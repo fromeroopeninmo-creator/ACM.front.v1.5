@@ -1,43 +1,50 @@
-// app/types/acm.types.ts
-
+// Tipología (orden alfabético)
 export enum PropertyType {
-  CASA = 'Casa',
-  DEPARTAMENTO = 'Departamento',
-  PH = 'PH',
-  TERRENO = 'Terreno',
-  LOCAL = 'Local',
-  OFICINA = 'Oficina',
+  CASA = "Casa",
+  DEPARTAMENTO = "Departamento",
+  DUPLEX = "Dúplex",
+  FONDO_COMERCIO = "Fondo de comercio",
+  GALPON = "Galpón",
+  LOCAL_COMERCIAL = "Local comercial",
+  LOTE = "Lote",
+  OFICINA = "Oficina",
+  PH = "PH",
 }
 
-export enum TitleType {
-  ESCRITURA = 'Escritura',
-  BOLETO = 'Boleto',
-  POSESION = 'Posesión',
-}
-
+// Estado de conservación
 export enum PropertyCondition {
-  A_ESTRENAR = 'A Estrenar',
-  EXCELENTE = 'Excelente',
-  MUY_BUENO = 'Muy Bueno',
-  BUENO = 'Bueno',
-  REGULAR = 'Regular',
-  MALO = 'Malo',
+  ESTRENAR = "A estrenar",
+  EXCELENTE = "Excelente",
+  MUY_BUENO = "Muy bueno",
+  BUENO = "Bueno",
+  REGULAR = "Regular",
+  MALO = "Malo",
 }
 
-export enum LocationQuality {
-  EXCELENTE = 'Excelente',
-  MUY_BUENA = 'Muy Buena',
-  BUENA = 'Buena',
-  MALA = 'Mala',
-}
-
+// Orientación
 export enum Orientation {
-  NORTE = 'Norte',
-  SUR = 'Sur',
-  ESTE = 'Este',
-  OESTE = 'Oeste',
+  NORTE = "Norte",
+  SUR = "Sur",
+  ESTE = "Este",
+  OESTE = "Oeste",
 }
 
+// Calidad de ubicación
+export enum LocationQuality {
+  EXCELENTE = "Excelente",
+  MUY_BUENA = "Muy buena",
+  BUENA = "Buena",
+  MALA = "Mala",
+}
+
+// Tipo de título
+export enum TitleType {
+  ESCRITURA = "Escritura",
+  BOLETO = "Boleto",
+  POSESION = "Posesión",
+}
+
+// Servicios
 export interface Services {
   luz: boolean;
   agua: boolean;
@@ -46,55 +53,46 @@ export interface Services {
   pavimento: boolean;
 }
 
+// Propiedad comparable
 export interface ComparableProperty {
-  id: string;
-  squareMeters: number;
-  price: number;
-  link: string;
-  description: string;
-  daysPublished: number;
-  pricePerSquareMeter: number;
-  coefficient: number;
+  builtArea: number;      // m² cubiertos
+  price: number;          // precio publicado
+  listingUrl: string;     // link de publicación / drive
+  description: string;    // descripción libre
+  daysPublished: number;  // días publicada
+  pricePerM2: number;     // calculado (price / builtArea)
+  coefficient: number;    // 0.1 a 1
 }
 
+// Formulario principal
 export interface ACMFormData {
-  // Información básica
-  date: string;
-  client: string;
-  agent: string;
+  date: string;               // ISO auto
+  clientName: string;
+  advisorName: string;
   phone: string;
   email: string;
-  
-  // Ubicación
   address: string;
   neighborhood: string;
   locality: string;
-  
-  // Características de la propiedad
   propertyType: PropertyType;
-  landSquareMeters: number;
-  coveredSquareMeters: number;
+  landArea: number;           // m² terreno
+  builtArea: number;          // m² cubiertos
   hasPlans: boolean;
   titleType: TitleType;
-  age: number;
+  age: number;                // antigüedad
   condition: PropertyCondition;
   locationQuality: LocationQuality;
   orientation: Orientation;
-  services: Services;
-  hasRent: boolean;
-  mainPhoto: string | null;
-  
-  // Propiedades comparables
+  services: Services;         // subsección “Servicios”
+  isRented: boolean;
+  // Foto principal: URL y base64 (para PDF)
+  mainPhotoUrl: string;
+  mainPhotoBase64?: string;
+  // Comparables
   comparables: ComparableProperty[];
-  
-  // Secciones de texto libre
+  // Texto libre
   observations: string;
-  toConsider: string;
+  considerations: string;
   strengths: string;
   weaknesses: string;
-}
-
-export interface AppConfig {
-  primaryColor: string;
-  secondaryColor: string;
 }

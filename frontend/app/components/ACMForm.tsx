@@ -48,10 +48,11 @@ export default function ACMForm() {
 ) => {
   const { name, value, type } = e.target;
 
-  if (type === "checkbox" && "checked" in e.target) {
+  if (type === "checkbox") {
+    const isChecked = (e.target as HTMLInputElement).checked;
     setFormData({
       ...formData,
-      [name]: (e.target as HTMLInputElement).checked,
+      [name]: isChecked,
     });
   } else if (type === "number") {
     setFormData({
@@ -65,7 +66,6 @@ export default function ACMForm() {
     });
   }
 };
-
 
   const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];

@@ -74,24 +74,31 @@ export default function ACMForm() {
   };
 
   // Manejo de comparables
-  const handleComparableChange = (
+ const handleComparableChange = (
   index: number,
   field: keyof ComparableProperty,
   value: string | number
 ) => {
   const copy = [...formData.comparables];
+  const current = copy[index];
+
+  if (!current) return;
+
+  // asignación segura
   if (field === "builtArea" || field === "price" || field === "daysPublished" || field === "coefficient") {
-    copy[index][field] = Number(value) as any;
+    (current[field] as number) = Number(value);
   } else {
-    copy[index][field] = value as any;
+    (current[field] as string) = String(value);
   }
 
   // recalcular pricePerM2
-  copy[index].pricePerM2 =
-    copy[index].builtArea > 0 ? copy[index].price / copy[index].builtArea : 0;
+  current.pricePerM2 =
+    current.builtArea > 0 ? current.price / current.builtArea : 0;
 
+  copy[index] = current;
   setFormData({ ...formData, comparables: copy });
 };
+
   
   const addComparable = () => {
     if (formData.comparables.length < 4) {

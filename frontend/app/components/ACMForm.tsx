@@ -57,21 +57,21 @@ const ACMForm: React.FC = () => {
 
   // ✅ FIX definitivo para "checked"
   const handleChange = (
-    e: React.ChangeEvent<
-      HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
-    >
-  ) => {
-    const { name, value, type } = e.target;
+  e: React.ChangeEvent<
+    HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
+  >
+) => {
+  const { name, value, type } = e.target;
 
-    if (type === "checkbox") {
-      const isChecked = (e.target as HTMLInputElement).checked;
-      setFormData({ ...formData, [name]: isChecked });
-    } else if (type === "number") {
-      setFormData({ ...formData, [name]: Number(value) });
-    } else {
-      setFormData({ ...formData, [name]: value });
-    }
-  };
+  if (type === "checkbox") {
+    const isChecked = (e.target as HTMLInputElement).checked;
+    setFormData({ ...formData, [name]: isChecked });
+  } else if (type === "number") {
+    setFormData({ ...formData, [name]: Number(value) });
+  } else {
+    setFormData({ ...formData, [name]: value });
+  }
+};
 
   // Comparables
   const handleComparableChange = (

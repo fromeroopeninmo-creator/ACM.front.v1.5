@@ -49,7 +49,7 @@ export default function ACMForm() {
   const { name, value, type } = e.target;
 
   if (type === "checkbox") {
-    const isChecked = (e.target as HTMLInputElement).checked;
+    const isChecked = (e.target as HTMLInputElement).checked; // ✅ type guard
     setFormData({
       ...formData,
       [name]: isChecked,

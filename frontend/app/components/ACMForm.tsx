@@ -44,14 +44,28 @@ export default function ACMForm() {
   });
 
   const handleChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
-  ) => {
-    const { name, value, type, checked } = e.target;
+  e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
+) => {
+  const { name, value, type } = e.target;
+
+  if (type === "checkbox" && "checked" in e.target) {
     setFormData({
       ...formData,
-      [name]: type === "checkbox" ? checked : type === "number" ? Number(value) : value,
+      [name]: (e.target as HTMLInputElement).checked,
     });
-  };
+  } else if (type === "number") {
+    setFormData({
+      ...formData,
+      [name]: Number(value),
+    });
+  } else {
+    setFormData({
+      ...formData,
+      [name]: value,
+    });
+  }
+};
+
 
   const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];

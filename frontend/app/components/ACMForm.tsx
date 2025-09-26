@@ -1,21 +1,19 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { jsPDF } from "jspdf";
 import {
   ACMFormData,
   PropertyType,
-  PropertyCondition,
-  Orientation,
-  LocationQuality,
   TitleType,
+  PropertyCondition,
+  LocationQuality,
+  Orientation,
   ComparableProperty,
-  Services,
 } from "@/app/types/acm.types";
 
-export default function ACMForm() {
+const ACMForm: React.FC = () => {
   const [formData, setFormData] = useState<ACMFormData>({
-    date: new Date().toISOString(),
+    date: "",
     clientName: "",
     advisorName: "",
     phone: "",
@@ -32,7 +30,13 @@ export default function ACMForm() {
     condition: PropertyCondition.BUENO,
     locationQuality: LocationQuality.BUENA,
     orientation: Orientation.NORTE,
-    services: { luz: false, agua: false, gas: false, cloacas: false, pavimento: false },
+    services: {
+      luz: false,
+      agua: false,
+      gas: false,
+      cloacas: false,
+      pavimento: false,
+    },
     isRented: false,
     mainPhotoUrl: "",
     mainPhotoBase64: undefined,
@@ -43,72 +47,49 @@ export default function ACMForm() {
     weaknesses: "",
   });
 
+  // Fecha automática al montar
+  useEffect(() => {
+    setFormData((prev) => ({
+      ...prev,
+      date: new Date().toISOString().split("T")[0],
+    }));
+  }, []);
+
+  // ✅ FIX definitivo para "checked"
   const handleChange = (
-  e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
-) => {
-  const { name, value, type } = e.target;
+    e: React.ChangeEvent<
+      HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
+    >
+  ) => {
+    const { name, value, type } = e.target;
 
-  if (type === "checkbox") {
-    const isChecked = (e.target as HTMLInputElement).checked; // ✅ type guard
-    setFormData({
-      ...formData,
-      [name]: isChecked,
-    });
-  } else if (type === "number") {
-    setFormData({
-      ...formData,
-      [name]: Number(value),
-    });
-  } else {
-    setFormData({
-      ...formData,
-      [name]: value,
-    });
-  }
-};
-
-  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setFormData({
-          ...formData,
-          mainPhotoUrl: URL.createObjectURL(file),
-          mainPhotoBase64: reader.result as string,
-        });
-      };
-      reader.readAsDataURL(file);
+    if (type === "checkbox") {
+      const isChecked = (e.target as HTMLInputElement).checked;
+      setFormData({ ...formData, [name]: isChecked });
+    } else if (type === "number") {
+      setFormData({ ...formData, [name]: Number(value) });
+    } else {
+      setFormData({ ...formData, [name]: value });
     }
   };
 
+  // Comparables
   const handleComparableChange = (
     index: number,
     field: keyof ComparableProperty,
     value: string | number
   ) => {
     const copy = [...formData.comparables];
-    if (field === "builtArea" || field === "price" || field === "daysPublished" || field === "coefficient") {
+    if (field === "builtArea" || field === "price" || field === "daysPublished") {
+      copy[index][field] = Number(value);
+    } else if (field === "coefficient") {
       copy[index][field] = Number(value);
     } else {
-      (copy[index][field] as string) = value.toString();
+      copy[index][field] = value as any;
     }
     copy[index].pricePerM2 =
       copy[index].builtArea > 0 ? copy[index].price / copy[index].builtArea : 0;
     setFormData({ ...formData, comparables: copy });
-  };
-
-  const handleComparablePhoto = (index: number, e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        const copy = [...formData.comparables];
-        (copy[index] as any).photoBase64 = reader.result as string;
-        setFormData({ ...formData, comparables: copy });
-      };
-      reader.readAsDataURL(file);
-    }
   };
 
   const addComparable = () => {
@@ -137,173 +118,292 @@ export default function ACMForm() {
     setFormData({ ...formData, comparables: copy });
   };
 
-  const handleDownloadPDF = async () => {
+  // Subir foto
+  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setFormData({
+        ...formData,
+        mainPhotoUrl: URL.createObjectURL(file),
+        mainPhotoBase64: reader.result as string,
+      });
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // Exportar PDF
+  const generatePDF = async () => {
+    const { jsPDF } = await import("jspdf");
     const doc = new jsPDF();
+
     doc.setFontSize(18);
-    doc.text("Informe ACM", 20, 20);
+    doc.text("Informe ACM", 14, 20);
 
     doc.setFontSize(12);
-    doc.text(`Fecha: ${new Date(formData.date).toLocaleDateString()}`, 20, 30);
-    doc.text(`Cliente: ${formData.clientName}`, 20, 40);
-    doc.text(`Agente: ${formData.advisorName}`, 20, 50);
-    doc.text(`Teléfono: ${formData.phone}`, 20, 60);
-    doc.text(`Email: ${formData.email}`, 20, 70);
-    doc.text(`Dirección: ${formData.address}`, 20, 80);
+    doc.text(`Fecha: ${formData.date}`, 14, 30);
+    doc.text(`Cliente: ${formData.clientName}`, 14, 40);
+    doc.text(`Asesor: ${formData.advisorName}`, 14, 50);
+    doc.text(`Teléfono: ${formData.phone}`, 14, 60);
+    doc.text(`Email: ${formData.email}`, 14, 70);
+    doc.text(`Dirección: ${formData.address}`, 14, 80);
+    doc.text(`Barrio: ${formData.neighborhood}`, 14, 90);
+    doc.text(`Localidad: ${formData.locality}`, 14, 100);
 
+    // Foto
     if (formData.mainPhotoBase64) {
-      doc.addImage(formData.mainPhotoBase64, "JPEG", 140, 30, 50, 50);
+      doc.addImage(formData.mainPhotoBase64, "JPEG", 150, 30, 40, 40);
     }
 
-    doc.addPage();
-    doc.text("Conclusión", 20, 20);
-    doc.text("Observaciones:", 20, 30);
-    doc.text(formData.observations || "-", 20, 40);
-    doc.text("Fortalezas:", 20, 60);
-    doc.text(formData.strengths || "-", 20, 70);
-    doc.text("Debilidades:", 20, 90);
-    doc.text(formData.weaknesses || "-", 20, 100);
-    doc.text("A Considerar:", 20, 120);
-    doc.text(formData.considerations || "-", 20, 130);
+    // Servicios
+    doc.text("Servicios:", 14, 120);
+    Object.entries(formData.services).forEach(([key, value], i) => {
+      doc.text(`${key}: ${value ? "✓" : "✗"}`, 20, 130 + i * 10);
+    });
 
-    doc.save("informe_acm.pdf");
+    // Comparables
+    doc.text("Propiedades comparables:", 14, 200);
+    formData.comparables.forEach((c, i) => {
+      doc.text(
+        `${i + 1}) m²: ${c.builtArea}, Precio: $${c.price}, $/m²: ${c.pricePerM2.toFixed(
+          2
+        )}, Coef: ${c.coefficient}, Días: ${c.daysPublished}`,
+        20,
+        210 + i * 10
+      );
+    });
+
+    // Conclusión
+    doc.addPage();
+    doc.setFontSize(14);
+    doc.text("Conclusión", 14, 20);
+    doc.setFontSize(12);
+    doc.text(`Observaciones: ${formData.observations}`, 14, 40);
+    doc.text(`Fortalezas: ${formData.strengths}`, 14, 60);
+    doc.text(`Debilidades: ${formData.weaknesses}`, 14, 80);
+    doc.text(`A Considerar: ${formData.considerations}`, 14, 100);
+
+    doc.save("informe-acm.pdf");
   };
 
   return (
-    <div className="max-w-7xl mx-auto p-6 bg-white shadow rounded-lg">
-      <h1 className="text-2xl font-bold mb-6">Análisis Comparativo de Mercado</h1>
+    <div className="max-w-7xl mx-auto bg-white shadow rounded-lg p-6 space-y-6">
+      <h2 className="text-xl font-bold mb-4">Análisis Comparativo de Mercado</h2>
 
       {/* Fecha */}
-      <p className="mb-6 text-sm text-gray-600">
-        Fecha: {new Date(formData.date).toLocaleDateString()}
-      </p>
+      <p className="text-sm text-gray-500">Fecha: {formData.date}</p>
 
-      {/* Datos de la propiedad + Foto */}
-      <div className="grid grid-cols-3 gap-6 mb-8">
-        <div className="col-span-2 space-y-4">
-          <label className="block text-sm font-medium">Cliente</label>
-          <input type="text" name="clientName" value={formData.clientName} onChange={handleChange} className="w-full border rounded p-2" />
-
-          <label className="block text-sm font-medium">Agente</label>
-          <input type="text" name="advisorName" value={formData.advisorName} onChange={handleChange} className="w-full border rounded p-2" />
-
-          <label className="block text-sm font-medium">Teléfono</label>
-          <input type="text" name="phone" value={formData.phone} onChange={handleChange} className="w-full border rounded p-2" />
-
-          <label className="block text-sm font-medium">Email</label>
-          <input type="email" name="email" value={formData.email} onChange={handleChange} className="w-full border rounded p-2" />
-
-          <label className="block text-sm font-medium">Dirección</label>
-          <input type="text" name="address" value={formData.address} onChange={handleChange} className="w-full border rounded p-2" />
-
-          <label className="block text-sm font-medium">Barrio</label>
-          <input type="text" name="neighborhood" value={formData.neighborhood} onChange={handleChange} className="w-full border rounded p-2" />
-
-          <label className="block text-sm font-medium">Localidad</label>
-          <input type="text" name="locality" value={formData.locality} onChange={handleChange} className="w-full border rounded p-2" />
-
-          <label className="block text-sm font-medium">m² Terreno</label>
-          <input type="number" name="landArea" value={formData.landArea} onChange={handleChange} className="w-full border rounded p-2" />
-
-          <label className="block text-sm font-medium">m² Cubiertos</label>
-          <input type="number" name="builtArea" value={formData.builtArea} onChange={handleChange} className="w-full border rounded p-2" />
-
-          <label className="block text-sm font-medium">Antigüedad (años)</label>
-          <input type="number" name="age" value={formData.age} onChange={handleChange} className="w-full border rounded p-2" />
-
-          <label className="block text-sm font-medium">Estado de Conservación</label>
-          <select name="condition" value={formData.condition} onChange={handleChange} className="w-full border rounded p-2">
-            {Object.values(PropertyCondition).map((cond) => (
-              <option key={cond} value={cond}>{cond}</option>
-            ))}
-          </select>
-
-          <label className="block text-sm font-medium">Ubicación</label>
-          <select name="locationQuality" value={formData.locationQuality} onChange={handleChange} className="w-full border rounded p-2">
-            {Object.values(LocationQuality).map((loc) => (
-              <option key={loc} value={loc}>{loc}</option>
-            ))}
-          </select>
-
-          <label className="block text-sm font-medium">Orientación</label>
-          <select name="orientation" value={formData.orientation} onChange={handleChange} className="w-full border rounded p-2">
-            {Object.values(Orientation).map((ori) => (
-              <option key={ori} value={ori}>{ori}</option>
-            ))}
-          </select>
+      {/* Datos de cliente y propiedad */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="space-y-4">
+          <input
+            name="clientName"
+            placeholder="Cliente"
+            value={formData.clientName}
+            onChange={handleChange}
+            className="w-full border rounded p-2"
+          />
+          <input
+            name="advisorName"
+            placeholder="Agente"
+            value={formData.advisorName}
+            onChange={handleChange}
+            className="w-full border rounded p-2"
+          />
+          <input
+            name="phone"
+            placeholder="Teléfono"
+            value={formData.phone}
+            onChange={handleChange}
+            className="w-full border rounded p-2"
+          />
+          <input
+            name="email"
+            placeholder="Email"
+            value={formData.email}
+            onChange={handleChange}
+            className="w-full border rounded p-2"
+          />
+          <input
+            name="address"
+            placeholder="Dirección"
+            value={formData.address}
+            onChange={handleChange}
+            className="w-full border rounded p-2"
+          />
+          <input
+            name="neighborhood"
+            placeholder="Barrio"
+            value={formData.neighborhood}
+            onChange={handleChange}
+            className="w-full border rounded p-2"
+          />
+          <input
+            name="locality"
+            placeholder="Localidad"
+            value={formData.locality}
+            onChange={handleChange}
+            className="w-full border rounded p-2"
+          />
         </div>
 
-        <div className="col-span-1">
+        {/* Foto */}
+        <div>
           <label className="block text-sm font-medium mb-2">Foto de la propiedad</label>
           <input type="file" accept="image/*" onChange={handlePhotoUpload} />
           {formData.mainPhotoUrl && (
-            <img src={formData.mainPhotoUrl} alt="Preview" className="mt-2 rounded shadow w-full" />
+            <img
+              src={formData.mainPhotoUrl}
+              alt="Vista previa"
+              className="mt-2 w-40 h-40 object-cover rounded"
+            />
           )}
         </div>
       </div>
 
-      {/* Comparables */}
-      <h2 className="text-xl font-semibold mb-4">Propiedades comparables</h2>
-      {formData.comparables.map((c, i) => (
-        <div key={i} className="border p-4 mb-4 rounded">
-          <label className="block text-sm font-medium">m² Cubiertos</label>
-          <input type="number" value={c.builtArea} onChange={(e) => handleComparableChange(i, "builtArea", e.target.value)} className="w-full border rounded p-2 mb-2" />
-
-          <label className="block text-sm font-medium">Precio publicado</label>
-          <input type="number" value={c.price} onChange={(e) => handleComparableChange(i, "price", e.target.value)} className="w-full border rounded p-2 mb-2" />
-
-          <label className="block text-sm font-medium">Link</label>
-          <input type="text" value={c.listingUrl} onChange={(e) => handleComparableChange(i, "listingUrl", e.target.value)} className="w-full border rounded p-2 mb-2" />
-
-          <label className="block text-sm font-medium">Descripción</label>
-          <textarea value={c.description} onChange={(e) => handleComparableChange(i, "description", e.target.value)} className="w-full border rounded p-2 mb-2" />
-
-          <label className="block text-sm font-medium">Días publicada</label>
-          <input type="number" value={c.daysPublished} onChange={(e) => handleComparableChange(i, "daysPublished", e.target.value)} className="w-full border rounded p-2 mb-2" />
-
-          <label className="block text-sm font-medium">Coeficiente</label>
-          <select value={c.coefficient} onChange={(e) => handleComparableChange(i, "coefficient", e.target.value)} className="w-full border rounded p-2 mb-2">
-            {[...Array(10)].map((_, idx) => {
-              const val = (idx + 1) / 10;
-              return (
-                <option key={val} value={val}>
-                  {val.toFixed(1)}
-                </option>
-              );
-            })}
-          </select>
-
-          <label className="block text-sm font-medium">Foto</label>
-          <input type="file" accept="image/*" onChange={(e) => handleComparablePhoto(i, e)} className="mb-2" />
-          {(c as any).photoBase64 && (
-            <img src={(c as any).photoBase64} alt="Comparable preview" className="rounded shadow w-32 h-32 object-cover" />
-          )}
-
-          <button type="button" onClick={() => removeComparable(i)} className="mt-2 text-red-600">
-            Eliminar
-          </button>
+      {/* Servicios */}
+      <div>
+        <h3 className="font-semibold mb-2">Servicios</h3>
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+          {Object.keys(formData.services).map((service) => (
+            <label key={service} className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                name={service}
+                checked={formData.services[service as keyof typeof formData.services]}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    services: {
+                      ...formData.services,
+                      [service]: e.target.checked,
+                    },
+                  })
+                }
+              />
+              <span>{service}</span>
+            </label>
+          ))}
         </div>
-      ))}
-      <button type="button" onClick={addComparable} className="px-4 py-2 bg-blue-600 text-white rounded">
-        Agregar comparable
-      </button>
+      </div>
+
+      {/* Comparables */}
+      <div>
+        <h3 className="font-semibold mb-2">Propiedades comparables</h3>
+        {formData.comparables.map((c, i) => (
+          <div key={i} className="border p-4 rounded mb-4">
+            <input
+              type="number"
+              placeholder="m² Cubiertos"
+              value={c.builtArea}
+              onChange={(e) => handleComparableChange(i, "builtArea", e.target.value)}
+              className="w-full border rounded p-2 mb-2"
+            />
+            <input
+              type="number"
+              placeholder="Precio"
+              value={c.price}
+              onChange={(e) => handleComparableChange(i, "price", e.target.value)}
+              className="w-full border rounded p-2 mb-2"
+            />
+            <input
+              type="text"
+              placeholder="Link"
+              value={c.listingUrl}
+              onChange={(e) => handleComparableChange(i, "listingUrl", e.target.value)}
+              className="w-full border rounded p-2 mb-2"
+            />
+            <input
+              type="text"
+              placeholder="Descripción"
+              value={c.description}
+              onChange={(e) => handleComparableChange(i, "description", e.target.value)}
+              className="w-full border rounded p-2 mb-2"
+            />
+            <input
+              type="number"
+              placeholder="Días publicada"
+              value={c.daysPublished}
+              onChange={(e) =>
+                handleComparableChange(i, "daysPublished", e.target.value)
+              }
+              className="w-full border rounded p-2 mb-2"
+            />
+            <select
+              value={c.coefficient}
+              onChange={(e) =>
+                handleComparableChange(i, "coefficient", e.target.value)
+              }
+              className="w-full border rounded p-2 mb-2"
+            >
+              {[...Array(10)].map((_, idx) => (
+                <option key={idx} value={(idx + 1) / 10}>
+                  {(idx + 1) / 10}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={() => removeComparable(i)}
+              className="text-red-600 text-sm"
+            >
+              Eliminar
+            </button>
+          </div>
+        ))}
+        <button
+          type="button"
+          onClick={addComparable}
+          className="mt-2 bg-blue-600 text-white px-4 py-2 rounded"
+        >
+          Agregar comparable
+        </button>
+      </div>
 
       {/* Conclusión */}
-      <h2 className="text-xl font-semibold mt-8 mb-4">Conclusión</h2>
-      <label className="block text-sm font-medium">Observaciones</label>
-      <textarea name="observations" value={formData.observations} onChange={handleChange} className="w-full border rounded p-2 mb-4 h-24" />
+      <div>
+        <h3 className="font-semibold mb-2">Conclusión</h3>
+        <textarea
+          name="observations"
+          placeholder="Observaciones"
+          value={formData.observations}
+          onChange={handleChange}
+          className="w-full border rounded p-2 mb-2 h-24"
+        />
+        <textarea
+          name="strengths"
+          placeholder="Fortalezas"
+          value={formData.strengths}
+          onChange={handleChange}
+          className="w-full border rounded p-2 mb-2 h-24"
+        />
+        <textarea
+          name="weaknesses"
+          placeholder="Debilidades"
+          value={formData.weaknesses}
+          onChange={handleChange}
+          className="w-full border rounded p-2 mb-2 h-24"
+        />
+        <textarea
+          name="considerations"
+          placeholder="A considerar"
+          value={formData.considerations}
+          onChange={handleChange}
+          className="w-full border rounded p-2 mb-2 h-24"
+        />
+      </div>
 
-      <label className="block text-sm font-medium">Fortalezas</label>
-      <textarea name="strengths" value={formData.strengths} onChange={handleChange} className="w-full border rounded p-2 mb-4 h-24" />
-
-      <label className="block text-sm font-medium">Debilidades</label>
-      <textarea name="weaknesses" value={formData.weaknesses} onChange={handleChange} className="w-full border rounded p-2 mb-4 h-24" />
-
-      <label className="block text-sm font-medium">A Considerar</label>
-      <textarea name="considerations" value={formData.considerations} onChange={handleChange} className="w-full border rounded p-2 mb-4 h-24" />
-
-      <button type="button" onClick={handleDownloadPDF} className="px-4 py-2 bg-green-600 text-white rounded">
+      {/* Botón PDF */}
+      <button
+        type="button"
+        onClick={generatePDF}
+        className="bg-green-600 text-white px-6 py-2 rounded shadow"
+      >
         Descargar PDF
       </button>
     </div>
   );
-}
+};
+
+export default ACMForm;

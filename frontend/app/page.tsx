@@ -1,14 +1,16 @@
+"use client";
+
 import ACMForm from "@/app/components/ACMForm";
 
 export default function HomePage() {
   return (
-    <div className="max-w-7xl mx-auto p-6">
-      <div className="bg-white shadow rounded-lg p-6">
-        <h2 className="text-xl font-semibold text-indigo-600 mb-4">
-          Formulario de Análisis Comparativo de Mercado
-        </h2>
+    <main className="max-w-7xl mx-auto p-6">
+      <h1 className="text-3xl font-bold mb-6 text-blue-600">
+        Informe ACM
+      </h1>
+      <div className="bg-white shadow-lg rounded-lg p-6">
         <ACMForm />
       </div>
-    </div>
+    </main>
   );
 }

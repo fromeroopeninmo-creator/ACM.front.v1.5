@@ -1,34 +1,29 @@
-import type { Metadata } from "next";
 import "./globals.css";
+import type { Metadata } from "next";
+import { ReactNode } from "react";
 
 export const metadata: Metadata = {
-  title: "Informe ACM",
-  description: "Aplicación para generar Análisis Comparativo de Mercado inmobiliario",
+  title: "ACM Inmobiliario",
+  description: "Aplicación para generar Análisis Comparativos de Mercado (ACM) inmobiliarios.",
+  viewport: "width=device-width, initial-scale=1",
+  icons: {
+    icon: "/favicon.ico",
+  },
 };
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="es">
-      <body className="bg-gray-50 text-gray-800 antialiased">
-        <main className="min-h-screen flex flex-col">
-          <header className="bg-white shadow-sm">
-            <div className="max-w-7xl mx-auto px-6 py-4">
-              <h1 className="text-2xl font-bold text-indigo-600">
-                Informe ACM
-              </h1>
-            </div>
-          </header>
-          <div className="flex-1 max-w-7xl mx-auto w-full p-6">{children}</div>
-          <footer className="bg-gray-100 border-t mt-8">
-            <div className="max-w-7xl mx-auto px-6 py-4 text-sm text-gray-500 text-center">
-              © {new Date().getFullYear()} Informe ACM — Generado con Next.js & TailwindCSS
-            </div>
-          </footer>
-        </main>
+      <head>
+        {/* Espacio para fuentes externas, favicons adicionales, Google Analytics, etc. */}
+      </head>
+      <body className="bg-gray-50 text-gray-900 antialiased min-h-screen">
+        {/* 
+          FUTURO: acá podés envolver con ThemeProvider o Contexts
+          Ejemplo: 
+          <ThemeProvider>{children}</ThemeProvider> 
+        */}
+        <div className="max-w-7xl mx-auto p-6">{children}</div>
       </body>
     </html>
   );

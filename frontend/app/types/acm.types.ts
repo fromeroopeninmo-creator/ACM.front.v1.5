@@ -1,95 +1,156 @@
 // app/types/acm.types.ts
 
 /**
- * Tipologías de propiedades disponibles en el ACM.
- * Se muestran en orden alfabético en el formulario.
+ * Tipología de propiedad (mantener estos valores tal cual, se ordenan en UI).
  */
-export const propertyTypes: string[] = [
-  "Casa",
-  "Departamento",
-  "Dúplex",
-  "Fondo de comercio",
-  "Galpón",
-  "Local comercial",
-  "Oficina",
-  "PH",
-  "Terreno"
-].sort();
+export enum PropertyType {
+  CASA = "Casa",
+  DEPARTAMENTO = "Departamento",
+  DUPLEX = "Dúplex",
+  FONDO_DE_COMERCIO = "Fondo de comercio",
+  GALPON = "Galpón",
+  LOCAL_COMERCIAL = "Local comercial",
+  OFICINA = "Oficina",
+  PH = "PH",
+  LOTE = "Terreno",
+}
 
 /**
- * Servicios básicos que puede tener la propiedad.
+ * Estado de conservación de la propiedad.
+ */
+export enum PropertyCondition {
+  ESTRENAR = "A estrenar",
+  EXCELENTE = "Excelente",
+  MUY_BUENO = "Muy bueno",
+  BUENO = "Bueno",
+  REGULAR = "Regular",
+  MALO = "Malo",
+}
+
+/**
+ * Orientación cardinal.
+ */
+export enum Orientation {
+  NORTE = "Norte",
+  SUR = "Sur",
+  ESTE = "Este",
+  OESTE = "Oeste",
+}
+
+/**
+ * Calidad de ubicación (interna/entorno).
+ */
+export enum LocationQuality {
+  EXCELENTE = "Excelente",
+  MUY_BUENA = "Muy buena",
+  BUENA = "Buena",
+  MALA = "Mala",
+}
+
+/**
+ * Tipo de título/tenencia.
+ */
+export enum TitleType {
+  ESCRITURA = "Escritura",
+  BOLETO = "Boleto",
+  POSESION = "Posesión",
+}
+
+/**
+ * Servicios disponibles (coinciden con los 5 checkboxes del formulario).
  */
 export interface Services {
-  agua: boolean;
   luz: boolean;
+  agua: boolean;
   gas: boolean;
   cloacas: boolean;
   pavimento: boolean;
-  internet: boolean;
 }
 
 /**
- * Propiedad comparable que se usa en el análisis.
+ * Estructura de cada propiedad comparable.
+ * NOTA: incluimos address/barrio/foto y ambos campos de link (listingUrl y link)
+ * para ser compatibles con distintas versiones del formulario/PDF.
  */
 export interface ComparableProperty {
-  // Identificación
-  address: string;        // Dirección
-  neighborhood: string;   // Barrio
+  // Identificación y contexto
+  address: string;            // Dirección de la comparable
+  neighborhood: string;       // Barrio de la comparable
 
-  // Dimensiones y valores
-  builtArea: number;      // m² cubiertos
-  price: number;          // Precio total
-  pricePerM2: number;     // Precio por m² (calculado)
-  coefficient: number;    // Coeficiente de ajuste (0.1 a 1)
+  // Métricas y valores
+  builtArea: number;          // m² cubiertos
+  price: number;              // Precio publicado (total)
+  pricePerM2: number;         // Calculado: price / builtArea
+  coefficient: number;        // Multiplicador 0.1 a 1 (ajuste por diferencias)
+  daysPublished: number;      // Días publicada
 
-  // Info adicional
-  description: string;    // Breve descripción
-  link: string;           // Link a publicación (ej. portal inmobiliario)
+  // Enlaces / referencias
+  listingUrl?: string;        // Link a publicación (nombre usado en versiones previas)
+  link?: string;              // Alias alternativo (por compatibilidad)
 
-  // Multimedia
-  photo?: string;         // Foto de la propiedad (base64 o URL)
+  // Descripción libre
+  description: string;
+
+  // Multimedia (para preview y para PDF)
+  photoUrl?: string;          // URL de imagen si se carga por link
+  photoBase64?: string;       // Imagen en base64 si se sube archivo
 }
 
 /**
- * Datos principales de la propiedad bajo análisis.
- */
-export interface MainProperty {
-  propertyType: string;   // Tipo de propiedad
-  address: string;        // Dirección
-  neighborhood: string;   // Barrio
-  landArea: number;       // m² de terreno
-  builtArea: number;      // m² cubiertos
-  age: number;            // Antigüedad en años
-  state: string;          // Estado de conservación
-  orientation: string;    // Orientación (ej. Norte, Sur, etc.)
-  location: string;       // Ubicación interna (ej. Frente, Contrafrente)
-  price?: number;         // Precio estimado opcional
-
-  // Multimedia
-  photo?: string;         // Foto de la propiedad principal
-  logo?: string;          // Logo de la empresa/inmobiliaria
-
-  // Servicios
-  services: Services;
-}
-
-/**
- * Conclusiones del análisis comparativo.
- */
-export interface Conclusions {
-  observations: string;   // Observaciones generales
-  strengths: string;      // Fortalezas
-  weaknesses: string;     // Debilidades
-  considerations: string; // A considerar
-}
-
-/**
- * Datos completos del formulario ACM.
- * Incluye la propiedad principal, comparables y conclusiones.
+ * Datos principales del formulario ACM.
+ * Mantiene la estructura usada por el ACMForm grande: campos “planos/renta” como boolean,
+ * orientación, calidad de ubicación, condición, etc. Además, soporta logo e imagen principal.
  */
 export interface ACMFormData {
-  mainProperty: MainProperty;          // Propiedad principal
-  comparables: ComparableProperty[];   // Lista de comparables
-  conclusions: Conclusions;            // Observaciones y análisis
-  date: string;                        // Fecha del informe (automática)
+  // Fecha del informe (ISO string)
+  date: string;
+
+  // Datos del cliente / asesor
+  clientName: string;
+  advisorName: string;
+  phone: string;
+  email: string;
+
+  // Ubicación de la propiedad principal
+  address: string;
+  neighborhood: string;
+  locality: string;
+
+  // Características principales
+  propertyType: PropertyType;
+  landArea: number;              // m² terreno
+  builtArea: number;             // m² cubiertos
+  hasPlans: boolean;             // Planos (sí/no)
+  titleType: TitleType;          // Título (escritura/boleto/posesión)
+  age: number;                   // Antigüedad (años)
+  condition: PropertyCondition;  // Estado de conservación
+  locationQuality: LocationQuality; // Calidad de ubicación
+  orientation: Orientation;      // Orientación
+
+  // Servicios (subsección “Servicios”)
+  services: Services;
+
+  // Renta actual (sí/no)
+  isRented: boolean;
+
+  // Multimedia principal
+  mainPhotoUrl: string;          // URL opcional (si pegás un link)
+  mainPhotoBase64?: string;      // Imagen cargada (para preview/PDF)
+
+  // Branding opcional
+  logoUrl?: string;              // URL de logo
+  logoBase64?: string;           // Logo en base64 (para PDF)
+
+  // Comparables
+  comparables: ComparableProperty[];
+
+  // Texto libre (Conclusión)
+  observations: string;          // Observaciones
+  strengths: string;             // Fortalezas
+  weaknesses: string;            // Debilidades
+  considerations: string;        // A considerar
+
+  // Extras opcionales que puede usar el UI/PDF
+  primaryColorHex?: string;      // Color primario configurable (UI/PDF)
+  suggestedPrice?: number;       // Precio sugerido calculado (resultado final)
 }

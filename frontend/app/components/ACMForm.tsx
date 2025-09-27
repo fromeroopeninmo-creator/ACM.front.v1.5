@@ -1,28 +1,28 @@
-"use client";
+'use client';
 
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   ACMFormData,
   ComparableProperty,
-  PropertyType,
-  PropertyCondition,
-  Orientation,
   LocationQuality,
+  Orientation,
+  PropertyCondition,
+  PropertyType,
+  Services,
   TitleType,
-} from "@/app/types/acm.types";
+} from '@/app/types/acm.types';
 
 export default function ACMForm() {
-  const [primaryColor, setPrimaryColor] = useState<string>("#1d4ed8"); // color de acento (UI/PDF)
-
-  const [formData, setFormData] = useState<ACMFormData>({
-    date: "",
-    clientName: "",
-    advisorName: "",
-    phone: "",
-    email: "",
-    address: "",
-    neighborhood: "",
-    locality: "",
+  // Estado principal
+  const [formData, setFormData] = useState<ACMFormData>(() => ({
+    date: new Date().toISOString(), // ISO automático
+    clientName: '',
+    advisorName: '',
+    phone: '',
+    email: '',
+    address: '',
+    neighborhood: '',
+    locality: '',
     propertyType: PropertyType.CASA,
     landArea: 0,
     builtArea: 0,
@@ -32,507 +32,373 @@ export default function ACMForm() {
     condition: PropertyCondition.BUENO,
     locationQuality: LocationQuality.BUENA,
     orientation: Orientation.NORTE,
-    services: { luz: false, agua: false, gas: false, cloacas: false, pavimento: false },
+    services: {
+      luz: false,
+      agua: false,
+      gas: false,
+      cloacas: false,
+      pavimento: false,
+    },
     isRented: false,
-    mainPhotoUrl: "",
+    mainPhotoUrl: '',
     mainPhotoBase64: undefined,
-    comparables: [],
-    observations: "",
-    considerations: "",
-    strengths: "",
-    weaknesses: "",
-  });
+    comparables: [
+      {
+        builtArea: 0,
+        price: 0,
+        listingUrl: '',
+        description: '',
+        daysPublished: 0,
+        pricePerM2: 0,
+        coefficient: 1,
+      },
+    ],
+    observations: '',
+    considerations: '',
+    strengths: '',
+    weaknesses: '',
+  }));
 
-  // Fecha automática al montar
-  useEffect(() => {
-    setFormData((prev) => ({ ...prev, date: new Date().toISOString().split("T")[0] }));
-  }, []);
+  const [primaryColor, setPrimaryColor] = useState<string>('#1d4ed8'); // color configurable (azul tailwind 700 aprox.)
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
 
-  // Campos numéricos para castear sin mirar e.target.type (evita problemas de union types)
-  const numericFields = new Set([
-    "landArea",
-    "builtArea",
-    "age",
-  ]);
+  // Asegura que la fecha sea formato YYYY-MM-DD para mostrar arriba si querés
+  const displayDate = useMemo(() => formData.date.substring(0, 10), [formData.date]);
 
-  // Cambios genéricos (inputs/selects/textarea) con casteo según campo
+  // ---------- Helpers de cambio (sin checked) ----------
+
+  // Texto o número genérico (para inputs y selects de enums/números)
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
   ) => {
-    const { name, value } = e.target;
-    let finalValue: any = value;
-
-    if (numericFields.has(name)) {
-      finalValue = Number(value);
-    } else {
-      // casteos a enums cuando corresponde
-      if (name === "propertyType") finalValue = value as PropertyType;
-      if (name === "titleType") finalValue = value as TitleType;
-      if (name === "condition") finalValue = value as PropertyCondition;
-      if (name === "locationQuality") finalValue = value as LocationQuality;
-      if (name === "orientation") finalValue = value as Orientation;
-    }
-
-    setFormData((prev) => ({ ...prev, [name]: finalValue } as ACMFormData));
-  };
-
-  // Cambios booleanos (select Sí/No) para hasPlans, isRented
-  const handleBooleanChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const { name, value } = e.target; // "true" | "false"
-    const boolVal = value === "true";
-    setFormData((prev) => ({ ...prev, [name]: boolVal } as ACMFormData));
-  };
-
-  // Servicios: select Sí/No por cada servicio
-  const handleServiceChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const { name, value } = e.target; // name es un key de services
-    const boolVal = value === "true";
+    const { name, value, type } = e.target;
     setFormData((prev) => ({
       ...prev,
-      services: { ...prev.services, [name]: boolVal },
+      [name]: type === 'number' ? Number(value) : value,
     }));
   };
 
-  // Comparables
-  const handleComparableChange = (
+  // Select Sí/No -> boolean (para hasPlans / isRented)
+  const handleBooleanSelect = (name: keyof Pick<ACMFormData, 'hasPlans' | 'isRented'>, value: string) => {
+    setFormData((prev) => ({ ...prev, [name]: value === 'true' }));
+  };
+
+  // Servicios (cada uno es boolean con Sí/No)
+  const handleServiceSelect = (field: keyof Services, value: string) => {
+    setFormData((prev) => ({
+      ...prev,
+      services: { ...prev.services, [field]: value === 'true' },
+    }));
+  };
+
+  // Comparables: distintos tipos de campo
+  const handleComparableChange = <K extends keyof ComparableProperty>(
     index: number,
-    field: keyof ComparableProperty,
+    field: K,
     rawValue: string
   ) => {
-    const copy = [...formData.comparables];
-    if (field === "builtArea" || field === "price" || field === "daysPublished" || field === "coefficient") {
-      (copy[index][field] as number) = Number(rawValue);
-    } else {
-      (copy[index][field] as any) = rawValue;
-    }
-    // recálculo de $/m²
-    copy[index].pricePerM2 =
-      copy[index].builtArea > 0 ? copy[index].price / copy[index].builtArea : 0;
+    setFormData((prev) => {
+      const comps = [...prev.comparables];
+      const current = { ...comps[index] };
 
-    setFormData((prev) => ({ ...prev, comparables: copy }));
+      const numericFields: Array<keyof ComparableProperty> = [
+        'builtArea',
+        'price',
+        'daysPublished',
+        'pricePerM2',
+        'coefficient',
+      ];
+
+      if (numericFields.includes(field)) {
+        const num = field === 'coefficient' ? parseFloat(rawValue) : Number(rawValue);
+        (current[field] as unknown as number) = Number.isFinite(num) ? num : 0;
+      } else {
+        (current[field] as unknown as string) = rawValue;
+      }
+
+      // Recalcular valor m²
+      current.pricePerM2 = current.builtArea > 0 ? current.price / current.builtArea : 0;
+
+      comps[index] = current;
+      return { ...prev, comparables: comps };
+    });
   };
 
   const addComparable = () => {
-    if (formData.comparables.length >= 4) return;
-    const nuevo: ComparableProperty = {
-      builtArea: 0,
-      price: 0,
-      listingUrl: "",
-      description: "",
-      daysPublished: 0,
-      pricePerM2: 0,
-      coefficient: 1,
-    };
-    setFormData((prev) => ({ ...prev, comparables: [...prev.comparables, nuevo] }));
+    setFormData((prev) => {
+      if (prev.comparables.length >= 4) return prev;
+      return {
+        ...prev,
+        comparables: [
+          ...prev.comparables,
+          {
+            builtArea: 0,
+            price: 0,
+            listingUrl: '',
+            description: '',
+            daysPublished: 0,
+            pricePerM2: 0,
+            coefficient: 1,
+          },
+        ],
+      };
+    });
   };
 
   const removeComparable = (index: number) => {
-    const copy = [...formData.comparables];
-    copy.splice(index, 1);
-    setFormData((prev) => ({ ...prev, comparables: copy }));
+    setFormData((prev) => {
+      if (prev.comparables.length <= 1) return prev;
+      const comps = [...prev.comparables];
+      comps.splice(index, 1);
+      return { ...prev, comparables: comps };
+    });
   };
 
-  // Foto principal
-  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Foto principal -> base64 + preview
+  const handlePhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      setFormData((prev) => ({
-        ...prev,
-        mainPhotoUrl: URL.createObjectURL(file),
-        mainPhotoBase64: reader.result as string,
-      }));
-    };
-    reader.readAsDataURL(file);
+
+    const toBase64 = (file: File) =>
+      new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result));
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+
+    const base64 = await toBase64(file);
+    const url = URL.createObjectURL(file);
+
+    setFormData((prev) => ({
+      ...prev,
+      mainPhotoBase64: base64,
+      mainPhotoUrl: url,
+    }));
   };
 
-  // Helpers PDF
-  const hexToRgb = (hex: string) => {
-    const h = hex.replace("#", "");
-    const bigint = parseInt(h, 16);
-    return {
-      r: (bigint >> 16) & 255,
-      g: (bigint >> 8) & 255,
-      b: bigint & 255,
-    };
-  };
+  // Orden alfabético de Tipologías
+  const propertyTypeOptions = useMemo(
+    () => Object.values(PropertyType).sort((a, b) => a.localeCompare(b, 'es')),
+    []
+  );
 
-  const fmt = (n: number) =>
-    isFinite(n) ? n.toLocaleString("es-AR", { maximumFractionDigits: 2 }) : "0";
+  // Opciones de enums
+  const titleTypeOptions = Object.values(TitleType);
+  const conditionOptions = Object.values(PropertyCondition);
+  const locationOptions = Object.values(LocationQuality);
+  const orientationOptions = Object.values(Orientation);
 
-  // Descargar PDF (jsPDF import dinámico)
-  const handleDownloadPDF = async () => {
-    const { jsPDF } = await import("jspdf");
-    const doc = new jsPDF({ unit: "mm", format: "a4" });
-    const marginX = 14;
-    let y = 18;
-
-    const { r, g, b } = hexToRgb(primaryColor);
-
-    // Encabezado
-    doc.setFontSize(18);
-    doc.setTextColor(r, g, b);
-    doc.text("Informe ACM", marginX, y);
-    doc.setTextColor(0, 0, 0);
-    doc.setFontSize(11);
-    y += 8;
-    doc.text(`Fecha: ${formData.date || "-"}`, marginX, y);
-    y += 8;
-
-    // Datos del cliente/propiedad
-    doc.setTextColor(r, g, b);
-    doc.setFontSize(14);
-    doc.text("Datos del Cliente / Propiedad", marginX, y);
-    doc.setTextColor(0, 0, 0);
-    doc.setFontSize(11);
-    y += 7;
-
-    const putLine = (label: string, value: string) => {
-      doc.text(`${label}: ${value || "-"}`, marginX, y);
-      y += 6;
-      if (y > 270) {
-        doc.addPage();
-        y = 18;
-      }
-    };
-
-    putLine("Cliente", formData.clientName);
-    putLine("Agente", formData.advisorName);
-    putLine("Teléfono", formData.phone);
-    putLine("Email", formData.email);
-    putLine("Dirección", formData.address);
-    putLine("Barrio", formData.neighborhood);
-    putLine("Localidad", formData.locality);
-    putLine("Tipología", formData.propertyType);
-    putLine("m² Terreno", String(formData.landArea));
-    putLine("m² Cubiertos", String(formData.builtArea));
-    putLine("Antigüedad", String(formData.age));
-    putLine("Planos", formData.hasPlans ? "Sí" : "No");
-    putLine("Título", formData.titleType);
-    putLine("Estado", formData.condition);
-    putLine("Ubicación", formData.locationQuality);
-    putLine("Orientación", formData.orientation);
-    putLine("Posee renta", formData.isRented ? "Sí" : "No");
-
-    // Servicios
-    doc.setTextColor(r, g, b);
-    doc.setFontSize(14);
-    doc.text("Servicios", marginX, y);
-    doc.setTextColor(0, 0, 0);
-    doc.setFontSize(11);
-    y += 7;
-
-    const sv = formData.services;
-    const check = (v: boolean) => (v ? "✓" : "✗");
-    putLine("Luz", check(sv.luz));
-    putLine("Agua", check(sv.agua));
-    putLine("Gas", check(sv.gas));
-    putLine("Cloacas", check(sv.cloacas));
-    putLine("Pavimento", check(sv.pavimento));
-
-    // Foto principal (si hay)
-    if (formData.mainPhotoBase64) {
-      // estimar tamaño
-      const imgType = formData.mainPhotoBase64.startsWith("data:image/png") ? "PNG" : "JPEG";
-      const imgWidth = 90;
-      const imgHeight = 60;
-      if (y + imgHeight > 270) {
-        doc.addPage();
-        y = 18;
-      }
-      doc.addImage(formData.mainPhotoBase64, imgType as any, marginX, y, imgWidth, imgHeight);
-      y += imgHeight + 6;
+  // Coeficiente 0.1 a 1.0
+  const coefficientOptions = useMemo(() => {
+    const arr: number[] = [];
+    for (let x = 0.1; x <= 1.0 + 1e-9; x += 0.1) {
+      arr.push(Number(x.toFixed(1)));
     }
+    return arr;
+  }, []);
 
-    // Comparables
-    doc.setTextColor(r, g, b);
-    doc.setFontSize(14);
-    doc.text("Propiedades comparadas en la zona", marginX, y);
-    doc.setTextColor(0, 0, 0);
-    doc.setFontSize(10);
-    y += 6;
+  // ---------- PDF ----------
+  const downloadPdf = async () => {
+    try {
+      setIsGeneratingPdf(true);
+      const { jsPDF } = await import('jspdf');
 
-    // Cabecera de tabla
-    const colX = [marginX, marginX + 26, marginX + 64, marginX + 96, marginX + 118, marginX + 144];
-    doc.text("m²", colX[0], y);
-    doc.text("Precio", colX[1], y);
-    doc.text("$ / m²", colX[2], y);
-    doc.text("Coef.", colX[3], y);
-    doc.text("Días", colX[4], y);
-    doc.text("Link", colX[5], y);
-    y += 5;
+      const doc = new jsPDF({ unit: 'pt' });
+      const marginX = 40;
+      let y = 50;
 
-    doc.setFontSize(9);
-    formData.comparables.forEach((c, idx) => {
-      if (y > 270) {
-        doc.addPage();
-        y = 18;
+      // Encabezado
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(18);
+      doc.setTextColor(primaryColor);
+      doc.text('Informe ACM', marginX, y);
+      y += 24;
+
+      doc.setFontSize(10);
+      doc.setTextColor('#111111');
+      doc.setFont('helvetica', 'normal');
+      doc.text(`Fecha: ${displayDate}`, marginX, y);
+      y += 18;
+      doc.text(`Agente: ${formData.advisorName || '-'}`, marginX, y);
+      y += 18;
+      doc.text(`Cliente: ${formData.clientName || '-'}`, marginX, y);
+      y += 26;
+
+      // Datos Propiedad
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(13);
+      doc.setTextColor(primaryColor);
+      doc.text('Datos de la Propiedad', marginX, y);
+      y += 16;
+
+      doc.setTextColor('#111111');
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(10);
+
+      const lines: string[] = [
+        `Dirección: ${formData.address || '-'}`,
+        `Barrio: ${formData.neighborhood || '-'} | Localidad: ${formData.locality || '-'}`,
+        `Tipología: ${formData.propertyType}`,
+        `m² Terreno: ${formData.landArea} | m² Cubiertos: ${formData.builtArea}`,
+        `Antigüedad: ${formData.age} | Título: ${formData.titleType}`,
+        `Estado: ${formData.condition} | Ubicación: ${formData.locationQuality} | Orientación: ${formData.orientation}`,
+        `Planos: ${formData.hasPlans ? 'Sí' : 'No'} | Posee renta: ${formData.isRented ? 'Sí' : 'No'}`,
+      ];
+
+      lines.forEach((t) => {
+        doc.text(t, marginX, y);
+        y += 16;
+      });
+
+      // Servicios
+      y += 8;
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(12);
+      doc.setTextColor(primaryColor);
+      doc.text('Servicios', marginX, y);
+      y += 16;
+
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor('#111111');
+      const serviciosTxt = [
+        `Luz: ${formData.services.luz ? '✓' : '✗'}`,
+        `Agua: ${formData.services.agua ? '✓' : '✗'}`,
+        `Gas: ${formData.services.gas ? '✓' : '✗'}`,
+        `Cloacas: ${formData.services.cloacas ? '✓' : '✗'}`,
+        `Pavimento: ${formData.services.pavimento ? '✓' : '✗'}`,
+      ].join('   |   ');
+      doc.text(serviciosTxt, marginX, y);
+      y += 20;
+
+      // Foto (si existe)
+      if (formData.mainPhotoBase64) {
+        const imgWidth = 240;
+        const imgHeight = 160;
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(12);
+        doc.setTextColor(primaryColor);
+        doc.text('Foto de la propiedad', marginX, y);
+        y += 10;
+        doc.addImage(formData.mainPhotoBase64, 'JPEG', marginX, y, imgWidth, imgHeight);
+        y += imgHeight + 20;
       }
-      doc.text(String(c.builtArea || 0), colX[0], y);
-      doc.text(`$ ${fmt(c.price || 0)}`, colX[1], y);
-      doc.text(`$ ${fmt(c.pricePerM2 || 0)}`, colX[2], y);
-      doc.text(String(c.coefficient || 0), colX[3], y);
-      doc.text(String(c.daysPublished || 0), colX[4], y);
-      const link = c.listingUrl ? (c.listingUrl.length > 28 ? c.listingUrl.slice(0, 28) + "…" : c.listingUrl) : "-";
-      doc.text(link, colX[5], y);
-      y += 5;
 
-      // Descripción en línea aparte
-      if (c.description) {
-        const descLines = doc.splitTextToSize(`Desc: ${c.description}`, 180);
-        descLines.forEach((line: string) => {
-          if (y > 270) {
-            doc.addPage();
-            y = 18;
-          }
-          doc.text(line, marginX, y);
-          y += 4;
+      // Comparables
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(13);
+      doc.setTextColor(primaryColor);
+      doc.text('Propiedades comparadas en la zona', marginX, y);
+      y += 16;
+
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor('#111111');
+      doc.setFontSize(10);
+
+      // Cabecera tabla
+      const headers = ['m²', 'Precio', 'Precio/m²', 'Coef.', 'Días', 'Link'];
+      const colX = [marginX, marginX + 60, marginX + 160, marginX + 260, marginX + 320, marginX + 370];
+      doc.setFont('helvetica', 'bold');
+      headers.forEach((h, i) => doc.text(h, colX[i], y));
+      y += 14;
+      doc.setFont('helvetica', 'normal');
+
+      formData.comparables.forEach((c) => {
+        const row = [
+          String(c.builtArea),
+          formatCurrency(c.price),
+          formatCurrency(c.pricePerM2),
+          String(c.coefficient),
+          String(c.daysPublished),
+          c.listingUrl || '-',
+        ];
+        row.forEach((cell, i) => {
+          const maxWidth = i === 5 ? 200 : 90; // link más ancho
+          const split = doc.splitTextToSize(cell, maxWidth);
+          doc.text(split, colX[i], y);
         });
-      }
-    });
+        y += 18;
+      });
 
-    // Conclusiones
-    doc.setTextColor(r, g, b);
-    doc.setFontSize(14);
-    if (y > 260) {
-      doc.addPage();
-      y = 18;
+      // Conclusión
+      y += 10;
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(13);
+      doc.setTextColor(primaryColor);
+      doc.text('Conclusión', marginX, y);
+      y += 16;
+
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor('#111111');
+      doc.setFontSize(11);
+      y = addParagraphBlock(doc, 'Observaciones', formData.observations, marginX, y);
+      y = addParagraphBlock(doc, 'Fortalezas', formData.strengths, marginX, y);
+      y = addParagraphBlock(doc, 'Debilidades', formData.weaknesses, marginX, y);
+      y = addParagraphBlock(doc, 'A Considerar', formData.considerations, marginX, y);
+
+      // Pie
+      y += 10;
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9);
+      doc.setTextColor('#666');
+      doc.text(`Generado el ${new Date().toLocaleString()}`, marginX, y);
+
+      doc.save(`informe-acm-${displayDate}.pdf`);
+    } catch (err) {
+      console.error(err);
+      alert('No se pudo generar el PDF.');
+    } finally {
+      setIsGeneratingPdf(false);
     }
-    doc.text("Conclusiones", marginX, y);
-    doc.setTextColor(0, 0, 0);
-    doc.setFontSize(11);
-    y += 7;
-
-    const putMultiline = (title: string, text: string) => {
-      if (y > 260) {
-        doc.addPage();
-        y = 18;
-      }
-      doc.setFont(undefined, "bold");
-      doc.text(title, marginX, y);
-      doc.setFont(undefined, "normal");
-      y += 5;
-      if (text) {
-        const lines = doc.splitTextToSize(text, 180);
-        lines.forEach((ln: string) => {
-          if (y > 270) {
-            doc.addPage();
-            y = 18;
-          }
-          doc.text(ln, marginX, y);
-          y += 5;
-        });
-      } else {
-        doc.text("-", marginX, y);
-        y += 5;
-      }
-      y += 3;
-    };
-
-    putMultiline("Observaciones", formData.observations);
-    putMultiline("Fortalezas", formData.strengths);
-    putMultiline("Debilidades", formData.weaknesses);
-    putMultiline("A Considerar", formData.considerations);
-
-    // Pie
-    if (y > 270) {
-      doc.addPage();
-      y = 18;
-    }
-    doc.setDrawColor(r, g, b);
-    doc.line(marginX, 285, 200, 285);
-    doc.setFontSize(9);
-    doc.text(
-      `Asesor: ${formData.advisorName || "-"} | Generado: ${new Date().toLocaleDateString("es-AR")}`,
-      marginX,
-      292
-    );
-
-    doc.save(`Informe-ACM-${formData.clientName || "propiedad"}.pdf`);
   };
 
+  // ---------- UI ----------
   return (
-    <form className="space-y-8 p-6 bg-white shadow rounded-lg">
-      {/* Color primario y fecha */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-end gap-4">
+    <div className="max-w-7xl mx-auto p-6">
+      {/* Encabezado + color primario */}
+      <div className="mb-6 flex flex-col md:flex-row md:items-end md:justify-between gap-4">
         <div>
-          <label className="block text-sm font-medium">Fecha</label>
-          <input
-            type="date"
-            name="date"
-            value={formData.date}
-            disabled
-            className="mt-1 block w-48 border rounded-md p-2 bg-gray-100"
-          />
+          <h1 className="text-2xl font-bold text-gray-900">Análisis Comparativo de Mercado (ACM)</h1>
+          <p className="text-sm text-gray-600">Fecha: <span className="font-medium">{displayDate}</span></p>
         </div>
-        <div>
-          <label className="block text-sm font-medium">Color principal</label>
+
+        <div className="flex items-center gap-3">
+          <label className="text-sm text-gray-600">Color primario</label>
           <input
             type="color"
             value={primaryColor}
             onChange={(e) => setPrimaryColor(e.target.value)}
-            className="mt-1 h-10 w-16 p-0 border rounded-md"
-            aria-label="Selector de color principal"
+            className="w-10 h-10 rounded border border-gray-200"
+            aria-label="Elegir color primario"
           />
         </div>
       </div>
 
-      {/* Datos + Foto */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Columna de datos (2/3) */}
-        <div className="lg:col-span-2 space-y-4">
-          <h2 className="text-lg font-semibold" style={{ color: primaryColor }}>
-            Datos del Cliente / Propiedad
-          </h2>
+      {/* Datos del cliente / propiedad + foto derecha */}
+      <section className="bg-white rounded-lg shadow p-6 mb-8">
+        <h2 className="text-lg font-semibold text-gray-900 border-b pb-3 mb-6">Datos del Cliente / Propiedad</h2>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium">Cliente</label>
-              <input
-                name="clientName"
-                value={formData.clientName}
-                onChange={handleChange}
-                className="mt-1 w-full border rounded-md p-2"
-                placeholder="Nombre completo"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium">Agente</label>
-              <input
-                name="advisorName"
-                value={formData.advisorName}
-                onChange={handleChange}
-                className="mt-1 w-full border rounded-md p-2"
-                placeholder="Nombre del asesor"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium">Teléfono</label>
-              <input
-                name="phone"
-                value={formData.phone}
-                onChange={handleChange}
-                className="mt-1 w-full border rounded-md p-2"
-                placeholder="+54 ..."
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium">Email</label>
-              <input
-                name="email"
-                value={formData.email}
-                onChange={handleChange}
-                className="mt-1 w-full border rounded-md p-2"
-                placeholder="correo@dominio.com"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium">Dirección</label>
-              <input
-                name="address"
-                value={formData.address}
-                onChange={handleChange}
-                className="mt-1 w-full border rounded-md p-2"
-                placeholder="Calle, número"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium">Barrio</label>
-              <input
-                name="neighborhood"
-                value={formData.neighborhood}
-                onChange={handleChange}
-                className="mt-1 w-full border rounded-md p-2"
-                placeholder="Barrio"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium">Localidad</label>
-              <input
-                name="locality"
-                value={formData.locality}
-                onChange={handleChange}
-                className="mt-1 w-full border rounded-md p-2"
-                placeholder="Ciudad / Localidad"
-              />
-            </div>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Columna izquierda (2/3) */}
+          <div className="lg:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-6">
+            <TextField label="Cliente" name="clientName" value={formData.clientName} onChange={handleChange} />
+            <TextField label="Agente" name="advisorName" value={formData.advisorName} onChange={handleChange} />
+            <TextField label="Teléfono" name="phone" value={formData.phone} onChange={handleChange} />
+            <TextField label="Email" type="email" name="email" value={formData.email} onChange={handleChange} />
+            <TextField label="Dirección" name="address" value={formData.address} onChange={handleChange} />
+            <TextField label="Barrio" name="neighborhood" value={formData.neighborhood} onChange={handleChange} />
+            <TextField label="Localidad" name="locality" value={formData.locality} onChange={handleChange} />
 
+            {/* Tipología (alfabética) */}
             <div>
-              <label className="block text-sm font-medium">Tipología</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Tipología</label>
               <select
                 name="propertyType"
                 value={formData.propertyType}
                 onChange={handleChange}
-                className="mt-1 w-full border rounded-md p-2"
+                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               >
-                {Object.values(PropertyType)
-                  .sort()
-                  .map((t) => (
-                    <option key={t} value={t}>
-                      {t}
-                    </option>
-                  ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium">m² Terreno</label>
-              <input
-                type="number"
-                name="landArea"
-                value={formData.landArea}
-                onChange={handleChange}
-                className="mt-1 w-full border rounded-md p-2"
-                placeholder="0"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium">m² Cubiertos</label>
-              <input
-                type="number"
-                name="builtArea"
-                value={formData.builtArea}
-                onChange={handleChange}
-                className="mt-1 w-full border rounded-md p-2"
-                placeholder="0"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium">Antigüedad (años)</label>
-              <input
-                type="number"
-                name="age"
-                value={formData.age}
-                onChange={handleChange}
-                className="mt-1 w-full border rounded-md p-2"
-                placeholder="0"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium">Planos</label>
-              <select
-                name="hasPlans"
-                value={String(formData.hasPlans)}
-                onChange={handleBooleanChange}
-                className="mt-1 w-full border rounded-md p-2"
-              >
-                <option value="false">No</option>
-                <option value="true">Sí</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium">Título</label>
-              <select
-                name="titleType"
-                value={formData.titleType}
-                onChange={handleChange}
-                className="mt-1 w-full border rounded-md p-2"
-              >
-                {Object.values(TitleType).map((t) => (
+                {propertyTypeOptions.map((t) => (
                   <option key={t} value={t}>
                     {t}
                   </option>
@@ -540,281 +406,410 @@ export default function ACMForm() {
               </select>
             </div>
 
-            <div>
-              <label className="block text-sm font-medium">Estado de conservación</label>
-              <select
-                name="condition"
-                value={formData.condition}
-                onChange={handleChange}
-                className="mt-1 w-full border rounded-md p-2"
-              >
-                {Object.values(PropertyCondition).map((c) => (
-                  <option key={c} value={c}>
-                    {c}
-                  </option>
-                ))}
-              </select>
+            <NumberField label="m² Terreno" name="landArea" value={formData.landArea} onChange={handleChange} />
+            <NumberField label="m² Cubiertos" name="builtArea" value={formData.builtArea} onChange={handleChange} />
+
+            {/* Planos (Sí/No) */}
+            <BooleanSelect
+              label="Planos"
+              value={formData.hasPlans}
+              onChange={(v) => handleBooleanSelect('hasPlans', v)}
+            />
+
+            {/* Título */}
+            <EnumSelect
+              label="Título"
+              name="titleType"
+              value={formData.titleType}
+              options={titleTypeOptions}
+              onChange={handleChange}
+            />
+
+            <NumberField label="Antigüedad" name="age" value={formData.age} onChange={handleChange} />
+
+            {/* Estado / Ubicación / Orientación */}
+            <EnumSelect
+              label="Estado"
+              name="condition"
+              value={formData.condition}
+              options={conditionOptions}
+              onChange={handleChange}
+            />
+            <EnumSelect
+              label="Ubicación"
+              name="locationQuality"
+              value={formData.locationQuality}
+              options={locationOptions}
+              onChange={handleChange}
+            />
+            <EnumSelect
+              label="Orientación"
+              name="orientation"
+              value={formData.orientation}
+              options={orientationOptions}
+              onChange={handleChange}
+            />
+
+            {/* Servicios */}
+            <div className="md:col-span-2">
+              <h3 className="text-sm font-semibold text-gray-900 mb-3">Servicios</h3>
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                <ServiceSelect label="Luz" value={formData.services.luz} onChange={(v) => handleServiceSelect('luz', v)} />
+                <ServiceSelect label="Agua" value={formData.services.agua} onChange={(v) => handleServiceSelect('agua', v)} />
+                <ServiceSelect label="Gas" value={formData.services.gas} onChange={(v) => handleServiceSelect('gas', v)} />
+                <ServiceSelect label="Cloacas" value={formData.services.cloacas} onChange={(v) => handleServiceSelect('cloacas', v)} />
+                <ServiceSelect label="Pavimento" value={formData.services.pavimento} onChange={(v) => handleServiceSelect('pavimento', v)} />
+              </div>
             </div>
 
-            <div>
-              <label className="block text-sm font-medium">Ubicación</label>
-              <select
-                name="locationQuality"
-                value={formData.locationQuality}
-                onChange={handleChange}
-                className="mt-1 w-full border rounded-md p-2"
-              >
-                {Object.values(LocationQuality).map((l) => (
-                  <option key={l} value={l}>
-                    {l}
-                  </option>
-                ))}
-              </select>
-            </div>
+            {/* Renta (Sí/No) */}
+            <BooleanSelect
+              label="Posee renta actualmente"
+              value={formData.isRented}
+              onChange={(v) => handleBooleanSelect('isRented', v)}
+            />
+          </div>
 
-            <div>
-              <label className="block text-sm font-medium">Orientación</label>
-              <select
-                name="orientation"
-                value={formData.orientation}
-                onChange={handleChange}
-                className="mt-1 w-full border rounded-md p-2"
-              >
-                {Object.values(Orientation).map((o) => (
-                  <option key={o} value={o}>
-                    {o}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium">Posee renta</label>
-              <select
-                name="isRented"
-                value={String(formData.isRented)}
-                onChange={handleBooleanChange}
-                className="mt-1 w-full border rounded-md p-2"
-              >
-                <option value="false">No</option>
-                <option value="true">Sí</option>
-              </select>
-            </div>
+          {/* Columna derecha (1/3) - Foto */}
+          <div className="space-y-3">
+            <label className="block text-sm font-medium text-gray-700">Foto de la propiedad</label>
+            <input
+              type="file"
+              accept="image/*"
+              onChange={handlePhoto}
+              className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+            {formData.mainPhotoUrl ? (
+              <img
+                src={formData.mainPhotoUrl}
+                alt="Foto de la propiedad"
+                className="w-full aspect-video object-cover rounded-lg border"
+              />
+            ) : (
+              <div className="w-full aspect-video rounded-lg border border-dashed grid place-items-center text-gray-400 text-sm">
+                Sin imagen
+              </div>
+            )}
           </div>
         </div>
-
-        {/* Columna de foto (1/3) */}
-        <div>
-          <h2 className="text-lg font-semibold mb-2" style={{ color: primaryColor }}>
-            Foto de la Propiedad
-          </h2>
-          <input type="file" accept="image/*" onChange={handlePhotoUpload} className="mb-4" />
-          {formData.mainPhotoUrl ? (
-            <img src={formData.mainPhotoUrl} alt="Preview" className="w-full rounded-md shadow" />
-          ) : (
-            <div className="w-full h-48 bg-gray-100 rounded-md flex items-center justify-center text-gray-400">
-              Sin imagen
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Servicios */}
-      <div>
-        <h2 className="text-lg font-semibold mb-2" style={{ color: primaryColor }}>
-          Servicios
-        </h2>
-        <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-5 gap-4">
-          {(
-            [
-              ["luz", "Luz"],
-              ["agua", "Agua"],
-              ["gas", "Gas"],
-              ["cloacas", "Cloacas"],
-              ["pavimento", "Pavimento"],
-            ] as Array<[keyof ACMFormData["services"], string]>
-          ).map(([key, label]) => (
-            <div key={key}>
-              <label className="block text-sm font-medium">{label}</label>
-              <select
-                name={key}
-                value={String(formData.services[key])}
-                onChange={handleServiceChange}
-                className="mt-1 w-full border rounded-md p-2"
-              >
-                <option value="false">No</option>
-                <option value="true">Sí</option>
-              </select>
-            </div>
-          ))}
-        </div>
-      </div>
+      </section>
 
       {/* Comparables */}
-      <div>
-        <h2 className="text-lg font-semibold mb-2" style={{ color: primaryColor }}>
-          Propiedades comparadas en la zona
-        </h2>
-
-        {formData.comparables.map((c, i) => (
-          <div key={i} className="border p-4 rounded-md space-y-3 mb-4">
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div>
-                <label className="block text-sm font-medium">m² Cubiertos</label>
-                <input
-                  type="number"
-                  value={c.builtArea}
-                  onChange={(e) => handleComparableChange(i, "builtArea", e.target.value)}
-                  className="mt-1 w-full border rounded-md p-2"
-                  placeholder="0"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium">Precio</label>
-                <input
-                  type="number"
-                  value={c.price}
-                  onChange={(e) => handleComparableChange(i, "price", e.target.value)}
-                  className="mt-1 w-full border rounded-md p-2"
-                  placeholder="0"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium">Días publicada</label>
-                <input
-                  type="number"
-                  value={c.daysPublished}
-                  onChange={(e) => handleComparableChange(i, "daysPublished", e.target.value)}
-                  className="mt-1 w-full border rounded-md p-2"
-                  placeholder="0"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div>
-                <label className="block text-sm font-medium">Coeficiente</label>
-                <select
-                  value={c.coefficient}
-                  onChange={(e) => handleComparableChange(i, "coefficient", e.target.value)}
-                  className="mt-1 w-full border rounded-md p-2"
-                >
-                  {Array.from({ length: 10 }, (_, idx) => (idx + 1) / 10).map((coef) => (
-                    <option key={coef} value={coef}>
-                      {coef}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium">$ / m² (auto)</label>
-                <input
-                  value={c.pricePerM2 ? c.pricePerM2.toFixed(2) : "0"}
-                  disabled
-                  className="mt-1 w-full border rounded-md p-2 bg-gray-100"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium">Link</label>
-                <input
-                  type="text"
-                  value={c.listingUrl}
-                  onChange={(e) => handleComparableChange(i, "listingUrl", e.target.value)}
-                  className="mt-1 w-full border rounded-md p-2"
-                  placeholder="URL publicación / Drive"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium">Descripción</label>
-              <input
-                type="text"
-                value={c.description}
-                onChange={(e) => handleComparableChange(i, "description", e.target.value)}
-                className="mt-1 w-full border rounded-md p-2"
-                placeholder="Texto libre"
-              />
-            </div>
-
-            <button
-              type="button"
-              onClick={() => removeComparable(i)}
-              className="text-red-600 hover:underline"
-            >
-              Eliminar
-            </button>
-          </div>
-        ))}
-
-        {formData.comparables.length < 4 && (
+      <section className="bg-white rounded-lg shadow p-6 mb-8">
+        <div className="flex items-center justify-between border-b pb-3 mb-6">
+          <h2 className="text-lg font-semibold text-gray-900">Propiedades comparadas en la zona</h2>
           <button
             type="button"
             onClick={addComparable}
-            className="px-4 py-2 rounded-md text-white"
-            style={{ backgroundColor: primaryColor }}
+            className="px-3 py-2 text-sm rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+            disabled={formData.comparables.length >= 4}
           >
             Agregar comparable
           </button>
-        )}
-      </div>
-
-      {/* Conclusiones */}
-      <div>
-        <h2 className="text-lg font-semibold mb-2" style={{ color: primaryColor }}>
-          Conclusiones
-        </h2>
-        <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium">Observaciones</label>
-            <textarea
-              name="observations"
-              value={formData.observations}
-              onChange={handleChange}
-              className="mt-1 w-full border rounded-md p-2 h-28"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium">Fortalezas</label>
-            <textarea
-              name="strengths"
-              value={formData.strengths}
-              onChange={handleChange}
-              className="mt-1 w-full border rounded-md p-2 h-28"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium">Debilidades</label>
-            <textarea
-              name="weaknesses"
-              value={formData.weaknesses}
-              onChange={handleChange}
-              className="mt-1 w-full border rounded-md p-2 h-28"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium">A Considerar</label>
-            <textarea
-              name="considerations"
-              value={formData.considerations}
-              onChange={handleChange}
-              className="mt-1 w-full border rounded-md p-2 h-28"
-            />
-          </div>
         </div>
-      </div>
+
+        <div className="space-y-6">
+          {formData.comparables.map((c, i) => (
+            <div key={i} className="rounded-lg border p-4">
+              <div className="flex items-start justify-between">
+                <h3 className="font-semibold text-gray-900">Comparable #{i + 1}</h3>
+                <button
+                  type="button"
+                  onClick={() => removeComparable(i)}
+                  className="text-sm text-red-600 hover:text-red-700"
+                  disabled={formData.comparables.length <= 1}
+                >
+                  Eliminar
+                </button>
+              </div>
+
+              <div className="mt-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <NumberField
+                  label="m² Cubiertos"
+                  name={`builtArea-${i}`}
+                  value={c.builtArea}
+                  onChange={(e) => handleComparableChange(i, 'builtArea', e.target.value)}
+                />
+                <NumberField
+                  label="Precio publicado"
+                  name={`price-${i}`}
+                  value={c.price}
+                  onChange={(e) => handleComparableChange(i, 'price', e.target.value)}
+                />
+                <NumberField
+                  label="Días publicada"
+                  name={`daysPublished-${i}`}
+                  value={c.daysPublished}
+                  onChange={(e) => handleComparableChange(i, 'daysPublished', e.target.value)}
+                />
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Link publicación / Drive</label>
+                  <input
+                    type="url"
+                    value={c.listingUrl}
+                    onChange={(e) => handleComparableChange(i, 'listingUrl', e.target.value)}
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="https://..."
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Coeficiente</label>
+                  <select
+                    value={c.coefficient}
+                    onChange={(e) => handleComparableChange(i, 'coefficient', e.target.value)}
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  >
+                    {coefficientOptions.map((v) => (
+                      <option key={v} value={v}>
+                        {v.toFixed(1)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Precio por m²</label>
+                  <input
+                    type="text"
+                    value={formatCurrency(c.pricePerM2)}
+                    readOnly
+                    className="w-full px-3 py-2 border rounded-lg bg-gray-50 text-gray-600"
+                  />
+                </div>
+
+                <div className="md:col-span-2 lg:col-span-3">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Descripción</label>
+                  <textarea
+                    value={c.description}
+                    onChange={(e) => handleComparableChange(i, 'description', e.target.value)}
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    rows={3}
+                  />
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* Conclusión */}
+      <section className="bg-white rounded-lg shadow p-6 mb-8">
+        <h2 className="text-lg font-semibold text-gray-900 border-b pb-3 mb-6">Conclusión</h2>
+        <div className="grid grid-cols-1 gap-6">
+          <TextAreaField
+            label="Observaciones"
+            name="observations"
+            value={formData.observations}
+            onChange={handleChange}
+          />
+          <TextAreaField label="Fortalezas" name="strengths" value={formData.strengths} onChange={handleChange} />
+          <TextAreaField
+            label="Debilidades"
+            name="weaknesses"
+            value={formData.weaknesses}
+            onChange={handleChange}
+          />
+          <TextAreaField
+            label="A Considerar"
+            name="considerations"
+            value={formData.considerations}
+            onChange={handleChange}
+          />
+        </div>
+      </section>
 
       {/* Acciones */}
       <div className="flex gap-3">
         <button
           type="button"
-          onClick={handleDownloadPDF}
-          className="px-4 py-2 rounded-md text-white"
+          onClick={downloadPdf}
+          className="px-4 py-2 rounded-lg text-white"
           style={{ backgroundColor: primaryColor }}
+          disabled={isGeneratingPdf}
         >
-          Descargar PDF
+          {isGeneratingPdf ? 'Generando PDF…' : 'Descargar PDF'}
         </button>
       </div>
-    </form>
+    </div>
   );
+}
+
+/* ---------- Inputs reutilizables ---------- */
+
+function TextField({
+  label,
+  name,
+  value,
+  onChange,
+  type = 'text',
+}: {
+  label: string;
+  name: string;
+  value: string;
+  onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  type?: string;
+}) {
+  return (
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-2">{label}</label>
+      <input
+        type={type}
+        name={name}
+        value={value}
+        onChange={onChange}
+        className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+      />
+    </div>
+  );
+}
+
+function NumberField({
+  label,
+  name,
+  value,
+  onChange,
+}: {
+  label: string;
+  name: string;
+  value: number;
+  onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+}) {
+  return (
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-2">{label}</label>
+      <input
+        type="number"
+        name={name}
+        value={Number.isFinite(value) ? value : 0}
+        onChange={onChange}
+        className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+      />
+    </div>
+  );
+}
+
+function TextAreaField({
+  label,
+  name,
+  value,
+  onChange,
+}: {
+  label: string;
+  name: string;
+  value: string;
+  onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void;
+}) {
+  return (
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-2">{label}</label>
+      <textarea
+        name={name}
+        value={value}
+        onChange={onChange}
+        rows={4}
+        className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+      />
+    </div>
+  );
+}
+
+function EnumSelect<T extends string>({
+  label,
+  name,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  name: string;
+  value: T;
+  options: T[];
+  onChange: (e: React.ChangeEvent<HTMLSelectElement>) => void;
+}) {
+  return (
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-2">{label}</label>
+      <select
+        name={name}
+        value={value}
+        onChange={onChange}
+        className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+      >
+        {options.map((op) => (
+          <option key={op} value={op}>
+            {op}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+function BooleanSelect({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: boolean;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-2">{label}</label>
+      <select
+        value={value ? 'true' : 'false'}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+      >
+        <option value="false">No</option>
+        <option value="true">Sí</option>
+      </select>
+    </div>
+  );
+}
+
+function ServiceSelect({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: boolean;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-2">{label}</label>
+      <select
+        value={value ? 'true' : 'false'}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+      >
+        <option value="false">No</option>
+        <option value="true">Sí</option>
+      </select>
+    </div>
+  );
+}
+
+/* ---------- Utils ---------- */
+
+function formatCurrency(n: number): string {
+  if (!Number.isFinite(n)) return '-';
+  return new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 }).format(n);
+}
+
+function addParagraphBlock(doc: any, title: string, content: string, x: number, y: number) {
+  doc.setFont('helvetica', 'bold');
+  doc.text(title, x, y);
+  y += 14;
+  doc.setFont('helvetica', 'normal');
+
+  const maxWidth = 520;
+  const lines = doc.splitTextToSize(content || '-', maxWidth);
+  doc.text(lines, x, y);
+  y += lines.length * 14 + 10;
+  return y;
 }

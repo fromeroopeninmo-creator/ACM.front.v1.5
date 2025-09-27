@@ -1,111 +1,95 @@
-// Tipología (orden alfabético)
-export enum PropertyType {
-  CASA = "Casa",
-  DEPARTAMENTO = "Departamento",
-  DUPLEX = "Dúplex",
-  FONDO_DE_COMERCIO = "Fondo de Comercio",
-  GALPON = "Galpón",
-  LOCAL_COMERCIAL = "Local Comercial",
-  LOTE = "Lote",
-  OFICINA = "Oficina",
-  PH = "PH",
-}
+// app/types/acm.types.ts
 
-// Estado de conservación
-export enum PropertyCondition {
-  ESTRENAR = "A estrenar",
-  EXCELENTE = "Excelente",
-  MUY_BUENO = "Muy bueno",
-  BUENO = "Bueno",
-  REGULAR = "Regular",
-  MALO = "Malo",
-}
+/**
+ * Tipologías de propiedades disponibles en el ACM.
+ * Se muestran en orden alfabético en el formulario.
+ */
+export const propertyTypes: string[] = [
+  "Casa",
+  "Departamento",
+  "Dúplex",
+  "Fondo de comercio",
+  "Galpón",
+  "Local comercial",
+  "Oficina",
+  "PH",
+  "Terreno"
+].sort();
 
-// Orientación
-export enum Orientation {
-  NORTE = "Norte",
-  SUR = "Sur",
-  ESTE = "Este",
-  OESTE = "Oeste",
-}
-
-// Calidad de ubicación
-export enum LocationQuality {
-  EXCELENTE = "Excelente",
-  MUY_BUENA = "Muy buena",
-  BUENA = "Buena",
-  MALA = "Mala",
-}
-
-// Tipo de título
-export enum TitleType {
-  ESCRITURA = "Escritura",
-  BOLETO = "Boleto",
-  POSESION = "Posesión",
-}
-
-// Servicios
+/**
+ * Servicios básicos que puede tener la propiedad.
+ */
 export interface Services {
-  luz: boolean;
   agua: boolean;
+  luz: boolean;
   gas: boolean;
   cloacas: boolean;
   pavimento: boolean;
+  internet: boolean;
 }
 
-// Propiedad comparable
+/**
+ * Propiedad comparable que se usa en el análisis.
+ */
 export interface ComparableProperty {
-  // nuevos
-  address: string;        // dirección (nueva)
-  neighborhood: string;   // barrio (nuevo)
-  photoBase64?: string;   // foto comparable (nueva)
+  // Identificación
+  address: string;        // Dirección
+  neighborhood: string;   // Barrio
 
+  // Dimensiones y valores
   builtArea: number;      // m² cubiertos
-  price: number;          // precio publicado
-  listingUrl: string;     // link de publicación / drive
-  description: string;    // descripción libre
-  daysPublished: number;  // días publicada
-  pricePerM2: number;     // calculado: (price / builtArea) * coefficient
-  coefficient: number;    // 0.1 a 1 (aplica sobre $/m²)
+  price: number;          // Precio total
+  pricePerM2: number;     // Precio por m² (calculado)
+  coefficient: number;    // Coeficiente de ajuste (0.1 a 1)
+
+  // Info adicional
+  description: string;    // Breve descripción
+  link: string;           // Link a publicación (ej. portal inmobiliario)
+
+  // Multimedia
+  photo?: string;         // Foto de la propiedad (base64 o URL)
 }
 
-// Formulario principal
+/**
+ * Datos principales de la propiedad bajo análisis.
+ */
+export interface MainProperty {
+  propertyType: string;   // Tipo de propiedad
+  address: string;        // Dirección
+  neighborhood: string;   // Barrio
+  landArea: number;       // m² de terreno
+  builtArea: number;      // m² cubiertos
+  age: number;            // Antigüedad en años
+  state: string;          // Estado de conservación
+  orientation: string;    // Orientación (ej. Norte, Sur, etc.)
+  location: string;       // Ubicación interna (ej. Frente, Contrafrente)
+  price?: number;         // Precio estimado opcional
+
+  // Multimedia
+  photo?: string;         // Foto de la propiedad principal
+  logo?: string;          // Logo de la empresa/inmobiliaria
+
+  // Servicios
+  services: Services;
+}
+
+/**
+ * Conclusiones del análisis comparativo.
+ */
+export interface Conclusions {
+  observations: string;   // Observaciones generales
+  strengths: string;      // Fortalezas
+  weaknesses: string;     // Debilidades
+  considerations: string; // A considerar
+}
+
+/**
+ * Datos completos del formulario ACM.
+ * Incluye la propiedad principal, comparables y conclusiones.
+ */
 export interface ACMFormData {
-  date: string;               // ISO auto
-  clientName: string;
-  advisorName: string;
-  phone: string;
-  email: string;
-  address: string;
-  neighborhood: string;
-  locality: string;
-
-  propertyType: PropertyType;
-  landArea: number;           // m² terreno
-  builtArea: number;          // m² cubiertos
-  hasPlans: boolean;
-  titleType: TitleType;
-  age: number;                // antigüedad
-  condition: PropertyCondition;
-  locationQuality: LocationQuality;
-  orientation: Orientation;
-
-  services: Services;         // “Servicios”
-  isRented: boolean;
-
-  // Foto principal
-  mainPhotoUrl: string;
-  mainPhotoBase64?: string;
-
-  // Logo (nuevo)
-  logoBase64?: string;
-
-  // Comparables
-  comparables: ComparableProperty[];
-
-  // Texto libre
-  observations: string;
-  considerations: string;
-  strengths: string;
-  weaknesses: string;
+  mainProperty: MainProperty;          // Propiedad principal
+  comparables: ComparableProperty[];   // Lista de comparables
+  conclusions: Conclusions;            // Observaciones y análisis
+  date: string;                        // Fecha del informe (automática)
 }

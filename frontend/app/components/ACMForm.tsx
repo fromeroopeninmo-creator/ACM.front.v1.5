@@ -289,17 +289,27 @@ export default function ACMForm() {
   }, [averageAdjustedPricePerM2, formData.builtArea]);
 
   /** ========= Guardar (stub) ========= */
-  const handleSave = async () => {
-    setIsSubmitting(true);
-    try {
-      await createACMAnalysis(formData);
-      alert('Guardado (stub). Puede configurar NEXT_PUBLIC_API_URL si tiene backend.');
-    } catch (err: any) {
-      alert(err?.message || 'Error al guardar');
-    } finally {
-      setIsSubmitting(false);
+ const handleSaveToDB = async () => {
+  try {
+    const res = await fetch("/api/acm", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        userId: "TU-USER-ID", // más adelante lo tomamos del login/auth
+        formData,
+      }),
+    });
+
+    const result = await res.json();
+    if (result.error) {
+      alert("Error guardando en la base: " + result.error);
+    } else {
+      alert("✅ Análisis guardado en la base con éxito");
     }
-  };
+  } catch (err: any) {
+    alert("Error inesperado: " + err.message);
+  }
+};
 
   /** ========= PDF ========= */
   const handleDownloadPDF = async () => {

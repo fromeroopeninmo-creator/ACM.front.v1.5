@@ -1,7 +1,8 @@
 import "./globals.css";
 import { Inter } from "next/font/google";
 import { AuthProvider } from "./context/AuthContext";
-import Header from "./components/Header"; // 👈 agregamos el import
+import ProtectedRoute from "./context/ProtectedRoute";
+import Header from "./components/Header";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -19,8 +20,10 @@ export default function RootLayout({
     <html lang="es">
       <body className={inter.className}>
         <AuthProvider>
-          <Header /> {/* 👈 agregado aquí */}
-          {children}
+          <ProtectedRoute>
+            <Header />
+            {children}
+          </ProtectedRoute>
         </AuthProvider>
       </body>
     </html>

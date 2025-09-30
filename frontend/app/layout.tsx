@@ -1,11 +1,12 @@
-// app/layout.tsx
 import "./globals.css";
-import type { Metadata } from "next";
-import { ThemeProvider } from "@/app/context/ThemeContext";
+import { Inter } from "next/font/google";
+import { AuthProvider } from "./context/AuthContext";
 
-export const metadata: Metadata = {
+const inter = Inter({ subsets: ["latin"] });
+
+export const metadata = {
   title: "ACM - Análisis Comparativo de Mercado",
-  description: "Aplicación para generar informes de ACM inmobiliarios",
+  description: "Generador de informes ACM",
 };
 
 export default function RootLayout({
@@ -15,10 +16,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="es">
-      <body className="bg-gray-50 text-gray-900">
-        <ThemeProvider>
-          <main className="min-h-screen">{children}</main>
-        </ThemeProvider>
+      <body className={inter.className}>
+        <AuthProvider>
+          {children}
+        </AuthProvider>
       </body>
     </html>
   );

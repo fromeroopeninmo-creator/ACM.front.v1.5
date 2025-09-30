@@ -1205,13 +1205,13 @@ export default function ACMForm() {
       {/* Acciones */}
       <div className="mt-6 flex flex-wrap items-center justify-end gap-3">
         <button
-          type="button"
-          onClick={handleSave}
-          disabled={isSubmitting}
-          className="inline-flex items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-        >
-          Guardar (stub)
-        </button>
+  type="button"
+  onClick={handleSaveToDB}
+  className="bg-blue-600 text-white px-4 py-2 rounded"
+>
+  Guardar en la Base
+</button>
+
 
         <button
           type="button"

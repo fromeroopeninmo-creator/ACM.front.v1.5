@@ -42,14 +42,18 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       };
     }
 
-    // 👉 Sacamos el id de profile para que no choque
-    const { id: _profileId, ...profileWithoutId } = profile || {};
+    // 👉 Quitamos id y email para evitar duplicados
+    const {
+      id: _profileId,
+      email: _profileEmail,
+      ...profileWithoutIdAndEmail
+    } = profile || {};
 
     return {
       id: supabaseUser.id, // id real de auth
-      email: supabaseUser.email,
+      email: supabaseUser.email, // siempre el de auth
       profileId: _profileId, // renombrado
-      ...profileWithoutId,
+      ...profileWithoutIdAndEmail,
     };
   };
 

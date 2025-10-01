@@ -1,110 +1,111 @@
+// app/(auth)/register/page.tsx
 "use client";
+
 import { useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 export default function RegisterPage() {
-  const [form, setForm] = useState({
-    email: "",
-    password: "",
+  const router = useRouter();
+  const [formData, setFormData] = useState({
     nombre: "",
     apellido: "",
-    nombre_matriculado: "",
-    cpi: "",
+    email: "",
+    password: "",
     telefono: "",
     direccion: "",
     localidad: "",
     provincia: "",
+    matriculado: "",
+    cpi: "",
   });
+
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setForm({ ...form, [e.target.name]: e.target.value });
+    setFormData({
+      ...formData,
+      [e.target.name]: e.target.value,
+    });
   };
 
-  const handleRegister = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setLoading(true);
 
-    // 1️⃣ Registrar usuario en auth
-    const { data, error } = await supabase.auth.signUp({
-      email: form.email,
-      password: form.password,
-    });
+    try {
+      const { data, error: signUpError } = await supabase.auth.signUp({
+        email: formData.email,
+        password: formData.password,
+        options: {
+          data: {
+            nombre: formData.nombre,
+            apellido: formData.apellido,
+            telefono: formData.telefono,
+            direccion: formData.direccion,
+            localidad: formData.localidad,
+            provincia: formData.provincia,
+            matriculado: formData.matriculado,
+            cpi: formData.cpi,
+          },
+        },
+      });
 
-    if (error) {
-      setError(error.message);
-      return;
-    }
-
-    // 2️⃣ Insertar datos extra en profiles
-    const user = data.user;
-    if (user) {
-      const { error: profileError } = await supabase
-        .from("profiles")
-        .update({
-          nombre: form.nombre,
-          apellido: form.apellido,
-          nombre_matriculado: form.nombre_matriculado,
-          cpi: form.cpi,
-          telefono: form.telefono,
-          direccion: form.direccion,
-          localidad: form.localidad,
-          provincia: form.provincia,
-        })
-        .eq("id", user.id);
-
-      if (profileError) {
-        setError(profileError.message);
+      if (signUpError) {
+        setError(signUpError.message);
+        setLoading(false);
         return;
       }
-    }
 
-    alert("Registro exitoso. Por favor confirma tu email.");
-    window.location.href = "/login";
+      alert("Registro exitoso. Revisa tu correo para confirmar tu cuenta.");
+      router.push("/login");
+    } catch (err: any) {
+      setError("Error en el registro: " + err.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50">
-      <img
-        src="/login-banner.jpg"
-        alt="Banner"
-        className="w-full max-h-48 object-cover mb-6"
-      />
+    <div className="flex min-h-screen">
+      {/* Banner a la izquierda */}
+      <div className="w-1/2 bg-gray-200 flex items-center justify-center">
+        <img src="/banner-login.jpg" alt="Banner ACM" className="max-h-full object-cover" />
+      </div>
 
-      <div className="w-full max-w-lg bg-white shadow-lg rounded-xl p-6">
-        <h1 className="text-2xl font-bold text-center mb-6">
-          Crea tu cuenta
-        </h1>
+      {/* Formulario a la derecha */}
+      <div className="w-1/2 flex items-center justify-center p-10">
+        <form onSubmit={handleSubmit} className="bg-white shadow-lg rounded-lg p-8 w-full max-w-md">
+          <h1 className="text-2xl font-bold mb-6 text-center">Registro de Usuario</h1>
 
-        <form onSubmit={handleRegister} className="space-y-3">
-          <div className="grid grid-cols-2 gap-3">
-            <input name="nombre" placeholder="Nombre" onChange={handleChange} required className="border rounded-md px-3 py-2" />
-            <input name="apellido" placeholder="Apellido" onChange={handleChange} required className="border rounded-md px-3 py-2" />
-          </div>
-          <input name="nombre_matriculado" placeholder="Nombre del Matriculado/a" onChange={handleChange} className="w-full border rounded-md px-3 py-2" />
-          <input name="cpi" placeholder="CPI" onChange={handleChange} className="w-full border rounded-md px-3 py-2" />
-          <input name="telefono" placeholder="Teléfono" onChange={handleChange} className="w-full border rounded-md px-3 py-2" />
-          <input name="direccion" placeholder="Dirección" onChange={handleChange} className="w-full border rounded-md px-3 py-2" />
-          <div className="grid grid-cols-2 gap-3">
-            <input name="localidad" placeholder="Localidad" onChange={handleChange} className="border rounded-md px-3 py-2" />
-            <input name="provincia" placeholder="Provincia" onChange={handleChange} className="border rounded-md px-3 py-2" />
-          </div>
-          <input name="email" type="email" placeholder="Correo electrónico" onChange={handleChange} required className="w-full border rounded-md px-3 py-2" />
-          <input name="password" type="password" placeholder="Contraseña" onChange={handleChange} required className="w-full border rounded-md px-3 py-2" />
+          {error && <p className="text-red-500 text-sm mb-4">{error}</p>}
 
-          {error && <p className="text-red-500 text-sm">{error}</p>}
-          <button type="submit" className="w-full bg-green-600 text-white rounded-md py-2 font-semibold hover:bg-green-700">
-            Registrarse
+          <input type="text" name="nombre" placeholder="Nombre" value={formData.nombre} onChange={handleChange} className="w-full p-2 border rounded mb-3" required />
+          <input type="text" name="apellido" placeholder="Apellido" value={formData.apellido} onChange={handleChange} className="w-full p-2 border rounded mb-3" required />
+          <input type="email" name="email" placeholder="Correo electrónico" value={formData.email} onChange={handleChange} className="w-full p-2 border rounded mb-3" required />
+          <input type="password" name="password" placeholder="Contraseña" value={formData.password} onChange={handleChange} className="w-full p-2 border rounded mb-3" required />
+
+          <input type="text" name="telefono" placeholder="Teléfono" value={formData.telefono} onChange={handleChange} className="w-full p-2 border rounded mb-3" />
+          <input type="text" name="direccion" placeholder="Dirección" value={formData.direccion} onChange={handleChange} className="w-full p-2 border rounded mb-3" />
+          <input type="text" name="localidad" placeholder="Localidad" value={formData.localidad} onChange={handleChange} className="w-full p-2 border rounded mb-3" />
+          <input type="text" name="provincia" placeholder="Provincia" value={formData.provincia} onChange={handleChange} className="w-full p-2 border rounded mb-3" />
+
+          <input type="text" name="matriculado" placeholder="Nombre del Matriculado/a" value={formData.matriculado} onChange={handleChange} className="w-full p-2 border rounded mb-3" />
+          <input type="text" name="cpi" placeholder="CPI" value={formData.cpi} onChange={handleChange} className="w-full p-2 border rounded mb-6" />
+
+          <button type="submit" disabled={loading} className="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700">
+            {loading ? "Registrando..." : "Registrarse"}
           </button>
-        </form>
 
-        <p className="mt-4 text-sm text-center">
-          ¿Ya tienes cuenta?{" "}
-          <Link href="/login" className="text-blue-600 hover:underline">
-            Inicia sesión
-          </Link>
-        </p>
+          <p className="mt-4 text-sm text-center">
+            ¿Ya tienes cuenta?{" "}
+            <a href="/login" className="text-blue-600 hover:underline">
+              Inicia sesión aquí
+            </a>
+          </p>
+        </form>
       </div>
     </div>
   );

@@ -64,6 +64,28 @@ export default function RegisterPage() {
       return;
     }
 
+    // 👉 Guardar datos en tabla profiles
+    if (data.user) {
+      const { error: profileError } = await supabase.from("profiles").upsert({
+        id: data.user.id,
+        email: data.user.email,
+        nombre,
+        apellido,
+        telefono,
+        direccion,
+        localidad,
+        provincia,
+        matriculado_nombre: matriculado, // 👈 usamos el campo creado en SQL
+        cpi,
+      });
+
+      if (profileError) {
+        console.error("Error guardando perfil:", profileError.message);
+        setErrorMsg("Error al guardar el perfil en la base de datos.");
+        return;
+      }
+    }
+
     if (!data.session) {
       setInfoMsg(
         "Registro exitoso. Revisá tu email para confirmar la cuenta y luego iniciá sesión."

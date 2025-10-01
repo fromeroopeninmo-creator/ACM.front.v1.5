@@ -1,9 +1,9 @@
-// app/(auth)/register/page.tsx
 "use client";
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { supabase } from "../../lib/supabaseClient";
+import { supabase } from "@/lib/supabaseClient";
+import AuthLayout from "../components/AuthLayout";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -41,7 +41,6 @@ export default function RegisterPage() {
     }
 
     setLoading(true);
-    // Registramos al usuario y guardamos los datos en user_metadata.
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
@@ -58,7 +57,6 @@ export default function RegisterPage() {
         },
       },
     });
-
     setLoading(false);
 
     if (error) {
@@ -66,7 +64,6 @@ export default function RegisterPage() {
       return;
     }
 
-    // Si el proyecto tiene verificación por email, no hay sesión automática
     if (!data.session) {
       setInfoMsg(
         "Registro exitoso. Revisá tu email para confirmar la cuenta y luego iniciá sesión."
@@ -74,228 +71,146 @@ export default function RegisterPage() {
       return;
     }
 
-    // Si no hay verificación y entra directo con sesión:
     router.push("/");
   };
 
   return (
-    <div style={{ display: "flex", minHeight: "100vh" }}>
-      {/* Columna izquierda: banner */}
-      <div
-        style={{
-          flex: 1,
-          backgroundImage: "url('/banner.jpg')",
-          backgroundSize: "cover",
-          backgroundPosition: "center",
-        }}
-      />
+    <AuthLayout
+      title="Crear cuenta"
+      subtitle="Bienvenido a ACM – Registrate para continuar"
+    >
+      {errorMsg && <div style={alertError}>{errorMsg}</div>}
+      {infoMsg && <div style={alertInfo}>{infoMsg}</div>}
 
-      {/* Columna derecha: formulario */}
-      <div
-        style={{
-          flex: 1,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          padding: "2rem",
-        }}
-      >
-        <form
-          onSubmit={handleRegister}
-          style={{
-            width: "100%",
-            maxWidth: 420,
-            display: "grid",
-            gap: "12px",
-            background: "#fff",
-            padding: "24px",
-            borderRadius: 8,
-            boxShadow: "0 10px 25px rgba(0,0,0,0.08)",
-          }}
-        >
-          <div style={{ marginBottom: 8 }}>
-            <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700 }}>
-              Crear cuenta
-            </h1>
-            <p style={{ margin: "6px 0 0 0", color: "#555" }}>
-              Bienvenido a ACM – Registrate para continuar
-            </p>
-          </div>
-
-          {errorMsg && (
-            <div
-              style={{
-                background: "#ffe6e6",
-                border: "1px solid #ffb3b3",
-                color: "#b00020",
-                padding: "8px 10px",
-                borderRadius: 6,
-                fontSize: 14,
-              }}
-            >
-              {errorMsg}
-            </div>
-          )}
-
-          {infoMsg && (
-            <div
-              style={{
-                background: "#e6f4ff",
-                border: "1px solid #b3ddff",
-                color: "#084c8d",
-                padding: "8px 10px",
-                borderRadius: 6,
-                fontSize: 14,
-              }}
-            >
-              {infoMsg}
-            </div>
-          )}
-
-          {/* Datos personales */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-            <div>
-              <label style={{ fontSize: 13, fontWeight: 600 }}>Nombre</label>
-              <input
-                type="text"
-                value={nombre}
-                onChange={(e) => setNombre(e.target.value)}
-                placeholder="Nombre"
-                required
-                style={inputStyle}
-              />
-            </div>
-            <div>
-              <label style={{ fontSize: 13, fontWeight: 600 }}>Apellido</label>
-              <input
-                type="text"
-                value={apellido}
-                onChange={(e) => setApellido(e.target.value)}
-                placeholder="Apellido"
-                required
-                style={inputStyle}
-              />
-            </div>
-          </div>
-
+      <form onSubmit={handleRegister} style={{ display: "grid", gap: "12px" }}>
+        {/* Datos personales */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
           <div>
-            <label style={{ fontSize: 13, fontWeight: 600 }}>Email</label>
+            <label style={labelStyle}>Nombre</label>
             <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value.trim())}
-              placeholder="tu@email.com"
+              type="text"
+              value={nombre}
+              onChange={(e) => setNombre(e.target.value)}
+              placeholder="Nombre"
               required
               style={inputStyle}
             />
           </div>
-
           <div>
-            <label style={{ fontSize: 13, fontWeight: 600 }}>Contraseña</label>
+            <label style={labelStyle}>Apellido</label>
             <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="Mínimo 6 caracteres"
+              type="text"
+              value={apellido}
+              onChange={(e) => setApellido(e.target.value)}
+              placeholder="Apellido"
               required
               style={inputStyle}
             />
           </div>
+        </div>
 
-          {/* Datos de contacto */}
+        <div>
+          <label style={labelStyle}>Email</label>
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value.trim())}
+            placeholder="tu@email.com"
+            required
+            style={inputStyle}
+          />
+        </div>
+
+        <div>
+          <label style={labelStyle}>Contraseña</label>
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="Mínimo 6 caracteres"
+            required
+            style={inputStyle}
+          />
+        </div>
+
+        {/* Datos de contacto */}
+        <div>
+          <label style={labelStyle}>Teléfono</label>
+          <input
+            type="text"
+            value={telefono}
+            onChange={(e) => setTelefono(e.target.value)}
+            placeholder="Teléfono"
+            style={inputStyle}
+          />
+        </div>
+
+        <div>
+          <label style={labelStyle}>Dirección</label>
+          <input
+            type="text"
+            value={direccion}
+            onChange={(e) => setDireccion(e.target.value)}
+            placeholder="Calle y número"
+            style={inputStyle}
+          />
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
           <div>
-            <label style={{ fontSize: 13, fontWeight: 600 }}>Teléfono</label>
+            <label style={labelStyle}>Localidad</label>
             <input
               type="text"
-              value={telefono}
-              onChange={(e) => setTelefono(e.target.value)}
-              placeholder="Teléfono"
+              value={localidad}
+              onChange={(e) => setLocalidad(e.target.value)}
+              placeholder="Localidad"
               style={inputStyle}
             />
           </div>
-
           <div>
-            <label style={{ fontSize: 13, fontWeight: 600 }}>Dirección</label>
+            <label style={labelStyle}>Provincia</label>
             <input
               type="text"
-              value={direccion}
-              onChange={(e) => setDireccion(e.target.value)}
-              placeholder="Calle y número"
+              value={provincia}
+              onChange={(e) => setProvincia(e.target.value)}
+              placeholder="Provincia"
               style={inputStyle}
             />
           </div>
+        </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-            <div>
-              <label style={{ fontSize: 13, fontWeight: 600 }}>Localidad</label>
-              <input
-                type="text"
-                value={localidad}
-                onChange={(e) => setLocalidad(e.target.value)}
-                placeholder="Localidad"
-                style={inputStyle}
-              />
-            </div>
-            <div>
-              <label style={{ fontSize: 13, fontWeight: 600 }}>Provincia</label>
-              <input
-                type="text"
-                value={provincia}
-                onChange={(e) => setProvincia(e.target.value)}
-                placeholder="Provincia"
-                style={inputStyle}
-              />
-            </div>
-          </div>
+        {/* Datos del matriculado */}
+        <div>
+          <label style={labelStyle}>Nombre del Matriculado/a</label>
+          <input
+            type="text"
+            value={matriculado}
+            onChange={(e) => setMatriculado(e.target.value)}
+            placeholder="Nombre completo del matriculado/a"
+            style={inputStyle}
+          />
+        </div>
 
-          {/* Datos del matriculado */}
-          <div>
-            <label style={{ fontSize: 13, fontWeight: 600 }}>
-              Nombre del Matriculado/a
-            </label>
-            <input
-              type="text"
-              value={matriculado}
-              onChange={(e) => setMatriculado(e.target.value)}
-              placeholder="Nombre completo del matriculado/a"
-              style={inputStyle}
-            />
-          </div>
+        <div>
+          <label style={labelStyle}>CPI</label>
+          <input
+            type="text"
+            value={cpi}
+            onChange={(e) => setCpi(e.target.value)}
+            placeholder="Matrícula / CPI"
+            style={inputStyle}
+          />
+        </div>
 
-          <div>
-            <label style={{ fontSize: 13, fontWeight: 600 }}>CPI</label>
-            <input
-              type="text"
-              value={cpi}
-              onChange={(e) => setCpi(e.target.value)}
-              placeholder="Matrícula / CPI"
-              style={inputStyle}
-            />
-          </div>
+        <button type="submit" disabled={loading} style={buttonStyle}>
+          {loading ? "Creando cuenta..." : "Crear cuenta"}
+        </button>
 
-          <button
-            type="submit"
-            disabled={loading}
-            style={{
-              height: 42,
-              borderRadius: 8,
-              border: 0,
-              background: "#111",
-              color: "#fff",
-              fontWeight: 600,
-              cursor: loading ? "not-allowed" : "pointer",
-              marginTop: 6,
-            }}
-          >
-            {loading ? "Creando cuenta..." : "Crear cuenta"}
-          </button>
-
-          <p style={{ fontSize: 14, textAlign: "center", marginTop: 6 }}>
-            ¿Ya tenés cuenta? <a href="/login">Ingresá acá</a>
-          </p>
-        </form>
-      </div>
-    </div>
+        <p style={{ fontSize: 14, textAlign: "center", marginTop: 6 }}>
+          ¿Ya tenés cuenta? <a href="/login">Ingresá acá</a>
+        </p>
+      </form>
+    </AuthLayout>
   );
 }
 
@@ -306,4 +221,31 @@ const inputStyle: React.CSSProperties = {
   border: "1px solid #e5e7eb",
   padding: "0 12px",
   outline: "none",
+};
+const labelStyle: React.CSSProperties = { fontSize: 13, fontWeight: 600 };
+const buttonStyle: React.CSSProperties = {
+  height: 42,
+  borderRadius: 8,
+  border: 0,
+  background: "#111",
+  color: "#fff",
+  fontWeight: 600,
+  cursor: "pointer",
+  marginTop: 6,
+};
+const alertError: React.CSSProperties = {
+  background: "#ffe6e6",
+  border: "1px solid #ffb3b3",
+  color: "#b00020",
+  padding: "8px 10px",
+  borderRadius: 6,
+  fontSize: 14,
+};
+const alertInfo: React.CSSProperties = {
+  background: "#e6f4ff",
+  border: "1px solid #b3ddff",
+  color: "#084c8d",
+  padding: "8px 10px",
+  borderRadius: 6,
+  fontSize: 14,
 };

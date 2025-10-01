@@ -8,6 +8,7 @@ interface Profile {
   nombre?: string;
   matriculado?: string;
   cpi?: string;
+  profileId?: string;
 }
 
 const AuthContext = createContext<any>(null);
@@ -34,12 +35,14 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       };
     }
 
+    // ✅ acá estaba el problema: el return no estaba cerrado
     return {
-  id: supabaseUser.id, // id real de auth
-  email: supabaseUser.email,
-  profileId: profile?.id, // 👈 renombramos este
-  ...profile,
-};
+      id: supabaseUser.id, // id real de auth
+      email: supabaseUser.email,
+      profileId: profile?.id, // renombramos para no duplicar id
+      ...profile,
+    };
+  };
 
   useEffect(() => {
     // Cargar sesión inicial

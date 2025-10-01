@@ -1,16 +1,11 @@
 "use client";
-import { useAuth } from "../context/AuthContext";
+import { useAuth } from "@/app/context/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
 import { useRouter } from "next/navigation";
 
 export default function Header() {
   const { user } = useAuth();
   const router = useRouter();
-
-  const nombre = user?.user_metadata?.nombre;
-  const apellido = user?.user_metadata?.apellido;
-  const matriculado = user?.user_metadata?.matriculado;
-  const cpi = user?.user_metadata?.cpi;
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -28,20 +23,27 @@ export default function Header() {
         borderBottom: "1px solid #ddd",
       }}
     >
-      {/* Izquierda: datos de matrícula */}
+      {/* Izquierda: Matriculado y CPI */}
       <div style={{ display: "flex", flexDirection: "column" }}>
         <span style={{ fontWeight: 600, fontSize: 14 }}>
-          Matriculado/a: {matriculado || "-"}
+          Matriculado/a: {user?.matriculado || "-"}
         </span>
         <span style={{ fontSize: 14, color: "#555" }}>
-          CPI: {cpi || "-"}
+          CPI: {user?.cpi || "-"}
         </span>
       </div>
 
-      {/* Derecha: nombre completo + logout */}
+      {/* Centro: logo o texto ACM */}
+      <div style={{ fontWeight: "bold", fontSize: 16 }}>
+        ACM
+      </div>
+
+      {/* Derecha: asesor + logout */}
       <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
         <span style={{ fontWeight: "bold", fontSize: 16 }}>
-          {nombre && apellido ? `${nombre} ${apellido}` : user?.email || "Invitado"}
+          {user?.nombre
+            ? `${user.nombre}${user.apellido ? " " + user.apellido : ""}`
+            : user?.email || "Invitado"}
         </span>
         {user && (
           <button

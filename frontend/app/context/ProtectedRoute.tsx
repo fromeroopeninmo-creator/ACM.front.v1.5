@@ -1,9 +1,7 @@
-// app/context/ProtectedRoute.tsx
 "use client";
-
-import { useEffect } from "react";
-import { useRouter } from "next/navigation";
 import { useAuth } from "./AuthContext";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect } from "react";
 
 export default function ProtectedRoute({
   children,
@@ -12,28 +10,28 @@ export default function ProtectedRoute({
 }) {
   const { user, loading } = useAuth();
   const router = useRouter();
+  const pathname = usePathname();
 
   useEffect(() => {
-    if (!loading && !user) {
-      router.replace("/login");
+    if (!loading && !user && pathname !== "/login" && pathname !== "/register") {
+      router.push("/login");
     }
-  }, [loading, user, router]);
+  }, [user, loading, pathname, router]);
 
   if (loading) {
-    return (
-      <div className="min-h-screen grid place-items-center text-gray-600">
-        Cargando…
-      </div>
-    );
+    return <p>Cargando sesión...</p>; // 👈 indicador temporal
   }
 
-  if (!user) {
-    return (
-      <div className="min-h-screen grid place-items-center text-gray-600">
-        Redirigiendo al login…
-      </div>
-    );
+  // Si está en login/register y no hay usuario → mostrar la página normal
+  if (!user && (pathname === "/login" || pathname === "/register")) {
+    return <>{children}</>;
   }
 
-  return <>{children}</>;
+  // Si hay usuario → mostrar la app
+  if (user) {
+    return <>{children}</>;
+  }
+
+  // Fallback
+  return null;
 }

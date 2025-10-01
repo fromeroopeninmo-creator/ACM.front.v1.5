@@ -6,7 +6,12 @@ interface Profile {
   id: string;
   email: string;
   nombre?: string;
-  matriculado?: string;
+  apellido?: string;
+  telefono?: string;
+  direccion?: string;
+  localidad?: string;
+  provincia?: string;
+  matriculado_nombre?: string;
   cpi?: string;
   profileId?: string;
 }
@@ -23,12 +28,14 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     // Buscar datos en la tabla profiles
     const { data: profile, error } = await supabase
       .from("profiles")
-      .select("id, nombre, matriculado, cpi")
+      .select(
+        "id, email, nombre, apellido, telefono, direccion, localidad, provincia, matriculado_nombre, cpi"
+      )
       .eq("id", supabaseUser.id)
       .single();
 
     if (error) {
-      console.error("Error cargando perfil:", error.message);
+      console.error("❌ Error cargando perfil:", error.message);
       return {
         id: supabaseUser.id,
         email: supabaseUser.email,
@@ -50,9 +57,14 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     // Cargar sesión inicial
     supabase.auth.getSession().then(async ({ data }) => {
       const sessionUser = data.session?.user ?? null;
-      const profile = sessionUser ? await loadUserProfile(sessionUser) : null;
-      setUser(profile);
-      setLoading(false);
+      try {
+        const profile = sessionUser ? await loadUserProfile(sessionUser) : null;
+        setUser(profile);
+      } catch (err) {
+        console.error("❌ Error inicial cargando usuario:", err);
+      } finally {
+        setLoading(false);
+      }
     });
 
     // Escuchar cambios de sesión
@@ -60,9 +72,14 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (_event, session) => {
       const sessionUser = session?.user ?? null;
-      const profile = sessionUser ? await loadUserProfile(sessionUser) : null;
-      setUser(profile);
-      setLoading(false);
+      try {
+        const profile = sessionUser ? await loadUserProfile(sessionUser) : null;
+        setUser(profile);
+      } catch (err) {
+        console.error("❌ Error escuchando cambios de sesión:", err);
+      } finally {
+        setLoading(false);
+      }
     });
 
     return () => subscription.unsubscribe();

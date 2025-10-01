@@ -35,11 +35,11 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
 
     return {
-      id: supabaseUser.id,
-      email: supabaseUser.email,
-      ...profile,
-    };
-  };
+  id: supabaseUser.id, // id real de auth
+  email: supabaseUser.email,
+  profileId: profile?.id, // 👈 renombramos este
+  ...profile,
+};
 
   useEffect(() => {
     // Cargar sesión inicial

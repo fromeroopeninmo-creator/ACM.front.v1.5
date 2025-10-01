@@ -1,8 +1,8 @@
 // app/(protected)/layout.tsx
 "use client";
 
-import ProtectedRoute from "@/app/context/ProtectedRoute";
-import Header from "@/app/components/Header";
+import ProtectedRoute from "@/context/ProtectedRoute";
+import Header from "@/components/Header";
 
 export default function ProtectedLayout({
   children,
@@ -16,4 +16,3 @@ export default function ProtectedLayout({
     </ProtectedRoute>
   );
 }
-

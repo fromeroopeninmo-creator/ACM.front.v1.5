@@ -10,8 +10,8 @@ import {
   PropertyType,
   Services,
   TitleType,
-} from '@/app/types/acm.types';
-import { createACMAnalysis } from '@/app/lib/api';
+} from '@/types/acm.types';
+import { createACMAnalysis } from '@/lib/api';
 
 /** =========================
  *  Helpers / Utils

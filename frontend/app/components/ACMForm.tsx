@@ -12,6 +12,8 @@ import {
   TitleType,
 } from '@/types/acm.types';
 import { createACMAnalysis } from '@/lib/api';
+import { useAuth } from "@/context/AuthContext";
+
 
 /** =========================
  *  Helpers / Utils
@@ -96,6 +98,7 @@ const makeInitialData = (): ACMFormData => ({
  *  Componente
  *  ========================= */
 export default function ACMForm() {
+  const { user } = useAuth();
   const [primaryColor, setPrimaryColor] = useState<string>('#0ea5e9'); // azul tailwind 500-ish
   const [logoBase64, setLogoBase64] = useState<string | undefined>(undefined);
 

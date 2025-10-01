@@ -1,74 +1,96 @@
+// app/(auth)/login/page.tsx
 "use client";
+
 import { useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 export default function LoginPage() {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const router = useRouter();
+  const [formData, setFormData] = useState({ email: "", password: "" });
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
 
-  const handleLogin = async (e: React.FormEvent) => {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setFormData({
+      ...formData,
+      [e.target.name]: e.target.value,
+    });
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setLoading(true);
 
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email: formData.email,
+        password: formData.password,
+      });
 
-    if (error) {
-      setError(error.message);
-    } else {
-      window.location.href = "/";
+      if (error) {
+        setError(error.message);
+        setLoading(false);
+        return;
+      }
+
+      router.push("/");
+    } catch (err: any) {
+      setError("Error al iniciar sesión: " + err.message);
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50">
-      <img
-        src="/login-banner.jpg"
-        alt="Banner"
-        className="w-full max-h-48 object-cover mb-6"
-      />
+    <div className="flex min-h-screen">
+      {/* Banner a la izquierda */}
+      <div className="w-1/2 bg-gray-200 flex items-center justify-center">
+        <img src="/banner-login.jpg" alt="Banner ACM" className="max-h-full object-cover" />
+      </div>
 
-      <div className="w-full max-w-md bg-white shadow-lg rounded-xl p-6">
-        <h1 className="text-2xl font-bold text-center mb-6">
-          Bienvenido a ACM
-        </h1>
+      {/* Formulario a la derecha */}
+      <div className="w-1/2 flex items-center justify-center p-10">
+        <form onSubmit={handleSubmit} className="bg-white shadow-lg rounded-lg p-8 w-full max-w-md">
+          <h1 className="text-2xl font-bold mb-6 text-center">Bienvenido a ACM</h1>
 
-        <form onSubmit={handleLogin} className="space-y-4">
+          {error && <p className="text-red-500 text-sm mb-4">{error}</p>}
+
           <input
             type="email"
+            name="email"
             placeholder="Correo electrónico"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="w-full border rounded-md px-3 py-2"
+            value={formData.email}
+            onChange={handleChange}
+            className="w-full p-2 border rounded mb-3"
             required
           />
           <input
             type="password"
+            name="password"
             placeholder="Contraseña"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="w-full border rounded-md px-3 py-2"
+            value={formData.password}
+            onChange={handleChange}
+            className="w-full p-2 border rounded mb-6"
             required
           />
-          {error && <p className="text-red-500 text-sm">{error}</p>}
+
           <button
             type="submit"
-            className="w-full bg-blue-600 text-white rounded-md py-2 font-semibold hover:bg-blue-700"
+            disabled={loading}
+            className="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700"
           >
-            Iniciar sesión
+            {loading ? "Ingresando..." : "Iniciar sesión"}
           </button>
-        </form>
 
-        <p className="mt-4 text-sm text-center">
-          ¿Aún no tienes cuenta?{" "}
-          <Link href="/register" className="text-blue-600 hover:underline">
-            Regístrate
-          </Link>
-        </p>
+          <p className="mt-4 text-sm text-center">
+            ¿No tienes cuenta?{" "}
+            <a href="/register" className="text-blue-600 hover:underline">
+              Regístrate aquí
+            </a>
+          </p>
+        </form>
       </div>
     </div>
   );

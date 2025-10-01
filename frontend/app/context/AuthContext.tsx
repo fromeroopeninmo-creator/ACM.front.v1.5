@@ -35,12 +35,14 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       };
     }
 
-    // ✅ acá estaba el problema: el return no estaba cerrado
+    // 👉 Sacamos el id de profile para que no choque
+    const { id: _profileId, ...profileWithoutId } = profile || {};
+
     return {
       id: supabaseUser.id, // id real de auth
       email: supabaseUser.email,
-      profileId: profile?.id, // renombramos para no duplicar id
-      ...profile,
+      profileId: _profileId, // renombrado
+      ...profileWithoutId,
     };
   };
 

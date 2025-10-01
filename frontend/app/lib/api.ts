@@ -1,4 +1,4 @@
-import { ACMFormData } from "@/app/types/acm.types";
+import { ACMFormData } from "@/types/acm.types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 

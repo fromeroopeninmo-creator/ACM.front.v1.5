@@ -1,68 +1,49 @@
+// app/components/Header.tsx
 "use client";
 
-import { useEffect, useState } from "react";
+import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
 
 export default function Header() {
-  const [profile, setProfile] = useState<any>(null);
-
-  useEffect(() => {
-    const getProfile = async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
-      if (user) {
-        const { data, error } = await supabase
-          .from("profiles")
-          .select("nombre, apellido, nombre_matriculado, cpi")
-          .eq("id", user.id)
-          .single();
-
-        if (!error && data) {
-          setProfile(data);
-        }
-      }
-    };
-
-    getProfile();
-  }, []);
+  const { user } = useAuth();
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
-    window.location.href = "/login";
+    window.location.href = "/login"; // Redirige al login tras cerrar sesión
   };
 
   return (
-    <header className="w-full bg-blue-600 text-white flex justify-between items-center px-6 py-4 shadow-md">
-      {/* Izquierda: matriculado y cpi */}
-      <div>
-        {profile ? (
-          <div>
-            <p className="font-bold">{profile.nombre_matriculado}</p>
-            <p className="text-sm">CPI: {profile.cpi}</p>
-          </div>
-        ) : (
-          <p className="font-semibold">ACM</p>
+    <header className="bg-gray-800 text-white p-4 flex justify-between items-center">
+      {/* 🔹 Datos del matriculado (cuando los tengamos en el perfil se mostrarán aquí) */}
+      <div className="flex flex-col">
+        <span className="text-lg font-bold">ACM - Análisis Comparativo de Mercado</span>
+        {user?.user_metadata?.matriculado && (
+          <span className="text-sm">
+            {user.user_metadata.matriculado} - CPI {user.user_metadata.cpi}
+          </span>
         )}
       </div>
 
-      {/* Derecha: bienvenida + logout */}
+      {/* 🔹 Lado derecho con bienvenida y logout */}
       <div className="flex items-center gap-4">
-        {profile && (
-          <span>
-            Bienvenido/a:{" "}
-            <strong>
-              {profile.nombre} {profile.apellido}
-            </strong>
-          </span>
+        {user ? (
+          <>
+            <span>
+              Bienvenido/a:{" "}
+              <strong>
+                {user.user_metadata?.nombre ?? user.email}
+              </strong>
+            </span>
+            <button
+              onClick={handleLogout}
+              className="bg-red-500 hover:bg-red-600 px-3 py-1 rounded text-sm"
+            >
+              Cerrar sesión
+            </button>
+          </>
+        ) : (
+          <span className="italic">No autenticado</span>
         )}
-        <button
-          onClick={handleLogout}
-          className="bg-red-500 hover:bg-red-600 px-3 py-1 rounded-md text-sm"
-        >
-          Cerrar sesión
-        </button>
       </div>
     </header>
   );

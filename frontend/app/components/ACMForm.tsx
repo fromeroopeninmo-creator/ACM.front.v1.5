@@ -312,55 +312,62 @@ export default function ACMForm() {
 };
 
 /** ========= PDF ========= */
-  const handleDownloadPDF = async () => {
-    const { jsPDF } = await import("jspdf");
+const handleDownloadPDF = async () => {
+  const { jsPDF } = await import("jspdf");
 
-    const doc = new jsPDF("p", "pt", "a4");
-    const pageW = doc.internal.pageSize.getWidth();
-    const pageH = doc.internal.pageSize.getHeight();
-    const margin = 36;
+  const doc = new jsPDF("p", "pt", "a4");
+  const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
 
-    // === Traemos datos del usuario logueado ===
-    const matriculado = user?.user_metadata?.matriculado || "-";
-    const cpi = user?.user_metadata?.cpi || "-";
-    const fullName = `${user?.user_metadata?.nombre || ""} ${user?.user_metadata?.apellido || ""}`.trim();
+  const margin = 36;
+  let y = margin;
 
-    // Color primario
-    const hexToRgb = (hex: string) => {
-      const m = hex.replace("#", "");
-      const int = parseInt(m.length === 3 ? m.split("").map((c) => c + c).join("") : m, 16);
-      return { r: (int >> 16) & 255, g: (int >> 8) & 255, b: int & 255 };
-    };
-    const pc = hexToRgb(primaryColor);
+  // Datos de usuario
+  const matriculado = user?.user_metadata?.matriculado || "—";
+  const cpi = user?.user_metadata?.cpi || "—";
+  const asesorNombre =
+    user?.user_metadata?.nombre && user?.user_metadata?.apellido
+      ? `${user.user_metadata.nombre} ${user.user_metadata.apellido}`
+      : user?.email || "—";
 
-    // === HEADER ===
-    const headerY = margin;
-    if (logoBase64) {
-      try {
-        doc.addImage(logoBase64, "PNG", margin, headerY, 60, 30, undefined, "FAST");
-      } catch {}
-    }
+  // Color primario
+  const hexToRgb = (hex: string) => {
+    const m = hex.replace("#", "");
+    const int = parseInt(
+      m.length === 3 ? m.split("").map((c) => c + c).join("") : m,
+      16
+    );
+    return { r: (int >> 16) & 255, g: (int >> 8) & 255, b: int & 255 };
+  };
+  const pc = hexToRgb(primaryColor);
 
-    doc.setFontSize(9);
-    doc.setFont("helvetica", "normal");
-    doc.text(`Matriculado/a: ${matriculado}`, margin, headerY + 45);
-    doc.text(`CPI: ${cpi}`, margin, headerY + 58);
+  // Header: Logo izquierda / ACM centro / Matriculado + CPI derecha
+  if (logoBase64) {
+    try {
+      doc.addImage(logoBase64, "PNG", margin, y, 90, 40, undefined, "FAST");
+    } catch {}
+  }
 
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(14);
-    doc.text("ACM", pageW / 2, headerY + 25, { align: "center" });
+  // Texto central ACM
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(16);
+  doc.setTextColor(pc.r, pc.g, pc.b);
+  doc.text("ACM", pageW / 2, y + 18, { align: "center" });
+  doc.setTextColor(0, 0, 0);
 
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(9);
-    doc.text(`Asesor: ${fullName}`, pageW - margin, headerY + 25, { align: "right" });
+  // Datos a la derecha
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+  doc.text(`Matriculado/a: ${matriculado}`, pageW - margin - 150, y + 10);
+  doc.text(`CPI: ${cpi}`, pageW - margin - 150, y + 24);
 
-    let y = headerY + 90;
+  y += 52;
 
-    // === TÍTULO PRINCIPAL ===
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(18);
-    doc.text("Análisis Comparativo de Mercado", pageW / 2, y, { align: "center" });
-    y += 40;
+  // Asesor (debajo del header)
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(11);
+  doc.text(`Asesor: ${asesorNombre}`, margin, y);
+  y += 14;
 
     // === Fecha ===
     doc.setFontSize(10);
@@ -566,23 +573,18 @@ export default function ACMForm() {
     block('Debilidades', formData.weaknesses);
     block('A considerar', formData.considerations);
 
-    // === FOOTER en todas las páginas ===
-const addFooter = () => {
-  const footerY = pageH - 30;
+    // === Footer ===
   doc.setFont("helvetica", "italic");
   doc.setFontSize(9);
-  doc.text(`Matriculado/a: ${matriculado} | CPI: ${cpi}`, pageW / 2, footerY, { align: "center" });
+  doc.text(
+    `Matriculado/a: ${matriculado}  |  CPI: ${cpi}`,
+    pageW / 2,
+    pageH - 30,
+    { align: "center" }
+  );
+
+  doc.save("ACM.pdf");
 };
-
-const pageCount = doc.getNumberOfPages();
-for (let i = 1; i <= pageCount; i++) {
-  doc.setPage(i);
-  addFooter();
-}
-
-doc.save("ACM.pdf");
-
-  };
 
   /** ========= Render ========= */
   const propertyTypeOptions = useMemo(() => enumToOptions(PropertyType), []);

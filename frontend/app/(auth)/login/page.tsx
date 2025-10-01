@@ -1,94 +1,64 @@
-// app/(auth)/login/page.tsx
 "use client";
-
 import { useState } from "react";
-import { supabase } from "@/lib/supabaseClient";
 import { useRouter } from "next/navigation";
+import { supabase } from "../../lib/supabaseClient";
 
 export default function LoginPage() {
   const router = useRouter();
-  const [formData, setFormData] = useState({ email: "", password: "" });
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setFormData({
-      ...formData,
-      [e.target.name]: e.target.value,
-    });
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError(null);
-    setLoading(true);
-
-    try {
-      const { error } = await supabase.auth.signInWithPassword({
-        email: formData.email,
-        password: formData.password,
-      });
-
-      if (error) {
-        setError(error.message);
-        setLoading(false);
-        return;
-      }
-
-      router.push("/");
-    } catch (err: any) {
-      setError("Error al iniciar sesión: " + err.message);
-    } finally {
-      setLoading(false);
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+    if (error) {
+      setError(error.message);
+    } else {
+      router.push("/"); // redirigir a la app protegida
     }
   };
 
   return (
-    <div className="flex min-h-screen">
-      {/* Banner a la izquierda */}
-      <div className="w-1/2 bg-gray-200 flex items-center justify-center">
-        <img src="/banner-login.jpg" alt="Banner ACM" className="max-h-full object-cover" />
-      </div>
-
-      {/* Formulario a la derecha */}
-      <div className="w-1/2 flex items-center justify-center p-10">
-        <form onSubmit={handleSubmit} className="bg-white shadow-lg rounded-lg p-8 w-full max-w-md">
-          <h1 className="text-2xl font-bold mb-6 text-center">Bienvenido a ACM</h1>
-
-          {error && <p className="text-red-500 text-sm mb-4">{error}</p>}
-
+    <div style={{ display: "flex", minHeight: "100vh" }}>
+      <div
+        style={{
+          flex: 1,
+          backgroundImage: "url('/banner.jpg')",
+          backgroundSize: "cover",
+          backgroundPosition: "center",
+        }}
+      ></div>
+      <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <form
+          onSubmit={handleLogin}
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            width: "300px",
+            gap: "10px",
+          }}
+        >
+          <h1>Bienvenido a ACM</h1>
+          {error && <p style={{ color: "red" }}>{error}</p>}
           <input
             type="email"
-            name="email"
-            placeholder="Correo electrónico"
-            value={formData.email}
-            onChange={handleChange}
-            className="w-full p-2 border rounded mb-3"
-            required
+            placeholder="Correo"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
           />
           <input
             type="password"
-            name="password"
             placeholder="Contraseña"
-            value={formData.password}
-            onChange={handleChange}
-            className="w-full p-2 border rounded mb-6"
-            required
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
           />
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700"
-          >
-            {loading ? "Ingresando..." : "Iniciar sesión"}
-          </button>
-
-          <p className="mt-4 text-sm text-center">
-            ¿No tienes cuenta?{" "}
-            <a href="/register" className="text-blue-600 hover:underline">
-              Regístrate aquí
-            </a>
+          <button type="submit">Ingresar</button>
+          <p style={{ fontSize: "14px" }}>
+            ¿No tienes cuenta? <a href="/register">Regístrate aquí</a>
           </p>
         </form>
       </div>

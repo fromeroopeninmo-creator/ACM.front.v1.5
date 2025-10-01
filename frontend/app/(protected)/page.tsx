@@ -1,5 +1,5 @@
 // app/(protected)/page.tsx
-import ACMForm from "@/app/components/ACMForm";
+import ACMForm from '@/components/ACMForm';
 
 export default function HomePage() {
   return (

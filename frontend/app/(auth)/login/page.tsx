@@ -1,20 +1,18 @@
 "use client";
-
 import { useState } from "react";
-import { supabase } from "@/app/lib/supabaseClient";
-import { useRouter } from "next/navigation";
+import { supabase } from "@/lib/supabaseClient";
+import Link from "next/link";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const router = useRouter();
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 
-    const { data, error } = await supabase.auth.signInWithPassword({
+    const { error } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
@@ -22,87 +20,56 @@ export default function LoginPage() {
     if (error) {
       setError(error.message);
     } else {
-      console.log("Login exitoso:", data);
-      router.push("/"); // redirige al home
+      window.location.href = "/";
     }
   };
 
   return (
-    <div
-      style={{
-        display: "flex",
-        height: "100vh",
-        alignItems: "center",
-        justifyContent: "center",
-        backgroundColor: "#f5f5f5",
-      }}
-    >
-      <form
-        onSubmit={handleLogin}
-        style={{
-          backgroundColor: "white",
-          padding: "2rem",
-          borderRadius: "8px",
-          boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
-          width: "100%",
-          maxWidth: "400px",
-        }}
-      >
-        <h2 style={{ marginBottom: "1rem", textAlign: "center" }}>Login</h2>
+    <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50">
+      <img
+        src="/login-banner.jpg"
+        alt="Banner"
+        className="w-full max-h-48 object-cover mb-6"
+      />
 
-        <div style={{ marginBottom: "1rem" }}>
-          <label>Email</label>
+      <div className="w-full max-w-md bg-white shadow-lg rounded-xl p-6">
+        <h1 className="text-2xl font-bold text-center mb-6">
+          Bienvenido a ACM
+        </h1>
+
+        <form onSubmit={handleLogin} className="space-y-4">
           <input
             type="email"
+            placeholder="Correo electrónico"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
+            className="w-full border rounded-md px-3 py-2"
             required
-            style={{
-              width: "100%",
-              padding: "0.5rem",
-              marginTop: "0.25rem",
-              borderRadius: "4px",
-              border: "1px solid #ccc",
-            }}
           />
-        </div>
-
-        <div style={{ marginBottom: "1rem" }}>
-          <label>Password</label>
           <input
             type="password"
+            placeholder="Contraseña"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
+            className="w-full border rounded-md px-3 py-2"
             required
-            style={{
-              width: "100%",
-              padding: "0.5rem",
-              marginTop: "0.25rem",
-              borderRadius: "4px",
-              border: "1px solid #ccc",
-            }}
           />
-        </div>
+          {error && <p className="text-red-500 text-sm">{error}</p>}
+          <button
+            type="submit"
+            className="w-full bg-blue-600 text-white rounded-md py-2 font-semibold hover:bg-blue-700"
+          >
+            Iniciar sesión
+          </button>
+        </form>
 
-        {error && (
-          <p style={{ color: "red", marginBottom: "1rem" }}>{error}</p>
-        )}
-
-        <button
-          type="submit"
-          style={{
-            width: "100%",
-            padding: "0.75rem",
-            backgroundColor: "#0070f3",
-            color: "white",
-            border: "none",
-            borderRadius: "4px",
-            cursor: "pointer",
-          }}
-        >
-          Ingresar
-        </button>
-      </form>
+        <p className="mt-4 text-sm text-center">
+          ¿Aún no tienes cuenta?{" "}
+          <Link href="/register" className="text-blue-600 hover:underline">
+            Regístrate
+          </Link>
+        </p>
+      </div>
     </div>
   );
 }

@@ -311,46 +311,68 @@ export default function ACMForm() {
   }
 };
 
-  /** ========= PDF ========= */
+/** ========= PDF ========= */
   const handleDownloadPDF = async () => {
-    const { jsPDF } = await import('jspdf');
+    const { jsPDF } = await import("jspdf");
 
-    const doc = new jsPDF('p', 'pt', 'a4');
+    const doc = new jsPDF("p", "pt", "a4");
     const pageW = doc.internal.pageSize.getWidth();
     const pageH = doc.internal.pageSize.getHeight();
-
     const margin = 36;
-    let y = margin;
+
+    // === Traemos datos del usuario logueado ===
+    const matriculado = user?.user_metadata?.matriculado || "-";
+    const cpi = user?.user_metadata?.cpi || "-";
+    const fullName = `${user?.user_metadata?.nombre || ""} ${user?.user_metadata?.apellido || ""}`.trim();
 
     // Color primario
     const hexToRgb = (hex: string) => {
-      const m = hex.replace('#', '');
-      const int = parseInt(m.length === 3 ? m.split('').map((c) => c + c).join('') : m, 16);
+      const m = hex.replace("#", "");
+      const int = parseInt(m.length === 3 ? m.split("").map((c) => c + c).join("") : m, 16);
       return { r: (int >> 16) & 255, g: (int >> 8) & 255, b: int & 255 };
     };
     const pc = hexToRgb(primaryColor);
 
-    // Header
+    // === HEADER ===
+    const headerY = margin;
     if (logoBase64) {
-      // Logo en esquina superior izquierda
       try {
-        doc.addImage(logoBase64, 'PNG', margin, y, 90, 40, undefined, 'FAST');
+        doc.addImage(logoBase64, "PNG", margin, headerY, 60, 30, undefined, "FAST");
       } catch {}
     }
 
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(16);
-    doc.setTextColor(pc.r, pc.g, pc.b);
-    doc.text('ACM - Análisis Comparativo de Mercado', margin + (logoBase64 ? 100 : 0), y + 18);
-    doc.setTextColor(0, 0, 0);
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "normal");
+    doc.text(`Matriculado/a: ${matriculado}`, margin, headerY + 45);
+    doc.text(`CPI: ${cpi}`, margin, headerY + 58);
 
-    y += 52;
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(14);
+    doc.text("ACM", pageW / 2, headerY + 25, { align: "center" });
 
-    // Fecha
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.text(`Asesor: ${fullName}`, pageW - margin, headerY + 25, { align: "right" });
+
+    let y = headerY + 90;
+
+    // === TÍTULO PRINCIPAL ===
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(18);
+    doc.text("Análisis Comparativo de Mercado", pageW / 2, y, { align: "center" });
+    y += 40;
+
+    // === Fecha ===
     doc.setFontSize(10);
-    doc.text(`Fecha: ${new Date(formData.date).toLocaleDateString('es-AR')}`, margin, y);
-    y += 14;
+    doc.setFont("helvetica", "normal");
+    doc.text(`Fecha: ${new Date(formData.date).toLocaleDateString("es-AR")}`, margin, y);
+    y += 20;
 
+    // === Línea separadora ===
+    doc.setDrawColor(pc.r, pc.g, pc.b);
+    doc.setLineWidth(1);
+    doc.line(margin, y, pageW - margin, y);
+    y += 14;
     // Propiedad principal: texto a la izquierda, foto a la derecha
     const colLeftX = margin;
     const colRightX = pageW - margin - 180; // espacio para foto
@@ -544,22 +566,22 @@ export default function ACMForm() {
     block('Debilidades', formData.weaknesses);
     block('A considerar', formData.considerations);
 
-    // Pie
-    if (y > pageH - 40) {
-      doc.addPage();
-      y = margin;
-    }
-    doc.setDrawColor(220, 220, 220);
-    doc.line(margin, pageH - 50, pageW - margin, pageH - 50);
-    doc.setFont('helvetica', 'italic');
-    doc.setFontSize(9);
-    doc.text(
-      `Generado por ${formData.advisorName || '—'} · ${new Date(formData.date).toLocaleString('es-AR')}`,
-      margin,
-      pageH - 34
-    );
+    // === FOOTER en todas las páginas ===
+const addFooter = () => {
+  const footerY = pageH - 30;
+  doc.setFont("helvetica", "italic");
+  doc.setFontSize(9);
+  doc.text(`Matriculado/a: ${matriculado} | CPI: ${cpi}`, pageW / 2, footerY, { align: "center" });
+};
 
-    doc.save('ACM.pdf');
+const pageCount = doc.getNumberOfPages();
+for (let i = 1; i <= pageCount; i++) {
+  doc.setPage(i);
+  addFooter();
+}
+
+doc.save("ACM.pdf");
+
   };
 
   /** ========= Render ========= */

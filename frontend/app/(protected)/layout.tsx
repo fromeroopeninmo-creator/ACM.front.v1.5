@@ -1,6 +1,6 @@
 "use client";
 
-import ProtectedRoute from "../../context/ProtectedRoute";
+import ProtectedRoute from '../context/ProtectedRoute';
 import Header from "../../components/Header";
 
 export default function ProtectedLayout({

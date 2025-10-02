@@ -12,16 +12,16 @@ export async function middleware(req: NextRequest) {
 
   const { pathname } = req.nextUrl;
 
-  // Rutas públicas
+  // === Rutas públicas (login y registro siempre accesibles) ===
   if (pathname.startsWith("/login") || pathname.startsWith("/register")) {
     if (session) {
-      // Si ya está logueado, lo mando a home
+      // Si ya está logueado, redirige al home
       return NextResponse.redirect(new URL("/", req.url));
     }
     return res;
   }
 
-  // Rutas protegidas
+  // === Rutas protegidas ===
   if (!session) {
     return NextResponse.redirect(new URL("/login", req.url));
   }
@@ -29,6 +29,7 @@ export async function middleware(req: NextRequest) {
   return res;
 }
 
+// Matcher: protege todas las rutas salvo assets estáticos
 export const config = {
   matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
 };

@@ -15,8 +15,6 @@ interface Profile {
   cpi?: string;
   inmobiliaria?: string;
   profileId?: string;
-  logoBase64?: string | null;
-  primaryColor?: string;
 }
 
 interface AuthContextType {
@@ -35,11 +33,11 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Estado de logo y color
+  // Estado para logo y color
   const [logoBase64, setLogoBase64State] = useState<string | null>(null);
-  const [primaryColor, setPrimaryColorState] = useState<string>("#0ea5e9");
+  const [primaryColor, setPrimaryColorState] = useState<string>("#0ea5e9"); // valor por defecto
 
-  // --- cargar logo y color desde localStorage al iniciar ---
+  // Cargar logo y color desde localStorage al inicio
   useEffect(() => {
     const storedLogo = localStorage.getItem("logoBase64");
     const storedColor = localStorage.getItem("primaryColor");
@@ -47,7 +45,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     if (storedColor) setPrimaryColorState(storedColor);
   }, []);
 
-  // --- handlers de logo y color ---
+  // Handlers que además actualizan localStorage
   const setLogoBase64 = (logo: string | null) => {
     if (logo) {
       localStorage.setItem("logoBase64", logo);
@@ -55,60 +53,50 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       localStorage.removeItem("logoBase64");
     }
     setLogoBase64State(logo);
-
-    if (user) {
-      supabase.from("profiles").update({ logoBase64: logo }).eq("id", user.id);
-    }
   };
 
   const setPrimaryColor = (color: string) => {
     localStorage.setItem("primaryColor", color);
     setPrimaryColorState(color);
-
-    if (user) {
-      supabase.from("profiles").update({ primaryColor: color }).eq("id", user.id);
-    }
   };
 
-  // --- cargar perfil de usuario desde supabase ---
+  // 🔑 Logout centralizado
+  const logout = async () => {
+    await supabase.auth.signOut();
+    setUser(null);
+  };
+
   const loadUserProfile = async (supabaseUser: any) => {
     if (!supabaseUser) return null;
 
+    // Cargamos perfil desde la tabla profiles
     const { data: profile, error } = await supabase
       .from("profiles")
       .select(
-        "id, email, nombre, apellido, telefono, direccion, localidad, provincia, matriculado_nombre, cpi, inmobiliaria, logoBase64, primaryColor"
+        "id, email, nombre, apellido, telefono, direccion, localidad, provincia, matriculado_nombre, cpi, inmobiliaria"
       )
       .eq("id", supabaseUser.id)
       .single();
 
     if (error || !profile) {
-      console.warn("⚠ No se encontró perfil en profiles, usando auth.user mínimo");
+      console.warn("⚠ No se encontró perfil en profiles, usando solo auth.user");
       return {
         id: supabaseUser.id,
         email: supabaseUser.email,
       };
     }
 
-    // persistir también logo y color localmente
-    if (profile.logoBase64) {
-      setLogoBase64State(profile.logoBase64);
-      localStorage.setItem("logoBase64", profile.logoBase64);
-    }
-    if (profile.primaryColor) {
-      setPrimaryColorState(profile.primaryColor);
-      localStorage.setItem("primaryColor", profile.primaryColor);
-    }
+    // Normalizamos el perfil → evitamos duplicar id/email
+    const { id: _profileId, email: _profileEmail, ...rest } = profile;
 
     return {
       id: supabaseUser.id,
       email: supabaseUser.email,
-      profileId: profile.id,
-      ...profile,
+      profileId: _profileId,
+      ...rest,
     };
   };
 
-  // --- inicializar sesión ---
   useEffect(() => {
     const init = async () => {
       try {
@@ -126,25 +114,24 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
     init();
 
-    // escuchar cambios en sesión
-    const { data: subscription } = supabase.auth.onAuthStateChange(
-      async (_event, session) => {
+    // Escuchar cambios de sesión
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      try {
         const sessionUser = session?.user ?? null;
         const profile = sessionUser ? await loadUserProfile(sessionUser) : null;
         setUser(profile);
+      } catch (err) {
+        console.error("❌ Error escuchando cambios de sesión:", err);
+        setUser(null);
+      } finally {
+        setLoading(false);
       }
-    );
+    });
 
-    return () => {
-      subscription?.subscription.unsubscribe();
-    };
+    return () => subscription.unsubscribe();
   }, []);
-
-  // --- logout ---
-  const logout = async () => {
-    await supabase.auth.signOut();
-    setUser(null);
-  };
 
   return (
     <AuthContext.Provider

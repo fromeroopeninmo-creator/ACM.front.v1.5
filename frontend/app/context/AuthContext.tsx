@@ -42,9 +42,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   const loadUserProfile = async (supabaseUser: any) => {
     if (!supabaseUser) return null;
-
     try {
-      const { data: profile, error } = await supabase
+      const { data: profile } = await supabase
         .from("profiles")
         .select(
           "id, email, nombre, apellido, telefono, direccion, localidad, provincia, matriculado_nombre, cpi, inmobiliaria"
@@ -52,27 +51,21 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         .eq("id", supabaseUser.id)
         .single();
 
-      if (error || !profile) {
-        return {
-          id: supabaseUser.id,
-          email: supabaseUser.email,
-        };
+      if (!profile) {
+        return { id: supabaseUser.id, email: supabaseUser.email };
       }
 
-      const { id: _profileId, email: _profileEmail, ...profileData } = profile;
+      const { id: _profileId, email: _profileEmail, ...rest } = profile;
 
       return {
         id: supabaseUser.id,
         email: supabaseUser.email,
         profileId: _profileId,
-        ...profileData,
+        ...rest,
       };
     } catch (err) {
       console.error("❌ Error cargando perfil:", err);
-      return {
-        id: supabaseUser.id,
-        email: supabaseUser.email,
-      };
+      return { id: supabaseUser.id, email: supabaseUser.email };
     }
   };
 
@@ -80,6 +73,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     let mounted = true;
 
     const init = async () => {
+      setLoading(true);
       try {
         const { data, error } = await supabase.auth.getSession();
         if (error) throw error;
@@ -87,7 +81,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         const sessionUser = data.session?.user ?? null;
 
         if (!sessionUser) {
-          // 👉 si no hay sesión, directo al login
           if (mounted) {
             setUser(null);
             setLoading(false);
@@ -110,13 +103,16 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     const { data: listener } = supabase.auth.onAuthStateChange(
       async (_event, session) => {
         if (!mounted) return;
+
+        if (!session?.user) {
+          setUser(null);
+          setLoading(false);
+          return;
+        }
+
         try {
-          if (!session?.user) {
-            setUser(null);
-          } else {
-            const profile = await loadUserProfile(session.user);
-            setUser(profile);
-          }
+          const profile = await loadUserProfile(session.user);
+          setUser(profile);
         } catch (err) {
           console.error("❌ Error escuchando cambios de sesión:", err);
           setUser(null);
@@ -133,13 +129,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   }, []);
 
   return (
-    <AuthContext.Provider
-      value={{
-        user,
-        loading,
-        logout,
-      }}
-    >
+    <AuthContext.Provider value={{ user, loading, logout }}>
       {children}
     </AuthContext.Provider>
   );

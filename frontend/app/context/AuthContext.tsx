@@ -35,23 +35,23 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   // Estado para logo y color
   const [logoBase64, setLogoBase64State] = useState<string | null>(null);
-  const [primaryColor, setPrimaryColorState] = useState<string>("#0ea5e9"); // valor por defecto
+  const [primaryColor, setPrimaryColorState] = useState<string>("#0ea5e9");
 
-  // Cargar logo y color desde localStorage al inicio
+  // Cargar logo y color desde localStorage
   useEffect(() => {
-    const storedLogo = localStorage.getItem("logoBase64");
-    const storedColor = localStorage.getItem("primaryColor");
-    if (storedLogo) setLogoBase64State(storedLogo);
-    if (storedColor) setPrimaryColorState(storedColor);
+    try {
+      const storedLogo = localStorage.getItem("logoBase64");
+      const storedColor = localStorage.getItem("primaryColor");
+      if (storedLogo) setLogoBase64State(storedLogo);
+      if (storedColor) setPrimaryColorState(storedColor);
+    } catch (e) {
+      console.warn("⚠ Error leyendo localStorage", e);
+    }
   }, []);
 
-  // Handlers que además actualizan localStorage
   const setLogoBase64 = (logo: string | null) => {
-    if (logo) {
-      localStorage.setItem("logoBase64", logo);
-    } else {
-      localStorage.removeItem("logoBase64");
-    }
+    if (logo) localStorage.setItem("logoBase64", logo);
+    else localStorage.removeItem("logoBase64");
     setLogoBase64State(logo);
   };
 
@@ -60,7 +60,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     setPrimaryColorState(color);
   };
 
-  // 🔑 Logout centralizado
   const logout = async () => {
     try {
       await supabase.auth.signOut();
@@ -68,75 +67,86 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       console.error("❌ Error al cerrar sesión:", err);
     } finally {
       setUser(null);
-      setLoading(false); // evita que quede clavado en "cargando sesión"
+      setLoading(false); // 👈 evita que se quede colgado
     }
   };
 
-  // Cargar perfil desde Supabase
   const loadUserProfile = async (supabaseUser: any) => {
     if (!supabaseUser) return null;
+    try {
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select(
+          "id, email, nombre, apellido, telefono, direccion, localidad, provincia, matriculado_nombre, cpi, inmobiliaria"
+        )
+        .eq("id", supabaseUser.id)
+        .single();
 
-    const { data: profile, error } = await supabase
-      .from("profiles")
-      .select(
-        "id, email, nombre, apellido, telefono, direccion, localidad, provincia, matriculado_nombre, cpi, inmobiliaria"
-      )
-      .eq("id", supabaseUser.id)
-      .single();
+      if (!profile) {
+        return {
+          id: supabaseUser.id,
+          email: supabaseUser.email,
+        };
+      }
 
-    if (error || !profile) {
-      console.warn("⚠ No se encontró perfil en profiles, usando solo auth.user");
+      const { id: _profileId, email: _profileEmail, ...rest } = profile;
+      return {
+        id: supabaseUser.id,
+        email: supabaseUser.email,
+        profileId: _profileId,
+        ...rest,
+      };
+    } catch (err) {
+      console.error("❌ Error cargando perfil:", err);
       return {
         id: supabaseUser.id,
         email: supabaseUser.email,
       };
     }
-
-    const { id: _profileId, email: _profileEmail, ...rest } = profile;
-
-    return {
-      id: supabaseUser.id,
-      email: supabaseUser.email,
-      profileId: _profileId,
-      ...rest,
-    };
   };
 
   useEffect(() => {
+    let mounted = true;
+
     const init = async () => {
+      setLoading(true);
       try {
-        const { data } = await supabase.auth.getSession();
+        const { data, error } = await supabase.auth.getSession();
+        if (error) throw error;
+
         const sessionUser = data.session?.user ?? null;
         const profile = sessionUser ? await loadUserProfile(sessionUser) : null;
-        setUser(profile);
+        if (mounted) setUser(profile);
       } catch (err) {
         console.error("❌ Error inicial cargando usuario:", err);
-        setUser(null);
+        if (mounted) setUser(null);
       } finally {
-        setLoading(false); // 👈 garantiza salida del estado "cargando"
+        if (mounted) setLoading(false);
       }
     };
 
     init();
 
-    // Escuchar cambios de sesión
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      setLoading(true); // bloquea momentáneamente mientras se actualiza
-      try {
-        const sessionUser = session?.user ?? null;
-        const profile = sessionUser ? await loadUserProfile(sessionUser) : null;
-        setUser(profile);
-      } catch (err) {
-        console.error("❌ Error escuchando cambios de sesión:", err);
-        setUser(null);
-      } finally {
-        setLoading(false); // desbloquea siempre
+    const { data: listener } = supabase.auth.onAuthStateChange(
+      async (_event, session) => {
+        try {
+          setLoading(true);
+          const sessionUser = session?.user ?? null;
+          const profile = sessionUser ? await loadUserProfile(sessionUser) : null;
+          if (mounted) setUser(profile);
+        } catch (err) {
+          console.error("❌ Error escuchando cambios de sesión:", err);
+          if (mounted) setUser(null);
+        } finally {
+          if (mounted) setLoading(false);
+        }
       }
-    });
+    );
 
-    return () => subscription.unsubscribe();
+    return () => {
+      mounted = false;
+      listener.subscription.unsubscribe();
+    };
   }, []);
 
   return (

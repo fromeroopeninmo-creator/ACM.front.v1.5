@@ -26,21 +26,22 @@ export default function Header() {
       {/* Izquierda: Matriculado y CPI */}
       <div style={{ display: "flex", flexDirection: "column" }}>
         <span style={{ fontWeight: 600, fontSize: 14 }}>
-          Matriculado/a: {user?.matriculado || "-"}
+          {user?.matriculado || "-"}
         </span>
         <span style={{ fontSize: 14, color: "#555" }}>
           CPI: {user?.cpi || "-"}
         </span>
       </div>
 
-      {/* Centro: logo o texto ACM */}
+      {/* Centro: logo o texto VMI */}
       <div style={{ fontWeight: "bold", fontSize: 16 }}>
-        ACM
+        VMI
       </div>
 
       {/* Derecha: asesor + logout */}
       <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
         <span style={{ fontWeight: "bold", fontSize: 16 }}>
+          Asesor:{" "}
           {user?.nombre
             ? `${user.nombre}${user.apellido ? " " + user.apellido : ""}`
             : user?.email || "Invitado"}

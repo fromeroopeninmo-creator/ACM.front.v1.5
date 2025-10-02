@@ -35,11 +35,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Estado para logo y color
   const [logoBase64, setLogoBase64State] = useState<string | null>(null);
   const [primaryColor, setPrimaryColorState] = useState<string>("#0ea5e9");
 
-  // Guardar logo en Supabase + localStorage
   const setLogoBase64 = async (logo: string | null) => {
     try {
       if (user?.id) {
@@ -56,7 +54,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
   };
 
-  // Guardar color en Supabase + localStorage
   const setPrimaryColor = async (color: string) => {
     try {
       if (user?.id) {
@@ -102,7 +99,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         };
       }
 
-      // Fallback a localStorage si en la DB están en null
+      // 🔧 Sacamos id y email para evitar duplicados
+      const { id: _profileId, email: _profileEmail, ...profileData } = profile;
+
+      // fallback localStorage
       const storedLogo = localStorage.getItem("logoBase64");
       const storedColor = localStorage.getItem("primaryColor");
 
@@ -111,9 +111,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
       if (logo) setLogoBase64State(logo);
       if (color) setPrimaryColorState(color);
-
-      // 🔧 FIX: evitamos duplicar id
-      const { id: _profileId, ...profileData } = profile;
 
       return {
         id: supabaseUser.id,

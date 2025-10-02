@@ -26,15 +26,14 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const loadUserProfile = async (supabaseUser: any) => {
     if (!supabaseUser) return null;
 
-    // Intentamos cargar perfil desde la tabla
-  const { data: profile, error } = await supabase
-  .from("profiles")
-  .select(
-    "id, email, nombre, apellido, telefono, direccion, localidad, provincia, matriculado_nombre, cpi, inmobiliaria" // 👈 agregado inmobiliaria
-  )
-  .eq("id", supabaseUser.id)
-  .single();
-
+    // Cargamos perfil desde la tabla profiles
+    const { data: profile, error } = await supabase
+      .from("profiles")
+      .select(
+        "id, email, nombre, apellido, telefono, direccion, localidad, provincia, matriculado_nombre, cpi, inmobiliaria"
+      )
+      .eq("id", supabaseUser.id)
+      .single();
 
     if (error || !profile) {
       console.warn("⚠ No se encontró perfil en profiles, usando solo auth.user");
@@ -44,15 +43,14 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       };
     }
 
-    // Sacamos id/email para evitar duplicados
-    const { id: _profileId, email: _profileEmail, ...profileWithoutIdAndEmail } =
-      profile;
+    // Normalizamos el perfil
+    const { id: _profileId, email: _profileEmail, ...rest } = profile;
 
     return {
       id: supabaseUser.id,
       email: supabaseUser.email,
       profileId: _profileId,
-      ...profileWithoutIdAndEmail,
+      ...rest,
     };
   };
 

@@ -29,20 +29,17 @@ export default function Header() {
         justifyContent: "space-between",
         alignItems: "center",
         padding: "1rem 2rem",
-        backgroundColor: "#f5f5f5", // Gris claro fijo
+        backgroundColor: "#f5f5f5", // gris claro
         borderBottom: "1px solid #ddd",
       }}
     >
-      {/* Izquierda: Matriculado + CPI + Inmobiliaria */}
+      {/* Izquierda: Matriculado + CPI */}
       <div style={{ display: "flex", flexDirection: "column" }}>
         <span style={{ fontWeight: 600, fontSize: 14 }}>
           {matriculado}
         </span>
         <span style={{ fontSize: 14, color: "#555" }}>
           CPI: {cpi}
-        </span>
-        <span style={{ fontSize: 14, color: "#333" }}>
-          {inmobiliaria}
         </span>
       </div>
 

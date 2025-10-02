@@ -41,8 +41,6 @@ export default function RegisterPage() {
     }
 
     setLoading(true);
-
-    // 1) Crear usuario en auth
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
@@ -54,25 +52,23 @@ export default function RegisterPage() {
       return;
     }
 
-    // 2) Insertar datos en la tabla profiles
+    // 👇 Guardamos datos en la tabla profiles
     if (data.user) {
-      const { error: insertError } = await supabase.from("profiles").insert([
-        {
-          id: data.user.id, // el mismo UUID que en auth.users
-          email,
-          nombre,
-          apellido,
-          telefono,
-          direccion,
-          localidad,
-          provincia,
-          matriculado_nombre: matriculado,
-          cpi,
-        },
-      ]);
+      const { error: insertError } = await supabase.from("profiles").upsert({
+        id: data.user.id, // 👈 clave primaria igual al id de auth.users
+        email,
+        nombre,
+        apellido,
+        telefono,
+        direccion,
+        localidad,
+        provincia,
+        matriculado_nombre: matriculado, // 👈 ojo con este nombre de campo
+        cpi,
+      });
 
       if (insertError) {
-        console.error("❌ Error insertando perfil:", insertError.message);
+        console.error("❌ Error guardando perfil:", insertError.message);
         setErrorMsg("Hubo un problema guardando el perfil.");
         setLoading(false);
         return;
@@ -81,7 +77,6 @@ export default function RegisterPage() {
 
     setLoading(false);
 
-    // 3) Confirmación o redirección
     if (!data.session) {
       setInfoMsg(
         "Registro exitoso. Revisá tu email para confirmar la cuenta y luego iniciá sesión."
@@ -232,7 +227,6 @@ export default function RegisterPage() {
   );
 }
 
-// 🎨 estilos inline (los mantenemos de tu versión)
 const inputStyle: React.CSSProperties = {
   width: "100%",
   height: 42,

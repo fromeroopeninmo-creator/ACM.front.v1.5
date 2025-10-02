@@ -15,6 +15,8 @@ interface Profile {
   cpi?: string;
   inmobiliaria?: string;
   profileId?: string;
+  logoBase64?: string | null;
+  primaryColor?: string | null;
 }
 
 interface AuthContextType {
@@ -37,27 +39,37 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [logoBase64, setLogoBase64State] = useState<string | null>(null);
   const [primaryColor, setPrimaryColorState] = useState<string>("#0ea5e9");
 
-  // Cargar logo y color desde localStorage
-  useEffect(() => {
+  // Guardar logo en Supabase + localStorage
+  const setLogoBase64 = async (logo: string | null) => {
     try {
-      const storedLogo = localStorage.getItem("logoBase64");
-      const storedColor = localStorage.getItem("primaryColor");
-      if (storedLogo) setLogoBase64State(storedLogo);
-      if (storedColor) setPrimaryColorState(storedColor);
-    } catch (e) {
-      console.warn("⚠ Error leyendo localStorage", e);
+      if (user?.id) {
+        await supabase
+          .from("profiles")
+          .update({ logoBase64: logo })
+          .eq("id", user.id);
+      }
+      if (logo) localStorage.setItem("logoBase64", logo);
+      else localStorage.removeItem("logoBase64");
+      setLogoBase64State(logo);
+    } catch (err) {
+      console.error("❌ Error guardando logo:", err);
     }
-  }, []);
-
-  const setLogoBase64 = (logo: string | null) => {
-    if (logo) localStorage.setItem("logoBase64", logo);
-    else localStorage.removeItem("logoBase64");
-    setLogoBase64State(logo);
   };
 
-  const setPrimaryColor = (color: string) => {
-    localStorage.setItem("primaryColor", color);
-    setPrimaryColorState(color);
+  // Guardar color en Supabase + localStorage
+  const setPrimaryColor = async (color: string) => {
+    try {
+      if (user?.id) {
+        await supabase
+          .from("profiles")
+          .update({ primaryColor: color })
+          .eq("id", user.id);
+      }
+      localStorage.setItem("primaryColor", color);
+      setPrimaryColorState(color);
+    } catch (err) {
+      console.error("❌ Error guardando color:", err);
+    }
   };
 
   const logout = async () => {
@@ -67,17 +79,18 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       console.error("❌ Error al cerrar sesión:", err);
     } finally {
       setUser(null);
-      setLoading(false); // 👈 evita que se quede colgado
+      setLoading(false);
     }
   };
 
   const loadUserProfile = async (supabaseUser: any) => {
     if (!supabaseUser) return null;
+
     try {
       const { data: profile } = await supabase
         .from("profiles")
         .select(
-          "id, email, nombre, apellido, telefono, direccion, localidad, provincia, matriculado_nombre, cpi, inmobiliaria"
+          "id, email, nombre, apellido, telefono, direccion, localidad, provincia, matriculado_nombre, cpi, inmobiliaria, logoBase64, primaryColor"
         )
         .eq("id", supabaseUser.id)
         .single();
@@ -89,12 +102,23 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         };
       }
 
-      const { id: _profileId, email: _profileEmail, ...rest } = profile;
+      // Fallback a localStorage si en la DB están en null
+      const storedLogo = localStorage.getItem("logoBase64");
+      const storedColor = localStorage.getItem("primaryColor");
+
+      const logo = profile.logoBase64 ?? storedLogo ?? null;
+      const color = profile.primaryColor ?? storedColor ?? "#0ea5e9";
+
+      if (logo) setLogoBase64State(logo);
+      if (color) setPrimaryColorState(color);
+
       return {
         id: supabaseUser.id,
         email: supabaseUser.email,
-        profileId: _profileId,
-        ...rest,
+        profileId: profile.id,
+        ...profile,
+        logoBase64: logo,
+        primaryColor: color,
       };
     } catch (err) {
       console.error("❌ Error cargando perfil:", err);

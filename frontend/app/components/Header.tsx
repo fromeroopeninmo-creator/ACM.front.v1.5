@@ -9,8 +9,15 @@ export default function Header() {
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
-    router.push("/login"); // Redirige a login después de cerrar sesión
+    router.push("/login");
   };
+
+  const matriculado = user?.matriculado_nombre || "—";
+  const cpi = user?.cpi || "—";
+  const asesorNombre =
+    user?.nombre && user?.apellido
+      ? `${user.nombre} ${user.apellido}`
+      : "—";
 
   return (
     <header
@@ -23,28 +30,20 @@ export default function Header() {
         borderBottom: "1px solid #ddd",
       }}
     >
-      {/* Izquierda: Matriculado y CPI */}
+      {/* Izquierda: Matriculado + CPI */}
       <div style={{ display: "flex", flexDirection: "column" }}>
         <span style={{ fontWeight: 600, fontSize: 14 }}>
-          {user?.matriculado || "-"}
+          {matriculado}
         </span>
         <span style={{ fontSize: 14, color: "#555" }}>
-          CPI: {user?.cpi || "-"}
+          CPI: {cpi}
         </span>
       </div>
 
-      {/* Centro: logo o texto VMI */}
-      <div style={{ fontWeight: "bold", fontSize: 16 }}>
-        VMI
-      </div>
-
-      {/* Derecha: asesor + logout */}
+      {/* Derecha: Asesor + Logout */}
       <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
         <span style={{ fontWeight: "bold", fontSize: 16 }}>
-          Asesor:{" "}
-          {user?.nombre
-            ? `${user.nombre}${user.apellido ? " " + user.apellido : ""}`
-            : user?.email || "Invitado"}
+          Asesor: {asesorNombre}
         </span>
         {user && (
           <button

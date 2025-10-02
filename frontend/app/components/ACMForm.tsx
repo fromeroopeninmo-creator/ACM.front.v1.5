@@ -625,34 +625,61 @@ const handleDownloadPDF = async () => {
   return (
     <div className="max-w-7xl mx-auto p-6">
       {/* Header */}
-            {/* Header */}
-      <div className="flex items-center justify-between mb-4">
-        {/* Logo + Nombre inmobiliaria */}
-        <div className="flex items-center gap-4">
-          <div className="w-28 h-14 bg-white rounded-lg border border-gray-200 flex items-center justify-center overflow-hidden">
-            {logoBase64 ? (
-              <img src={logoBase64} alt="Logo" className="object-contain w-full h-full" />
-            ) : (
-              <label className="text-xs text-gray-500 px-2 text-center">
-                Logo
-                <input
-                  ref={logoInputRef}
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={handleLogoSelect}
-                />
-                <button
-                  type="button"
-                  onClick={() => logoInputRef.current?.click()}
-                  className="mt-1 inline-flex items-center rounded-md border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
-                >
-                  Subir
-                </button>
-              </label>
-            )}
-          </div>
-
+           {/* Header */}
+<div className="flex items-center justify-between mb-4">
+  {/* Logo + Nombre inmobiliaria */}
+  <div className="flex items-center gap-4">
+    <div className="w-28 h-14 bg-white rounded-lg border border-gray-200 flex items-center justify-center overflow-hidden">
+      {logoBase64 ? (
+        <div className="flex flex-col items-center w-full h-full">
+          <img
+            src={logoBase64}
+            alt="Logo"
+            className="object-contain w-full h-full"
+          />
+          <button
+            type="button"
+            onClick={() => {
+              setLogoBase64(undefined);
+              localStorage.removeItem("logoBase64");
+              if (logoInputRef.current) logoInputRef.current.value = "";
+            }}
+            className="mt-1 inline-flex items-center rounded-md border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
+          >
+            Cambiar
+          </button>
+        </div>
+      ) : (
+        <label className="text-xs text-gray-500 px-2 text-center">
+          Logo
+          <input
+            ref={logoInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={async (e) => {
+              const f = e.target.files?.[0];
+              if (!f) return;
+              const reader = new FileReader();
+              reader.onloadend = () => {
+                const b64 = reader.result as string;
+                setLogoBase64(b64);
+                localStorage.setItem("logoBase64", b64); // 🔑 persistencia
+              };
+              reader.readAsDataURL(f);
+              if (logoInputRef.current) logoInputRef.current.value = "";
+            }}
+          />
+          <button
+            type="button"
+            onClick={() => logoInputRef.current?.click()}
+            className="mt-1 inline-flex items-center rounded-md border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
+          >
+            Subir
+          </button>
+        </label>
+      )}
+    </div>
           {/* Nombre de la inmobiliaria */}
           <div>
          <p className="text-base font-bold text-gray-800">

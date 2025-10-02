@@ -69,45 +69,40 @@ export interface Services {
 
 /**
  * Estructura de cada propiedad comparable.
- * NOTA: incluimos address/barrio/foto y ambos campos de link (listingUrl y link)
- * para ser compatibles con distintas versiones del formulario/PDF.
  */
 export interface ComparableProperty {
   // Identificación y contexto
-  address: string;            // Dirección de la comparable
-  neighborhood: string;       // Barrio de la comparable
+  address: string;
+  neighborhood: string;
 
   // Métricas y valores
-  builtArea: number;          // m² cubiertos
-  price: number;              // Precio publicado (total)
-  pricePerM2: number;         // Calculado: price / builtArea
-  coefficient: number;        // Multiplicador 0.1 a 1 (ajuste por diferencias)
-  daysPublished: number;      // Días publicada
+  builtArea: number;
+  price: number;
+  pricePerM2: number;
+  coefficient: number;
+  daysPublished: number;
 
   // Enlaces / referencias
-  listingUrl?: string;        // Link a publicación (nombre usado en versiones previas)
-  link?: string;              // Alias alternativo (por compatibilidad)
+  listingUrl?: string;
+  link?: string;
 
   // Descripción libre
   description: string;
 
-  // Multimedia (para preview y para PDF)
-  photoUrl?: string;          // URL de imagen si se carga por link
-  photoBase64?: string;       // Imagen en base64 si se sube archivo
+  // Multimedia
+  photoUrl?: string;
+  photoBase64?: string;
 }
 
 /**
  * Datos principales del formulario ACM.
- * Mantiene la estructura usada por el ACMForm grande: campos “planos/renta” como boolean,
- * orientación, calidad de ubicación, condición, etc. Además, soporta logo e imagen principal.
  */
 export interface ACMFormData {
-  // Fecha del informe (ISO string)
+  // Fecha del informe
   date: string;
 
-  // Datos del cliente / asesor
+  // Datos del cliente
   clientName: string;
-  advisorName: string;
   phone: string;
   email: string;
 
@@ -118,39 +113,39 @@ export interface ACMFormData {
 
   // Características principales
   propertyType: PropertyType;
-  landArea: number;              // m² terreno
-  builtArea: number;             // m² cubiertos
-  hasPlans: boolean;             // Planos (sí/no)
-  titleType: TitleType;          // Título (escritura/boleto/posesión)
-  age: number;                   // Antigüedad (años)
-  condition: PropertyCondition;  // Estado de conservación
-  locationQuality: LocationQuality; // Calidad de ubicación
-  orientation: Orientation;      // Orientación
+  landArea: number;
+  builtArea: number;
+  hasPlans: boolean;
+  titleType: TitleType;
+  age: number;
+  condition: PropertyCondition;
+  locationQuality: LocationQuality;
+  orientation: Orientation;
 
-  // Servicios (subsección “Servicios”)
+  // Servicios
   services: Services;
 
-  // Renta actual (sí/no)
+  // Renta
   isRented: boolean;
 
   // Multimedia principal
-  mainPhotoUrl: string;          // URL opcional (si pegás un link)
-  mainPhotoBase64?: string;      // Imagen cargada (para preview/PDF)
+  mainPhotoUrl: string;
+  mainPhotoBase64?: string;
 
-  // Branding opcional
-  logoUrl?: string;              // URL de logo
-  logoBase64?: string;           // Logo en base64 (para PDF)
+  // Branding
+  logoUrl?: string;
+  logoBase64?: string;
 
   // Comparables
   comparables: ComparableProperty[];
 
-  // Texto libre (Conclusión)
-  observations: string;          // Observaciones
-  strengths: string;             // Fortalezas
-  weaknesses: string;            // Debilidades
-  considerations: string;        // A considerar
+  // Conclusión
+  observations: string;
+  strengths: string;
+  weaknesses: string;
+  considerations: string;
 
-  // Extras opcionales que puede usar el UI/PDF
-  primaryColorHex?: string;      // Color primario configurable (UI/PDF)
-  suggestedPrice?: number;       // Precio sugerido calculado (resultado final)
+  // Extras
+  primaryColorHex?: string;
+  suggestedPrice?: number;
 }

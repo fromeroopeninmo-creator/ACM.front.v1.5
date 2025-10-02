@@ -13,16 +13,19 @@ export default function ProtectedRoute({
   const pathname = usePathname();
 
   useEffect(() => {
-    if (!loading && !user && pathname !== "/login" && pathname !== "/register") {
-      router.push("/login");
+    if (!loading) {
+      if (!user && pathname !== "/login" && pathname !== "/register") {
+        router.replace("/login");
+      }
     }
   }, [user, loading, pathname, router]);
 
+  // Mostrar un pequeño loader solo mientras carga sesión la primera vez
   if (loading) {
-    return <p>Cargando sesión...</p>; // 👈 indicador temporal
+    return <p>Cargando sesión...</p>;
   }
 
-  // Si está en login/register y no hay usuario → mostrar la página normal
+  // Si no hay usuario y estamos en login/register → mostrar normalmente
   if (!user && (pathname === "/login" || pathname === "/register")) {
     return <>{children}</>;
   }
@@ -32,6 +35,6 @@ export default function ProtectedRoute({
     return <>{children}</>;
   }
 
-  // Fallback
+  // Evitar loops infinitos: si no hay user y no está en login/register → null
   return null;
 }

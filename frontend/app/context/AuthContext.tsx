@@ -13,6 +13,7 @@ interface Profile {
   provincia?: string;
   matriculado_nombre?: string;
   cpi?: string;
+  inmobiliaria?: string;
   profileId?: string;
 }
 
@@ -26,13 +27,14 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     if (!supabaseUser) return null;
 
     // Intentamos cargar perfil desde la tabla
-    const { data: profile, error } = await supabase
-      .from("profiles")
-      .select(
-        "id, email, nombre, apellido, telefono, direccion, localidad, provincia, matriculado_nombre, cpi"
-      )
-      .eq("id", supabaseUser.id)
-      .single();
+  const { data: profile, error } = await supabase
+  .from("profiles")
+  .select(
+    "id, email, nombre, apellido, telefono, direccion, localidad, provincia, matriculado_nombre, cpi, inmobiliaria" // 👈 agregado inmobiliaria
+  )
+  .eq("id", supabaseUser.id)
+  .single();
+
 
     if (error || !profile) {
       console.warn("⚠ No se encontró perfil en profiles, usando solo auth.user");

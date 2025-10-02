@@ -6,8 +6,8 @@ import { AuthProvider } from "./context/AuthContext";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata = {
-  title: "ACM - Análisis Comparativo de Mercado",
-  description: "Generador de informes ACM",
+  title: "VMI - Valoración de Mercado Inmobiliario",
+  description: "Generador de informes VMI",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

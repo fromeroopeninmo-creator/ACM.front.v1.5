@@ -1031,6 +1031,205 @@ export default function ACMForm() {
           Calculado como promedio del precio/m² ajustado de comparables × m² cubiertos de la propiedad principal.
         </p>
       </div>
+{/* =========================
+    Propiedades comparadas en la zona
+   ========================= */}
+<div className="mt-6 rounded-xl border border-gray-200 bg-white shadow-sm">
+  <div className="border-b border-gray-200 p-6">
+    <h2 className="text-lg font-semibold" style={{ color: primaryColor }}>
+      Propiedades comparadas en la zona
+    </h2>
+  </div>
+
+  <div className="p-6 space-y-6">
+    {formData.comparables.map((c, i) => {
+      const ppm2Base = c.builtArea > 0 ? c.price / c.builtArea : 0;
+      const ppm2Adj = ppm2Base * (c.coefficient || 1);
+
+      return (
+        <div key={i} className="rounded-lg border border-gray-200 p-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-gray-800">
+              Comparable #{i + 1}
+            </h3>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => removeComparable(i)}
+                className="inline-flex items-center rounded-md border border-gray-300 bg-white px-2 py-1 text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                disabled={formData.comparables.length <= 1}
+              >
+                Eliminar
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-4 grid grid-cols-1 lg:grid-cols-7 gap-4">
+            {/* Foto */}
+            <div className="lg:col-span-2">
+              <h4 className="mb-1 text-xs font-medium text-gray-600">Foto</h4>
+              {c.photoBase64 ? (
+                <div className="overflow-hidden rounded-lg border border-gray-200">
+                  <img
+                    src={c.photoBase64}
+                    alt={`Foto comparable ${i + 1}`}
+                    className="h-40 w-full object-cover"
+                  />
+                  <div className="p-2 text-right">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setFormData((prev) => {
+                          const arr = prev.comparables.slice();
+                          arr[i] = { ...arr[i], photoBase64: undefined };
+                          return { ...prev, comparables: arr };
+                        })
+                      }
+                      className="inline-flex items-center rounded-md border border-gray-300 bg-white px-2 py-1 text-xs text-gray-700 hover:bg-gray-50"
+                    >
+                      Cambiar foto
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-lg border border-dashed border-gray-300 p-3 text-center">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => handleComparablePhotoSelect(i, e)}
+                    className="block w-full text-sm"
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Datos */}
+            <div className="lg:col-span-5 grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* Dirección */}
+              <div className="space-y-1 md:col-span-2">
+                <label className="block text-sm font-medium text-gray-700">Dirección</label>
+                <input
+                  value={c.address}
+                  onChange={(e) => updateComparable(i, 'address', e.target.value)}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
+                  placeholder="Calle y número"
+                />
+              </div>
+
+              {/* Barrio */}
+              <div className="space-y-1">
+                <label className="block text-sm font-medium text-gray-700">Barrio</label>
+                <input
+                  value={c.neighborhood}
+                  onChange={(e) => updateComparable(i, 'neighborhood', e.target.value)}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
+                  placeholder="Barrio"
+                />
+              </div>
+
+              {/* m² Cubiertos */}
+              <div className="space-y-1">
+                <label className="block text-sm font-medium text-gray-700">m² Cubiertos</label>
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  value={c.builtArea}
+                  onChange={(e) => updateComparable(i, 'builtArea', e.target.value)}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
+                  placeholder="0"
+                />
+              </div>
+
+              {/* Precio */}
+              <div className="space-y-1">
+                <label className="block text-sm font-medium text-gray-700">Precio ($)</label>
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  value={c.price}
+                  onChange={(e) => updateComparable(i, 'price', e.target.value)}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
+                  placeholder="0"
+                />
+              </div>
+
+              {/* Días publicada */}
+              <div className="space-y-1">
+                <label className="block text-sm font-medium text-gray-700">Días publicada</label>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  value={c.daysPublished}
+                  onChange={(e) => updateComparable(i, 'daysPublished', e.target.value)}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
+                  placeholder="0"
+                />
+              </div>
+
+              {/* Link */}
+              <div className="space-y-1 md:col-span-2">
+                <label className="block text-sm font-medium text-gray-700">Link de publicación</label>
+                <input
+                  value={c.listingUrl || ''}
+                  onChange={(e) => updateComparable(i, 'listingUrl', e.target.value)}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
+                  placeholder="https://..."
+                />
+              </div>
+
+              {/* Coeficiente */}
+              <div className="space-y-1">
+                <label className="block text-sm font-medium text-gray-700">Coeficiente</label>
+                <select
+                  value={c.coefficient}
+                  onChange={(e) => updateComparable(i, 'coefficient', e.target.value)}
+                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
+                >
+                  {coefOpts.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Precio/m² (solo lectura) */}
+              <div className="space-y-1">
+                <label className="block text-sm font-medium text-gray-700">Precio por m² (ajustado)</label>
+                <div className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm">
+                  {peso(ppm2Adj)}
+                </div>
+              </div>
+
+              {/* Descripción */}
+              <div className="space-y-1 md:col-span-3">
+                <label className="block text-sm font-medium text-gray-700">Descripción</label>
+                <textarea
+                  value={c.description}
+                  onChange={(e) => updateComparable(i, 'description', e.target.value)}
+                  rows={3}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
+                  placeholder="Descripción breve de la propiedad comparable"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    })}
+
+    <div className="flex justify-end">
+      <button
+        type="button"
+        onClick={addComparable}
+        disabled={formData.comparables.length >= 4}
+        className="inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+      >
+        Agregar comparable
+      </button>
+    </div>
+  </div>
+</div>
 
       {/* Conclusión */}
       <div className="mt-6 rounded-xl border border-gray-200 bg-white shadow-sm">

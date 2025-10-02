@@ -606,14 +606,17 @@ const handleDownloadPDF = async () => {
   block("Debilidades", formData.weaknesses);
   block("A considerar", formData.considerations);
 
-  // === Footer ===
-  const footerText = `${user?.nombre || ""} ${user?.apellido || ""} | CPI: ${cpi}`;
-  doc.setFont("helvetica", "italic");
-  doc.setFontSize(9);
-  doc.text(footerText, pageW / 2, pageH - 30, { align: "center" });
+     // === Footer ===
+    const matriculado = user?.user_metadata?.matriculado || "—";
+    const cpi = user?.user_metadata?.cpi || "—";
 
-  doc.save("VMI.pdf");
-};
+    const footerText = `${matriculado}  |  CPI: ${cpi}`;
+    doc.setFont("helvetica", "italic");
+    doc.setFontSize(9);
+    doc.text(footerText, pageW / 2, pageH - 30, { align: "center" });
+
+    doc.save("VMI.pdf");
+  };
 
   /** ========= Render ========= */
   const propertyTypeOptions = useMemo(() => enumToOptions(PropertyType), []);
@@ -1338,16 +1341,8 @@ const handleDownloadPDF = async () => {
         </div>
       </div>
 
-      {/* Acciones */}
+           {/* Acciones */}
       <div className="mt-6 flex flex-wrap items-center justify-end gap-3">
-        <button
-          type="button"
-          onClick={handleSaveToDB}
-          className="bg-blue-600 text-white px-4 py-2 rounded"
-        >
-          Guardar en la Base
-        </button>
-
         <button
           type="button"
           onClick={handleDownloadPDF}

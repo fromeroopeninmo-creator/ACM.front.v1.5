@@ -4,32 +4,35 @@ import { createMiddlewareClient } from "@supabase/auth-helpers-nextjs";
 
 export async function middleware(req: NextRequest) {
   const res = NextResponse.next();
-  const supabase = createMiddlewareClient({ req, res });
 
+  // Creamos cliente de supabase para leer sesión desde cookies
+  const supabase = createMiddlewareClient({ req, res });
   const {
     data: { session },
   } = await supabase.auth.getSession();
 
-  const { pathname } = req.nextUrl;
-
-  // === Rutas públicas (login y registro siempre accesibles) ===
-  if (pathname.startsWith("/login") || pathname.startsWith("/register")) {
-    if (session) {
-      // Si ya está logueado, redirige al home
-      return NextResponse.redirect(new URL("/", req.url));
+  // 🔒 Redirigir al login si no hay sesión y quiere entrar a rutas protegidas
+  if (!session && req.nextUrl.pathname.startsWith("/")) {
+    if (
+      !req.nextUrl.pathname.startsWith("/login") &&
+      !req.nextUrl.pathname.startsWith("/register")
+    ) {
+      const redirectUrl = req.nextUrl.clone();
+      redirectUrl.pathname = "/login";
+      return NextResponse.redirect(redirectUrl);
     }
-    return res;
   }
 
-  // === Rutas protegidas ===
-  if (!session) {
-    return NextResponse.redirect(new URL("/login", req.url));
+  // 🔑 Si hay sesión y quiere ir al login/registro → lo mando al home
+  if (session && (req.nextUrl.pathname === "/login" || req.nextUrl.pathname === "/register")) {
+    const redirectUrl = req.nextUrl.clone();
+    redirectUrl.pathname = "/";
+    return NextResponse.redirect(redirectUrl);
   }
 
   return res;
 }
 
-// Matcher: protege todas las rutas salvo assets estáticos
 export const config = {
   matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
 };

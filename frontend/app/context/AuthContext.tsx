@@ -1,7 +1,7 @@
 "use client";
 import { createContext, useContext, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import { useRouter } from "next/navigation";
 
 interface Profile {
   id: string;
@@ -34,12 +34,12 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const logout = async () => {
     try {
       await supabase.auth.signOut();
-      setUser(null);
-      router.push("/login"); // 🔑 al cerrar sesión, ir al login
     } catch (err) {
       console.error("❌ Error al cerrar sesión:", err);
     } finally {
+      setUser(null);
       setLoading(false);
+      router.push("/login");
     }
   };
 
@@ -47,7 +47,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     if (!supabaseUser) return null;
 
     try {
-      const { data: profile, error } = await supabase
+      const { data: profile } = await supabase
         .from("profiles")
         .select(
           "id, email, nombre, apellido, telefono, direccion, localidad, provincia, matriculado_nombre, cpi, inmobiliaria"
@@ -55,11 +55,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         .eq("id", supabaseUser.id)
         .single();
 
-      if (error || !profile) {
-        return {
-          id: supabaseUser.id,
-          email: supabaseUser.email,
-        };
+      if (!profile) {
+        return { id: supabaseUser.id, email: supabaseUser.email };
       }
 
       const { id: _profileId, email: _profileEmail, ...profileData } = profile;
@@ -72,10 +69,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       };
     } catch (err) {
       console.error("❌ Error cargando perfil:", err);
-      return {
-        id: supabaseUser.id,
-        email: supabaseUser.email,
-      };
+      return { id: supabaseUser.id, email: supabaseUser.email };
     }
   };
 
@@ -83,7 +77,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     let mounted = true;
 
     const init = async () => {
-      setLoading(true);
       try {
         const { data, error } = await supabase.auth.getSession();
         if (error) throw error;
@@ -91,9 +84,11 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         const sessionUser = data.session?.user ?? null;
 
         if (!sessionUser) {
+          // 🔴 Sin sesión → login
+          router.push("/login");
           if (mounted) {
             setUser(null);
-            router.push("/login"); // 🔑 si no hay sesión => login
+            setLoading(false);
           }
           return;
         }
@@ -115,27 +110,16 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
     const { data: listener } = supabase.auth.onAuthStateChange(
       async (_event, session) => {
-        try {
-          setLoading(true);
-          const sessionUser = session?.user ?? null;
-          if (sessionUser) {
-            const profile = await loadUserProfile(sessionUser);
-            if (mounted) setUser(profile);
-          } else {
-            if (mounted) {
-              setUser(null);
-              router.push("/login"); // 🔑 si expira sesión => login
-            }
-          }
-        } catch (err) {
-          console.error("❌ Error escuchando cambios de sesión:", err);
-          if (mounted) {
-            setUser(null);
-            router.push("/login");
-          }
-        } finally {
-          if (mounted) setLoading(false);
+        if (!mounted) return;
+        if (!session?.user) {
+          setUser(null);
+          setLoading(false);
+          router.push("/login");
+          return;
         }
+        const profile = await loadUserProfile(session.user);
+        setUser(profile);
+        setLoading(false);
       }
     );
 
@@ -145,14 +129,17 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     };
   }, [router]);
 
+  // Mientras carga → spinner
+  if (loading) {
+    return (
+      <div style={{ display: "flex", justifyContent: "center", marginTop: "20%" }}>
+        <p style={{ fontSize: 18, fontWeight: 600 }}>Cargando sesión...</p>
+      </div>
+    );
+  }
+
   return (
-    <AuthContext.Provider
-      value={{
-        user,
-        loading,
-        logout,
-      }}
-    >
+    <AuthContext.Provider value={{ user, loading, logout }}>
       {children}
     </AuthContext.Provider>
   );

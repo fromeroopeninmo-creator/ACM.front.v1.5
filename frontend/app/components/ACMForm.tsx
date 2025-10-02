@@ -305,130 +305,138 @@ export default function ACMForm() {
   };
 
   /** ========= PDF ========= */
-  const handleDownloadPDF = async () => {
-    const { jsPDF } = await import("jspdf");
+ /** ========= PDF ========= */
+const handleDownloadPDF = async () => {
+  const { jsPDF } = await import("jspdf");
 
-    const doc = new jsPDF("p", "pt", "a4");
-    const pageW = doc.internal.pageSize.getWidth();
-    const pageH = doc.internal.pageSize.getHeight();
+  const doc = new jsPDF("p", "pt", "a4");
+  const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
+  const margin = 40;
+  let y = margin;
 
-    const margin = 36;
-    let y = margin;
+  // Datos de usuario
+  const matriculado = user?.user_metadata?.matriculado || "—";
+  const cpi = user?.user_metadata?.cpi || "—";
+  const inmobiliaria = user?.user_metadata?.inmobiliaria || "—";
+  const asesorNombre =
+    user?.user_metadata?.nombre && user?.user_metadata?.apellido
+      ? `${user.user_metadata.nombre} ${user.user_metadata.apellido}`
+      : "—";
 
-    // Datos de usuario
-    const matriculado = user?.user_metadata?.matriculado || "—";
-    const cpi = user?.user_metadata?.cpi || "—";
-    const asesorNombre =
-      user?.user_metadata?.nombre && user?.user_metadata?.apellido
-        ? `${user.user_metadata.nombre} ${user.user_metadata.apellido}`
-        : user?.email || "—";
+  // === Título centrado ===
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(16);
+  doc.text("VMI - Valoración de Mercado Inmobiliario", pageW / 2, y, {
+    align: "center",
+  });
+  y += 30;
 
-    // Color primario
-    const hexToRgb = (hex: string) => {
-      const m = hex.replace("#", "");
-      const int = parseInt(
-        m.length === 3 ? m.split("").map((c) => c + c).join("") : m,
-        16
+  // === Encabezado en 2 columnas ===
+  const colLeftX = margin;
+  const colRightX = pageW - margin - 200;
+
+  doc.setFontSize(11);
+  doc.setFont("helvetica", "normal");
+
+  // Columna izquierda
+  doc.text(`Inmobiliaria: ${inmobiliaria}`, colLeftX, y);
+  doc.text(`Asesor: ${asesorNombre}`, colLeftX, y + 15);
+  doc.text(
+    `Fecha: ${new Date(formData.date).toLocaleDateString("es-AR")}`,
+    colLeftX,
+    y + 30
+  );
+
+  // Columna derecha
+  doc.text(`Matriculado: ${matriculado}`, colRightX, y);
+  doc.text(`CPI: ${cpi}`, colRightX, y + 15);
+
+  y += 60;
+
+  // === Línea separadora ===
+  doc.setDrawColor(0, 0, 0);
+  doc.setLineWidth(0.8);
+  doc.line(margin, y, pageW - margin, y);
+  y += 20;
+
+  // === Datos de la propiedad ===
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(13);
+  doc.text("Datos de la Propiedad", pageW / 2, y, { align: "center" });
+  y += 20;
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+  const lh = 15; // interlineado 1.5 approx
+
+  // Arriba: datos (col izquierda) + foto (col derecha)
+  const datosIzq = [
+    `Cliente: ${formData.clientName || "-"}`,
+    `Teléfono: ${formData.phone || "-"}`,
+    `Email: ${formData.email || "-"}`,
+    `Dirección: ${formData.address || "-"}`,
+    `Barrio: ${formData.neighborhood || "-"}`,
+    `Localidad: ${formData.locality || "-"}`,
+    `Tipología: ${formData.propertyType}`,
+    `m² Terreno: ${numero(formData.landArea)}`,
+    `m² Cubiertos: ${numero(formData.builtArea)}`,
+    `Planos: ${formData.hasPlans ? "Sí" : "No"}`,
+    `Título: ${formData.titleType}`,
+  ];
+
+  let yDatos = y;
+  datosIzq.forEach((line) => {
+    doc.text(line, colLeftX, yDatos);
+    yDatos += lh;
+  });
+
+  if (formData.mainPhotoBase64) {
+    try {
+      doc.addImage(
+        formData.mainPhotoBase64,
+        "JPEG",
+        colRightX,
+        y,
+        180,
+        135,
+        undefined,
+        "FAST"
       );
-      return { r: (int >> 16) & 255, g: (int >> 8) & 255, b: int & 255 };
-    };
-    const pc = hexToRgb(primaryColor);
+    } catch {}
+  }
+  y = Math.max(yDatos, y + 135) + 20;
 
-    // Header: Logo izquierda / Título VMI derecha
-    if (logoBase64) {
-      try {
-        doc.addImage(logoBase64, "PNG", margin, y, 90, 40, undefined, "FAST");
-      } catch {}
-    }
+  // Parte inferior: dos columnas
+  const datosIzq2 = [
+    `Antigüedad: ${numero(formData.age)} años`,
+    `Estado: ${formData.condition}`,
+    `Ubicación: ${formData.locationQuality}`,
+    `Orientación: ${formData.orientation}`,
+    `Posee renta: ${formData.isRented ? "Sí" : "No"}`,
+  ];
 
-    // Texto izquierda
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(14);
-    doc.setTextColor(pc.r, pc.g, pc.b);
-    doc.text("VMI - Valoración de Mercado Inmobiliario", margin + 110, y + 18);
-    doc.setTextColor(0, 0, 0);
+  const servicios = [
+    `Luz: ${formData.services.luz ? "Sí" : "No"}`,
+    `Agua: ${formData.services.agua ? "Sí" : "No"}`,
+    `Gas: ${formData.services.gas ? "Sí" : "No"}`,
+    `Cloacas: ${formData.services.cloacas ? "Sí" : "No"}`,
+    `Pavimento: ${formData.services.pavimento ? "Sí" : "No"}`,
+  ];
 
-    // Datos a la derecha
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(10);
-    doc.text(`${user?.user_metadata?.nombre || ""} ${user?.user_metadata?.apellido || ""}`, pageW - margin - 150, y + 10);
-    doc.text(`CPI: ${cpi}`, pageW - margin - 150, y + 24);
+  let yCol = y;
+  datosIzq2.forEach((line) => {
+    doc.text(line, colLeftX, yCol);
+    yCol += lh;
+  });
 
-    y += 52;
+  let yCol2 = y;
+  servicios.forEach((line) => {
+    doc.text(line, colRightX, yCol2);
+    yCol2 += lh;
+  });
 
-    // Asesor (debajo del header)
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(11);
-    doc.text(`Asesor: ${asesorNombre}`, margin, y);
-    y += 14;
-
-    // === Fecha ===
-    doc.setFontSize(10);
-    doc.setFont("helvetica", "normal");
-    doc.text(`Fecha: ${new Date(formData.date).toLocaleDateString("es-AR")}`, margin, y);
-    y += 20;
-
-    // === Línea separadora ===
-    doc.setDrawColor(pc.r, pc.g, pc.b);
-    doc.setLineWidth(1);
-    doc.line(margin, y, pageW - margin, y);
-    y += 14;
-
-    // Propiedad principal
-    const colLeftX = margin;
-    const colRightX = pageW - margin - 180;
-    const colWidth = colRightX - colLeftX - 12;
-
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(12);
-    doc.setTextColor(pc.r, pc.g, pc.b);
-    doc.text('Datos de la Propiedad', pageW / 2, y, { align: 'center' });
-    doc.setTextColor(0, 0, 0);
-    y += 14;
-
-    const leftLines: string[] = [
-      `Cliente: ${formData.clientName || '-'}`,
-      `Teléfono: ${formData.phone || '-'}`,
-      `Email: ${formData.email || '-'}`,
-      `Dirección: ${formData.address || '-'}`,
-      `Barrio: ${formData.neighborhood || '-'}`,
-      `Localidad: ${formData.locality || '-'}`,
-      `Tipología: ${formData.propertyType}`,
-      `m² Terreno: ${numero(formData.landArea)}`,
-      `m² Cubiertos: ${numero(formData.builtArea)}`,
-      `Planos: ${formData.hasPlans ? 'Sí' : 'No'}`,
-      `Título: ${formData.titleType}`,
-      `Antigüedad: ${numero(formData.age)} años`,
-      `Estado: ${formData.condition}`,
-      `Ubicación: ${formData.locationQuality}`,
-      `Orientación: ${formData.orientation}`,
-      `Luz: ${formData.services.luz ? 'Sí' : 'No'}`,
-      `Agua: ${formData.services.agua ? 'Sí' : 'No'}`,
-      `Gas: ${formData.services.gas ? 'Sí' : 'No'}`,
-      `Cloacas: ${formData.services.cloacas ? 'Sí' : 'No'}`,
-      `Pavimento: ${formData.services.pavimento ? 'Sí' : 'No'}`,
-      `Posee renta: ${formData.isRented ? 'Sí' : 'No'}`,
-    ];
-
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(10);
-    const lh = 14;
-    let tY = y + 6;
-    leftLines.forEach((line) => {
-      doc.text(line, colLeftX, tY, { maxWidth: colWidth });
-      tY += lh;
-    });
-
-    if (formData.mainPhotoBase64) {
-      try {
-        doc.addImage(formData.mainPhotoBase64, 'JPEG', colRightX, y, 180, 135, undefined, 'FAST');
-      } catch {}
-    }
-    y = Math.max(tY, y + 135) + 10;
-
-    doc.setDrawColor(pc.r, pc.g, pc.b);
-    doc.line(margin, y, pageW - margin, y);
-    y += 14;
+  y = Math.max(yCol, yCol2) + 30;
 
     // Comparables
     doc.setFont('helvetica', 'bold');
@@ -455,16 +463,16 @@ export default function ACMForm() {
       if (c.photoBase64) {
         try {
           doc.addImage(c.photoBase64, 'JPEG', x + innerPad, cursorY, cardW - innerPad * 2, 80, undefined, 'FAST');
-          cursorY += 86;
+          cursorY += 95;
         } catch {}
       }
 
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(10);
       doc.text(`Dirección: ${c.address || '-'}`, x + innerPad, cursorY);
-      cursorY += 12;
+      cursorY += 14;
       doc.text(`Barrio: ${c.neighborhood || '-'}`, x + innerPad, cursorY);
-      cursorY += 12;
+      cursorY += 14;
 
       const ppm2Base = c.builtArea > 0 ? c.price / c.builtArea : 0;
       const ppm2Adj = ppm2Base * (c.coefficient || 1);
@@ -472,17 +480,17 @@ export default function ACMForm() {
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(10);
       doc.text(`Precio: ${peso(c.price)}`, x + innerPad, cursorY);
-      cursorY += 12;
+      cursorY += 14;
       doc.text(`m² Cubiertos: ${numero(c.builtArea)}`, x + innerPad, cursorY);
-      cursorY += 12;
+      cursorY += 14;
       doc.text(`Precio/m²: ${peso(ppm2Adj)}`, x + innerPad, cursorY);
-      cursorY += 12;
+      cursorY += 14;
 
       if (c.listingUrl) {
         doc.setTextColor(33, 150, 243);
         doc.textWithLink('Link', x + innerPad, cursorY, { url: c.listingUrl });
         doc.setTextColor(0, 0, 0);
-        cursorY += 12;
+        cursorY += 14;
       }
 
       const desc = c.description || '';
@@ -608,9 +616,10 @@ export default function ACMForm() {
 
           {/* Nombre de la inmobiliaria */}
           <div>
-            <p className="text-base font-bold text-gray-800">
-              {user?.inmobiliaria || "Inmobiliaria sin nombre"}
-            </p>
+          <p className="text-base font-bold text-gray-800">
+  {user?.user_metadata?.inmobiliaria || "Inmobiliaria sin nombre"}
+</p>
+
           </div>
         </div>
 

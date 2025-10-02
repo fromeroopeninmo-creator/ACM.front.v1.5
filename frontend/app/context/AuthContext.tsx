@@ -62,14 +62,20 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   // 🔑 Logout centralizado
   const logout = async () => {
-    await supabase.auth.signOut();
-    setUser(null);
+    try {
+      await supabase.auth.signOut();
+    } catch (err) {
+      console.error("❌ Error al cerrar sesión:", err);
+    } finally {
+      setUser(null);
+      setLoading(false); // evita que quede clavado en "cargando sesión"
+    }
   };
 
+  // Cargar perfil desde Supabase
   const loadUserProfile = async (supabaseUser: any) => {
     if (!supabaseUser) return null;
 
-    // Cargamos perfil desde la tabla profiles
     const { data: profile, error } = await supabase
       .from("profiles")
       .select(
@@ -86,7 +92,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       };
     }
 
-    // Normalizamos el perfil → evitamos duplicar id/email
     const { id: _profileId, email: _profileEmail, ...rest } = profile;
 
     return {
@@ -108,7 +113,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         console.error("❌ Error inicial cargando usuario:", err);
         setUser(null);
       } finally {
-        setLoading(false);
+        setLoading(false); // 👈 garantiza salida del estado "cargando"
       }
     };
 
@@ -118,6 +123,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      setLoading(true); // bloquea momentáneamente mientras se actualiza
       try {
         const sessionUser = session?.user ?? null;
         const profile = sessionUser ? await loadUserProfile(sessionUser) : null;
@@ -126,7 +132,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         console.error("❌ Error escuchando cambios de sesión:", err);
         setUser(null);
       } finally {
-        setLoading(false);
+        setLoading(false); // desbloquea siempre
       }
     });
 

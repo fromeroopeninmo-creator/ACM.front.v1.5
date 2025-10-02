@@ -3,13 +3,13 @@ import { useAuth } from "@/context/AuthContext";
 import { useRouter } from "next/navigation";
 
 export default function Header() {
-  const { user, logout } = useAuth(); // 👈 usamos logout del contexto
+  const { user, logout } = useAuth();
   const router = useRouter();
 
   const handleLogout = async () => {
     try {
-      await logout(); // 👈 llama al logout centralizado
-      router.push("/login"); // redirige al login
+      await logout(); // usamos el logout centralizado del contexto
+      router.push("/login"); // redirige al login después de cerrar sesión
     } catch (err) {
       console.error("❌ Error al cerrar sesión:", err);
     }

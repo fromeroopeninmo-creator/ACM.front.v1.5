@@ -20,6 +20,7 @@ export default function RegisterPage() {
   const [provincia, setProvincia] = useState("");
   const [matriculado, setMatriculado] = useState("");
   const [cpi, setCpi] = useState("");
+  const [inmobiliaria, setInmobiliaria] = useState("");
 
   // UI state
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -44,38 +45,26 @@ export default function RegisterPage() {
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
+      options: {
+        data: {
+          nombre,
+          apellido,
+          telefono,
+          direccion,
+          localidad,
+          provincia,
+          matriculado,
+          cpi,
+          inmobiliaria, // 👈 nuevo campo
+        },
+      },
     });
+    setLoading(false);
 
     if (error) {
       setErrorMsg(error.message);
-      setLoading(false);
       return;
     }
-
-    // 👇 Guardamos datos en la tabla profiles
-    if (data.user) {
-      const { error: insertError } = await supabase.from("profiles").upsert({
-        id: data.user.id, // 👈 clave primaria igual al id de auth.users
-        email,
-        nombre,
-        apellido,
-        telefono,
-        direccion,
-        localidad,
-        provincia,
-        matriculado_nombre: matriculado, // 👈 ojo con este nombre de campo
-        cpi,
-      });
-
-      if (insertError) {
-        console.error("❌ Error guardando perfil:", insertError.message);
-        setErrorMsg("Hubo un problema guardando el perfil.");
-        setLoading(false);
-        return;
-      }
-    }
-
-    setLoading(false);
 
     if (!data.session) {
       setInfoMsg(
@@ -90,7 +79,7 @@ export default function RegisterPage() {
   return (
     <AuthLayout
       title="Crear cuenta"
-      subtitle="Bienvenido a ACM – Registrate para continuar"
+      subtitle="Bienvenido a VMI – Registrate para continuar"
     >
       {errorMsg && <div style={alertError}>{errorMsg}</div>}
       {infoMsg && <div style={alertInfo}>{infoMsg}</div>}
@@ -211,6 +200,18 @@ export default function RegisterPage() {
             value={cpi}
             onChange={(e) => setCpi(e.target.value)}
             placeholder="Matrícula / CPI"
+            style={inputStyle}
+          />
+        </div>
+
+        {/* Inmobiliaria */}
+        <div>
+          <label style={labelStyle}>Inmobiliaria</label>
+          <input
+            type="text"
+            value={inmobiliaria}
+            onChange={(e) => setInmobiliaria(e.target.value)}
+            placeholder="Nombre de la inmobiliaria"
             style={inputStyle}
           />
         </div>

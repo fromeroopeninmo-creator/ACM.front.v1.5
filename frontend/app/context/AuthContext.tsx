@@ -17,11 +17,47 @@ interface Profile {
   profileId?: string;
 }
 
-const AuthContext = createContext<any>(null);
+interface AuthContextType {
+  user: Profile | null;
+  loading: boolean;
+  logoBase64: string | null;
+  setLogoBase64: (logo: string | null) => void;
+  primaryColor: string;
+  setPrimaryColor: (color: string) => void;
+}
+
+const AuthContext = createContext<AuthContextType | null>(null);
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // Estado para logo y color
+  const [logoBase64, setLogoBase64State] = useState<string | null>(null);
+  const [primaryColor, setPrimaryColorState] = useState<string>("#0ea5e9"); // valor por defecto
+
+  // Cargar logo y color desde localStorage al inicio
+  useEffect(() => {
+    const storedLogo = localStorage.getItem("logoBase64");
+    const storedColor = localStorage.getItem("primaryColor");
+    if (storedLogo) setLogoBase64State(storedLogo);
+    if (storedColor) setPrimaryColorState(storedColor);
+  }, []);
+
+  // Handlers que además actualizan localStorage
+  const setLogoBase64 = (logo: string | null) => {
+    if (logo) {
+      localStorage.setItem("logoBase64", logo);
+    } else {
+      localStorage.removeItem("logoBase64");
+    }
+    setLogoBase64State(logo);
+  };
+
+  const setPrimaryColor = (color: string) => {
+    localStorage.setItem("primaryColor", color);
+    setPrimaryColorState(color);
+  };
 
   const loadUserProfile = async (supabaseUser: any) => {
     if (!supabaseUser) return null;
@@ -91,10 +127,19 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, loading }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        loading,
+        logoBase64,
+        setLogoBase64,
+        primaryColor,
+        setPrimaryColor,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );
 };
 
-export const useAuth = () => useContext(AuthContext);
+export const useAuth = () => useContext(AuthContext) as AuthContextType;

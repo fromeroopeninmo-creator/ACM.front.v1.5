@@ -25,7 +25,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const loadUserProfile = async (supabaseUser: any) => {
     if (!supabaseUser) return null;
 
-    // Buscar datos en la tabla profiles
+    // Intentamos cargar perfil desde la tabla
     const { data: profile, error } = await supabase
       .from("profiles")
       .select(
@@ -34,53 +34,54 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       .eq("id", supabaseUser.id)
       .single();
 
-    if (error) {
-      console.error("❌ Error cargando perfil:", error.message);
+    if (error || !profile) {
+      console.warn("⚠ No se encontró perfil en profiles, usando solo auth.user");
       return {
         id: supabaseUser.id,
         email: supabaseUser.email,
       };
     }
 
-    // Quitamos id y email de la tabla para evitar duplicados
-    const {
-      id: _profileId,
-      email: _profileEmail,
-      ...profileData
-    } = profile || {};
+    // Sacamos id/email para evitar duplicados
+    const { id: _profileId, email: _profileEmail, ...profileWithoutIdAndEmail } =
+      profile;
 
     return {
-      id: supabaseUser.id, // siempre el de auth
-      email: supabaseUser.email, // siempre el de auth
-      profileId: _profileId, // id de la tabla profiles
-      ...profileData, // resto de campos (nombre, apellido, etc.)
+      id: supabaseUser.id,
+      email: supabaseUser.email,
+      profileId: _profileId,
+      ...profileWithoutIdAndEmail,
     };
   };
 
   useEffect(() => {
-    // Cargar sesión inicial
-    supabase.auth.getSession().then(async ({ data }) => {
-      const sessionUser = data.session?.user ?? null;
+    const init = async () => {
       try {
+        const { data } = await supabase.auth.getSession();
+        const sessionUser = data.session?.user ?? null;
         const profile = sessionUser ? await loadUserProfile(sessionUser) : null;
         setUser(profile);
       } catch (err) {
         console.error("❌ Error inicial cargando usuario:", err);
+        setUser(null);
       } finally {
         setLoading(false);
       }
-    });
+    };
+
+    init();
 
     // Escuchar cambios de sesión
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      const sessionUser = session?.user ?? null;
       try {
+        const sessionUser = session?.user ?? null;
         const profile = sessionUser ? await loadUserProfile(sessionUser) : null;
         setUser(profile);
       } catch (err) {
         console.error("❌ Error escuchando cambios de sesión:", err);
+        setUser(null);
       } finally {
         setLoading(false);
       }

@@ -16,13 +16,24 @@ export default function LoginPage() {
     setErrorMsg(null);
     setLoading(true);
 
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    setLoading(false);
+    try {
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
 
-    if (error) {
-      setErrorMsg(error.message);
-    } else {
+      if (error) {
+        setErrorMsg(error.message);
+        setLoading(false);
+        return;
+      }
+
+      // 🔑 Forzar refresco de sesión para evitar pantalla blanca
+      await supabase.auth.getSession();
+
       router.push("/");
+    } catch (err: any) {
+      setErrorMsg("Error inesperado al iniciar sesión.");
+      console.error("❌ Error login:", err);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -31,9 +42,7 @@ export default function LoginPage() {
       title="Iniciar sesión"
       subtitle="Bienvenido a ACM – Ingresa tus credenciales"
     >
-      {errorMsg && (
-        <div style={alertError}>{errorMsg}</div>
-      )}
+      {errorMsg && <div style={alertError}>{errorMsg}</div>}
 
       <form onSubmit={handleLogin} style={{ display: "grid", gap: "12px" }}>
         <div>

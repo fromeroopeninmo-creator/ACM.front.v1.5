@@ -14,6 +14,7 @@ interface Profile {
   matriculado_nombre?: string;
   cpi?: string;
   inmobiliaria?: string;
+  profileId?: string;
 }
 
 interface AuthContextType {
@@ -29,42 +30,60 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [loading, setLoading] = useState(true);
 
   const logout = async () => {
-    await supabase.auth.signOut();
-    setUser(null);
+    try {
+      await supabase.auth.signOut();
+    } catch (err) {
+      console.error("❌ Error al cerrar sesión:", err);
+    } finally {
+      setUser(null);
+    }
   };
 
   const loadUserProfile = async (supabaseUser: any) => {
     if (!supabaseUser) return null;
 
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select(
-        "id, email, nombre, apellido, telefono, direccion, localidad, provincia, matriculado_nombre, cpi, inmobiliaria"
-      )
-      .eq("id", supabaseUser.id)
-      .single();
+    try {
+      const { data: profile, error } = await supabase
+        .from("profiles")
+        .select(
+          "id, email, nombre, apellido, telefono, direccion, localidad, provincia, matriculado_nombre, cpi, inmobiliaria"
+        )
+        .eq("id", supabaseUser.id)
+        .single();
 
-    if (!profile) {
+      if (error || !profile) {
+        return { id: supabaseUser.id, email: supabaseUser.email };
+      }
+
+      const { id: _profileId, email: _profileEmail, ...profileData } = profile;
+
       return {
         id: supabaseUser.id,
         email: supabaseUser.email,
+        profileId: _profileId,
+        ...profileData,
       };
+    } catch (err) {
+      console.error("❌ Error cargando perfil:", err);
+      return { id: supabaseUser.id, email: supabaseUser.email };
     }
-
-    return {
-      id: supabaseUser.id,
-      email: supabaseUser.email,
-      ...profile,
-    };
   };
 
   useEffect(() => {
+    let mounted = true;
+
     const init = async () => {
-      const { data } = await supabase.auth.getSession();
-      const sessionUser = data.session?.user ?? null;
-      const profile = sessionUser ? await loadUserProfile(sessionUser) : null;
-      setUser(profile);
-      setLoading(false);
+      try {
+        const { data } = await supabase.auth.getSession();
+        const sessionUser = data.session?.user ?? null;
+        const profile = sessionUser ? await loadUserProfile(sessionUser) : null;
+        if (mounted) setUser(profile);
+      } catch (err) {
+        console.error("❌ Error inicial cargando usuario:", err);
+        if (mounted) setUser(null);
+      } finally {
+        if (mounted) setLoading(false);
+      }
     };
 
     init();
@@ -73,12 +92,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       async (_event, session) => {
         const sessionUser = session?.user ?? null;
         const profile = sessionUser ? await loadUserProfile(sessionUser) : null;
-        setUser(profile);
-        setLoading(false);
+        if (mounted) setUser(profile);
+        if (mounted) setLoading(false);
       }
     );
 
     return () => {
+      mounted = false;
       listener.subscription.unsubscribe();
     };
   }, []);

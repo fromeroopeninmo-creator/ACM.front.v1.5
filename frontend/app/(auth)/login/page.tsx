@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import AuthLayout from "../components/AuthLayout";
@@ -11,29 +11,29 @@ export default function LoginPage() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
+  // 🔹 Si ya hay sesión activa → redirigir a "/"
+  useEffect(() => {
+    const checkSession = async () => {
+      const { data } = await supabase.auth.getSession();
+      if (data.session?.user) {
+        router.push("/"); // ya logueado → dashboard
+      }
+    };
+    checkSession();
+  }, [router]);
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
     setLoading(true);
 
-    try {
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    setLoading(false);
 
-      if (error) {
-        setErrorMsg(error.message);
-        setLoading(false);
-        return;
-      }
-
-      // 🔑 Forzar refresco de sesión para evitar pantalla blanca
-      await supabase.auth.getSession();
-
+    if (error) {
+      setErrorMsg(error.message);
+    } else {
       router.push("/");
-    } catch (err: any) {
-      setErrorMsg("Error inesperado al iniciar sesión.");
-      console.error("❌ Error login:", err);
-    } finally {
-      setLoading(false);
     }
   };
 

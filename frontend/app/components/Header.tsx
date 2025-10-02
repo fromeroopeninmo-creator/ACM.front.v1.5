@@ -8,8 +8,12 @@ export default function Header() {
   const router = useRouter();
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
-    router.push("/login");
+    try {
+      await supabase.auth.signOut();
+      router.push("/login"); // redirige al login
+    } catch (err) {
+      console.error("❌ Error al cerrar sesión:", err);
+    }
   };
 
   const matriculado = user?.matriculado_nombre || "—";

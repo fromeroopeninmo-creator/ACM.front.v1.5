@@ -8,33 +8,43 @@ export default function ProtectedRoute({
 }: {
   children: React.ReactNode;
 }) {
-  const { user, loading } = useAuth();
+  const { user, loading } = useAuth(); // ✅ ahora funciona
   const router = useRouter();
   const pathname = usePathname();
 
   useEffect(() => {
-    if (!loading) {
-      if (!user && pathname !== "/login" && pathname !== "/register") {
-        router.replace("/login");
-      }
+    if (!loading && !user && pathname !== "/login" && pathname !== "/register") {
+      router.push("/login");
     }
   }, [user, loading, pathname, router]);
 
-  // Mostrar un pequeño loader solo mientras carga sesión la primera vez
   if (loading) {
-    return <p>Cargando sesión...</p>;
+    return (
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "center",
+          height: "100vh",
+          fontSize: "18px",
+          fontWeight: "bold",
+        }}
+      >
+        Cargando sesión...
+      </div>
+    );
   }
 
-  // Si no hay usuario y estamos en login/register → mostrar normalmente
+  // Si no hay usuario pero está en login/register, mostrar la página normal
   if (!user && (pathname === "/login" || pathname === "/register")) {
     return <>{children}</>;
   }
 
-  // Si hay usuario → mostrar la app
+  // Si hay usuario → mostrar el contenido protegido
   if (user) {
     return <>{children}</>;
   }
 
-  // Evitar loops infinitos: si no hay user y no está en login/register → null
+  // Fallback (seguridad extra)
   return null;
 }

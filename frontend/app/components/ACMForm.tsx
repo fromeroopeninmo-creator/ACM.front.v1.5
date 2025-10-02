@@ -578,39 +578,41 @@ export default function ACMForm() {
   return (
     <div className="max-w-7xl mx-auto p-6">
       {/* Header */}
-      {/* Logo + Nombre inmobiliaria */}
-<div className="flex items-center gap-4">
-  <div className="w-28 h-14 bg-white rounded-lg border border-gray-200 flex items-center justify-center overflow-hidden">
-    {logoBase64 ? (
-      <img src={logoBase64} alt="Logo" className="object-contain w-full h-full" />
-    ) : (
-      <label className="text-xs text-gray-500 px-2 text-center">
-        Logo
-        <input
-          ref={logoInputRef}
-          type="file"
-          accept="image/*"
-          className="hidden"
-          onChange={handleLogoSelect}
-        />
-        <button
-          type="button"
-          onClick={() => logoInputRef.current?.click()}
-          className="mt-1 inline-flex items-center rounded-md border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
-        >
-          Subir
-        </button>
-      </label>
-    )}
-  </div>
+            {/* Header */}
+      <div className="flex items-center justify-between mb-4">
+        {/* Logo + Nombre inmobiliaria */}
+        <div className="flex items-center gap-4">
+          <div className="w-28 h-14 bg-white rounded-lg border border-gray-200 flex items-center justify-center overflow-hidden">
+            {logoBase64 ? (
+              <img src={logoBase64} alt="Logo" className="object-contain w-full h-full" />
+            ) : (
+              <label className="text-xs text-gray-500 px-2 text-center">
+                Logo
+                <input
+                  ref={logoInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleLogoSelect}
+                />
+                <button
+                  type="button"
+                  onClick={() => logoInputRef.current?.click()}
+                  className="mt-1 inline-flex items-center rounded-md border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                >
+                  Subir
+                </button>
+              </label>
+            )}
+          </div>
 
-  {/* Nombre de la inmobiliaria */}
-  <div>
-    <p className="text-base font-bold text-gray-800">
-      {user?.inmobiliaria || "Inmobiliaria sin nombre"}
-    </p>
-  </div>
-</div>
+          {/* Nombre de la inmobiliaria */}
+          <div>
+            <p className="text-base font-bold text-gray-800">
+              {user?.inmobiliaria || "Inmobiliaria sin nombre"}
+            </p>
+          </div>
+        </div>
 
         {/* Color primario */}
         <div className="flex items-center gap-2">

@@ -1050,7 +1050,7 @@ export default function ACMForm() {
         <div key={i} className="rounded-lg border border-gray-200 p-4">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-semibold text-gray-800">
-              Comparable #{i + 1}
+              Propiedad N°{i + 1}
             </h3>
             <div className="flex items-center gap-2">
               <button

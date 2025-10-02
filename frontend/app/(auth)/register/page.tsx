@@ -41,51 +41,47 @@ export default function RegisterPage() {
     }
 
     setLoading(true);
+
+    // 1) Crear usuario en auth
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
-      options: {
-        data: {
+    });
+
+    if (error) {
+      setErrorMsg(error.message);
+      setLoading(false);
+      return;
+    }
+
+    // 2) Insertar datos en la tabla profiles
+    if (data.user) {
+      const { error: insertError } = await supabase.from("profiles").insert([
+        {
+          id: data.user.id, // el mismo UUID que en auth.users
+          email,
           nombre,
           apellido,
           telefono,
           direccion,
           localidad,
           provincia,
-          matriculado,
+          matriculado_nombre: matriculado,
           cpi,
         },
-      },
-    });
-    setLoading(false);
+      ]);
 
-    if (error) {
-      setErrorMsg(error.message);
-      return;
-    }
-
-    // 👉 Guardar datos en tabla profiles
-    if (data.user) {
-      const { error: profileError } = await supabase.from("profiles").upsert({
-        id: data.user.id,
-        email: data.user.email,
-        nombre,
-        apellido,
-        telefono,
-        direccion,
-        localidad,
-        provincia,
-        matriculado_nombre: matriculado, // 👈 usamos el campo creado en SQL
-        cpi,
-      });
-
-      if (profileError) {
-        console.error("Error guardando perfil:", profileError.message);
-        setErrorMsg("Error al guardar el perfil en la base de datos.");
+      if (insertError) {
+        console.error("❌ Error insertando perfil:", insertError.message);
+        setErrorMsg("Hubo un problema guardando el perfil.");
+        setLoading(false);
         return;
       }
     }
 
+    setLoading(false);
+
+    // 3) Confirmación o redirección
     if (!data.session) {
       setInfoMsg(
         "Registro exitoso. Revisá tu email para confirmar la cuenta y luego iniciá sesión."
@@ -236,6 +232,7 @@ export default function RegisterPage() {
   );
 }
 
+// 🎨 estilos inline (los mantenemos de tu versión)
 const inputStyle: React.CSSProperties = {
   width: "100%",
   height: 42,

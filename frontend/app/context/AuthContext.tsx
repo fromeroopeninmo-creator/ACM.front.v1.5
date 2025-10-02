@@ -112,11 +112,14 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       if (logo) setLogoBase64State(logo);
       if (color) setPrimaryColorState(color);
 
+      // 🔧 FIX: evitamos duplicar id
+      const { id: _profileId, ...profileData } = profile;
+
       return {
         id: supabaseUser.id,
         email: supabaseUser.email,
-        profileId: profile.id,
-        ...profile,
+        profileId: _profileId,
+        ...profileData,
         logoBase64: logo,
         primaryColor: color,
       };

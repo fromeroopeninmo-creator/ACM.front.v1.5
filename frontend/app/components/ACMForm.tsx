@@ -643,9 +643,10 @@ export default function ACMForm() {
 
           {/* Nombre de la inmobiliaria */}
           <div>
-          <p className="text-base font-bold text-gray-800">
-  {user?.user_metadata?.inmobiliaria || "Inmobiliaria sin nombre"}
+         <p className="text-base font-bold text-gray-800">
+  {user?.inmobiliaria || "Inmobiliaria sin nombre"}
 </p>
+
 
           </div>
         </div>

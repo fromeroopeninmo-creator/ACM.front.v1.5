@@ -607,16 +607,14 @@ const handleDownloadPDF = async () => {
   block("A considerar", formData.considerations);
 
      // === Footer ===
-    const matriculado = user?.user_metadata?.matriculado || "—";
-    const cpi = user?.user_metadata?.cpi || "—";
+      
+  const footerText = `${matriculado}  |  CPI: ${cpi}`;
+  doc.setFont("helvetica", "italic");
+  doc.setFontSize(9);
+  doc.text(footerText, pageW / 2, pageH - 30, { align: "center" });
 
-    const footerText = `${matriculado}  |  CPI: ${cpi}`;
-    doc.setFont("helvetica", "italic");
-    doc.setFontSize(9);
-    doc.text(footerText, pageW / 2, pageH - 30, { align: "center" });
-
-    doc.save("VMI.pdf");
-  };
+  doc.save("VMI.pdf");
+};
 
   /** ========= Render ========= */
   const propertyTypeOptions = useMemo(() => enumToOptions(PropertyType), []);

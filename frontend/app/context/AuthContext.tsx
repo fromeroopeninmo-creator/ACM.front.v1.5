@@ -1,5 +1,6 @@
 "use client";
 import { createContext, useContext, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 
 interface Profile {
@@ -28,14 +29,16 @@ const AuthContext = createContext<AuthContextType | null>(null);
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
+  const router = useRouter();
 
   const logout = async () => {
     try {
       await supabase.auth.signOut();
+      setUser(null);
+      router.push("/login"); // 🔑 al cerrar sesión, ir al login
     } catch (err) {
       console.error("❌ Error al cerrar sesión:", err);
     } finally {
-      setUser(null);
       setLoading(false);
     }
   };
@@ -86,11 +89,23 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         if (error) throw error;
 
         const sessionUser = data.session?.user ?? null;
-        const profile = sessionUser ? await loadUserProfile(sessionUser) : null;
+
+        if (!sessionUser) {
+          if (mounted) {
+            setUser(null);
+            router.push("/login"); // 🔑 si no hay sesión => login
+          }
+          return;
+        }
+
+        const profile = await loadUserProfile(sessionUser);
         if (mounted) setUser(profile);
       } catch (err) {
         console.error("❌ Error inicial cargando usuario:", err);
-        if (mounted) setUser(null);
+        if (mounted) {
+          setUser(null);
+          router.push("/login");
+        }
       } finally {
         if (mounted) setLoading(false);
       }
@@ -103,11 +118,21 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         try {
           setLoading(true);
           const sessionUser = session?.user ?? null;
-          const profile = sessionUser ? await loadUserProfile(sessionUser) : null;
-          if (mounted) setUser(profile);
+          if (sessionUser) {
+            const profile = await loadUserProfile(sessionUser);
+            if (mounted) setUser(profile);
+          } else {
+            if (mounted) {
+              setUser(null);
+              router.push("/login"); // 🔑 si expira sesión => login
+            }
+          }
         } catch (err) {
           console.error("❌ Error escuchando cambios de sesión:", err);
-          if (mounted) setUser(null);
+          if (mounted) {
+            setUser(null);
+            router.push("/login");
+          }
         } finally {
           if (mounted) setLoading(false);
         }
@@ -118,7 +143,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       mounted = false;
       listener.subscription.unsubscribe();
     };
-  }, []);
+  }, [router]);
 
   return (
     <AuthContext.Provider

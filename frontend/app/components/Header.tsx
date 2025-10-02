@@ -21,7 +21,6 @@ export default function Header() {
     user?.nombre && user?.apellido
       ? `${user.nombre} ${user.apellido}`
       : "—";
-  const inmobiliaria = user?.inmobiliaria || "—";
 
   return (
     <header

@@ -1,15 +1,14 @@
 "use client";
 import { useAuth } from "@/context/AuthContext";
-import { supabase } from "@/lib/supabaseClient";
 import { useRouter } from "next/navigation";
 
 export default function Header() {
-  const { user } = useAuth();
+  const { user, logout } = useAuth(); // 👈 usamos logout del contexto
   const router = useRouter();
 
   const handleLogout = async () => {
     try {
-      await supabase.auth.signOut();
+      await logout(); // 👈 llama al logout centralizado
       router.push("/login"); // redirige al login
     } catch (err) {
       console.error("❌ Error al cerrar sesión:", err);

@@ -1,7 +1,7 @@
 "use client";
 
-import ProtectedRoute from '../context/ProtectedRoute';
-import Header from "../components/Header";
+import ProtectedRoute from "../../context/ProtectedRoute";
+import Header from "../../components/Header";
 
 export default function ProtectedLayout({
   children,
@@ -10,8 +10,10 @@ export default function ProtectedLayout({
 }) {
   return (
     <ProtectedRoute>
-      <Header />
-      {children}
+      <div className="min-h-screen bg-white">
+        <Header />
+        {children}
+      </div>
     </ProtectedRoute>
   );
 }

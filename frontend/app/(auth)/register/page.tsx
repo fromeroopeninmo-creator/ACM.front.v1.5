@@ -1,9 +1,8 @@
 "use client";
-
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
-import AuthLayout from "../components/AuthLayout";
+import AuthLayout from "../../components/AuthLayout";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -55,7 +54,7 @@ export default function RegisterPage() {
           provincia,
           matriculado,
           cpi,
-          inmobiliaria, // 👈 nuevo campo
+          inmobiliaria,
         },
       },
     });
@@ -66,6 +65,7 @@ export default function RegisterPage() {
       return;
     }
 
+    // Si requiere verificación por correo
     if (!data.session) {
       setInfoMsg(
         "Registro exitoso. Revisá tu email para confirmar la cuenta y luego iniciá sesión."
@@ -73,6 +73,7 @@ export default function RegisterPage() {
       return;
     }
 
+    // Si ya hay sesión activa → redirigir al dashboard
     router.push("/");
   };
 
@@ -221,7 +222,7 @@ export default function RegisterPage() {
         </button>
 
         <p style={{ fontSize: 14, textAlign: "center", marginTop: 6 }}>
-          ¿Ya tenés cuenta? <a href="/login">Ingresá acá</a>
+          ¿Ya tenés cuenta? <a href="/auth/login">Ingresá acá</a>
         </p>
       </form>
     </AuthLayout>

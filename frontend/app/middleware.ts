@@ -5,14 +5,24 @@ import { createMiddlewareClient } from "@supabase/auth-helpers-nextjs";
 export async function middleware(req: NextRequest) {
   const res = NextResponse.next();
 
-  // Creamos cliente con cookies de la request
   const supabase = createMiddlewareClient({ req, res });
 
-  // ✅ Refresca el token de sesión automáticamente en cada request
-  await supabase.auth.getSession();
+  // Refresca sesión si existe
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+
+  const { pathname } = req.nextUrl;
+
+  // Si no hay sesión y la ruta no es pública → redirigir a /login
+  if (!session && !pathname.startsWith("/login") && !pathname.startsWith("/register")) {
+    const loginUrl = new URL("/login", req.url);
+    return NextResponse.redirect(loginUrl);
+  }
 
   return res;
 }
+
 export const config = {
-  matcher: ["/((?!login|register|_next/static|_next/image|favicon.ico).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
 };

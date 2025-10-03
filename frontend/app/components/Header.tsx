@@ -1,114 +1,67 @@
 "use client";
+import { useAuth } from "@/context/AuthContext";
+import { useRouter } from "next/navigation";
 
-import { createContext, useContext, useEffect, useState } from "react";
-import { supabase } from "#lib/supabaseClient";
+export default function Header() {
+  const { user, logout } = useAuth();
+  const router = useRouter();
 
-interface Profile {
-  id: string;
-  email: string;
-  nombre?: string;
-  apellido?: string;
-  telefono?: string;
-  direccion?: string;
-  localidad?: string;
-  provincia?: string;
-  matriculado_nombre?: string;
-  cpi?: string;
-  inmobiliaria?: string;
-}
-
-interface AuthContextType {
-  user: Profile | null;
-  loading: boolean;
-  logout: () => Promise<void>;
-}
-
-const AuthContext = createContext<AuthContextType | null>(null);
-
-export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
-  const [user, setUser] = useState<Profile | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  const logout = async () => {
-    await supabase.auth.signOut();
-    setUser(null);
-  };
-
-  const loadUserProfile = async (supabaseUser: any): Promise<Profile | null> => {
-    if (!supabaseUser) return null;
-
-    // 1) Intentar traer desde la tabla "profiles"
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select(
-        "id, email, nombre, apellido, telefono, direccion, localidad, provincia, matriculado_nombre, cpi, inmobiliaria"
-      )
-      .eq("id", supabaseUser.id)
-      .single();
-
-    if (profile) {
-      return { ...profile };
+  const handleLogout = async () => {
+    try {
+      await logout();
+      router.push("/auth/login");
+    } catch (err) {
+      console.error("❌ Error al cerrar sesión:", err);
     }
-
-    // 2) Fallback: si no existe fila en "profiles", usar user_metadata
-    const meta = (supabaseUser.user_metadata ?? {}) as Record<string, any>;
-
-    const fallback: Profile = {
-      id: supabaseUser.id,
-      email: supabaseUser.email,
-      nombre: meta.nombre,
-      apellido: meta.apellido,
-      telefono: meta.telefono,
-      direccion: meta.direccion,
-      localidad: meta.localidad,
-      provincia: meta.provincia,
-      // Si el registro guardó "matriculado", lo mapeamos a "matriculado_nombre"
-      matriculado_nombre: meta.matriculado_nombre ?? meta.matriculado,
-      cpi: meta.cpi,
-      inmobiliaria: meta.inmobiliaria,
-    };
-
-    return fallback;
   };
 
-  useEffect(() => {
-    const init = async () => {
-      setLoading(true);
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-
-      const sessionUser = session?.user ?? null;
-      const profile = sessionUser ? await loadUserProfile(sessionUser) : null;
-      setUser(profile);
-      setLoading(false);
-    };
-
-    init();
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      setLoading(true);
-      const sessionUser = session?.user ?? null;
-      const profile = sessionUser ? await loadUserProfile(sessionUser) : null;
-      setUser(profile);
-      setLoading(false);
-    });
-
-    return () => {
-      subscription?.unsubscribe();
-    };
-  }, []);
+  const matriculado = user?.matriculado_nombre || "—";
+  const cpi = user?.cpi || "—";
+  const inmobiliaria = user?.inmobiliaria || "—";
+  const asesorNombre =
+    user?.nombre && user?.apellido ? `${user.nombre} ${user.apellido}` : "—";
 
   return (
-    <AuthContext.Provider value={{ user, loading, logout }}>
-      {children}
-    </AuthContext.Provider>
+    <header
+      style={{
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        padding: "1rem 2rem",
+        backgroundColor: "#f5f5f5",
+        borderBottom: "1px solid #ddd",
+      }}
+    >
+      {/* Izquierda */}
+      <div style={{ display: "flex", flexDirection: "column" }}>
+        <span style={{ fontWeight: 600, fontSize: 14 }}>
+          Inmobiliaria: {inmobiliaria}
+        </span>
+        <span style={{ fontWeight: 600, fontSize: 14 }}>{matriculado}</span>
+        <span style={{ fontSize: 14, color: "#555" }}>CPI: {cpi}</span>
+      </div>
+
+      {/* Derecha */}
+      <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
+        <span style={{ fontWeight: "bold", fontSize: 16 }}>
+          Asesor: {asesorNombre}
+        </span>
+        {user && (
+          <button
+            onClick={handleLogout}
+            style={{
+              padding: "6px 12px",
+              border: "1px solid #ccc",
+              borderRadius: 6,
+              background: "#fff",
+              cursor: "pointer",
+              fontSize: 14,
+            }}
+          >
+            Cerrar sesión
+          </button>
+        )}
+      </div>
+    </header>
   );
-};
-
-export const useAuth = () => useContext(AuthContext) as AuthContextType;
-
-// ✅ agregado para que pueda importarse con default
-export default AuthProvider;
+}

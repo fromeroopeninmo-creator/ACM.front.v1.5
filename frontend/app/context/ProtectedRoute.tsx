@@ -8,13 +8,14 @@ export default function ProtectedRoute({
 }: {
   children: React.ReactNode;
 }) {
-  const { user, loading } = useAuth(); // ✅ ahora funciona
+  const { user, loading } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
 
   useEffect(() => {
+    // Si ya terminó de cargar y no hay usuario → mandar al login
     if (!loading && !user && pathname !== "/login" && pathname !== "/register") {
-      router.push("/login");
+      router.replace("/login");
     }
   }, [user, loading, pathname, router]);
 
@@ -35,12 +36,12 @@ export default function ProtectedRoute({
     );
   }
 
-  // Si no hay usuario pero está en login/register, mostrar la página normal
+  // Caso: sin usuario, pero en login o register → mostrar esa página
   if (!user && (pathname === "/login" || pathname === "/register")) {
     return <>{children}</>;
   }
 
-  // Si hay usuario → mostrar el contenido protegido
+  // Caso: usuario autenticado → mostrar la app
   if (user) {
     return <>{children}</>;
   }

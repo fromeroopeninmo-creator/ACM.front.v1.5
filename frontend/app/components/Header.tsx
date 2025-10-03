@@ -6,14 +6,16 @@ export default function Header() {
   const { user, logout } = useAuth();
   const router = useRouter();
 
-  const handleLogout = async () => {
-    try {
-      await logout();
-      router.push("/login"); // redirige al login después de cerrar sesión
-    } catch (err) {
-      console.error("❌ Error al cerrar sesión:", err);
-    }
-  };
+ const handleLogout = async () => {
+  try {
+    await logout();
+    // Usamos replace en vez de push para limpiar bien el stack
+    router.replace("/login");
+  } catch (err) {
+    console.error("❌ Error al cerrar sesión:", err);
+  }
+};
+
 
   // Datos del usuario
   const matriculado = user?.matriculado_nombre || "—";

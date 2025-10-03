@@ -1,4 +1,6 @@
 // app/page.tsx  (SERVER COMPONENT)
+export const dynamic = "force-dynamic";
+
 import { redirect } from "next/navigation";
 import { supabaseServer } from "#lib/supabaseServer";
 import ACMForm from "@/components/ACMForm";

@@ -7,6 +7,10 @@ interface Profile {
   email: string;
   nombre?: string;
   apellido?: string;
+  telefono?: string;
+  direccion?: string;
+  localidad?: string;
+  provincia?: string;
   matriculado_nombre?: string;
   cpi?: string;
   inmobiliaria?: string;
@@ -34,19 +38,27 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
     const { data: profile } = await supabase
       .from("profiles")
-      .select("id, email, nombre, apellido, matriculado_nombre, cpi, inmobiliaria")
+      .select(
+        "id, email, nombre, apellido, telefono, direccion, localidad, provincia, matriculado_nombre, cpi, inmobiliaria"
+      )
       .eq("id", supabaseUser.id)
       .single();
 
-    return profile
-      ? { ...profile }
-      : { id: supabaseUser.id, email: supabaseUser.email };
+    if (!profile) {
+      return { id: supabaseUser.id, email: supabaseUser.email };
+    }
+
+    return { ...profile };
   };
 
   useEffect(() => {
     const init = async () => {
-      const { data } = await supabase.auth.getSession();
-      const sessionUser = data.session?.user ?? null;
+      setLoading(true);
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      const sessionUser = session?.user ?? null;
       const profile = sessionUser ? await loadUserProfile(sessionUser) : null;
       setUser(profile);
       setLoading(false);
@@ -54,18 +66,16 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
     init();
 
-    const { data: listener } = supabase.auth.onAuthStateChange(
-      async (_event, session) => {
-        const sessionUser = session?.user ?? null;
-        const profile = sessionUser ? await loadUserProfile(sessionUser) : null;
-        setUser(profile);
-        setLoading(false); // 👈 nunca queda colgado
-      }
-    );
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      const sessionUser = session?.user ?? null;
+      const profile = sessionUser ? await loadUserProfile(sessionUser) : null;
+      setUser(profile);
+      setLoading(false);
+    });
 
-    return () => {
-      listener.subscription.unsubscribe();
-    };
+    return () => subscription.unsubscribe();
   }, []);
 
   return (

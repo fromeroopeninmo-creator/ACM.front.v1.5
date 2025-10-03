@@ -1,6 +1,6 @@
 "use client";
 import { createContext, useContext, useEffect, useState } from "react";
-import { supabase } from "@/lib/supabaseClient";
+import { supabase } from "../../lib/supabaseClient";
 
 interface Profile {
   id: string;
@@ -52,15 +52,11 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   useEffect(() => {
-    let mounted = true;
-
     const init = async () => {
       setLoading(true);
       const {
         data: { session },
       } = await supabase.auth.getSession();
-
-      if (!mounted) return;
 
       const sessionUser = session?.user ?? null;
       const profile = sessionUser ? await loadUserProfile(sessionUser) : null;
@@ -73,26 +69,14 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      if (!mounted) return;
       const sessionUser = session?.user ?? null;
       const profile = sessionUser ? await loadUserProfile(sessionUser) : null;
       setUser(profile);
       setLoading(false);
     });
 
-    return () => {
-      mounted = false;
-      subscription.unsubscribe();
-    };
+    return () => subscription.unsubscribe();
   }, []);
-
-  if (loading) {
-    return (
-      <div className="flex h-screen w-full items-center justify-center">
-        <p className="text-gray-600">Cargando sesión...</p>
-      </div>
-    );
-  }
 
   return (
     <AuthContext.Provider value={{ user, loading, logout }}>

@@ -1,8 +1,8 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabaseClient";
-import AuthLayout from "../../components/AuthLayout";
+import { supabase } from "../../lib/supabaseClient";
+import AuthLayout from "../components/AuthLayout";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -54,7 +54,7 @@ export default function RegisterPage() {
           provincia,
           matriculado,
           cpi,
-          inmobiliaria,
+          inmobiliaria, // 👈 se guarda en user_metadata
         },
       },
     });
@@ -65,7 +65,6 @@ export default function RegisterPage() {
       return;
     }
 
-    // Si requiere verificación por correo
     if (!data.session) {
       setInfoMsg(
         "Registro exitoso. Revisá tu email para confirmar la cuenta y luego iniciá sesión."
@@ -73,7 +72,6 @@ export default function RegisterPage() {
       return;
     }
 
-    // Si ya hay sesión activa → redirigir al dashboard
     router.push("/");
   };
 

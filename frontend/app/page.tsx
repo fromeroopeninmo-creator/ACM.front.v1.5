@@ -1,20 +1,11 @@
+// app/page.tsx
 "use client";
 
 import { useAuth } from "./context/AuthContext";
-import { useRouter } from "next/navigation";
-import { useEffect } from "react";
 import ACMForm from "./components/ACMForm";
 
 export default function RootPage() {
   const { user, loading } = useAuth();
-  const router = useRouter();
-
-  useEffect(() => {
-    // 🚨 Si no hay sesión y ya terminó de cargar → ir a /login
-    if (!loading && !user) {
-      router.replace("/login");
-    }
-  }, [user, loading, router]);
 
   if (loading) {
     return (
@@ -25,10 +16,11 @@ export default function RootPage() {
   }
 
   if (!user) {
-    return null; // 👈 mientras redirige
+    // 👈 En teoría el middleware ya redirigió al /login,
+    // pero ponemos fallback por seguridad
+    return null;
   }
 
-  // ✅ Si hay sesión → mostrar dashboard
   return (
     <div className="max-w-7xl mx-auto p-6">
       <h1 className="text-3xl font-bold mb-6 text-center text-primary">

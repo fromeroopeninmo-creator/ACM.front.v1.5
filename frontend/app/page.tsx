@@ -1,8 +1,8 @@
 "use client";
 
-import { useAuth } from "#context/AuthContext";
-import ProtectedRoute from "#context/ProtectedRoute";
-import ACMForm from "#components/ACMForm";
+import { useAuth } from "@/context/AuthContext";
+import ProtectedRoute from "@/context/ProtectedRoute";
+import ACMForm from "@/components/ACMForm";
 
 export default function RootPage() {
   const { user, loading } = useAuth();

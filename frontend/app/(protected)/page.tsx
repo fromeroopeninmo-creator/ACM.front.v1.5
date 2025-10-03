@@ -1,7 +1,7 @@
 "use client";
 
-import { useAuth } from "../context/AuthContext";
-import ACMForm from "../components/ACMForm";
+import { useAuth } from "@/context/AuthContext";
+import ACMForm from "@/components/ACMForm";
 
 export default function ProtectedHomePage() {
   const { user, loading } = useAuth();

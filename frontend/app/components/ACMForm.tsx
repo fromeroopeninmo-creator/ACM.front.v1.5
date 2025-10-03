@@ -12,8 +12,7 @@ import {
   TitleType,
 } from '@/types/acm.types';
 import { createACMAnalysis } from '../lib/api';
-import { useAuth } from "../context/AuthContext";
-
+import { useAuth } from "@/context/AuthContext";
 
 /** =========================
  *  Helpers / Utils

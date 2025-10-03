@@ -9,7 +9,7 @@ export default function Header() {
   const handleLogout = async () => {
     try {
       await logout();
-      router.push("/login");
+      router.push("/login"); // 🔑 redirige al login
     } catch (err) {
       console.error("❌ Error al cerrar sesión:", err);
     }
@@ -17,6 +17,7 @@ export default function Header() {
 
   const matriculado = user?.matriculado_nombre || "—";
   const cpi = user?.cpi || "—";
+  const inmobiliaria = user?.inmobiliaria || "—";
   const asesorNombre =
     user?.nombre && user?.apellido
       ? `${user.nombre} ${user.apellido}`
@@ -33,8 +34,11 @@ export default function Header() {
         borderBottom: "1px solid #ddd",
       }}
     >
-      {/* Izquierda: Matriculado + CPI */}
+      {/* Izquierda: Inmobiliaria + Matriculado + CPI */}
       <div style={{ display: "flex", flexDirection: "column" }}>
+        <span style={{ fontWeight: 600, fontSize: 14 }}>
+          Inmobiliaria: {inmobiliaria}
+        </span>
         <span style={{ fontWeight: 600, fontSize: 14 }}>
           {matriculado}
         </span>

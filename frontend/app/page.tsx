@@ -1,44 +1,29 @@
-"use client";
-
-import { useAuth } from "@/context/AuthContext";
-import ProtectedRoute from "@/context/ProtectedRoute";
+// app/page.tsx  (SERVER COMPONENT)
+import { redirect } from "next/navigation";
+import { supabaseServer } from "#lib/supabaseServer";
 import ACMForm from "@/components/ACMForm";
-import { useRouter } from "next/navigation";
-import { useEffect } from "react";
 
-export default function RootPage() {
-  const { user, loading } = useAuth();
-  const router = useRouter();
+export default async function RootPage() {
+  // Lee la sesión desde cookie en el SERVIDOR
+  const supabase = supabaseServer();
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
 
-  useEffect(() => {
-    if (!loading && !user) {
-      // 👈 si no hay sesión, redirigimos a /auth/login
-      router.replace("/auth/login");
-    }
-  }, [user, loading, router]);
-
-  if (loading) {
-    return (
-      <div style={{ textAlign: "center", marginTop: "40px" }}>
-        <p>Cargando sesión...</p>
-      </div>
-    );
+  // Si NO hay sesión → redirige al login ANTES de renderizar (sin pantalla en blanco)
+  if (!session) {
+    redirect("/login"); // si tu login real es /auth/login, cambiá SOLO esta ruta
   }
 
-  if (!user) {
-    return null; // se redirige en useEffect
-  }
-
+  // Si hay sesión → renderiza el dashboard directamente
   return (
-    <ProtectedRoute>
-      <div className="max-w-7xl mx-auto p-6">
-        <h1 className="text-3xl font-bold mb-6 text-center text-primary">
-          VMI - Valoración de Mercado Inmobiliario
-        </h1>
-        <div className="bg-white shadow-lg rounded-lg p-6">
-          <ACMForm />
-        </div>
+    <div className="max-w-7xl mx-auto p-6">
+      <h1 className="text-3xl font-bold mb-6 text-center text-primary">
+        VMI - Valoración de Mercado Inmobiliario
+      </h1>
+      <div className="bg-white shadow-lg rounded-lg p-6">
+        <ACMForm />
       </div>
-    </ProtectedRoute>
+    </div>
   );
 }

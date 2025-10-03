@@ -12,7 +12,7 @@ export default function ProtectedLayout({
     <ProtectedRoute>
       <div className="min-h-screen bg-white">
         <Header />
-        {children}
+        <main>{children}</main>
       </div>
     </ProtectedRoute>
   );

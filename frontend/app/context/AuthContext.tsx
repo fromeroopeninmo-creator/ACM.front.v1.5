@@ -19,7 +19,7 @@ interface Profile {
 
 interface AuthContextType {
   user: Profile | null;
-  loading: boolean;   // 👈 lo volvemos a agregar
+  loading: boolean;
   logout: () => Promise<void>;
 }
 
@@ -80,13 +80,22 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     let mounted = true;
 
     const init = async () => {
-      setLoading(true);
       try {
         const { data, error } = await supabase.auth.getSession();
         if (error) throw error;
 
         const sessionUser = data.session?.user ?? null;
-        const profile = sessionUser ? await loadUserProfile(sessionUser) : null;
+
+        if (!sessionUser) {
+          // 👉 No hay sesión, salimos rápido
+          if (mounted) {
+            setUser(null);
+            setLoading(false);
+          }
+          return;
+        }
+
+        const profile = await loadUserProfile(sessionUser);
         if (mounted) setUser(profile);
       } catch (err) {
         console.error("❌ Error inicial cargando usuario:", err);
@@ -101,9 +110,15 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     const { data: listener } = supabase.auth.onAuthStateChange(
       async (_event, session) => {
         try {
+          if (!session?.user) {
+            if (mounted) {
+              setUser(null);
+              setLoading(false);
+            }
+            return;
+          }
           setLoading(true);
-          const sessionUser = session?.user ?? null;
-          const profile = sessionUser ? await loadUserProfile(sessionUser) : null;
+          const profile = await loadUserProfile(session.user);
           if (mounted) setUser(profile);
         } catch (err) {
           console.error("❌ Error escuchando cambios de sesión:", err);

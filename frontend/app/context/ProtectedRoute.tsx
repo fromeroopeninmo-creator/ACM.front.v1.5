@@ -14,7 +14,6 @@ export default function ProtectedRoute({
 
   useEffect(() => {
     // 🚨 Si no hay usuario y terminó el loading, redirigir a login
-    // Pero solo si no estamos en /auth/login o /auth/register
     if (
       !loading &&
       !user &&
@@ -43,7 +42,7 @@ export default function ProtectedRoute({
     );
   }
 
-  // Si no hay usuario y estamos en login/register → dejar ver el form
+  // Si no hay usuario y estamos en login/register → mostrar el form
   if (!user && (pathname === "/auth/login" || pathname === "/auth/register")) {
     return <>{children}</>;
   }
@@ -53,6 +52,6 @@ export default function ProtectedRoute({
     return <>{children}</>;
   }
 
-  // Fallback de seguridad (si nada aplica)
+  // Fallback de seguridad
   return null;
 }

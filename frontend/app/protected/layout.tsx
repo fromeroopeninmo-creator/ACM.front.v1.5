@@ -12,7 +12,6 @@ export default function ProtectedLayout({
     <ProtectedRoute>
       <div className="min-h-screen bg-white">
         <Header />
-        {/* 👇 importante: usar <main>{children}</main> */}
         <main>{children}</main>
       </div>
     </ProtectedRoute>

@@ -1,9 +1,12 @@
 // app/layout.tsx
+"use client";
+
 import "./globals.css";
 import { Inter } from "next/font/google";
-import { AuthProvider } from "./context/AuthContext";
+import { AuthProvider, useAuth } from "./context/AuthContext";
 import { ReactNode } from "react";
-import Header from "./components/Header"; // 👈 asegurate que la ruta sea correcta
+import Header from "./components/Header";
+import { usePathname } from "next/navigation";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -16,13 +19,27 @@ interface LayoutProps {
   children: ReactNode;
 }
 
+function AppWrapper({ children }: { children: ReactNode }) {
+  const { user } = useAuth();
+  const pathname = usePathname();
+
+  // ❌ no renderizar header en login ni register
+  const hideHeader = pathname === "/login" || pathname === "/register";
+
+  return (
+    <>
+      {!hideHeader && user && <Header />}
+      {children}
+    </>
+  );
+}
+
 export default function RootLayout({ children }: LayoutProps) {
   return (
     <html lang="es">
       <body className={inter.className}>
         <AuthProvider>
-          <Header /> {/* 👈 ahora el header se muestra en todas las páginas */}
-          {children}
+          <AppWrapper>{children}</AppWrapper>
         </AuthProvider>
       </body>
     </html>

@@ -1,34 +1,33 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabaseClient";
-import { useAuth } from "../../context/AuthContext";
-import AuthLayout from "../../components/AuthLayout";
+import { supabase } from "../../lib/supabaseClient";
+import AuthLayout from "../components/AuthLayout";
 
 export default function LoginPage() {
   const router = useRouter();
-  const { user, loading } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  if (!loading && user) {
-    router.push("/");
-    return (
-      <div className="flex h-screen items-center justify-center">
-        <p className="text-gray-600">Redirigiendo al panel...</p>
-      </div>
-    );
-  }
+  useEffect(() => {
+    const checkSession = async () => {
+      const { data } = await supabase.auth.getSession();
+      if (data.session?.user) {
+        router.push("/");
+      }
+    };
+    checkSession();
+  }, [router]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
-    setSubmitting(true);
+    setLoading(true);
 
     const { error } = await supabase.auth.signInWithPassword({ email, password });
-    setSubmitting(false);
+    setLoading(false);
 
     if (error) {
       setErrorMsg(error.message);
@@ -69,8 +68,8 @@ export default function LoginPage() {
           />
         </div>
 
-        <button type="submit" disabled={submitting} style={buttonStyle}>
-          {submitting ? "Ingresando..." : "Ingresar"}
+        <button type="submit" disabled={loading} style={buttonStyle}>
+          {loading ? "Ingresando..." : "Ingresar"}
         </button>
 
         <p style={{ fontSize: 14, textAlign: "center", marginTop: 6 }}>

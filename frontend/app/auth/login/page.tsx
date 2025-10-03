@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "#lib/supabaseClient";
-import AuthLayout from "@/(auth)/components/AuthLayout";
+import AuthLayout from "@/auth/components/AuthLayout";
 
 export default function LoginPage() {
   const router = useRouter();

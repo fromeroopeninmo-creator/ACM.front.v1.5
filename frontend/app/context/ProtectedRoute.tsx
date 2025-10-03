@@ -13,14 +13,14 @@ export default function ProtectedRoute({
   const pathname = usePathname();
 
   useEffect(() => {
-    // 🚨 Si no hay usuario y terminó el loading, redirigir a login
+    // 🚨 Si no hay usuario y terminó el loading, redirigir a /login
     if (
       !loading &&
       !user &&
-      pathname !== "/auth/login" &&
-      pathname !== "/auth/register"
+      pathname !== "/login" &&
+      pathname !== "/register"
     ) {
-      router.replace("/auth/login");
+      router.replace("/login");
     }
   }, [user, loading, pathname, router]);
 
@@ -42,8 +42,8 @@ export default function ProtectedRoute({
     );
   }
 
-  // Si no hay usuario y estamos en login/register → mostrar el form
-  if (!user && (pathname === "/auth/login" || pathname === "/auth/register")) {
+  // Si no hay usuario y estamos en /login o /register → mostrar el form
+  if (!user && (pathname === "/login" || pathname === "/register")) {
     return <>{children}</>;
   }
 

@@ -12,7 +12,7 @@ export default async function RootPage() {
 
   // Si NO hay sesión → redirige al login ANTES de renderizar (sin pantalla en blanco)
   if (!session) {
-    redirect("/login"); // si tu login real es /auth/login, cambiá SOLO esta ruta
+    redirect("/auth/login"); // si tu login real es /auth/login, cambiá SOLO esta ruta
   }
 
   // Si hay sesión → renderiza el dashboard directamente

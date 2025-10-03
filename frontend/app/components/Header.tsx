@@ -9,16 +9,19 @@ export default function Header() {
   const handleLogout = async () => {
     try {
       await logout();
-      router.replace("/login"); // 👈 replace en vez de push, así no queda en el historial
+      router.push("/login"); // redirige al login después de cerrar sesión
     } catch (err) {
       console.error("❌ Error al cerrar sesión:", err);
     }
   };
 
+  // Datos del usuario
   const matriculado = user?.matriculado_nombre || "—";
   const cpi = user?.cpi || "—";
   const asesorNombre =
-    user?.nombre && user?.apellido ? `${user.nombre} ${user.apellido}` : "—";
+    user?.nombre && user?.apellido
+      ? `${user.nombre} ${user.apellido}`
+      : "—";
 
   return (
     <header
@@ -27,7 +30,7 @@ export default function Header() {
         justifyContent: "space-between",
         alignItems: "center",
         padding: "1rem 2rem",
-        backgroundColor: "#f5f5f5",
+        backgroundColor: "#f5f5f5", // gris claro
         borderBottom: "1px solid #ddd",
       }}
     >

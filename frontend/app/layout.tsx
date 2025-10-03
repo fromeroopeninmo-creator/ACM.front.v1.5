@@ -2,7 +2,7 @@
 import "./globals.css";
 import { Inter } from "next/font/google";
 import { AuthProvider } from "./context/AuthContext";
-import { ThemeProvider } from "./context/ThemeContext"; // 👈 importamos ThemeProvider
+import ProtectedRoute from "./context/ProtectedRoute";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -16,9 +16,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="es">
       <body className={inter.className}>
         <AuthProvider>
-          <ThemeProvider>
+          <ProtectedRoute>
             {children}
-          </ThemeProvider>
+          </ProtectedRoute>
         </AuthProvider>
       </body>
     </html>

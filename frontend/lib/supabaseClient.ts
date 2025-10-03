@@ -4,9 +4,11 @@
 import { createBrowserSupabaseClient } from "@supabase/auth-helpers-nextjs";
 
 export const supabase = createBrowserSupabaseClient({
-  auth: {
-    persistSession: true,
-    autoRefreshToken: true,
-    detectSessionInUrl: true,
+  options: {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true,
+    },
   },
 });

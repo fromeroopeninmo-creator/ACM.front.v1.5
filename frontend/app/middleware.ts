@@ -4,9 +4,11 @@ import { createMiddlewareClient } from "@supabase/auth-helpers-nextjs";
 
 export async function middleware(req: NextRequest) {
   const res = NextResponse.next();
+
+  // Creamos cliente con cookies de la request
   const supabase = createMiddlewareClient({ req, res });
 
-  // refresca la sesión en cada request
+  // ✅ Refresca el token de sesión automáticamente en cada request
   await supabase.auth.getSession();
 
   return res;

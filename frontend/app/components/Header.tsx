@@ -1,4 +1,5 @@
 "use client";
+
 import { useAuth } from "@/context/AuthContext";
 import { useRouter } from "next/navigation";
 
@@ -9,7 +10,7 @@ export default function Header() {
   const handleLogout = async () => {
     try {
       await logout();
-      router.push("/auth/login");
+      router.push("/login");
     } catch (err) {
       console.error("❌ Error al cerrar sesión:", err);
     }
@@ -17,9 +18,10 @@ export default function Header() {
 
   const matriculado = user?.matriculado_nombre || "—";
   const cpi = user?.cpi || "—";
-  const inmobiliaria = user?.inmobiliaria || "—";
   const asesorNombre =
-    user?.nombre && user?.apellido ? `${user.nombre} ${user.apellido}` : "—";
+    user?.nombre && user?.apellido
+      ? `${user.nombre} ${user.apellido}`
+      : "—";
 
   return (
     <header
@@ -28,39 +30,36 @@ export default function Header() {
         justifyContent: "space-between",
         alignItems: "center",
         padding: "1rem 2rem",
-        backgroundColor: "#f5f5f5",
+        backgroundColor: "#f5f5f5", // gris claro
         borderBottom: "1px solid #ddd",
       }}
     >
-      {/* Izquierda */}
-      <div style={{ display: "flex", flexDirection: "column" }}>
-        <span style={{ fontWeight: 600, fontSize: 14 }}>
-          Inmobiliaria: {inmobiliaria}
-        </span>
-        <span style={{ fontWeight: 600, fontSize: 14 }}>{matriculado}</span>
-        <span style={{ fontSize: 14, color: "#555" }}>CPI: {cpi}</span>
+      {/* IZQUIERDA */}
+      <div style={{ textAlign: "left" }}>
+        <div style={{ fontWeight: "bold" }}>{matriculado}</div>
+        <div style={{ fontSize: "0.9rem", color: "#555" }}>CPI: {cpi}</div>
       </div>
 
-      {/* Derecha */}
-      <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
-        <span style={{ fontWeight: "bold", fontSize: 16 }}>
-          Asesor: {asesorNombre}
-        </span>
-        {user && (
-          <button
-            onClick={handleLogout}
-            style={{
-              padding: "6px 12px",
-              border: "1px solid #ccc",
-              borderRadius: 6,
-              background: "#fff",
-              cursor: "pointer",
-              fontSize: 14,
-            }}
-          >
-            Cerrar sesión
-          </button>
-        )}
+      {/* CENTRO (luego pondrás el logo VMI) */}
+      <div style={{ fontWeight: "bold", fontSize: "1.2rem" }}>VMI</div>
+
+      {/* DERECHA */}
+      <div style={{ textAlign: "right" }}>
+        <div>Asesor: {asesorNombre}</div>
+        <button
+          onClick={handleLogout}
+          style={{
+            marginTop: "0.5rem",
+            padding: "0.4rem 0.8rem",
+            backgroundColor: "#e53935",
+            color: "white",
+            border: "none",
+            borderRadius: "4px",
+            cursor: "pointer",
+          }}
+        >
+          Cerrar Sesión
+        </button>
       </div>
     </header>
   );

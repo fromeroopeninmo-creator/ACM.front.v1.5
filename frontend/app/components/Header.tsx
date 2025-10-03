@@ -9,7 +9,7 @@ export default function Header() {
   const handleLogout = async () => {
     try {
       await logout();
-      router.push("/login"); // 🔑 redirige al login
+      router.replace("/login"); // 👈 replace en vez de push, así no queda en el historial
     } catch (err) {
       console.error("❌ Error al cerrar sesión:", err);
     }
@@ -17,11 +17,8 @@ export default function Header() {
 
   const matriculado = user?.matriculado_nombre || "—";
   const cpi = user?.cpi || "—";
-  const inmobiliaria = user?.inmobiliaria || "—";
   const asesorNombre =
-    user?.nombre && user?.apellido
-      ? `${user.nombre} ${user.apellido}`
-      : "—";
+    user?.nombre && user?.apellido ? `${user.nombre} ${user.apellido}` : "—";
 
   return (
     <header
@@ -30,21 +27,14 @@ export default function Header() {
         justifyContent: "space-between",
         alignItems: "center",
         padding: "1rem 2rem",
-        backgroundColor: "#f5f5f5", // gris claro
+        backgroundColor: "#f5f5f5",
         borderBottom: "1px solid #ddd",
       }}
     >
-      {/* Izquierda: Inmobiliaria + Matriculado + CPI */}
+      {/* Izquierda: Matriculado + CPI */}
       <div style={{ display: "flex", flexDirection: "column" }}>
-        <span style={{ fontWeight: 600, fontSize: 14 }}>
-          Inmobiliaria: {inmobiliaria}
-        </span>
-        <span style={{ fontWeight: 600, fontSize: 14 }}>
-          {matriculado}
-        </span>
-        <span style={{ fontSize: 14, color: "#555" }}>
-          CPI: {cpi}
-        </span>
+        <span style={{ fontWeight: 600, fontSize: 14 }}>{matriculado}</span>
+        <span style={{ fontSize: 14, color: "#555" }}>CPI: {cpi}</span>
       </div>
 
       {/* Derecha: Asesor + Logout */}

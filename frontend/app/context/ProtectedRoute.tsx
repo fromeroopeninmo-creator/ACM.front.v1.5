@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, ReactNode } from "react";
 
 interface ProtectedRouteProps {
-  children?: ReactNode; // 👈 lo hacemos opcional para que no rompa
+  children?: ReactNode; // lo dejamos opcional para que nunca marque error
 }
 
 export default function ProtectedRoute({ children }: ProtectedRouteProps) {

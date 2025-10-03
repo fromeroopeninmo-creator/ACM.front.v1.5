@@ -1,7 +1,7 @@
 "use client";
 
-import ProtectedRoute from "../../context/ProtectedRoute";
-import Header from "../../components/Header";
+import ProtectedRoute from "@/context/ProtectedRoute";
+import Header from "@/components/Header";
 
 export default function ProtectedLayout({
   children,

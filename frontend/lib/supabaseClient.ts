@@ -3,12 +3,5 @@
 
 import { createBrowserSupabaseClient } from "@supabase/auth-helpers-nextjs";
 
-export const supabase = createBrowserSupabaseClient({
-  options: {
-    auth: {
-      persistSession: true,
-      autoRefreshToken: true,
-      detectSessionInUrl: true,
-    },
-  },
-});
+// Cliente Supabase para usar en componentes del lado del cliente
+export const supabase = createBrowserSupabaseClient();

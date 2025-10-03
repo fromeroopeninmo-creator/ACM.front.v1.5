@@ -1,34 +1,34 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
-import AuthLayout from "../components/AuthLayout";
+import { useAuth } from "../../context/AuthContext";
+import AuthLayout from "../../components/AuthLayout";
 
 export default function LoginPage() {
   const router = useRouter();
+  const { user, loading } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
-  // 🔹 Si ya hay sesión activa → redirigir a "/"
-  useEffect(() => {
-    const checkSession = async () => {
-      const { data } = await supabase.auth.getSession();
-      if (data.session?.user) {
-        router.push("/"); // ya logueado → dashboard
-      }
-    };
-    checkSession();
-  }, [router]);
+  if (!loading && user) {
+    router.push("/");
+    return (
+      <div className="flex h-screen items-center justify-center">
+        <p className="text-gray-600">Redirigiendo al panel...</p>
+      </div>
+    );
+  }
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
-    setLoading(true);
+    setSubmitting(true);
 
     const { error } = await supabase.auth.signInWithPassword({ email, password });
-    setLoading(false);
+    setSubmitting(false);
 
     if (error) {
       setErrorMsg(error.message);
@@ -69,12 +69,12 @@ export default function LoginPage() {
           />
         </div>
 
-        <button type="submit" disabled={loading} style={buttonStyle}>
-          {loading ? "Ingresando..." : "Ingresar"}
+        <button type="submit" disabled={submitting} style={buttonStyle}>
+          {submitting ? "Ingresando..." : "Ingresar"}
         </button>
 
         <p style={{ fontSize: 14, textAlign: "center", marginTop: 6 }}>
-          ¿No tienes cuenta? <a href="/register">Regístrate aquí</a>
+          ¿No tienes cuenta? <a href="/auth/register">Regístrate aquí</a>
         </p>
       </form>
     </AuthLayout>

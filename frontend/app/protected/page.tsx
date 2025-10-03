@@ -1,4 +1,6 @@
 "use client";
+export const dynamic = "force-dynamic";
+
 
 import ACMForm from "@/components/ACMForm";
 import ProtectedRoute from "@/context/ProtectedRoute";

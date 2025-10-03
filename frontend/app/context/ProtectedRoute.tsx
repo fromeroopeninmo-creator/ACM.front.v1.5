@@ -13,13 +13,19 @@ export default function ProtectedRoute({
   const pathname = usePathname();
 
   useEffect(() => {
-    // 🚨 Si no hay usuario y terminó el loading, redirigir
-    if (!loading && !user && pathname !== "/login" && pathname !== "/register") {
-      router.replace("/login");
+    // 🚨 Si no hay usuario y terminó el loading, redirigir a login
+    // Pero solo si no estamos en /auth/login o /auth/register
+    if (
+      !loading &&
+      !user &&
+      pathname !== "/auth/login" &&
+      pathname !== "/auth/register"
+    ) {
+      router.replace("/auth/login");
     }
   }, [user, loading, pathname, router]);
 
-  // Mientras carga la sesión → spinner
+  // Mientras carga la sesión → spinner amigable
   if (loading) {
     return (
       <div
@@ -37,16 +43,16 @@ export default function ProtectedRoute({
     );
   }
 
-  // Si está en login o register y no hay user
-  if (!user && (pathname === "/login" || pathname === "/register")) {
+  // Si no hay usuario y estamos en login/register → dejar ver el form
+  if (!user && (pathname === "/auth/login" || pathname === "/auth/register")) {
     return <>{children}</>;
   }
 
-  // Si hay user
+  // Si hay usuario → permitir acceder
   if (user) {
     return <>{children}</>;
   }
 
-  // fallback de seguridad
+  // Fallback de seguridad (si nada aplica)
   return null;
 }

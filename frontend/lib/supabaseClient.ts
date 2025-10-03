@@ -1,11 +1,12 @@
 // lib/supabaseClient.ts
-import { createClient } from "@supabase/supabase-js";
+"use client";
 
-const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+import { createBrowserSupabaseClient } from "@supabase/auth-helpers-nextjs";
 
-// Nota: el "!" le indica a TypeScript que estas vars existen.
-// Si preferís, podés validar y lanzar un error más claro:
-// if (!url || !anon) throw new Error("Supabase env vars are missing");
-
-export const supabase = createClient(url, anon);
+export const supabase = createBrowserSupabaseClient({
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true,
+  },
+});

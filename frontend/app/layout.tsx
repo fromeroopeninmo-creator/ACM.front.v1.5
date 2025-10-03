@@ -1,6 +1,6 @@
 import "./globals.css";
 import { Inter } from "next/font/google";
-import AuthProvider from "./context/AuthContext"; // ✅ ahora se importa el default
+import { AuthProvider } from "./context/AuthContext"; // ✅ ahora se importa el default
 
 const inter = Inter({ subsets: ["latin"] });
 

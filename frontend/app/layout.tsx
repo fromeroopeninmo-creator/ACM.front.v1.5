@@ -1,6 +1,7 @@
 import "./globals.css";
 import { Inter } from "next/font/google";
-import { AuthProvider } from "./context/AuthContext"; // ✅ se importa como named export
+import { AuthProvider } from "./context/AuthContext"; // 👈 correcto como named export
+import { ReactNode } from "react";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -9,7 +10,11 @@ export const metadata = {
   description: "Generador de informes VMI",
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+interface LayoutProps {
+  children: ReactNode;
+}
+
+export default function RootLayout({ children }: LayoutProps) {
   return (
     <html lang="es">
       <body className={inter.className}>

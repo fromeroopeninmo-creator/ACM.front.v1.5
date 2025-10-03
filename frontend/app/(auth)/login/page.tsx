@@ -1,42 +1,53 @@
 "use client";
-import { useState } from "react";
+
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "#lib/supabaseClient";
+import AuthLayout from "../components/AuthLayout";
 import { useAuth } from "@/context/AuthContext";
-import AuthLayout from "@/(auth)/components/AuthLayout";  // ojo, confirmame si está en app/(auth)/components
 
 export default function LoginPage() {
   const router = useRouter();
   const { user, loading } = useAuth();
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
+  const [loadingForm, setLoadingForm] = useState(false);
 
-  // Si ya hay sesión activa → redirigir al panel
-  if (!loading && user) {
-    router.push("/");
-    return (
-      <div className="flex h-screen items-center justify-center">
-        <p className="text-gray-600">Redirigiendo al panel...</p>
-      </div>
-    );
-  }
+  // 🚨 Si ya hay sesión → ir a "/"
+  useEffect(() => {
+    if (!loading && user) {
+      router.replace("/");
+    }
+  }, [user, loading, router]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
-    setSubmitting(true);
+    setLoadingForm(true);
 
     const { error } = await supabase.auth.signInWithPassword({ email, password });
-    setSubmitting(false);
+    setLoadingForm(false);
 
     if (error) {
       setErrorMsg(error.message);
     } else {
-      router.push("/"); // onAuthStateChange actualiza el contexto
+      router.replace("/"); // al loguearse → dashboard
     }
   };
+
+  // Mientras chequea si ya hay sesión
+  if (loading) {
+    return (
+      <div style={{ textAlign: "center", marginTop: "40px" }}>
+        <p>Cargando sesión...</p>
+      </div>
+    );
+  }
+
+  // Si ya hay user → no mostrar login (middleware igual te protege)
+  if (user) return null;
 
   return (
     <AuthLayout
@@ -70,12 +81,12 @@ export default function LoginPage() {
           />
         </div>
 
-        <button type="submit" disabled={submitting} style={buttonStyle}>
-          {submitting ? "Ingresando..." : "Ingresar"}
+        <button type="submit" disabled={loadingForm} style={buttonStyle}>
+          {loadingForm ? "Ingresando..." : "Ingresar"}
         </button>
 
         <p style={{ fontSize: 14, textAlign: "center", marginTop: 6 }}>
-          ¿No tienes cuenta? <a href="/auth/register">Regístrate aquí</a>
+          ¿No tienes cuenta? <a href="/register">Regístrate aquí</a>
         </p>
       </form>
     </AuthLayout>

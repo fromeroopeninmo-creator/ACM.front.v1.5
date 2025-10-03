@@ -3,9 +3,19 @@
 import { useAuth } from "@/context/AuthContext";
 import ProtectedRoute from "@/context/ProtectedRoute";
 import ACMForm from "@/components/ACMForm";
+import { useRouter } from "next/navigation";
+import { useEffect } from "react";
 
 export default function RootPage() {
   const { user, loading } = useAuth();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!loading && !user) {
+      // 👈 si no hay sesión, redirigimos a /auth/login
+      router.replace("/auth/login");
+    }
+  }, [user, loading, router]);
 
   if (loading) {
     return (
@@ -16,9 +26,7 @@ export default function RootPage() {
   }
 
   if (!user) {
-    // 👈 El middleware debería redirigir a /auth/login,
-    // pero dejamos fallback de seguridad
-    return null;
+    return null; // se redirige en useEffect
   }
 
   return (

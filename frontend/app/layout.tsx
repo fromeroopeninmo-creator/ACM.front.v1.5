@@ -1,7 +1,9 @@
+// app/layout.tsx
 import "./globals.css";
 import { Inter } from "next/font/google";
-import { AuthProvider } from "./context/AuthContext"; // 👈 correcto como named export
+import { AuthProvider } from "./context/AuthContext";
 import { ReactNode } from "react";
+import Header from "./components/Header"; // 👈 asegurate que la ruta sea correcta
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -18,7 +20,10 @@ export default function RootLayout({ children }: LayoutProps) {
   return (
     <html lang="es">
       <body className={inter.className}>
-        <AuthProvider>{children}</AuthProvider>
+        <AuthProvider>
+          <Header /> {/* 👈 ahora el header se muestra en todas las páginas */}
+          {children}
+        </AuthProvider>
       </body>
     </html>
   );

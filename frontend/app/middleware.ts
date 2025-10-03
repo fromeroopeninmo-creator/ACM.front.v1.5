@@ -14,9 +14,13 @@ export async function middleware(req: NextRequest) {
 
   const { pathname } = req.nextUrl;
 
-  // Si no hay sesión y la ruta no es pública → redirigir a /login
-  if (!session && !pathname.startsWith("/login") && !pathname.startsWith("/register")) {
-    const loginUrl = new URL("/login", req.url);
+  // Si no hay sesión y la ruta no es pública → redirigir a /auth/login
+  if (
+    !session &&
+    !pathname.startsWith("/auth/login") &&
+    !pathname.startsWith("/auth/register")
+  ) {
+    const loginUrl = new URL("/auth/login", req.url);
     return NextResponse.redirect(loginUrl);
   }
 

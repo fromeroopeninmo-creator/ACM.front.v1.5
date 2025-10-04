@@ -1,4 +1,5 @@
 "use client";
+
 import { createContext, useContext, useEffect, useState } from "react";
 import { supabase } from "#lib/supabaseClient";
 
@@ -7,10 +8,6 @@ interface Profile {
   email: string;
   nombre?: string;
   apellido?: string;
-  telefono?: string;
-  direccion?: string;
-  localidad?: string;
-  provincia?: string;
   matriculado_nombre?: string;
   cpi?: string;
   inmobiliaria?: string;
@@ -28,78 +25,59 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // 🔐 Logout seguro
   const logout = async () => {
     await supabase.auth.signOut();
     setUser(null);
+    window.location.href = "/login";
   };
 
-  const loadUserProfile = async (supabaseUser: any) => {
+  const loadUserProfile = async (supabaseUser: any): Promise<Profile | null> => {
     if (!supabaseUser) return null;
 
-    try {
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select(
-          "id, email, nombre, apellido, telefono, direccion, localidad, provincia, matriculado_nombre, cpi, inmobiliaria"
-        )
-        .eq("id", supabaseUser.id)
-        .single();
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("id, email, nombre, apellido, matriculado_nombre, cpi, inmobiliaria")
+      .eq("id", supabaseUser.id)
+      .single();
 
-      if (!profile) {
-        return { id: supabaseUser.id, email: supabaseUser.email };
-      }
-
-      return { ...profile };
-    } catch (err) {
-      console.error("❌ Error cargando perfil:", err);
-      return { id: supabaseUser.id, email: supabaseUser.email };
-    }
+    return profile || {
+      id: supabaseUser.id,
+      email: supabaseUser.email,
+      nombre: supabaseUser.user_metadata?.nombre,
+      apellido: supabaseUser.user_metadata?.apellido,
+      matriculado_nombre: supabaseUser.user_metadata?.matriculado_nombre,
+      cpi: supabaseUser.user_metadata?.cpi,
+      inmobiliaria: supabaseUser.user_metadata?.inmobiliaria,
+    };
   };
 
   useEffect(() => {
     const init = async () => {
-      try {
-        const {
-          data: { session },
-          error,
-        } = await supabase.auth.getSession();
+      setLoading(true);
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
 
-        if (error) {
-          console.error("❌ Error al obtener sesión:", error.message);
-        }
-
-        const sessionUser = session?.user ?? null;
-        const profile = sessionUser ? await loadUserProfile(sessionUser) : null;
-        setUser(profile);
-      } catch (err) {
-        console.error("❌ Error init AuthContext:", err);
-        setUser(null);
-      } finally {
-        // 👈 Siempre terminar el loading
-        setLoading(false);
-      }
+      const sessionUser = session?.user ?? null;
+      const profile = sessionUser ? await loadUserProfile(sessionUser) : null;
+      setUser(profile);
+      setLoading(false);
     };
 
     init();
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      try {
-        const sessionUser = session?.user ?? null;
-        const profile = sessionUser ? await loadUserProfile(sessionUser) : null;
-        setUser(profile);
-      } catch (err) {
-        console.error("❌ Error en onAuthStateChange:", err);
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!session?.user) {
         setUser(null);
-      } finally {
-        setLoading(false);
+      } else {
+        loadUserProfile(session.user).then(setUser);
       }
     });
 
-    return () => {
-      subscription.unsubscribe();
-    };
+    return () => subscription.unsubscribe();
   }, []);
 
   return (
@@ -109,4 +87,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   );
 };
 
-export const useAuth = () => useContext(AuthContext) as AuthContextType;
+export const useAuth = () => {
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error("useAuth debe usarse dentro de AuthProvider");
+  return ctx;
+};

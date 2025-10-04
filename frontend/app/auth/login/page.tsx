@@ -41,7 +41,7 @@ export default function LoginPage() {
   return (
     <AuthLayout
       title="Iniciar sesión"
-      subtitle="Bienvenido a VMI – Ingresa tus credenciales"
+      subtitle="Bienvenido a VAI – Ingresa tus credenciales"
     >
       {errorMsg && <div style={alertError}>{errorMsg}</div>}
 

@@ -80,7 +80,7 @@ export default function RegisterPage() {
   return (
     <AuthLayout
       title="Crear cuenta"
-      subtitle="Bienvenido a VMI – Registrate para continuar"
+      subtitle="Bienvenido a VAI – Registrate para continuar"
     >
       {errorMsg && <div style={alertError}>{errorMsg}</div>}
       {infoMsg && <div style={alertInfo}>{infoMsg}</div>}

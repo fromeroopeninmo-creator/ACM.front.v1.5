@@ -24,8 +24,8 @@ export default function Header() {
       {/* Centro: logo */}
       <div className="my-2 md:my-0 flex justify-center items-center">
         <Image
-          src="/logo-vmi.png"
-          alt="Logo VMI"
+          src="/logo-vmi2.png"
+          alt=""
           width={60}
           height={60}
           priority

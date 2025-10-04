@@ -23,7 +23,7 @@ export default function Header() {
       {/* Centro (Logo exactamente del alto del header) */}
       <div className="flex justify-center items-center h-full">
         <img
-          src="/logo-vai.png"
+          src="/logo-vai3.png"
           alt=""
           className="object-contain"
           style={{

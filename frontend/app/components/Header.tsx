@@ -1,4 +1,5 @@
 "use client";
+import Image from "next/image";
 import { useAuth } from "@/context/AuthContext";
 
 export default function Header() {
@@ -7,16 +8,28 @@ export default function Header() {
   if (!user) return null;
 
   return (
-    <header className="flex flex-col md:flex-row justify-between items-center p-4 bg-gray-100 border-b">
+    <header
+      className="
+        sticky top-0 z-50
+        flex flex-col md:flex-row justify-between items-center
+        p-4 bg-gray-100 border-b shadow-sm
+      "
+    >
       {/* Izquierda */}
       <div className="text-sm font-semibold text-gray-700 text-center md:text-left">
         <p>{user.matriculado_nombre || "—"}</p>
         <p>CPI: {user.cpi || "—"}</p>
       </div>
 
-      {/* Centro */}
-      <div className="my-2 md:my-0">
-        <span className="text-xl font-bold">VMI</span>
+      {/* Centro: logo */}
+      <div className="my-2 md:my-0 flex justify-center items-center">
+        <Image
+          src="/logo-vmi.png"
+          alt="Logo VMI"
+          width={60}
+          height={60}
+          priority
+        />
       </div>
 
       {/* Derecha */}
@@ -26,7 +39,7 @@ export default function Header() {
         </span>
         <button
           onClick={logout}
-          className="px-3 py-1 text-sm border rounded bg-white hover:bg-gray-200"
+          className="px-3 py-1 text-sm border rounded bg-white hover:bg-gray-200 transition"
         >
           Cerrar sesión
         </button>

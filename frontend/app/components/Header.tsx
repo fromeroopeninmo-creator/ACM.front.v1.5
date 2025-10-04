@@ -11,7 +11,7 @@ export default function Header() {
       className="flex flex-col md:flex-row justify-between items-center px-6 py-3 bg-gray-100 border-b shadow-sm sticky top-0 z-50"
       style={{
         height: "70px", // 🔒 altura fija del header
-        overflow: "hidden", // evita que el logo desborde
+        overflow: "hidden", // ✅ evita que el logo sobresalga
       }}
     >
       {/* Izquierda */}
@@ -20,14 +20,15 @@ export default function Header() {
         <p>CPI: {user.cpi || "—"}</p>
       </div>
 
-      {/* Centro (Logo grande pero contenido) */}
+      {/* Centro (Logo exactamente del alto del header) */}
       <div className="flex justify-center items-center h-full">
         <img
           src="/logo-vai.png"
           alt=""
-          className="h-40 w-auto object-contain"
+          className="object-contain"
           style={{
-            maxHeight: "100%", // mantiene el logo dentro del header
+            height: "70px", // ✅ mismo alto que el header
+            width: "auto",
           }}
         />
       </div>

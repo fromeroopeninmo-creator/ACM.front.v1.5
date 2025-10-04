@@ -29,7 +29,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const logout = async () => {
     await supabase.auth.signOut();
     setUser(null);
-    window.location.href = "/login";
+   window.location.replace("/auth/login");
   };
 
   const loadUserProfile = async (supabaseUser: any): Promise<Profile | null> => {

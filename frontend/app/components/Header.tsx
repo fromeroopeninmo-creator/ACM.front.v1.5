@@ -11,8 +11,10 @@ export default function Header() {
     <header
       className="
         sticky top-0 z-50
-        flex flex-col md:flex-row justify-between items-center
-        p-4 bg-gray-100 border-b shadow-sm
+        flex flex-col md:flex-row
+        justify-between items-center
+        p-4 bg-gray-100 border-b
+        shadow-sm
       "
     >
       {/* Izquierda */}
@@ -21,13 +23,13 @@ export default function Header() {
         <p>CPI: {user.cpi || "—"}</p>
       </div>
 
-      {/* Centro: logo */}
-      <div className="my-2 md:my-0 flex justify-center items-center">
+      {/* Centro (logo) */}
+      <div className="flex justify-center items-center my-2 md:my-0">
         <Image
-          src="/logo-vmi2.png"
-          alt=""
-          width={60}
-          height={60}
+          src="/logo-vmi.png"
+          alt="Logo VMI"
+          width={90}   // 🔹 un poco más grande
+          height={90}
           priority
         />
       </div>

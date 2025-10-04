@@ -43,7 +43,16 @@ export default function AuthLayout({
             boxShadow: "0 10px 25px rgba(0,0,0,0.08)",
           }}
         >
-          <div style={{ marginBottom: 8 }}>
+          {/* 🔹 Logo arriba del formulario */}
+          <div style={{ display: "flex", justifyContent: "center", marginBottom: "12px" }}>
+            <img
+              src="/logo-vai.png"
+              alt="Logo VAI"
+              style={{ height: "70px", width: "auto", objectFit: "contain" }}
+            />
+          </div>
+
+          <div style={{ marginBottom: 8, textAlign: "center" }}>
             <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700 }}>{title}</h1>
             <p style={{ margin: "6px 0 0 0", color: "#555" }}>{subtitle}</p>
           </div>

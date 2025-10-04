@@ -19,7 +19,7 @@ export default function Header() {
         <img
           src="/logo-vai.png"
           alt=""
-          className="h-10 w-auto object-contain"
+          className="h-20 w-auto object-contain"
         />
       </div>
 

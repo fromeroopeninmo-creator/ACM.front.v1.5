@@ -48,7 +48,7 @@ export default function AuthLayout({
             <img
               src="/logo-vai.png"
               alt="Logo VAI"
-              style={{ height: "70px", width: "auto", objectFit: "contain" }}
+              style={{ height: "100px", width: "auto", objectFit: "contain" }}
             />
           </div>
 

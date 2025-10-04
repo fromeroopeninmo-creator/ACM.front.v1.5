@@ -8,8 +8,8 @@ import AppWrapper from "./AppWrapper"; // 👈 moveremos la lógica de cliente a
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata = {
-  title: "VMI - Valoración de Mercado Inmobiliario",
-  description: "Generador de informes VMI",
+  title: "VAI - Valuador de Activos Inmobiliario",
+  description: "Generador de informes VAI",
 };
 
 interface LayoutProps {

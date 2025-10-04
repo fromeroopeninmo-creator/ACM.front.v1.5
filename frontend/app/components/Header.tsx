@@ -7,7 +7,8 @@ export default function Header() {
   if (!user) return null;
 
   return (
-    <header className="sticky top-0 z-50 flex flex-col md:flex-row justify-between items-center p-4 bg-gray-100 border-b shadow-sm">
+    <header className="flex flex-col md:flex-row justify-between items-center px-6 py-3 bg-gray-100 border-b shadow-sm sticky top-0 z-50"
+      style={{ height: "70px" }} // 👈 Altura fija del header>
       {/* Izquierda */}
       <div className="text-sm font-semibold text-gray-700 text-center md:text-left">
         <p>{user.matriculado_nombre || "—"}</p>
@@ -19,7 +20,7 @@ export default function Header() {
         <img
           src="/logo-vai.png"
           alt=""
-          className="h-30 md:h-30 w-auto object-contain" 
+          className="h-20 md:h-20 w-auto object-contain" 
         />
       </div>
 

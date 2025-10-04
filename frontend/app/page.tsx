@@ -21,7 +21,7 @@ export default async function RootPage() {
   return (
     <div className="max-w-7xl mx-auto p-6">
       <h1 className="text-3xl font-bold mb-6 text-center text-primary">
-        VMI - Valoración de Mercado Inmobiliario
+        VAI - Valuador de Activos Inmobiliarios
       </h1>
       <div className="bg-white shadow-lg rounded-lg p-6">
         <ACMForm />

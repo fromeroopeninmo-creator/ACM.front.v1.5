@@ -337,7 +337,7 @@ const handleDownloadPDF = async () => {
   doc.setFont("helvetica", "bold");
   doc.setFontSize(16);
   doc.setTextColor(pc.r, pc.g, pc.b);
-  doc.text("VMI - Valoración de Mercado Inmobiliario", pageW / 2, y, {
+  doc.text("VAI - Valuador de Activos Inmobiliarios", pageW / 2, y, {
     align: "center",
   });
   doc.setTextColor(0, 0, 0);

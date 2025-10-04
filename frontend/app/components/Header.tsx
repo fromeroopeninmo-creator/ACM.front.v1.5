@@ -17,7 +17,7 @@ export default function Header() {
       {/* Centro: logo */}
       <div className="my-2 md:my-0">
         <img
-          src="/logo-vai2.png"
+          src="/logo-vai.png"
           alt=""
           className="h-10 w-auto object-contain"
         />

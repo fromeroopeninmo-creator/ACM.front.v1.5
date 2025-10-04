@@ -25,7 +25,7 @@ export default function Header() {
         <img
           src="/logo-vai.png"
           alt=""
-          className="h-20 w-auto object-contain"
+          className="h-40 w-auto object-contain"
           style={{
             maxHeight: "100%", // mantiene el logo dentro del header
           }}

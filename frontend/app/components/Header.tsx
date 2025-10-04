@@ -27,7 +27,7 @@ export default function Header() {
           alt=""
           className="object-contain"
           style={{
-            height: "80px", // ✅ mismo alto que el header
+            height: "100px", // ✅ mismo alto que el header
             width: "auto",
           }}
         />

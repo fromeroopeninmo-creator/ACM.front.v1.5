@@ -46,7 +46,7 @@ export default function AuthLayout({
           {/* 🔹 Logo arriba del formulario */}
           <div style={{ display: "flex", justifyContent: "center", marginBottom: "12px" }}>
             <img
-              src="/logo-vai.png"
+              src="/logo-vai3.png"
               alt="Logo VAI"
               style={{ height: "160px", width: "auto", objectFit: "contain" }}
             />

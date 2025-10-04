@@ -1,53 +1,28 @@
 "use client";
 
+import { useRouter } from "next/navigation";
+import { useEffect } from "react";
 import { useAuth } from "./AuthContext";
-import { usePathname, useRouter } from "next/navigation";
-import { useEffect, ReactNode } from "react";
 
-interface ProtectedRouteProps {
-  children?: ReactNode; // lo dejamos opcional para que nunca marque error
-}
-
-export default function ProtectedRoute({ children }: ProtectedRouteProps) {
+export default function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
   const router = useRouter();
-  const pathname = usePathname();
 
   useEffect(() => {
-    if (
-      !loading &&
-      !user &&
-      pathname !== "/auth/login" &&
-      pathname !== "/auth/register"
-    ) {
-      router.replace("/auth/login");
+    if (!loading && !user) {
+      router.replace("/login");
     }
-  }, [user, loading, pathname, router]);
+  }, [loading, user, router]);
 
   if (loading) {
     return (
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "center",
-          alignItems: "center",
-          height: "100vh",
-          fontSize: "18px",
-          fontWeight: "bold",
-        }}
-      >
-        Cargando sesión...
+      <div className="flex justify-center items-center h-screen text-gray-500">
+        Cargando...
       </div>
     );
   }
 
-  if (!user && (pathname === "/auth/login" || pathname === "/auth/register")) {
-    return <>{children}</>;
-  }
+  if (!user) return null;
 
-  if (user) {
-    return <>{children}</>;
-  }
-
-  return null;
+  return <>{children}</>;
 }

@@ -1444,8 +1444,7 @@ const handleDownloadPDF = async () => {
               placeholder="Aspectos a considerar en la decisión"
             />
           </div>
-        </div>
-       </div> 
+        </div> 
 
       {/* Acciones */}
       <div className="mt-6 flex flex-col sm:flex-row flex-wrap items-center justify-center sm:justify-end gap-3">
@@ -1457,7 +1456,6 @@ const handleDownloadPDF = async () => {
         >
           Descargar PDF
         </button>
-      </div>
-    </div> 
+      </div> 
   ); 
 } 

@@ -320,7 +320,7 @@ const handleDownloadPDF = async () => {
   const asesorNombre =
     user?.nombre && user?.apellido ? `${user.nombre} ${user.apellido}` : "—";
 
-  // Logo del usuario (base64 desde el formulario)
+  // Logo del usuario (desde la app)
   const userLogo = logoBase64 || null;
 
   // Color primario
@@ -344,7 +344,7 @@ const handleDownloadPDF = async () => {
   doc.setTextColor(0, 0, 0);
   y += 30;
 
-  // === Encabezado en 2 columnas + logo centrado ===
+  // === Encabezado con logo ===
   const colLeftX = margin;
   const colRightX = pageW - margin - 200;
 
@@ -367,10 +367,19 @@ const handleDownloadPDF = async () => {
   // Logo centrado (si existe)
   if (userLogo) {
     try {
+      const img = await fetch(userLogo);
+      const blob = await img.blob();
+      const reader = new FileReader();
+      const base64Promise = new Promise<string>((resolve) => {
+        reader.onload = () => resolve(reader.result as string);
+      });
+      reader.readAsDataURL(blob);
+      const base64Img = await base64Promise;
+
       const logoW = 70;
       const logoH = 70;
       const centerX = pageW / 2 - logoW / 2;
-      doc.addImage(userLogo, "PNG", centerX, y - 10, logoW, logoH, undefined, "FAST");
+      doc.addImage(base64Img, "PNG", centerX, y - 10, logoW, logoH, undefined, "FAST");
     } catch (err) {
       console.warn("⚠️ No se pudo cargar el logo del usuario en el PDF", err);
     }
@@ -384,7 +393,219 @@ const handleDownloadPDF = async () => {
   doc.line(margin, y, pageW - margin, y);
   y += 20;
 
-  /** === Bloque auxiliar para texto largo === */
+  // === Datos de la propiedad ===
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(13);
+  doc.setTextColor(pc.r, pc.g, pc.b);
+  doc.text("Datos de la Propiedad", pageW / 2, y, { align: "center" });
+  doc.setTextColor(0, 0, 0);
+  y += 20;
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+  const lh = 15;
+
+  const datosIzq = [
+    `Cliente: ${formData.clientName || "-"}`,
+    `Teléfono: ${formData.phone || "-"}`,
+    `Email: ${formData.email || "-"}`,
+    `Dirección: ${formData.address || "-"}`,
+    `Barrio: ${formData.neighborhood || "-"}`,
+    `Localidad: ${formData.locality || "-"}`,
+    `Tipología: ${formData.propertyType}`,
+    `m² Terreno: ${numero(formData.landArea)}`,
+    `m² Cubiertos: ${numero(formData.builtArea)}`,
+    `Planos: ${formData.hasPlans ? "Sí" : "No"}`,
+    `Título: ${formData.titleType}`,
+  ];
+
+  let yDatos = y;
+  datosIzq.forEach((line) => {
+    doc.text(line, colLeftX, yDatos);
+    yDatos += lh;
+  });
+
+  if (formData.mainPhotoBase64) {
+    try {
+      doc.addImage(
+        formData.mainPhotoBase64,
+        "JPEG",
+        colRightX,
+        y,
+        180,
+        135,
+        undefined,
+        "FAST"
+      );
+    } catch {}
+  }
+  y = Math.max(yDatos, y + 135) + 20;
+
+  // Parte inferior: dos columnas
+  const datosIzq2 = [
+    `Antigüedad: ${numero(formData.age)} años`,
+    `Estado: ${formData.condition}`,
+    `Ubicación: ${formData.locationQuality}`,
+    `Orientación: ${formData.orientation}`,
+    `Posee renta: ${formData.isRented ? "Sí" : "No"}`,
+  ];
+
+  const servicios = [
+    `Luz: ${formData.services.luz ? "Sí" : "No"}`,
+    `Agua: ${formData.services.agua ? "Sí" : "No"}`,
+    `Gas: ${formData.services.gas ? "Sí" : "No"}`,
+    `Cloacas: ${formData.services.cloacas ? "Sí" : "No"}`,
+    `Pavimento: ${formData.services.pavimento ? "Sí" : "No"}`,
+  ];
+
+  let yCol = y;
+  datosIzq2.forEach((line) => {
+    doc.text(line, colLeftX, yCol);
+    yCol += lh;
+  });
+
+  let yCol2 = y;
+  servicios.forEach((line) => {
+    doc.text(line, colRightX, yCol2);
+    yCol2 += lh;
+  });
+
+  y = Math.max(yCol, yCol2) + 30;
+
+  // === Comparables ===
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(12);
+  doc.setTextColor(pc.r, pc.g, pc.b);
+  doc.text("Propiedades Comparadas en la Zona", pageW / 2, y, {
+    align: "center",
+  });
+  doc.setTextColor(0, 0, 0);
+  y += 16;
+
+  const cols = 4;
+  const gap = 10;
+  const cardW = (pageW - margin * 2 - gap * (cols - 1)) / cols;
+  const cardH = 250;
+  let cx = margin;
+  let cy = y;
+
+  const drawComparableCard = (
+    c: ComparableProperty,
+    x: number,
+    yCard: number,
+    index: number
+  ) => {
+    doc.setDrawColor(200, 200, 200);
+    doc.setLineWidth(0.8);
+    doc.rect(x, yCard, cardW, cardH);
+
+    const innerPad = 8;
+    let cursorY = yCard + innerPad;
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.text(`Propiedad Nº ${index + 1}`, x + innerPad, cursorY);
+    cursorY += 18;
+
+    if (c.photoBase64) {
+      try {
+        doc.addImage(
+          c.photoBase64,
+          "JPEG",
+          x + innerPad,
+          cursorY,
+          cardW - innerPad * 2,
+          80,
+          undefined,
+          "FAST"
+        );
+        cursorY += 95;
+      } catch {}
+    }
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+
+    let dirLines = doc.splitTextToSize(`Dirección: ${c.address || "-"}`, cardW - innerPad * 2);
+    doc.text(dirLines, x + innerPad, cursorY);
+    cursorY += dirLines.length * 12;
+
+    let barrioLines = doc.splitTextToSize(`Barrio: ${c.neighborhood || "-"}`, cardW - innerPad * 2);
+    doc.text(barrioLines, x + innerPad, cursorY);
+    cursorY += barrioLines.length * 12;
+
+    const ppm2Base = c.builtArea > 0 ? c.price / c.builtArea : 0;
+    const ppm2Adj = ppm2Base * (c.coefficient || 1);
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+
+    let precioLines = doc.splitTextToSize(`Precio: ${peso(c.price)}`, cardW - innerPad * 2);
+    doc.text(precioLines, x + innerPad, cursorY);
+    cursorY += precioLines.length * 12;
+
+    doc.text(`m² Cubiertos: ${numero(c.builtArea)}`, x + innerPad, cursorY);
+    cursorY += 14;
+
+    doc.text(`Precio/m²: ${peso(ppm2Adj)}`, x + innerPad, cursorY);
+    cursorY += 14;
+
+    if (c.listingUrl) {
+      doc.setTextColor(33, 150, 243);
+      doc.textWithLink("Link", x + innerPad, cursorY, { url: c.listingUrl });
+      doc.setTextColor(0, 0, 0);
+      cursorY += 14;
+    }
+
+    const desc = c.description || "";
+    const textLines = doc.splitTextToSize(desc, cardW - innerPad * 2);
+    const maxLines = 5;
+    const clipped = (textLines as string[]).slice(0, maxLines);
+    doc.text(clipped as any, x + innerPad, cursorY);
+  };
+
+  formData.comparables.forEach((c, i) => {
+    if (i > 0 && i % cols === 0) {
+      cy += cardH + gap;
+      cx = margin;
+    }
+    drawComparableCard(c, cx, cy, i);
+    cx += cardW + gap;
+  });
+
+  y = cy + cardH + 16;
+  if (y > pageH - 200) {
+    doc.addPage();
+    y = margin;
+  }
+
+  doc.setDrawColor(pc.r, pc.g, pc.b);
+  doc.line(margin, y, pageW - margin, y);
+  y += 14;
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(12);
+  doc.setTextColor(pc.r, pc.g, pc.b);
+  doc.text("Precio sugerido de venta", margin, y);
+  doc.setTextColor(0, 0, 0);
+  y += 16;
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(18);
+  doc.text(peso(suggestedPrice), pageW / 2, y, { align: "center" });
+  y += 30;
+
+  doc.setDrawColor(pc.r, pc.g, pc.b);
+  doc.line(margin, y, pageW - margin, y);
+  y += 14;
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(12);
+  doc.setTextColor(pc.r, pc.g, pc.b);
+  doc.text("Conclusión", margin, y);
+  doc.setTextColor(0, 0, 0);
+  y += 16;
+
   const block = (title: string, text: string) => {
     doc.setFont("helvetica", "bold");
     doc.setFontSize(11);
@@ -401,24 +622,12 @@ const handleDownloadPDF = async () => {
     }
   };
 
-  /** 👇 desde aquí sigue exactamente tu código original */
-  // === Datos de la Propiedad ===
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(13);
-  doc.setTextColor(pc.r, pc.g, pc.b);
-  doc.text("Datos de la Propiedad", pageW / 2, y, { align: "center" });
-  doc.setTextColor(0, 0, 0);
-  y += 20;
-
-  // ... [mantén aquí todo tu código PDF existente sin tocar hasta las secciones de texto]
-
-  // === Secciones finales ===
   block("Observaciones", formData.observations);
   block("Fortalezas", formData.strengths);
   block("Debilidades", formData.weaknesses);
   block("A considerar", formData.considerations);
 
-  /** === Imagen final (fija) === */
+  // === Imagen final (fija, sin deformar) ===
   try {
     const graficoUrl = "/grafico1-pdf.png";
     const img = await fetch(graficoUrl);
@@ -430,11 +639,16 @@ const handleDownloadPDF = async () => {
     reader.readAsDataURL(blob);
     const base64Img = await base64Promise;
 
-    y += 40; // espacio antes de la imagen
-    const imgW = pageW * 0.7; // 70% del ancho
-    const imgH = imgW * 0.5; // mantiene proporción
+    const tempImg = new Image();
+    tempImg.src = base64Img;
+    await new Promise((res) => (tempImg.onload = res));
+    const ratio = tempImg.height / tempImg.width;
+
+    const imgW = pageW * 0.7;
+    const imgH = imgW * ratio;
     const imgX = (pageW - imgW) / 2;
 
+    y += 40;
     if (y + imgH > pageH - 60) {
       doc.addPage();
       y = margin;

@@ -1115,7 +1115,6 @@ const handleDownloadPDF = async () => {
         </div>
       </div>
     </div>
-  );
 
     {/* Precio sugerido */}
     <div className="mt-6 rounded-xl border border-amber-200 bg-amber-50 p-4 sm:p-6">

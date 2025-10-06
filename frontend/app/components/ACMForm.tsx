@@ -1458,8 +1458,6 @@ const handleDownloadPDF = async () => {
           Descargar PDF
         </button>
       </div>
-
-      {/* cierre del contenedor principal */}
     </div>
   );
 }

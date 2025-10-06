@@ -1363,7 +1363,6 @@ const handleDownloadPDF = async () => {
                 </div>
               </div>
             </div>
-          );
         })}
 
         <div className="flex justify-center sm:justify-end">

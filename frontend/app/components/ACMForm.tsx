@@ -23,9 +23,9 @@ const peso = (n: number) =>
 const numero = (n: number, dec = 0) =>
   isNaN(n) ? '-' : n.toLocaleString('es-AR', { maximumFractionDigits: dec, minimumFractionDigits: dec });
 
-const coefOpts = Array.from({ length: 10 }).map((_, i) => {
-  const v = (i + 1) / 10; // 0.1 .. 1.0
-  return { label: v.toFixed(1), value: v };
+const coefOpts = Array.from({ length: 15 }).map((_, i) => {
+  const v = 1.5 - i * 0.1; // 1.5 → 0.1
+  return { label: v.toFixed(1), value: v.toFixed(1) };
 });
 
 const yesNoOpts = [
@@ -113,7 +113,7 @@ export default function ACMForm() {
     }
   }, []);
 
-  /** ========= Handlers de cambio ========= */
+ /** ========= Handlers de cambio ========= */
   const handleFieldChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
   ) => {
@@ -677,70 +677,68 @@ const handleDownloadPDF = async () => {
   const orientationOptions = useMemo(() => enumToOptions(Orientation), []);
 
   return (
-    <div className="max-w-7xl mx-auto p-6">
+    <div className="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8">
       {/* Header */}
-           {/* Header */}
-<div className="flex items-center justify-between mb-4">
-  {/* Logo + Nombre inmobiliaria */}
-  <div className="flex items-center gap-4">
-    <div className="w-28 h-14 bg-white rounded-lg border border-gray-200 flex items-center justify-center overflow-hidden">
-      {logoBase64 ? (
-        <div className="flex flex-col items-center w-full h-full">
-          <img
-            src={logoBase64}
-            alt="Logo"
-            className="object-contain w-full h-full"
-          />
-          <button
-            type="button"
-            onClick={() => {
-              setLogoBase64(undefined);
-              localStorage.removeItem("logoBase64");
-              if (logoInputRef.current) logoInputRef.current.value = "";
-            }}
-            className="mt-1 inline-flex items-center rounded-md border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
-          >
-            Cambiar
-          </button>
-        </div>
-      ) : (
-        <label className="text-xs text-gray-500 px-2 text-center">
-          Logo
-          <input
-            ref={logoInputRef}
-            type="file"
-            accept="image/*"
-            className="hidden"
-            onChange={async (e) => {
-              const f = e.target.files?.[0];
-              if (!f) return;
-              const reader = new FileReader();
-              reader.onloadend = () => {
-                const b64 = reader.result as string;
-                setLogoBase64(b64);
-                localStorage.setItem("logoBase64", b64); // 🔑 persistencia
-              };
-              reader.readAsDataURL(f);
-              if (logoInputRef.current) logoInputRef.current.value = "";
-            }}
-          />
-          <button
-            type="button"
-            onClick={() => logoInputRef.current?.click()}
-            className="mt-1 inline-flex items-center rounded-md border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
-          >
-            Subir
-          </button>
-        </label>
-      )}
-    </div>
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mb-6">
+        {/* Logo + Nombre inmobiliaria */}
+        <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
+          <div className="w-24 h-12 sm:w-28 sm:h-14 bg-white rounded-lg border border-gray-200 flex flex-col items-center justify-center overflow-hidden">
+            {logoBase64 ? (
+              <div className="flex flex-col items-center w-full h-full">
+                <img
+                  src={logoBase64}
+                  alt="Logo"
+                  className="object-contain w-full h-full"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLogoBase64(undefined);
+                    localStorage.removeItem("logoBase64");
+                    if (logoInputRef.current) logoInputRef.current.value = "";
+                  }}
+                  className="mt-1 inline-flex items-center rounded-md border border-gray-300 bg-white px-2 py-1 text-[10px] sm:text-xs font-medium text-gray-700 hover:bg-gray-50"
+                >
+                  Cambiar
+                </button>
+              </div>
+            ) : (
+              <label className="text-xs text-gray-500 px-2 text-center">
+                Logo
+                <input
+                  ref={logoInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={async (e) => {
+                    const f = e.target.files?.[0];
+                    if (!f) return;
+                    const reader = new FileReader();
+                    reader.onloadend = () => {
+                      const b64 = reader.result as string;
+                      setLogoBase64(b64);
+                      localStorage.setItem("logoBase64", b64);
+                    };
+                    reader.readAsDataURL(f);
+                    if (logoInputRef.current) logoInputRef.current.value = "";
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => logoInputRef.current?.click()}
+                  className="mt-1 inline-flex items-center rounded-md border border-gray-300 bg-white px-2 py-1 text-[10px] sm:text-xs font-medium text-gray-700 hover:bg-gray-50"
+                >
+                  Subir
+                </button>
+              </label>
+            )}
+          </div>
+
           {/* Nombre de la inmobiliaria */}
-          <div>
-         <p className="text-base font-bold text-gray-800">
-  {user?.inmobiliaria || "Inmobiliaria sin nombre"}
-</p>
-
-
+          <div className="text-center sm:text-left">
+            <p className="text-sm sm:text-base font-bold text-gray-800">
+              {user?.inmobiliaria || "Inmobiliaria sin nombre"}
+            </p>
           </div>
         </div>
 
@@ -759,16 +757,19 @@ const handleDownloadPDF = async () => {
 
       {/* Card principal */}
       <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
-        <div className="border-b border-gray-200 p-6">
-          <h2 className="text-lg font-semibold" style={{ color: primaryColor }}>
+        <div className="border-b border-gray-200 p-4 sm:p-6">
+          <h2
+            className="text-base sm:text-lg font-semibold"
+            style={{ color: primaryColor }}
+          >
             Datos del Cliente / Propiedad
           </h2>
         </div>
 
-        {/* Grid: datos a la izquierda / foto a la derecha */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 p-6">
-          {/* Columna izquierda: datos */}
-          <div className="lg:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-5">
+        {/* Grid principal */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 p-4 sm:p-6">
+          {/* Columna izquierda */}
+          <div className="lg:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-5">
             {/* Cliente */}
             <div className="space-y-1">
               <label className="block text-sm font-medium text-gray-700">
@@ -783,6 +784,7 @@ const handleDownloadPDF = async () => {
                 placeholder="Nombre del cliente"
               />
             </div>
+
             {/* Teléfono */}
             <div className="space-y-1">
               <label className="block text-sm font-medium text-gray-700">
@@ -796,6 +798,7 @@ const handleDownloadPDF = async () => {
                 placeholder="+54 ..."
               />
             </div>
+
             {/* Email */}
             <div className="space-y-1">
               <label className="block text-sm font-medium text-gray-700">
@@ -810,6 +813,7 @@ const handleDownloadPDF = async () => {
                 placeholder="correo@dominio.com"
               />
             </div>
+
             {/* Dirección */}
             <div className="space-y-1 md:col-span-2">
               <label className="block text-sm font-medium text-gray-700">
@@ -1016,10 +1020,8 @@ const handleDownloadPDF = async () => {
 
             {/* Servicios */}
             <div className="space-y-3 md:col-span-2">
-              <h3 className="text-sm font-semibold text-gray-800">
-                Servicios
-              </h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+              <h3 className="text-sm font-semibold text-gray-800">Servicios</h3>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
                 {(
                   ["luz", "agua", "gas", "cloacas", "pavimento"] as Array<
                     keyof Services
@@ -1068,7 +1070,7 @@ const handleDownloadPDF = async () => {
 
           {/* Columna derecha: foto principal */}
           <div className="lg:col-span-1">
-            <h3 className="mb-2 text-sm font-semibold text-gray-800">
+            <h3 className="mb-2 text-sm font-semibold text-gray-800 text-center sm:text-left">
               Foto de la propiedad
             </h3>
 
@@ -1077,9 +1079,9 @@ const handleDownloadPDF = async () => {
                 <img
                   src={formData.mainPhotoBase64}
                   alt="Foto principal"
-                  className="h-64 w-full object-cover"
+                  className="h-48 sm:h-64 w-full object-cover"
                 />
-                <div className="p-2 text-right">
+                <div className="p-2 text-center sm:text-right">
                   <button
                     type="button"
                     onClick={() =>
@@ -1112,228 +1114,285 @@ const handleDownloadPDF = async () => {
           </div>
         </div>
       </div>
+    </div>
+  );
 
-      {/* Precio sugerido */}
-      <div className="mt-6 rounded-xl border border-amber-200 bg-amber-50 p-6">
-        <div className="flex items-center justify-between">
-          <h3 className="text-base font-semibold" style={{ color: primaryColor }}>
-            Precio sugerido de venta
-          </h3>
-          <span className="text-2xl font-bold">{peso(suggestedPrice)}</span>
-        </div>
-        <p className="mt-1 text-xs text-amber-700">
-          Calculado como promedio del precio/m² ajustado de comparables × m² cubiertos de la propiedad principal.
-        </p>
+    {/* Precio sugerido */}
+    <div className="mt-6 rounded-xl border border-amber-200 bg-amber-50 p-4 sm:p-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+        <h3
+          className="text-base sm:text-lg font-semibold text-center sm:text-left"
+          style={{ color: primaryColor }}
+        >
+          Precio sugerido de venta
+        </h3>
+        <span className="text-xl sm:text-2xl font-bold text-center sm:text-right">
+          {peso(suggestedPrice)}
+        </span>
       </div>
-{/* =========================
-    Propiedades comparadas en la zona
-   ========================= */}
-<div className="mt-6 rounded-xl border border-gray-200 bg-white shadow-sm">
-  <div className="border-b border-gray-200 p-6">
-    <h2 className="text-lg font-semibold" style={{ color: primaryColor }}>
-      Propiedades comparadas en la zona
-    </h2>
-  </div>
+      <p className="mt-2 text-xs sm:text-sm text-amber-700 text-center sm:text-left">
+        Calculado como promedio del precio/m² ajustado de comparables × m²
+        cubiertos de la propiedad principal.
+      </p>
+    </div>
 
-  <div className="p-6 space-y-6">
-    {formData.comparables.map((c, i) => {
-      const ppm2Base = c.builtArea > 0 ? c.price / c.builtArea : 0;
-      const ppm2Adj = ppm2Base * (c.coefficient || 1);
+    {/* =========================
+        Propiedades comparadas en la zona
+       ========================= */}
+    <div className="mt-6 rounded-xl border border-gray-200 bg-white shadow-sm">
+      <div className="border-b border-gray-200 p-4 sm:p-6">
+        <h2
+          className="text-base sm:text-lg font-semibold text-center sm:text-left"
+          style={{ color: primaryColor }}
+        >
+          Propiedades comparadas en la zona
+        </h2>
+      </div>
 
-      return (
-        <div key={i} className="rounded-lg border border-gray-200 p-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-gray-800">
-              Propiedad N°{i + 1}
-            </h3>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => removeComparable(i)}
-                className="inline-flex items-center rounded-md border border-gray-300 bg-white px-2 py-1 text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-                disabled={formData.comparables.length <= 1}
-              >
-                Eliminar
-              </button>
-            </div>
-          </div>
+      <div className="p-4 sm:p-6 space-y-6">
+        {formData.comparables.map((c, i) => {
+          const ppm2Base = c.builtArea > 0 ? c.price / c.builtArea : 0;
+          const ppm2Adj = ppm2Base * (c.coefficient || 1);
 
-          <div className="mt-4 grid grid-cols-1 lg:grid-cols-7 gap-4">
-            {/* Foto */}
-            <div className="lg:col-span-2">
-              <h4 className="mb-1 text-xs font-medium text-gray-600">Foto</h4>
-              {c.photoBase64 ? (
-                <div className="overflow-hidden rounded-lg border border-gray-200">
-                  <img
-                    src={c.photoBase64}
-                    alt={`Foto comparable ${i + 1}`}
-                    className="h-40 w-full object-cover"
-                  />
-                  <div className="p-2 text-right">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setFormData((prev) => {
-                          const arr = prev.comparables.slice();
-                          arr[i] = { ...arr[i], photoBase64: undefined };
-                          return { ...prev, comparables: arr };
-                        })
+          return (
+            <div
+              key={i}
+              className="rounded-lg border border-gray-200 p-4 sm:p-5 bg-white"
+            >
+              {/* Header */}
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                <h3 className="text-sm sm:text-base font-semibold text-gray-800">
+                  Propiedad N°{i + 1}
+                </h3>
+                <div className="flex items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => removeComparable(i)}
+                    className="inline-flex items-center justify-center rounded-md border border-gray-300 bg-white px-2 py-1 text-xs sm:text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                    disabled={formData.comparables.length <= 1}
+                  >
+                    Eliminar
+                  </button>
+                </div>
+              </div>
+
+              {/* Cuerpo */}
+              <div className="mt-4 grid grid-cols-1 lg:grid-cols-7 gap-4">
+                {/* Foto */}
+                <div className="lg:col-span-2">
+                  <h4 className="mb-1 text-xs sm:text-sm font-medium text-gray-600">
+                    Foto
+                  </h4>
+                  {c.photoBase64 ? (
+                    <div className="overflow-hidden rounded-lg border border-gray-200">
+                      <img
+                        src={c.photoBase64}
+                        alt={`Foto comparable ${i + 1}`}
+                        className="h-40 sm:h-48 w-full object-cover"
+                      />
+                      <div className="p-2 text-center sm:text-right">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setFormData((prev) => {
+                              const arr = prev.comparables.slice();
+                              arr[i] = { ...arr[i], photoBase64: undefined };
+                              return { ...prev, comparables: arr };
+                            })
+                          }
+                          className="inline-flex items-center rounded-md border border-gray-300 bg-white px-2 py-1 text-xs sm:text-sm text-gray-700 hover:bg-gray-50"
+                        >
+                          Cambiar foto
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="rounded-lg border border-dashed border-gray-300 p-3 text-center">
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => handleComparablePhotoSelect(i, e)}
+                        className="block w-full text-xs sm:text-sm"
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {/* Datos */}
+                <div className="lg:col-span-5 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                  {/* Dirección */}
+                  <div className="space-y-1 sm:col-span-2">
+                    <label className="block text-sm font-medium text-gray-700">
+                      Dirección
+                    </label>
+                    <input
+                      value={c.address}
+                      onChange={(e) =>
+                        updateComparable(i, "address", e.target.value)
                       }
-                      className="inline-flex items-center rounded-md border border-gray-300 bg-white px-2 py-1 text-xs text-gray-700 hover:bg-gray-50"
+                      className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
+                      placeholder="Calle y número"
+                    />
+                  </div>
+
+                  {/* Barrio */}
+                  <div className="space-y-1">
+                    <label className="block text-sm font-medium text-gray-700">
+                      Barrio
+                    </label>
+                    <input
+                      value={c.neighborhood}
+                      onChange={(e) =>
+                        updateComparable(i, "neighborhood", e.target.value)
+                      }
+                      className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
+                      placeholder="Barrio"
+                    />
+                  </div>
+
+                  {/* m² Cubiertos */}
+                  <div className="space-y-1">
+                    <label className="block text-sm font-medium text-gray-700">
+                      m² Cubiertos
+                    </label>
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      value={c.builtArea}
+                      onChange={(e) =>
+                        updateComparable(i, "builtArea", e.target.value)
+                      }
+                      className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
+                      placeholder="0"
+                    />
+                  </div>
+
+                  {/* Precio */}
+                  <div className="space-y-1">
+                    <label className="block text-sm font-medium text-gray-700">
+                      Precio ($)
+                    </label>
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      value={c.price}
+                      onChange={(e) =>
+                        updateComparable(i, "price", e.target.value)
+                      }
+                      className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
+                      placeholder="0"
+                    />
+                  </div>
+
+                  {/* Días publicada */}
+                  <div className="space-y-1">
+                    <label className="block text-sm font-medium text-gray-700">
+                      Días publicada
+                    </label>
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      value={c.daysPublished}
+                      onChange={(e) =>
+                        updateComparable(i, "daysPublished", e.target.value)
+                      }
+                      className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
+                      placeholder="0"
+                    />
+                  </div>
+
+                  {/* Link */}
+                  <div className="space-y-1 sm:col-span-2">
+                    <label className="block text-sm font-medium text-gray-700">
+                      Link de publicación
+                    </label>
+                    <input
+                      value={c.listingUrl || ""}
+                      onChange={(e) =>
+                        updateComparable(i, "listingUrl", e.target.value)
+                      }
+                      className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
+                      placeholder="https://..."
+                    />
+                  </div>
+
+                  {/* Coeficiente */}
+                  <div className="space-y-1">
+                    <label className="block text-sm font-medium text-gray-700">
+                      Coeficiente
+                    </label>
+                    <select
+                      value={c.coefficient}
+                      onChange={(e) =>
+                        updateComparable(i, "coefficient", e.target.value)
+                      }
+                      className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
                     >
-                      Cambiar foto
-                    </button>
+                      {coefOpts.map((o) => (
+                        <option key={o.value} value={o.value}>
+                          {o.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Precio/m² */}
+                  <div className="space-y-1">
+                    <label className="block text-sm font-medium text-gray-700">
+                      Precio por m² (ajustado)
+                    </label>
+                    <div className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm">
+                      {peso(ppm2Adj)}
+                    </div>
+                  </div>
+
+                  {/* Descripción */}
+                  <div className="space-y-1 sm:col-span-2 md:col-span-3">
+                    <label className="block text-sm font-medium text-gray-700">
+                      Descripción
+                    </label>
+                    <textarea
+                      value={c.description}
+                      onChange={(e) =>
+                        updateComparable(i, "description", e.target.value)
+                      }
+                      rows={3}
+                      className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
+                      placeholder="Descripción breve de la propiedad comparable"
+                    />
                   </div>
                 </div>
-              ) : (
-                <div className="rounded-lg border border-dashed border-gray-300 p-3 text-center">
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={(e) => handleComparablePhotoSelect(i, e)}
-                    className="block w-full text-sm"
-                  />
-                </div>
-              )}
-            </div>
-
-            {/* Datos */}
-            <div className="lg:col-span-5 grid grid-cols-1 md:grid-cols-3 gap-4">
-              {/* Dirección */}
-              <div className="space-y-1 md:col-span-2">
-                <label className="block text-sm font-medium text-gray-700">Dirección</label>
-                <input
-                  value={c.address}
-                  onChange={(e) => updateComparable(i, 'address', e.target.value)}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
-                  placeholder="Calle y número"
-                />
-              </div>
-
-              {/* Barrio */}
-              <div className="space-y-1">
-                <label className="block text-sm font-medium text-gray-700">Barrio</label>
-                <input
-                  value={c.neighborhood}
-                  onChange={(e) => updateComparable(i, 'neighborhood', e.target.value)}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
-                  placeholder="Barrio"
-                />
-              </div>
-
-              {/* m² Cubiertos */}
-              <div className="space-y-1">
-                <label className="block text-sm font-medium text-gray-700">m² Cubiertos</label>
-                <input
-                  type="number"
-                  inputMode="decimal"
-                  value={c.builtArea}
-                  onChange={(e) => updateComparable(i, 'builtArea', e.target.value)}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
-                  placeholder="0"
-                />
-              </div>
-
-              {/* Precio */}
-              <div className="space-y-1">
-                <label className="block text-sm font-medium text-gray-700">Precio ($)</label>
-                <input
-                  type="number"
-                  inputMode="decimal"
-                  value={c.price}
-                  onChange={(e) => updateComparable(i, 'price', e.target.value)}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
-                  placeholder="0"
-                />
-              </div>
-
-              {/* Días publicada */}
-              <div className="space-y-1">
-                <label className="block text-sm font-medium text-gray-700">Días publicada</label>
-                <input
-                  type="number"
-                  inputMode="numeric"
-                  value={c.daysPublished}
-                  onChange={(e) => updateComparable(i, 'daysPublished', e.target.value)}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
-                  placeholder="0"
-                />
-              </div>
-
-              {/* Link */}
-              <div className="space-y-1 md:col-span-2">
-                <label className="block text-sm font-medium text-gray-700">Link de publicación</label>
-                <input
-                  value={c.listingUrl || ''}
-                  onChange={(e) => updateComparable(i, 'listingUrl', e.target.value)}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
-                  placeholder="https://..."
-                />
-              </div>
-
-              {/* Coeficiente */}
-              <div className="space-y-1">
-                <label className="block text-sm font-medium text-gray-700">Coeficiente</label>
-                <select
-                  value={c.coefficient}
-                  onChange={(e) => updateComparable(i, 'coefficient', e.target.value)}
-                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
-                >
-                  {coefOpts.map((o) => (
-                    <option key={o.value} value={o.value}>
-                      {o.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Precio/m² (solo lectura) */}
-              <div className="space-y-1">
-                <label className="block text-sm font-medium text-gray-700">Precio por m² (ajustado)</label>
-                <div className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm">
-                  {peso(ppm2Adj)}
-                </div>
-              </div>
-
-              {/* Descripción */}
-              <div className="space-y-1 md:col-span-3">
-                <label className="block text-sm font-medium text-gray-700">Descripción</label>
-                <textarea
-                  value={c.description}
-                  onChange={(e) => updateComparable(i, 'description', e.target.value)}
-                  rows={3}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
-                  placeholder="Descripción breve de la propiedad comparable"
-                />
               </div>
             </div>
-          </div>
+          );
+        })}
+
+        <div className="flex justify-center sm:justify-end">
+          <button
+            type="button"
+            onClick={addComparable}
+            disabled={formData.comparables.length >= 4}
+            className="inline-flex items-center justify-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+          >
+            Agregar comparable
+          </button>
         </div>
-      );
-    })}
-
-    <div className="flex justify-end">
-      <button
-        type="button"
-        onClick={addComparable}
-        disabled={formData.comparables.length >= 4}
-        className="inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-      >
-        Agregar comparable
-      </button>
+      </div>
     </div>
-  </div>
-</div>
 
       {/* Conclusión */}
       <div className="mt-6 rounded-xl border border-gray-200 bg-white shadow-sm">
-        <div className="border-b border-gray-200 p-6">
-          <h2 className="text-lg font-semibold" style={{ color: primaryColor }}>
+        <div className="border-b border-gray-200 p-4 sm:p-6">
+          <h2
+            className="text-base sm:text-lg font-semibold text-center sm:text-left"
+            style={{ color: primaryColor }}
+          >
             Conclusión
           </h2>
         </div>
 
-        <div className="grid grid-cols-1 gap-5 p-6">
+        <div className="grid grid-cols-1 gap-4 sm:gap-5 p-4 sm:p-6">
+          {/* Observaciones */}
           <div className="space-y-1">
             <label className="block text-sm font-medium text-gray-700">
               Observaciones
@@ -1348,6 +1407,7 @@ const handleDownloadPDF = async () => {
             />
           </div>
 
+          {/* Fortalezas */}
           <div className="space-y-1">
             <label className="block text-sm font-medium text-gray-700">
               Fortalezas
@@ -1362,6 +1422,7 @@ const handleDownloadPDF = async () => {
             />
           </div>
 
+          {/* Debilidades */}
           <div className="space-y-1">
             <label className="block text-sm font-medium text-gray-700">
               Debilidades
@@ -1376,6 +1437,7 @@ const handleDownloadPDF = async () => {
             />
           </div>
 
+          {/* A considerar */}
           <div className="space-y-1">
             <label className="block text-sm font-medium text-gray-700">
               A considerar
@@ -1392,12 +1454,12 @@ const handleDownloadPDF = async () => {
         </div>
       </div>
 
-           {/* Acciones */}
-      <div className="mt-6 flex flex-wrap items-center justify-end gap-3">
+      {/* Acciones */}
+      <div className="mt-6 flex flex-col sm:flex-row flex-wrap items-center justify-center sm:justify-end gap-3">
         <button
           type="button"
           onClick={handleDownloadPDF}
-          className="inline-flex items-center rounded-lg px-4 py-2 text-sm font-semibold text-white"
+          className="inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-semibold text-white w-full sm:w-auto text-center"
           style={{ backgroundColor: primaryColor }}
         >
           Descargar PDF

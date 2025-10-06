@@ -321,7 +321,7 @@ const handleDownloadPDF = async () => {
     user?.nombre && user?.apellido ? `${user.nombre} ${user.apellido}` : "—";
 
   // Logo del usuario (si existe)
-  const userLogo = user?.logo_url || null; // 👈 si tienes guardado el logo en Supabase o metadata
+  const userLogo = logoBase64 || null; // 👈 si tienes guardado el logo en Supabase o metadata
 
   // Color primario
   const hexToRgb = (hex: string) => {

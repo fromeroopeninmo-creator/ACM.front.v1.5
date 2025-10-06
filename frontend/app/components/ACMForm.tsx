@@ -1458,5 +1458,5 @@ const handleDownloadPDF = async () => {
         </button>
       </div>
     </div> 
-  ); // ← cierre del return
-} // ← cierre de la función ACMForm
+  ); 
+} 

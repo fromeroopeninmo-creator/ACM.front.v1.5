@@ -303,7 +303,7 @@ export default function ACMForm() {
     }
   };
 
- /** ========= PDF ========= */
+/** ========= PDF ========= */
 const handleDownloadPDF = async () => {
   const { jsPDF } = await import("jspdf");
 
@@ -320,8 +320,8 @@ const handleDownloadPDF = async () => {
   const asesorNombre =
     user?.nombre && user?.apellido ? `${user.nombre} ${user.apellido}` : "—";
 
-  // Logo del usuario (si existe)
-  const userLogo = logoBase64 || null; // 👈 si tienes guardado el logo en Supabase o metadata
+  // Logo del usuario (base64 desde el formulario)
+  const userLogo = logoBase64 || null;
 
   // Color primario
   const hexToRgb = (hex: string) => {
@@ -367,19 +367,10 @@ const handleDownloadPDF = async () => {
   // Logo centrado (si existe)
   if (userLogo) {
     try {
-      const img = await fetch(userLogo);
-      const blob = await img.blob();
-      const reader = new FileReader();
-      const base64Promise = new Promise<string>((resolve) => {
-        reader.onload = () => resolve(reader.result as string);
-      });
-      reader.readAsDataURL(blob);
-      const base64Img = await base64Promise;
-
       const logoW = 70;
       const logoH = 70;
       const centerX = pageW / 2 - logoW / 2;
-      doc.addImage(base64Img, "PNG", centerX, y - 10, logoW, logoH, undefined, "FAST");
+      doc.addImage(userLogo, "PNG", centerX, y - 10, logoW, logoH, undefined, "FAST");
     } catch (err) {
       console.warn("⚠️ No se pudo cargar el logo del usuario en el PDF", err);
     }
@@ -393,8 +384,25 @@ const handleDownloadPDF = async () => {
   doc.line(margin, y, pageW - margin, y);
   y += 20;
 
+  /** === Bloque auxiliar para texto largo === */
+  const block = (title: string, text: string) => {
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.text(title, margin, y);
+    y += 12;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    const lines = doc.splitTextToSize(text || "-", pageW - margin * 2);
+    doc.text(lines as any, margin, y);
+    y += (Array.isArray(lines) ? lines.length : 1) * 14 + 8;
+    if (y > pageH - 80) {
+      doc.addPage();
+      y = margin;
+    }
+  };
+
   /** 👇 desde aquí sigue exactamente tu código original */
-  // === Datos de la propiedad ===
+  // === Datos de la Propiedad ===
   doc.setFont("helvetica", "bold");
   doc.setFontSize(13);
   doc.setTextColor(pc.r, pc.g, pc.b);
@@ -402,8 +410,9 @@ const handleDownloadPDF = async () => {
   doc.setTextColor(0, 0, 0);
   y += 20;
 
-  // ... [resto de tu código PDF idéntico]
+  // ... [mantén aquí todo tu código PDF existente sin tocar hasta las secciones de texto]
 
+  // === Secciones finales ===
   block("Observaciones", formData.observations);
   block("Fortalezas", formData.strengths);
   block("Debilidades", formData.weaknesses);
@@ -423,7 +432,7 @@ const handleDownloadPDF = async () => {
 
     y += 40; // espacio antes de la imagen
     const imgW = pageW * 0.7; // 70% del ancho
-    const imgH = imgW * 0.5; // mantén proporción
+    const imgH = imgW * 0.5; // mantiene proporción
     const imgX = (pageW - imgW) / 2;
 
     if (y + imgH > pageH - 60) {

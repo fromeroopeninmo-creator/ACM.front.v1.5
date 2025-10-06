@@ -1380,19 +1380,15 @@ const handleDownloadPDF = async () => {
       </div>
     </div>
 
-      {/* Conclusión */}
+           {/* Conclusión */}
       <div className="mt-6 rounded-xl border border-gray-200 bg-white shadow-sm">
-        <div className="border-b border-gray-200 p-4 sm:p-6">
-          <h2
-            className="text-base sm:text-lg font-semibold text-center sm:text-left"
-            style={{ color: primaryColor }}
-          >
+        <div className="border-b border-gray-200 p-6">
+          <h2 className="text-lg font-semibold" style={{ color: primaryColor }}>
             Conclusión
           </h2>
         </div>
 
-        <div className="grid grid-cols-1 gap-4 sm:gap-5 p-4 sm:p-6">
-          {/* Observaciones */}
+        <div className="grid grid-cols-1 gap-5 p-6">
           <div className="space-y-1">
             <label className="block text-sm font-medium text-gray-700">
               Observaciones
@@ -1407,7 +1403,6 @@ const handleDownloadPDF = async () => {
             />
           </div>
 
-          {/* Fortalezas */}
           <div className="space-y-1">
             <label className="block text-sm font-medium text-gray-700">
               Fortalezas
@@ -1422,7 +1417,6 @@ const handleDownloadPDF = async () => {
             />
           </div>
 
-          {/* Debilidades */}
           <div className="space-y-1">
             <label className="block text-sm font-medium text-gray-700">
               Debilidades
@@ -1437,7 +1431,6 @@ const handleDownloadPDF = async () => {
             />
           </div>
 
-          {/* A considerar */}
           <div className="space-y-1">
             <label className="block text-sm font-medium text-gray-700">
               A considerar
@@ -1452,18 +1445,19 @@ const handleDownloadPDF = async () => {
             />
           </div>
         </div>
+      </div>
 
       {/* Acciones */}
       <div className="mt-6 flex flex-col sm:flex-row flex-wrap items-center justify-center sm:justify-end gap-3">
         <button
           type="button"
           onClick={handleDownloadPDF}
-          className="inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-semibold text-white w-full sm:w-auto text-center"
+          className="inline-flex items-center rounded-lg px-4 py-2 text-sm font-semibold text-white"
           style={{ backgroundColor: primaryColor }}
         >
           Descargar PDF
         </button>
       </div>
-    </div>
+    </div> {/* cierre del contenedor principal */}
   );
 }

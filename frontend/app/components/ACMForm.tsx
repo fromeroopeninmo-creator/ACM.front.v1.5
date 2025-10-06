@@ -1378,7 +1378,7 @@ const handleDownloadPDF = async () => {
           </button>
         </div>
       </div>
-    </div>
+   
 
                   {/* Conclusión */}
       <div className="mt-6 rounded-xl border border-gray-200 bg-white shadow-sm">

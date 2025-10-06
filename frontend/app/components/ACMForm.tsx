@@ -1452,7 +1452,6 @@ const handleDownloadPDF = async () => {
             />
           </div>
         </div>
-      </div>
 
       {/* Acciones */}
       <div className="mt-6 flex flex-col sm:flex-row flex-wrap items-center justify-center sm:justify-end gap-3">

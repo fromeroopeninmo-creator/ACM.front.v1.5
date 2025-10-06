@@ -1380,7 +1380,7 @@ const handleDownloadPDF = async () => {
       </div>
     </div>
 
-           {/* Conclusión */}
+               {/* Conclusión */}
       <div className="mt-6 rounded-xl border border-gray-200 bg-white shadow-sm">
         <div className="border-b border-gray-200 p-6">
           <h2 className="text-lg font-semibold" style={{ color: primaryColor }}>
@@ -1458,6 +1458,8 @@ const handleDownloadPDF = async () => {
           Descargar PDF
         </button>
       </div>
-    </div> {/* cierre del contenedor principal */}
+
+      {/* cierre del contenedor principal */}
+    </div>
   );
 }

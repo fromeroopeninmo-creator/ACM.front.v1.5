@@ -49,12 +49,12 @@ export default function Header() {
             alt="Logo VAI"
             className="
               object-contain
-              h-[72px] sm:h-[80px]
+              h-[88px] sm:h-[96px]
               w-auto
               transition-transform duration-300
             "
             style={{
-              maxHeight: "88px",
+              maxHeight: "104px",
               transformOrigin: "center center",
             }}
           />

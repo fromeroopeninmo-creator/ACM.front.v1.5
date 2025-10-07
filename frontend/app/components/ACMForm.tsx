@@ -663,52 +663,74 @@ const handleDownloadPDF = async () => {
         {/* Logo + Nombre inmobiliaria */}
         <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
           <div className="w-24 h-12 sm:w-28 sm:h-14 bg-white rounded-lg border border-gray-200 flex flex-col items-center justify-center overflow-hidden">
-            {logoBase64 ? (
-              <div className="flex flex-col items-center w-full h-full">
-                <img src={logoBase64} alt="Logo" className="object-contain w-full h-full" />
-                <button
-                  type="button"
-                  onClick={() => {
-                    setLogoBase64(undefined);
-                    localStorage.removeItem("logoBase64");
-                    if (logoInputRef.current) logoInputRef.current.value = "";
-                  }}
-                  className="mt-1 inline-flex items-center rounded-md border border-gray-300 bg-white px-2 py-1 text-[10px] sm:text-xs font-medium text-gray-700 hover:bg-gray-50"
-                >
-                  Cambiar
-                </button>
-              </div>
-            ) : (
-              <label className="text-xs text-gray-500 px-2 text-center">
-                Logo
-                <input
-                  ref={logoInputRef}
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={async (e) => {
-                    const f = e.target.files?.[0];
-                    if (!f) return;
-                    const reader = new FileReader();
-                    reader.onloadend = () => {
-                      const b64 = reader.result as string;
-                      setLogoBase64(b64);
-                      localStorage.setItem("logoBase64", b64);
-                    };
-                    reader.readAsDataURL(f);
-                    if (logoInputRef.current) logoInputRef.current.value = "";
-                  }}
-                />
-                <button
-                  type="button"
-                  onClick={() => logoInputRef.current?.click()}
-                  className="mt-1 inline-flex items-center rounded-md border border-gray-300 bg-white px-2 py-1 text-[10px] sm:text-xs font-medium text-gray-700 hover:bg-gray-50"
-                >
-                  Subir
-                </button>
-              </label>
-            )}
-          </div>
+  {logoBase64 ? (
+    <div className="flex flex-col items-center w-full h-full">
+      <img
+        src={logoBase64}
+        alt="Logo"
+        className="object-contain w-full h-full"
+      />
+
+      {/* ✅ input oculto para reemplazar el logo directamente */}
+      <input
+        ref={logoInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={async (e) => {
+          const f = e.target.files?.[0];
+          if (!f) return;
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            const b64 = reader.result as string;
+            setLogoBase64(b64);
+            localStorage.setItem("logoBase64", b64);
+          };
+          reader.readAsDataURL(f);
+          if (logoInputRef.current) logoInputRef.current.value = "";
+        }}
+      />
+
+      {/* 🔘 Botón que abre el selector directamente */}
+      <button
+        type="button"
+        onClick={() => logoInputRef.current?.click()}
+        className="mt-1 inline-flex items-center rounded-md border border-gray-300 bg-white px-2 py-1 text-[10px] sm:text-xs font-medium text-gray-700 hover:bg-gray-50"
+      >
+        Cambiar logo
+      </button>
+    </div>
+  ) : (
+    <label className="text-xs text-gray-500 px-2 text-center">
+      Logo
+      <input
+        ref={logoInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={async (e) => {
+          const f = e.target.files?.[0];
+          if (!f) return;
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            const b64 = reader.result as string;
+            setLogoBase64(b64);
+            localStorage.setItem("logoBase64", b64);
+          };
+          reader.readAsDataURL(f);
+          if (logoInputRef.current) logoInputRef.current.value = "";
+        }}
+      />
+      <button
+        type="button"
+        onClick={() => logoInputRef.current?.click()}
+        className="mt-1 inline-flex items-center rounded-md border border-gray-300 bg-white px-2 py-1 text-[10px] sm:text-xs font-medium text-gray-700 hover:bg-gray-50"
+      >
+        Subir
+      </button>
+    </label>
+  )}
+</div>
 
           {/* Nombre de la inmobiliaria */}
           <div className="text-center sm:text-left">

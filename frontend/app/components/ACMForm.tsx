@@ -662,14 +662,16 @@ const handleDownloadPDF = async () => {
       <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mb-6">
         {/* Logo + Nombre inmobiliaria */}
         <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
-          <div className="w-24 h-12 sm:w-28 sm:h-14 bg-white rounded-lg border border-gray-200 flex flex-col items-center justify-center overflow-hidden">
+          <div className="w-28 sm:w-32 bg-white rounded-lg border border-gray-200 flex flex-col items-center justify-center overflow-hidden p-1">
   {logoBase64 ? (
-    <div className="flex flex-col items-center w-full h-full">
-      <img
-        src={logoBase64}
-        alt="Logo"
-        className="object-contain w-full h-full"
-      />
+    <div className="flex flex-col items-center justify-center w-full">
+      <div className="w-full flex justify-center">
+        <img
+          src={logoBase64}
+          alt="Logo"
+          className="object-contain max-h-16 sm:max-h-20 w-auto"
+        />
+      </div>
 
       {/* ✅ input oculto para reemplazar el logo directamente */}
       <input
@@ -691,7 +693,7 @@ const handleDownloadPDF = async () => {
         }}
       />
 
-      {/* 🔘 Botón que abre el selector directamente */}
+      {/* 🔘 Botón visible debajo del logo */}
       <button
         type="button"
         onClick={() => logoInputRef.current?.click()}
@@ -701,7 +703,7 @@ const handleDownloadPDF = async () => {
       </button>
     </div>
   ) : (
-    <label className="text-xs text-gray-500 px-2 text-center">
+    <label className="flex flex-col items-center justify-center text-xs text-gray-500 px-2 py-2 text-center">
       Logo
       <input
         ref={logoInputRef}
@@ -731,6 +733,7 @@ const handleDownloadPDF = async () => {
     </label>
   )}
 </div>
+
 
           {/* Nombre de la inmobiliaria */}
           <div className="text-center sm:text-left">

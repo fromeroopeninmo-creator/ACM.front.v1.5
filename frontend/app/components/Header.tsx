@@ -15,11 +15,11 @@ export default function Header() {
         w-full transition-all duration-300
       "
       style={{
-        height: "auto", // 🔄 flexible para mobile, mantiene alto compacto
+        height: "auto",
         overflow: "hidden",
       }}
     >
-      {/* 🔹 Versión MOBILE: info izquierda / logo derecha */}
+      {/* 🔹 MOBILE: info izquierda / logo derecha */}
       <div className="flex w-full items-center justify-between md:hidden">
         {/* Izquierda */}
         <div className="flex flex-col text-[11px] sm:text-sm font-semibold text-gray-700 leading-tight">
@@ -30,7 +30,7 @@ export default function Header() {
           </p>
         </div>
 
-        {/* Derecha (logo del alto del bloque izquierdo) */}
+        {/* Derecha (logo con altura proporcional) */}
         <div className="flex items-center justify-center">
           <img
             src="/logo-vai4.png"
@@ -49,7 +49,20 @@ export default function Header() {
         </div>
       </div>
 
-      {/* 🔹 Versión DESKTOP: estructura original */}
+      {/* ✅ Botón centrado solo en mobile */}
+      <div className="flex md:hidden justify-center mt-2">
+        <button
+          onClick={logout}
+          className="
+            px-4 py-1.5 text-xs sm:text-sm border rounded bg-white
+            font-medium text-gray-700 hover:bg-gray-200 transition
+          "
+        >
+          Cerrar sesión
+        </button>
+      </div>
+
+      {/* 🔹 DESKTOP: estructura original */}
       <div className="hidden md:flex w-full justify-between items-center">
         {/* Izquierda */}
         <div className="text-xs sm:text-sm font-semibold text-gray-700 text-left leading-tight">

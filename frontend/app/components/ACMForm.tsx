@@ -1436,26 +1436,29 @@ const handleDownloadPDF = async () => {
         </div>
       </div>
 
-      {/* Acciones */}
-      <div className="mt-6 flex flex-col sm:flex-row flex-wrap items-center justify-center sm:justify-end gap-3">
-        <button
-          type="button"
-          onClick={handleDownloadPDF}
-          className="inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-semibold text-white w-full sm:w-auto text-center"
-          style={{ backgroundColor: primaryColor }}
-        >
-          Descargar PDF
-        </button>
+     {/* Acciones */}
+<div className="mt-6 flex flex-col sm:flex-row flex-wrap items-center justify-center sm:justify-end gap-3">
+  <button
+    type="button"
+    onClick={handleDownloadPDF}
+    className="inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-semibold text-white w-full sm:w-auto text-center"
+    style={{ backgroundColor: primaryColor }}
+  >
+    Descargar PDF
+  </button>
 
-        <button
-          type="button"
-          onClick={handleSaveToDB}
-          className="inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-semibold text-white w-full sm:w-auto text-center"
-          style={{ backgroundColor: primaryColor }}
-        >
-          Guardar en Base
-        </button>
-      </div>
-    </div>
-  );
+  {/* 🔒 Botón temporalmente oculto — volver a activar en producción */}
+  {false && (
+    <button
+      type="button"
+      onClick={handleSaveToDB}
+      className="inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-semibold text-white w-full sm:w-auto text-center"
+      style={{ backgroundColor: primaryColor }}
+    >
+      Guardar en Base
+    </button>
+  )}
+</div>
+</div>
+);
 }

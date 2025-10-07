@@ -82,14 +82,34 @@ export default function RegisterPage() {
       title="Crear cuenta"
       subtitle="Bienvenido a VAI – Registrate para continuar"
     >
-      {errorMsg && <div style={alertError}>{errorMsg}</div>}
-      {infoMsg && <div style={alertInfo}>{infoMsg}</div>}
+      {errorMsg && (
+        <div
+          style={alertError}
+          className="text-center text-sm sm:text-base break-words"
+        >
+          {errorMsg}
+        </div>
+      )}
+      {infoMsg && (
+        <div
+          style={alertInfo}
+          className="text-center text-sm sm:text-base break-words"
+        >
+          {infoMsg}
+        </div>
+      )}
 
-      <form onSubmit={handleRegister} style={{ display: "grid", gap: "12px" }}>
-        {/* Datos personales */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+      <form
+        onSubmit={handleRegister}
+        style={{ display: "grid", gap: "12px" }}
+        className="w-full text-sm sm:text-base"
+      >
+        {/* 🧍 Datos personales */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
-            <label style={labelStyle}>Nombre</label>
+            <label style={labelStyle} className="block mb-1">
+              Nombre
+            </label>
             <input
               type="text"
               value={nombre}
@@ -97,10 +117,13 @@ export default function RegisterPage() {
               placeholder="Nombre"
               required
               style={inputStyle}
+              className="focus:ring-2 focus:ring-sky-400 transition-all w-full"
             />
           </div>
           <div>
-            <label style={labelStyle}>Apellido</label>
+            <label style={labelStyle} className="block mb-1">
+              Apellido
+            </label>
             <input
               type="text"
               value={apellido}
@@ -108,12 +131,16 @@ export default function RegisterPage() {
               placeholder="Apellido"
               required
               style={inputStyle}
+              className="focus:ring-2 focus:ring-sky-400 transition-all w-full"
             />
           </div>
         </div>
 
+        {/* 📧 Email */}
         <div>
-          <label style={labelStyle}>Email</label>
+          <label style={labelStyle} className="block mb-1">
+            Email
+          </label>
           <input
             type="email"
             value={email}
@@ -121,11 +148,15 @@ export default function RegisterPage() {
             placeholder="tu@email.com"
             required
             style={inputStyle}
+            className="focus:ring-2 focus:ring-sky-400 transition-all w-full"
           />
         </div>
 
+        {/* 🔒 Contraseña */}
         <div>
-          <label style={labelStyle}>Contraseña</label>
+          <label style={labelStyle} className="block mb-1">
+            Contraseña
+          </label>
           <input
             type="password"
             value={password}
@@ -133,102 +164,141 @@ export default function RegisterPage() {
             placeholder="Mínimo 6 caracteres"
             required
             style={inputStyle}
+            className="focus:ring-2 focus:ring-sky-400 transition-all w-full"
           />
         </div>
 
-        {/* Datos de contacto */}
+        {/* ☎️ Datos de contacto */}
         <div>
-          <label style={labelStyle}>Teléfono</label>
+          <label style={labelStyle} className="block mb-1">
+            Teléfono
+          </label>
           <input
             type="text"
             value={telefono}
             onChange={(e) => setTelefono(e.target.value)}
             placeholder="Teléfono"
             style={inputStyle}
+            className="focus:ring-2 focus:ring-sky-400 transition-all w-full"
           />
         </div>
 
         <div>
-          <label style={labelStyle}>Dirección</label>
+          <label style={labelStyle} className="block mb-1">
+            Dirección
+          </label>
           <input
             type="text"
             value={direccion}
             onChange={(e) => setDireccion(e.target.value)}
             placeholder="Calle y número"
             style={inputStyle}
+            className="focus:ring-2 focus:ring-sky-400 transition-all w-full"
           />
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
-            <label style={labelStyle}>Localidad</label>
+            <label style={labelStyle} className="block mb-1">
+              Localidad
+            </label>
             <input
               type="text"
               value={localidad}
               onChange={(e) => setLocalidad(e.target.value)}
               placeholder="Localidad"
               style={inputStyle}
+              className="focus:ring-2 focus:ring-sky-400 transition-all w-full"
             />
           </div>
           <div>
-            <label style={labelStyle}>Provincia</label>
+            <label style={labelStyle} className="block mb-1">
+              Provincia
+            </label>
             <input
               type="text"
               value={provincia}
               onChange={(e) => setProvincia(e.target.value)}
               placeholder="Provincia"
               style={inputStyle}
+              className="focus:ring-2 focus:ring-sky-400 transition-all w-full"
             />
           </div>
         </div>
 
-        {/* Datos del matriculado */}
+        {/* 📜 Datos del matriculado */}
         <div>
-          <label style={labelStyle}>Nombre del Matriculado/a</label>
+          <label style={labelStyle} className="block mb-1">
+            Nombre del Matriculado/a
+          </label>
           <input
             type="text"
             value={matriculado}
             onChange={(e) => setMatriculado(e.target.value)}
             placeholder="Nombre completo del matriculado/a"
             style={inputStyle}
+            className="focus:ring-2 focus:ring-sky-400 transition-all w-full"
           />
         </div>
 
         <div>
-          <label style={labelStyle}>CPI</label>
+          <label style={labelStyle} className="block mb-1">
+            CPI
+          </label>
           <input
             type="text"
             value={cpi}
             onChange={(e) => setCpi(e.target.value)}
             placeholder="Matrícula / CPI"
             style={inputStyle}
+            className="focus:ring-2 focus:ring-sky-400 transition-all w-full"
           />
         </div>
 
-        {/* Inmobiliaria */}
+        {/* 🏢 Inmobiliaria */}
         <div>
-          <label style={labelStyle}>Inmobiliaria</label>
+          <label style={labelStyle} className="block mb-1">
+            Inmobiliaria
+          </label>
           <input
             type="text"
             value={inmobiliaria}
             onChange={(e) => setInmobiliaria(e.target.value)}
             placeholder="Nombre de la inmobiliaria"
             style={inputStyle}
+            className="focus:ring-2 focus:ring-sky-400 transition-all w-full"
           />
         </div>
 
-        <button type="submit" disabled={loading} style={buttonStyle}>
+        {/* 🔘 Botón */}
+        <button
+          type="submit"
+          disabled={loading}
+          style={buttonStyle}
+          className="w-full text-sm sm:text-base hover:opacity-90 active:scale-[0.98] transition-all disabled:opacity-50"
+        >
           {loading ? "Creando cuenta..." : "Crear cuenta"}
         </button>
 
-        <p style={{ fontSize: 14, textAlign: "center", marginTop: 6 }}>
-          ¿Ya tenés cuenta? <a href="/auth/login">Ingresá acá</a>
+        {/* 🔗 Link a login */}
+        <p
+          style={{ fontSize: 14, textAlign: "center", marginTop: 6 }}
+          className="text-gray-600 text-xs sm:text-sm mt-2"
+        >
+          ¿Ya tenés cuenta?{" "}
+          <a
+            href="/auth/login"
+            className="text-sky-600 font-semibold hover:underline"
+          >
+            Ingresá acá
+          </a>
         </p>
       </form>
     </AuthLayout>
   );
 }
 
+/* 🎨 Estilos originales (sin cambios) */
 const inputStyle: React.CSSProperties = {
   width: "100%",
   height: 42,

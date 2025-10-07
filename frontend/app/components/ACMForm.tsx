@@ -323,7 +323,7 @@ const handleDownloadPDF = async () => {
   doc.setTextColor(0, 0, 0);
   y += 30;
 
-  // === Encabezado en 2 columnas ===
+ // === Encabezado con logo ===
   const colLeftX = margin;
   const colRightX = pageW - margin - 200;
 
@@ -342,6 +342,27 @@ const handleDownloadPDF = async () => {
   // Columna derecha
   doc.text(`Matriculado: ${matriculado}`, colRightX, y);
   doc.text(`CPI: ${cpi}`, colRightX, y + 15);
+
+  // Logo centrado (si existe)
+  if (userLogo) {
+    try {
+      const img = await fetch(userLogo);
+      const blob = await img.blob();
+      const reader = new FileReader();
+      const base64Promise = new Promise<string>((resolve) => {
+        reader.onload = () => resolve(reader.result as string);
+      });
+      reader.readAsDataURL(blob);
+      const base64Img = await base64Promise;
+
+      const logoW = 70;
+      const logoH = 70;
+      const centerX = pageW / 2 - logoW / 2;
+      doc.addImage(base64Img, "PNG", centerX, y - 10, logoW, logoH, undefined, "FAST");
+    } catch (err) {
+      console.warn("⚠️ No se pudo cargar el logo del usuario en el PDF", err);
+    }
+  }
 
   y += 60;
 
@@ -584,7 +605,39 @@ const handleDownloadPDF = async () => {
   block("Fortalezas", formData.strengths);
   block("Debilidades", formData.weaknesses);
   block("A considerar", formData.considerations);
+    
+// === Imagen final (fija, sin deformar) ===
+  try {
+    const graficoUrl = "/grafico1-pdf.png";
+    const img = await fetch(graficoUrl);
+    const blob = await img.blob();
+    const reader = new FileReader();
+    const base64Promise = new Promise<string>((resolve) => {
+      reader.onload = () => resolve(reader.result as string);
+    });
+    reader.readAsDataURL(blob);
+    const base64Img = await base64Promise;
 
+    const tempImg = new Image();
+    tempImg.src = base64Img;
+    await new Promise((res) => (tempImg.onload = res));
+    const ratio = tempImg.height / tempImg.width;
+
+    const imgW = pageW * 0.7;
+    const imgH = imgW * ratio;
+    const imgX = (pageW - imgW) / 2;
+
+    y += 40;
+    if (y + imgH > pageH - 60) {
+      doc.addPage();
+      y = margin;
+    }
+
+    doc.addImage(base64Img, "PNG", imgX, y, imgW, imgH, undefined, "FAST");
+    y += imgH + 20;
+  } catch (err) {
+    console.warn("⚠️ No se pudo agregar la imagen final al PDF", err);
+  }
      // === Footer ===
       
   const footerText = `${matriculado}  |  CPI: ${cpi}`;

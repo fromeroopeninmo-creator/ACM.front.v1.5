@@ -45,9 +45,13 @@ export default function AuthLayout({
               alt="Logo VAI"
               className="
                 object-contain
-                h-20 sm:h-24 md:h-28 lg:h-32
+                h-24 sm:h-28 md:h-32 lg:h-36 xl:h-40
+                max-h-[160px] w-auto
                 transition-all duration-300
               "
+              style={{
+                maxWidth: "95%", // 🔒 evita que se salga del contenedor
+              }}
             />
           </div>
 

@@ -10,32 +10,27 @@ export default function Header() {
     <header
       className="
         flex flex-col md:flex-row justify-between items-center
-        px-4 md:px-6 py-2 md:py-3
+        px-4 md:px-6 py-3 md:py-4
         bg-gray-100 border-b shadow-sm sticky top-0 z-50
-        w-full
+        w-full transition-all duration-300
       "
-      style={{
-        height: "70px", // 🔒 altura fija en desktop
-        overflow: "hidden", // evita que el logo sobresalga
-      }}
     >
       {/* Izquierda */}
-      <div className="text-xs sm:text-sm font-semibold text-gray-700 text-center md:text-left leading-tight mb-1 md:mb-0">
+      <div className="text-xs sm:text-sm font-semibold text-gray-700 text-center md:text-left leading-tight mb-2 md:mb-0">
         <p>{user.matriculado_nombre || "—"}</p>
         <p>CPI: {user.cpi || "—"}</p>
       </div>
 
-      {/* Centro (Logo responsive) */}
-      <div className="flex justify-center items-center h-full order-first md:order-none">
+      {/* Centro (Logo totalmente responsive) */}
+      <div className="flex justify-center items-center order-first md:order-none">
         <img
           src="/logo-vai4.png"
           alt="Logo VAI"
-          className="object-contain"
-          style={{
-            height: "100%", // ocupa toda la altura del header
-            maxHeight: "80px", // no supera el alto del header
-            width: "auto",
-          }}
+          className="
+            object-contain
+            h-10 sm:h-12 md:h-14 lg:h-16 xl:h-20
+            transition-all duration-300
+          "
         />
       </div>
 

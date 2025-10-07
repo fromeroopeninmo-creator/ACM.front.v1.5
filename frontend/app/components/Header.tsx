@@ -33,7 +33,7 @@ export default function Header() {
           className="object-contain"
           style={{
             height: "100%", // ocupa toda la altura del header
-            maxHeight: "70px", // no supera el alto del header
+            maxHeight: "80px", // no supera el alto del header
             width: "auto",
           }}
         />

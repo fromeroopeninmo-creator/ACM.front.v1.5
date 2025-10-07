@@ -15,8 +15,8 @@ export default function Header() {
         w-full transition-all duration-300
       "
       style={{
-        height: "72px", // 🔙 vuelve al alto compacto original
-        overflow: "hidden", // evita que el logo sobresalga del bloque
+        height: "72px", // 🔙 alto compacto original
+        overflow: "hidden", // evita que el logo sobresalga
       }}
     >
       {/* Izquierda */}
@@ -32,15 +32,13 @@ export default function Header() {
           alt="Logo VAI"
           className="
             object-contain
-            h-full
-            max-h-[72px]
-            w-auto
-            scale-125 sm:scale-130 md:scale-135
+            h-full max-h-[72px] w-auto
+            scale-[1.8] sm:scale-[2] md:scale-[2.2]
             transition-transform duration-300
           "
           style={{
-            transformOrigin: "center center", // 🔒 mantiene el centrado visual
-            maxWidth: "90%", // evita overflow horizontal
+            transformOrigin: "center center", // mantiene el centrado visual
+            maxWidth: "none", // permite crecer horizontalmente sin recortarse
           }}
         />
       </div>

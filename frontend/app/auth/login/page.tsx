@@ -43,11 +43,25 @@ export default function LoginPage() {
       title="Iniciar sesión"
       subtitle="Bienvenido a VAI – Ingresa tus credenciales"
     >
-      {errorMsg && <div style={alertError}>{errorMsg}</div>}
+      {errorMsg && (
+        <div
+          style={alertError}
+          className="text-center text-sm sm:text-base break-words"
+        >
+          {errorMsg}
+        </div>
+      )}
 
-      <form onSubmit={handleLogin} style={{ display: "grid", gap: "12px" }}>
+      <form
+        onSubmit={handleLogin}
+        style={{ display: "grid", gap: "12px" }}
+        className="w-full text-sm sm:text-base"
+      >
+        {/* 📧 Campo correo */}
         <div>
-          <label style={labelStyle}>Correo</label>
+          <label style={labelStyle} className="block mb-1">
+            Correo
+          </label>
           <input
             type="email"
             value={email}
@@ -55,11 +69,15 @@ export default function LoginPage() {
             placeholder="tu@email.com"
             required
             style={inputStyle}
+            className="focus:ring-2 focus:ring-sky-400 transition-all w-full"
           />
         </div>
 
+        {/* 🔒 Campo contraseña */}
         <div>
-          <label style={labelStyle}>Contraseña</label>
+          <label style={labelStyle} className="block mb-1">
+            Contraseña
+          </label>
           <input
             type="password"
             value={password}
@@ -67,15 +85,32 @@ export default function LoginPage() {
             placeholder="Tu contraseña"
             required
             style={inputStyle}
+            className="focus:ring-2 focus:ring-sky-400 transition-all w-full"
           />
         </div>
 
-        <button type="submit" disabled={loading} style={buttonStyle}>
+        {/* 🔘 Botón */}
+        <button
+          type="submit"
+          disabled={loading}
+          style={buttonStyle}
+          className="w-full text-sm sm:text-base hover:opacity-90 active:scale-[0.98] transition-all disabled:opacity-50"
+        >
           {loading ? "Ingresando..." : "Ingresar"}
         </button>
 
-        <p style={{ fontSize: 14, textAlign: "center", marginTop: 6 }}>
-          ¿No tienes cuenta? <a href="/auth/register">Regístrate aquí</a>
+        {/* 🔗 Registro */}
+        <p
+          style={{ fontSize: 14, textAlign: "center", marginTop: 6 }}
+          className="text-gray-600 text-xs sm:text-sm mt-2"
+        >
+          ¿No tienes cuenta?{" "}
+          <a
+            href="/auth/register"
+            className="text-sky-600 font-semibold hover:underline"
+          >
+            Regístrate aquí
+          </a>
         </p>
       </form>
     </AuthLayout>
@@ -90,7 +125,9 @@ const inputStyle: React.CSSProperties = {
   padding: "0 12px",
   outline: "none",
 };
+
 const labelStyle: React.CSSProperties = { fontSize: 13, fontWeight: 600 };
+
 const buttonStyle: React.CSSProperties = {
   height: 42,
   borderRadius: 8,
@@ -101,6 +138,7 @@ const buttonStyle: React.CSSProperties = {
   cursor: "pointer",
   marginTop: 6,
 };
+
 const alertError: React.CSSProperties = {
   background: "#ffe6e6",
   border: "1px solid #ffb3b3",

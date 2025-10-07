@@ -15,48 +15,81 @@ export default function Header() {
         w-full transition-all duration-300
       "
       style={{
-        height: "72px", // 🔙 alto compacto original
-        overflow: "hidden", // evita que el logo sobresalga
+        height: "auto", // 🔄 flexible para mobile, mantiene alto compacto
+        overflow: "hidden",
       }}
     >
-      {/* Izquierda */}
-      <div className="text-xs sm:text-sm font-semibold text-gray-700 text-center md:text-left leading-tight mb-1 md:mb-0">
-        <p>{user.matriculado_nombre || "—"}</p>
-        <p>CPI: {user.cpi || "—"}</p>
+      {/* 🔹 Versión MOBILE: info izquierda / logo derecha */}
+      <div className="flex w-full items-center justify-between md:hidden">
+        {/* Izquierda */}
+        <div className="flex flex-col text-[11px] sm:text-sm font-semibold text-gray-700 leading-tight">
+          <p>{user.matriculado_nombre || "—"}</p>
+          <p>CPI: {user.cpi || "—"}</p>
+          <p>
+            Asesor: {user.nombre} {user.apellido}
+          </p>
+        </div>
+
+        {/* Derecha (logo del alto del bloque izquierdo) */}
+        <div className="flex items-center justify-center">
+          <img
+            src="/logo-vai4.png"
+            alt="Logo VAI"
+            className="
+              object-contain
+              h-[52px] sm:h-[60px]
+              w-auto
+              transition-transform duration-300
+            "
+            style={{
+              maxHeight: "65px",
+              transformOrigin: "center center",
+            }}
+          />
+        </div>
       </div>
 
-      {/* Centro (logo más grande dentro del mismo alto) */}
-      <div className="flex justify-center items-center h-full order-first md:order-none">
-        <img
-          src="/logo-vai4.png"
-          alt="Logo VAI"
-          className="
-            object-contain
-            h-full max-h-[72px] w-auto
-            scale-[1.8] sm:scale-[2] md:scale-[2.2]
-            transition-transform duration-300
-          "
-          style={{
-            transformOrigin: "center center", // mantiene el centrado visual
-            maxWidth: "none", // permite crecer horizontalmente sin recortarse
-          }}
-        />
-      </div>
+      {/* 🔹 Versión DESKTOP: estructura original */}
+      <div className="hidden md:flex w-full justify-between items-center">
+        {/* Izquierda */}
+        <div className="text-xs sm:text-sm font-semibold text-gray-700 text-left leading-tight">
+          <p>{user.matriculado_nombre || "—"}</p>
+          <p>CPI: {user.cpi || "—"}</p>
+        </div>
 
-      {/* Derecha */}
-      <div className="flex flex-col items-center md:items-end gap-1 text-xs sm:text-sm">
-        <span className="font-medium text-center md:text-right">
-          Asesor: {user.nombre} {user.apellido}
-        </span>
-        <button
-          onClick={logout}
-          className="
-            px-3 py-1 text-xs md:text-sm border rounded bg-white
-            hover:bg-gray-200 transition
-          "
-        >
-          Cerrar sesión
-        </button>
+        {/* Centro (logo más grande dentro del mismo alto) */}
+        <div className="flex justify-center items-center h-full order-first md:order-none">
+          <img
+            src="/logo-vai4.png"
+            alt="Logo VAI"
+            className="
+              object-contain
+              h-full max-h-[72px] w-auto
+              scale-[1.8] sm:scale-[2] md:scale-[2.2]
+              transition-transform duration-300
+            "
+            style={{
+              transformOrigin: "center center",
+              maxWidth: "none",
+            }}
+          />
+        </div>
+
+        {/* Derecha */}
+        <div className="flex flex-col items-center md:items-end gap-1 text-xs sm:text-sm">
+          <span className="font-medium text-center md:text-right">
+            Asesor: {user.nombre} {user.apellido}
+          </span>
+          <button
+            onClick={logout}
+            className="
+              px-3 py-1 text-xs md:text-sm border rounded bg-white
+              hover:bg-gray-200 transition
+            "
+          >
+            Cerrar sesión
+          </button>
+        </div>
       </div>
     </header>
   );

@@ -11,7 +11,7 @@ export default function AuthLayout({
 }) {
   return (
     <div className="flex flex-col sm:flex-row min-h-screen w-full">
-      {/* 🖼️ Columna izquierda con banner (solo visible en sm y +) */}
+      {/* 🖼️ Columna izquierda con banner — se oculta solo en mobile */}
       <div
         className="
           hidden sm:block sm:flex-1
@@ -22,7 +22,7 @@ export default function AuthLayout({
         }}
       />
 
-      {/* 🧾 Columna derecha con formulario */}
+      {/* 🧾 Columna derecha con formulario (logo visible SIEMPRE) */}
       <div
         className="
           flex flex-1 items-center justify-center
@@ -38,16 +38,20 @@ export default function AuthLayout({
             transition-all duration-300
           "
         >
-          {/* 🔹 Logo solo visible en versión móvil */}
-          <div className="flex justify-center mb-4 sm:hidden">
+          {/* 🔹 Logo arriba del formulario — visible en todas las resoluciones */}
+          <div className="flex justify-center mb-4">
             <img
               src="/logo-vai4.png"
               alt="Logo VAI"
-              className="object-contain h-20 transition-all duration-300"
+              className="
+                object-contain
+                h-20 sm:h-24 md:h-28 lg:h-32
+                transition-all duration-300
+              "
             />
           </div>
 
-          {/* Título y subtítulo */}
+          {/* 🔹 Título y subtítulo */}
           <div className="text-center mb-3">
             <h1 className="text-xl sm:text-2xl font-bold text-gray-800">
               {title}
@@ -57,7 +61,7 @@ export default function AuthLayout({
             </p>
           </div>
 
-          {/* Formulario */}
+          {/* 🔹 Formulario */}
           <div className="mt-2">{children}</div>
         </div>
       </div>

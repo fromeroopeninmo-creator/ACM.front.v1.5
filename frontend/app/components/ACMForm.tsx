@@ -753,7 +753,6 @@ const handleDownloadPDF = async () => {
             aria-label="Color primario"
           />
         </div>
-      </div>
 
       {/* Card principal */}
       <div className="rounded-xl border border-gray-200 bg-white shadow-sm">

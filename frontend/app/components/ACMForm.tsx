@@ -753,6 +753,7 @@ const handleDownloadPDF = async () => {
             aria-label="Color primario"
           />
         </div>
+       </div> 
 
       {/* Card principal */}
       <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
@@ -1113,6 +1114,7 @@ const handleDownloadPDF = async () => {
           </div>
         </div>
       </div>
+    </div> 
 
     {/* Precio sugerido */}
     <div className="mt-6 rounded-xl border border-amber-200 bg-amber-50 p-4 sm:p-6">
@@ -1374,7 +1376,7 @@ const handleDownloadPDF = async () => {
           </button>
         </div>
       </div>
-   
+    </div>
 
                   {/* Conclusión */}
       <div className="mt-6 rounded-xl border border-gray-200 bg-white shadow-sm">
@@ -1453,5 +1455,6 @@ const handleDownloadPDF = async () => {
           Descargar PDF
         </button>
       </div> 
+    </div>   
   ); 
 } 

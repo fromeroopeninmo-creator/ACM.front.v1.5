@@ -10,80 +10,55 @@ export default function AuthLayout({
   subtitle: string;
 }) {
   return (
-    <div
-      style={{
-        display: "flex",
-        flexWrap: "wrap", // ✅ permite que el contenido se apile en móviles
-        minHeight: "100vh",
-      }}
-    >
-      {/* 🖼️ Columna izquierda con banner */}
+    <div className="flex flex-col sm:flex-row min-h-screen w-full">
+      {/* 🖼️ Columna izquierda con banner (solo visible en sm y +) */}
       <div
+        className="
+          hidden sm:block sm:flex-1
+          bg-cover bg-center
+        "
         style={{
-          flex: 1,
-          minWidth: "300px", // ✅ evita colapsar en pantallas muy pequeñas
           backgroundImage: "url('/banner.jpg')",
-          backgroundSize: "cover",
-          backgroundPosition: "center",
-          display: "block",
         }}
-        className="hidden sm:block" // ✅ oculta el banner en pantallas pequeñas
       />
 
       {/* 🧾 Columna derecha con formulario */}
       <div
-        style={{
-          flex: 1,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          padding: "1.5rem",
-        }}
+        className="
+          flex flex-1 items-center justify-center
+          p-4 sm:p-6 lg:p-10
+          bg-gray-50
+        "
       >
         <div
-          style={{
-            width: "100%",
-            maxWidth: 420,
-            display: "grid",
-            gap: "12px",
-            background: "#fff",
-            padding: "24px",
-            borderRadius: 8,
-            boxShadow: "0 10px 25px rgba(0,0,0,0.08)",
-          }}
+          className="
+            w-full max-w-sm sm:max-w-md lg:max-w-lg
+            bg-white rounded-xl shadow-lg
+            p-6 sm:p-8 space-y-4
+            transition-all duration-300
+          "
         >
-          {/* 🔹 Logo arriba del formulario */}
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "center",
-              marginBottom: "12px",
-            }}
-          >
+          {/* 🔹 Logo solo visible en versión móvil */}
+          <div className="flex justify-center mb-4 sm:hidden">
             <img
               src="/logo-vai4.png"
               alt="Logo VAI"
-              style={{
-                height: "120px", // ✅ tamaño ajustado al layout
-                width: "auto",
-                objectFit: "contain",
-              }}
+              className="object-contain h-20 transition-all duration-300"
             />
           </div>
 
           {/* Título y subtítulo */}
-          <div
-            style={{
-              marginBottom: 8,
-              textAlign: "center",
-            }}
-          >
-            <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700 }}>{title}</h1>
-            <p style={{ margin: "6px 0 0 0", color: "#555" }}>{subtitle}</p>
+          <div className="text-center mb-3">
+            <h1 className="text-xl sm:text-2xl font-bold text-gray-800">
+              {title}
+            </h1>
+            <p className="text-sm sm:text-base text-gray-600 mt-1">
+              {subtitle}
+            </p>
           </div>
 
           {/* Formulario */}
-          {children}
+          <div className="mt-2">{children}</div>
         </div>
       </div>
     </div>

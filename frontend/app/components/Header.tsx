@@ -15,7 +15,7 @@ export default function Header() {
         w-full transition-all duration-300
       "
       style={{
-        height: "auto",
+        height: "auto", // flexible solo en mobile
         overflow: "hidden",
       }}
     >
@@ -28,38 +28,37 @@ export default function Header() {
           <p>
             Asesor: {user.nombre} {user.apellido}
           </p>
+
+          {/* Botón debajo del asesor */}
+          <button
+            onClick={logout}
+            className="
+              mt-2 px-3 py-1 text-[11px] sm:text-xs border rounded bg-white
+              font-medium text-gray-700 hover:bg-gray-200 transition
+              self-start
+            "
+          >
+            Cerrar sesión
+          </button>
         </div>
 
-        {/* Derecha (logo con altura proporcional) */}
+        {/* Derecha (logo más grande y equilibrado) */}
         <div className="flex items-center justify-center">
           <img
             src="/logo-vai4.png"
             alt="Logo VAI"
             className="
               object-contain
-              h-[52px] sm:h-[60px]
+              h-[72px] sm:h-[80px]
               w-auto
               transition-transform duration-300
             "
             style={{
-              maxHeight: "65px",
+              maxHeight: "88px",
               transformOrigin: "center center",
             }}
           />
         </div>
-      </div>
-
-      {/* ✅ Botón centrado solo en mobile */}
-      <div className="flex md:hidden justify-center mt-2">
-        <button
-          onClick={logout}
-          className="
-            px-4 py-1.5 text-xs sm:text-sm border rounded bg-white
-            font-medium text-gray-700 hover:bg-gray-200 transition
-          "
-        >
-          Cerrar sesión
-        </button>
       </div>
 
       {/* 🔹 DESKTOP: estructura original */}

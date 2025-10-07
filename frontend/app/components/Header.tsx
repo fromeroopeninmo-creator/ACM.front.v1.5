@@ -14,6 +14,9 @@ export default function Header() {
         bg-gray-100 border-b shadow-sm sticky top-0 z-50
         w-full transition-all duration-300
       "
+      style={{
+        minHeight: "90px", // 🔼 un poco más de alto general
+      }}
     >
       {/* Izquierda */}
       <div className="text-xs sm:text-sm font-semibold text-gray-700 text-center md:text-left leading-tight mb-2 md:mb-0">
@@ -21,16 +24,20 @@ export default function Header() {
         <p>CPI: {user.cpi || "—"}</p>
       </div>
 
-      {/* Centro (Logo totalmente responsive) */}
+      {/* Centro (Logo más grande y fluido) */}
       <div className="flex justify-center items-center order-first md:order-none">
         <img
           src="/logo-vai4.png"
           alt="Logo VAI"
           className="
             object-contain
-            h-10 sm:h-12 md:h-14 lg:h-16 xl:h-20
+            h-14 sm:h-16 md:h-20 lg:h-24 xl:h-28
+            max-h-[120px] w-auto
             transition-all duration-300
           "
+          style={{
+            maxWidth: "90%", // 🔒 evita que se desborde horizontalmente
+          }}
         />
       </div>
 

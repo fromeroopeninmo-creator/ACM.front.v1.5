@@ -283,7 +283,7 @@ export default function ACMForm() {
     }
   };
 
- /** ========= PDF ========= */
+/** ========= PDF ========= */
 const handleDownloadPDF = async () => {
   const { jsPDF } = await import("jspdf");
 
@@ -298,9 +298,10 @@ const handleDownloadPDF = async () => {
   const cpi = user?.cpi || "—";
   const inmobiliaria = user?.inmobiliaria || "—";
   const asesorNombre =
-    user?.nombre && user?.apellido
-      ? `${user.nombre} ${user.apellido}`
-      : "—";
+    user?.nombre && user?.apellido ? `${user.nombre} ${user.apellido}` : "—";
+
+  // Logo del usuario (desde la app)
+  const userLogo = logoBase64 || null;
 
   // Color primario
   const hexToRgb = (hex: string) => {

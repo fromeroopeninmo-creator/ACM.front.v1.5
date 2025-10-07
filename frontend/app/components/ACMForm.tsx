@@ -283,9 +283,10 @@ export default function ACMForm() {
     }
   };
 
-  /** ========= PDF ========= */
+   /** ========= PDF ========= */
   const handleDownloadPDF = async () => {
     const { jsPDF } = await import("jspdf");
+
     const doc = new jsPDF("p", "pt", "a4");
     const pageW = doc.internal.pageSize.getWidth();
     const pageH = doc.internal.pageSize.getHeight();
@@ -295,25 +296,187 @@ export default function ACMForm() {
     const matriculado = user?.matriculado_nombre || "—";
     const cpi = user?.cpi || "—";
     const inmobiliaria = user?.inmobiliaria || "—";
-    const asesorNombre = user?.nombre && user?.apellido ? `${user.nombre} ${user.apellido}` : "—";
+    const asesorNombre =
+      user?.nombre && user?.apellido
+        ? `${user.nombre} ${user.apellido}`
+        : "—";
 
-    const userLogo = logoBase64 || null;
-
+    // Color primario
     const hexToRgb = (hex: string) => {
       const m = hex.replace("#", "");
-      const int = parseInt(m.length === 3 ? m.split("").map((c) => c + c).join("") : m, 16);
+      const int = parseInt(
+        m.length === 3 ? m.split("").map((c) => c + c).join("") : m,
+        16
+      );
       return { r: (int >> 16) & 255, g: (int >> 8) & 255, b: int & 255 };
     };
     const pc = hexToRgb(primaryColor);
 
+    // --- ENCABEZADO ---
     doc.setFont("helvetica", "bold");
     doc.setFontSize(16);
     doc.setTextColor(pc.r, pc.g, pc.b);
-    doc.text("VAI - Valuador de Activos Inmobiliarios", pageW / 2, y, { align: "center" });
+    doc.text("VAI - Valuador de Activos Inmobiliarios", pageW / 2, y, {
+      align: "center",
+    });
     doc.setTextColor(0, 0, 0);
     y += 30;
 
-    // ... (resto del contenido del PDF idéntico, sin cambios)
+    // Inmobiliaria / Asesor
+    doc.setFontSize(11);
+    doc.setFont("helvetica", "normal");
+    doc.text(`Inmobiliaria: ${inmobiliaria}`, margin, y);
+    doc.text(`Asesor: ${asesorNombre}`, margin, y + 15);
+    doc.text(`Fecha: ${new Date(formData.date).toLocaleDateString("es-AR")}`, margin, y + 30);
+    doc.text(`Matriculado: ${matriculado}`, pageW - margin - 200, y);
+    doc.text(`CPI: ${cpi}`, pageW - margin - 200, y + 15);
+    y += 60;
+
+    // --- LÍNEA SEPARADORA ---
+    doc.setDrawColor(pc.r, pc.g, pc.b);
+    doc.setLineWidth(0.8);
+    doc.line(margin, y, pageW - margin, y);
+    y += 20;
+
+    // --- DATOS DE LA PROPIEDAD ---
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(13);
+    doc.setTextColor(pc.r, pc.g, pc.b);
+    doc.text("Datos de la Propiedad", pageW / 2, y, { align: "center" });
+    doc.setTextColor(0, 0, 0);
+    y += 20;
+
+    const dataLines = [
+      `Cliente: ${formData.clientName || "-"}`,
+      `Teléfono: ${formData.phone || "-"}`,
+      `Email: ${formData.email || "-"}`,
+      `Dirección: ${formData.address || "-"}`,
+      `Barrio: ${formData.neighborhood || "-"}`,
+      `Localidad: ${formData.locality || "-"}`,
+      `Tipología: ${formData.propertyType}`,
+      `m² Terreno: ${numero(formData.landArea)}`,
+      `m² Cubiertos: ${numero(formData.builtArea)}`,
+      `Planos: ${formData.hasPlans ? "Sí" : "No"}`,
+      `Título: ${formData.titleType}`,
+      `Antigüedad: ${numero(formData.age)} años`,
+      `Estado: ${formData.condition}`,
+      `Ubicación: ${formData.locationQuality}`,
+      `Orientación: ${formData.orientation}`,
+      `Posee renta: ${formData.isRented ? "Sí" : "No"}`,
+    ];
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+
+    dataLines.forEach((line, i) => {
+      doc.text(line, margin, y + i * 14);
+    });
+
+    y += dataLines.length * 14 + 10;
+
+    // --- SERVICIOS ---
+    const servicios = [
+      `Luz: ${formData.services.luz ? "Sí" : "No"}`,
+      `Agua: ${formData.services.agua ? "Sí" : "No"}`,
+      `Gas: ${formData.services.gas ? "Sí" : "No"}`,
+      `Cloacas: ${formData.services.cloacas ? "Sí" : "No"}`,
+      `Pavimento: ${formData.services.pavimento ? "Sí" : "No"}`,
+    ];
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(12);
+    doc.text("Servicios:", margin, y);
+    y += 16;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    servicios.forEach((s, i) => doc.text(s, margin + 10, y + i * 14));
+
+    y += servicios.length * 14 + 20;
+
+    // --- COMPARABLES ---
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(12);
+    doc.setTextColor(pc.r, pc.g, pc.b);
+    doc.text("Propiedades Comparadas", pageW / 2, y, { align: "center" });
+    doc.setTextColor(0, 0, 0);
+    y += 20;
+
+    formData.comparables.forEach((c, i) => {
+      if (y > pageH - 100) {
+        doc.addPage();
+        y = margin;
+      }
+      doc.setFont("helvetica", "bold");
+      doc.text(`Propiedad Nº ${i + 1}`, margin, y);
+      y += 14;
+
+      doc.setFont("helvetica", "normal");
+      const lines = [
+        `Dirección: ${c.address || "-"}`,
+        `Barrio: ${c.neighborhood || "-"}`,
+        `Precio: ${peso(c.price)}`,
+        `m² Cubiertos: ${numero(c.builtArea)}`,
+        `Coeficiente: ${numero(c.coefficient, 1)}`,
+      ];
+      lines.forEach((ln) => {
+        doc.text(ln, margin + 10, y);
+        y += 12;
+      });
+      y += 10;
+    });
+
+    // --- PRECIO SUGERIDO ---
+    if (y > pageH - 120) {
+      doc.addPage();
+      y = margin;
+    }
+
+    doc.setDrawColor(pc.r, pc.g, pc.b);
+    doc.line(margin, y, pageW - margin, y);
+    y += 20;
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(14);
+    doc.text("Precio sugerido de venta", margin, y);
+    y += 20;
+    doc.setFontSize(18);
+    doc.text(peso(suggestedPrice), pageW / 2, y, { align: "center" });
+
+    y += 40;
+    doc.setDrawColor(pc.r, pc.g, pc.b);
+    doc.line(margin, y, pageW - margin, y);
+    y += 20;
+
+    // --- CONCLUSIÓN ---
+    const blocks = [
+      ["Observaciones", formData.observations],
+      ["Fortalezas", formData.strengths],
+      ["Debilidades", formData.weaknesses],
+      ["A considerar", formData.considerations],
+    ];
+
+    blocks.forEach(([title, text]) => {
+      if (y > pageH - 100) {
+        doc.addPage();
+        y = margin;
+      }
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(12);
+      doc.text(title as string, margin, y);
+      y += 14;
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(10);
+      const lines = doc.splitTextToSize(text || "-", pageW - margin * 2);
+      doc.text(lines, margin, y);
+      y += (lines.length + 1) * 14;
+    });
+
+    // --- FOOTER ---
+    const footerText = `${matriculado} | CPI: ${cpi}`;
+    doc.setFont("helvetica", "italic");
+    doc.setFontSize(9);
+    doc.text(footerText, pageW / 2, pageH - 30, { align: "center" });
+
+    // ✅ GUARDAR
     doc.save("VAI.pdf");
   };
 

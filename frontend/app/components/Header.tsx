@@ -10,33 +10,37 @@ export default function Header() {
     <header
       className="
         flex flex-col md:flex-row justify-between items-center
-        px-4 md:px-6 py-3 md:py-4
+        px-4 md:px-6 py-2 md:py-3
         bg-gray-100 border-b shadow-sm sticky top-0 z-50
         w-full transition-all duration-300
       "
       style={{
-        minHeight: "90px", // 🔼 un poco más de alto general
+        height: "72px", // 🔙 vuelve al alto compacto original
+        overflow: "hidden", // evita que el logo sobresalga del bloque
       }}
     >
       {/* Izquierda */}
-      <div className="text-xs sm:text-sm font-semibold text-gray-700 text-center md:text-left leading-tight mb-2 md:mb-0">
+      <div className="text-xs sm:text-sm font-semibold text-gray-700 text-center md:text-left leading-tight mb-1 md:mb-0">
         <p>{user.matriculado_nombre || "—"}</p>
         <p>CPI: {user.cpi || "—"}</p>
       </div>
 
-      {/* Centro (Logo más grande y fluido) */}
-      <div className="flex justify-center items-center order-first md:order-none">
+      {/* Centro (logo más grande dentro del mismo alto) */}
+      <div className="flex justify-center items-center h-full order-first md:order-none">
         <img
           src="/logo-vai4.png"
           alt="Logo VAI"
           className="
             object-contain
-            h-14 sm:h-16 md:h-20 lg:h-24 xl:h-28
-            max-h-[120px] w-auto
-            transition-all duration-300
+            h-full
+            max-h-[72px]
+            w-auto
+            scale-125 sm:scale-130 md:scale-135
+            transition-transform duration-300
           "
           style={{
-            maxWidth: "90%", // 🔒 evita que se desborde horizontalmente
+            transformOrigin: "center center", // 🔒 mantiene el centrado visual
+            maxWidth: "90%", // evita overflow horizontal
           }}
         />
       </div>

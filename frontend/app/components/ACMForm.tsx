@@ -11,7 +11,6 @@ import {
   Services,
   TitleType,
 } from '@/types/acm.types';
-import { createACMAnalysis } from '../lib/api';
 import { useAuth } from "@/context/AuthContext";
 
 /** =========================
@@ -105,6 +104,14 @@ export default function ACMForm() {
   const logoInputRef = useRef<HTMLInputElement | null>(null);
   const mainPhotoInputRef = useRef<HTMLInputElement | null>(null);
 
+  // Cargar logo de localStorage al montar
+  useEffect(() => {
+    const saved = localStorage.getItem("logoBase64");
+    if (saved && !logoBase64) {
+      setLogoBase64(saved);
+    }
+  }, []);
+
   /** ========= Fecha auto ========= */
   useEffect(() => {
     // “refresca” la fecha al montar, solo si está vacía
@@ -123,11 +130,6 @@ export default function ACMForm() {
     const booleanFields = new Set([
       'hasPlans',
       'isRented',
-      'services.luz',
-      'services.agua',
-      'services.gas',
-      'services.cloacas',
-      'services.pavimento',
     ]);
 
     const numberFields = new Set([
@@ -192,8 +194,12 @@ export default function ACMForm() {
 
       let value: any = rawValue;
       if (numericFields.includes(field)) {
-        const n = Number(rawValue);
-        value = isNaN(n) ? 0 : n;
+        if (field === 'coefficient') {
+          value = parseFloat(rawValue) || 1;
+        } else {
+          const n = Number(rawValue);
+          value = isNaN(n) ? 0 : n;
+        }
       }
 
       arr[index] = { ...arr[index], [field]: value };
@@ -237,6 +243,7 @@ export default function ACMForm() {
     if (!f) return;
     const b64 = await readFileAsBase64(f);
     setLogoBase64(b64);
+    localStorage.setItem("logoBase64", b64);
     if (logoInputRef.current) logoInputRef.current.value = '';
   };
 
@@ -265,7 +272,7 @@ export default function ACMForm() {
     return formData.comparables
       .filter((c) => c.builtArea > 0 && c.price > 0)
       .map((c) => {
-        const base = c.pricePerM2 || (c.builtArea > 0 ? c.price / c.builtArea : 0);
+        const base = c.builtArea > 0 ? c.price / c.builtArea : 0;
         return base * (c.coefficient || 1);
       });
   }, [formData.comparables]);
@@ -279,29 +286,6 @@ export default function ACMForm() {
   const suggestedPrice = useMemo(() => {
     return Math.round(averageAdjustedPricePerM2 * (formData.builtArea || 0));
   }, [averageAdjustedPricePerM2, formData.builtArea]);
-
-  /** ========= Guardar (stub) ========= */
-  const handleSaveToDB = async () => {
-    try {
-      const res = await fetch("/api/acm", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          userId: "TU-USER-ID", // más adelante lo tomamos del login/auth
-          formData,
-        }),
-      });
-
-      const result = await res.json();
-      if (result.error) {
-        alert("Error guardando en la base: " + result.error);
-      } else {
-        alert("✅ Análisis guardado en la base con éxito");
-      }
-    } catch (err: any) {
-      alert("Error inesperado: " + err.message);
-    }
-  };
 
 /** ========= PDF ========= */
 const handleDownloadPDF = async () => {
@@ -364,31 +348,22 @@ const handleDownloadPDF = async () => {
   doc.text(`Matriculado: ${matriculado}`, colRightX, y);
   doc.text(`CPI: ${cpi}`, colRightX, y + 15);
 
-  // Logo centrado (si existe)
+  // Logo centrado (si existe) - directamente sin fetch
   if (userLogo) {
     try {
-      const img = await fetch(userLogo);
-      const blob = await img.blob();
-      const reader = new FileReader();
-      const base64Promise = new Promise<string>((resolve) => {
-        reader.onload = () => resolve(reader.result as string);
-      });
-      reader.readAsDataURL(blob);
-      const base64Img = await base64Promise;
-
       const logoW = 70;
       const logoH = 70;
       const centerX = pageW / 2 - logoW / 2;
-      doc.addImage(base64Img, "PNG", centerX, y - 10, logoW, logoH, undefined, "FAST");
+      doc.addImage(userLogo, "PNG", centerX, y - 10, logoW, logoH, undefined, "FAST");
     } catch (err) {
-      console.warn("⚠️ No se pudo cargar el logo del usuario en el PDF", err);
+      console.warn("⚠️ No se pudo agregar el logo del usuario en el PDF", err);
     }
   }
 
   y += 60;
 
   // === Línea separadora ===
-  doc.setDrawColor(pc.r, pc.g, pc.b);
+    doc.setDrawColor(pc.r, pc.g, pc.b);
   doc.setLineWidth(0.8);
   doc.line(margin, y, pageW - margin, y);
   y += 20;
@@ -552,7 +527,10 @@ const handleDownloadPDF = async () => {
 
     if (c.listingUrl) {
       doc.setTextColor(33, 150, 243);
-      doc.textWithLink("Link", x + innerPad, cursorY, { url: c.listingUrl });
+      const linkX = x + innerPad;
+      const linkY = cursorY;
+      doc.text("Link", linkX, linkY);
+      doc.link(linkX, linkY - 12, 30, 12, { url: c.listingUrl });
       doc.setTextColor(0, 0, 0);
       cursorY += 14;
     }
@@ -560,13 +538,17 @@ const handleDownloadPDF = async () => {
     const desc = c.description || "";
     const textLines = doc.splitTextToSize(desc, cardW - innerPad * 2);
     const maxLines = 5;
-    const clipped = (textLines as string[]).slice(0, maxLines);
-    doc.text(clipped as any, x + innerPad, cursorY);
+    const clipped = textLines.slice(0, maxLines);
+    doc.text(clipped, x + innerPad, cursorY);
   };
 
   formData.comparables.forEach((c, i) => {
     if (i > 0 && i % cols === 0) {
       cy += cardH + gap;
+      if (cy > pageH - 200) {
+        doc.addPage();
+        cy = margin;
+      }
       cx = margin;
     }
     drawComparableCard(c, cx, cy, i);
@@ -614,7 +596,7 @@ const handleDownloadPDF = async () => {
     doc.setFont("helvetica", "normal");
     doc.setFontSize(10);
     const lines = doc.splitTextToSize(text || "-", pageW - margin * 2);
-    doc.text(lines as any, margin, y);
+    doc.text(lines, margin, y);
     y += (Array.isArray(lines) ? lines.length : 1) * 14 + 8;
     if (y > pageH - 80) {
       doc.addPage();
@@ -631,6 +613,9 @@ const handleDownloadPDF = async () => {
   try {
     const graficoUrl = "/grafico1-pdf.png";
     const img = await fetch(graficoUrl);
+    if (!img.ok) {
+      throw new Error("Imagen no encontrada o inaccesible");
+    }
     const blob = await img.blob();
     const reader = new FileReader();
     const base64Promise = new Promise<string>((resolve) => {
@@ -666,10 +651,10 @@ const handleDownloadPDF = async () => {
   doc.setFontSize(9);
   doc.text(footerText, pageW / 2, pageH - 30, { align: "center" });
 
-  doc.save("VAI.pdf");
+  doc.save(`VAI-${new Date().toISOString().split('T')[0]}.pdf`);
 };
 
-  /** ========= Render ========= */
+  /** ========= Render ========= */  
   const propertyTypeOptions = useMemo(() => enumToOptions(PropertyType), []);
   const titleOptions = useMemo(() => enumToOptions(TitleType), []);
   const conditionOptions = useMemo(() => enumToOptions(PropertyCondition), []);
@@ -1134,7 +1119,7 @@ const handleDownloadPDF = async () => {
       </p>
     </div>
 
-    {/* =========================
+       {/* =========================
         Propiedades comparadas en la zona
        ========================= */}
     <div className="mt-6 rounded-xl border border-gray-200 bg-white shadow-sm">
@@ -1207,6 +1192,7 @@ const handleDownloadPDF = async () => {
                   ) : (
                     <div className="rounded-lg border border-dashed border-gray-300 p-3 text-center">
                       <input
+                        id={`comparable-photo-${i}`}
                         type="file"
                         accept="image/*"
                         onChange={(e) => handleComparablePhotoSelect(i, e)}
@@ -1220,10 +1206,11 @@ const handleDownloadPDF = async () => {
                 <div className="lg:col-span-5 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
                   {/* Dirección */}
                   <div className="space-y-1 sm:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700">
+                    <label htmlFor={`comparable-address-${i}`} className="block text-sm font-medium text-gray-700">
                       Dirección
                     </label>
                     <input
+                      id={`comparable-address-${i}`}
                       value={c.address}
                       onChange={(e) =>
                         updateComparable(i, "address", e.target.value)
@@ -1235,10 +1222,11 @@ const handleDownloadPDF = async () => {
 
                   {/* Barrio */}
                   <div className="space-y-1">
-                    <label className="block text-sm font-medium text-gray-700">
+                    <label htmlFor={`comparable-neighborhood-${i}`} className="block text-sm font-medium text-gray-700">
                       Barrio
                     </label>
                     <input
+                      id={`comparable-neighborhood-${i}`}
                       value={c.neighborhood}
                       onChange={(e) =>
                         updateComparable(i, "neighborhood", e.target.value)
@@ -1250,12 +1238,14 @@ const handleDownloadPDF = async () => {
 
                   {/* m² Cubiertos */}
                   <div className="space-y-1">
-                    <label className="block text-sm font-medium text-gray-700">
+                    <label htmlFor={`comparable-builtArea-${i}`} className="block text-sm font-medium text-gray-700">
                       m² Cubiertos
                     </label>
                     <input
+                      id={`comparable-builtArea-${i}`}
                       type="number"
                       inputMode="decimal"
+                      min="0"
                       value={c.builtArea}
                       onChange={(e) =>
                         updateComparable(i, "builtArea", e.target.value)
@@ -1267,12 +1257,14 @@ const handleDownloadPDF = async () => {
 
                   {/* Precio */}
                   <div className="space-y-1">
-                    <label className="block text-sm font-medium text-gray-700">
+                    <label htmlFor={`comparable-price-${i}`} className="block text-sm font-medium text-gray-700">
                       Precio ($)
                     </label>
                     <input
+                      id={`comparable-price-${i}`}
                       type="number"
                       inputMode="decimal"
+                      min="0"
                       value={c.price}
                       onChange={(e) =>
                         updateComparable(i, "price", e.target.value)
@@ -1284,12 +1276,14 @@ const handleDownloadPDF = async () => {
 
                   {/* Días publicada */}
                   <div className="space-y-1">
-                    <label className="block text-sm font-medium text-gray-700">
+                    <label htmlFor={`comparable-days-${i}`} className="block text-sm font-medium text-gray-700">
                       Días publicada
                     </label>
                     <input
+                      id={`comparable-days-${i}`}
                       type="number"
                       inputMode="numeric"
+                      min="0"
                       value={c.daysPublished}
                       onChange={(e) =>
                         updateComparable(i, "daysPublished", e.target.value)
@@ -1301,10 +1295,11 @@ const handleDownloadPDF = async () => {
 
                   {/* Link */}
                   <div className="space-y-1 sm:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700">
+                    <label htmlFor={`comparable-url-${i}`} className="block text-sm font-medium text-gray-700">
                       Link de publicación
                     </label>
                     <input
+                      id={`comparable-url-${i}`}
                       value={c.listingUrl || ""}
                       onChange={(e) =>
                         updateComparable(i, "listingUrl", e.target.value)
@@ -1316,11 +1311,12 @@ const handleDownloadPDF = async () => {
 
                   {/* Coeficiente */}
                   <div className="space-y-1">
-                    <label className="block text-sm font-medium text-gray-700">
+                    <label htmlFor={`comparable-coef-${i}`} className="block text-sm font-medium text-gray-700">
                       Coeficiente
                     </label>
                     <select
-                      value={c.coefficient}
+                      id={`comparable-coef-${i}`}
+                      value={String(c.coefficient.toFixed(1))}
                       onChange={(e) =>
                         updateComparable(i, "coefficient", e.target.value)
                       }
@@ -1346,10 +1342,11 @@ const handleDownloadPDF = async () => {
 
                   {/* Descripción */}
                   <div className="space-y-1 sm:col-span-2 md:col-span-3">
-                    <label className="block text-sm font-medium text-gray-700">
+                    <label htmlFor={`comparable-desc-${i}`} className="block text-sm font-medium text-gray-700">
                       Descripción
                     </label>
                     <textarea
+                      id={`comparable-desc-${i}`}
                       value={c.description}
                       onChange={(e) =>
                         updateComparable(i, "description", e.target.value)
@@ -1362,6 +1359,7 @@ const handleDownloadPDF = async () => {
                 </div>
               </div>
             </div>
+          );
         })}
 
         <div className="flex justify-center sm:justify-end">
@@ -1377,74 +1375,78 @@ const handleDownloadPDF = async () => {
       </div>
     </div>
 
-                  {/* Conclusión */}
-      <div className="mt-6 rounded-xl border border-gray-200 bg-white shadow-sm">
-        <div className="border-b border-gray-200 p-6">
-          <h2 className="text-lg font-semibold" style={{ color: primaryColor }}>
-            Conclusión
-          </h2>
+    {/* Conclusión */}
+    <div className="mt-6 rounded-xl border border-gray-200 bg-white shadow-sm">
+      <div className="border-b border-gray-200 p-6">
+        <h2 className="text-lg font-semibold" style={{ color: primaryColor }}>
+          Conclusión
+        </h2>
+      </div>
+
+      <div className="grid grid-cols-1 gap-5 p-6">
+        <div className="space-y-1">
+          <label htmlFor="observations" className="block text-sm font-medium text-gray-700">
+            Observaciones
+          </label>
+          <textarea
+            id="observations"
+            name="observations"
+            value={formData.observations}
+            onChange={handleFieldChange}
+            rows={4}
+            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
+            placeholder="Observaciones generales"
+          />
         </div>
 
-        <div className="grid grid-cols-1 gap-5 p-6">
-          <div className="space-y-1">
-            <label className="block text-sm font-medium text-gray-700">
-              Observaciones
-            </label>
-            <textarea
-              name="observations"
-              value={formData.observations}
-              onChange={handleFieldChange}
-              rows={4}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
-              placeholder="Observaciones generales"
-            />
-          </div>
+        <div className="space-y-1">
+          <label htmlFor="strengths" className="block text-sm font-medium text-gray-700">
+            Fortalezas
+          </label>
+          <textarea
+            id="strengths"
+            name="strengths"
+            value={formData.strengths}
+            onChange={handleFieldChange}
+            rows={4}
+            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
+            placeholder="Puntos fuertes de la propiedad"
+          />
+        </div>
 
-          <div className="space-y-1">
-            <label className="block text-sm font-medium text-gray-700">
-              Fortalezas
-            </label>
-            <textarea
-              name="strengths"
-              value={formData.strengths}
-              onChange={handleFieldChange}
-              rows={4}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
-              placeholder="Puntos fuertes de la propiedad"
-            />
-          </div>
+        <div className="space-y-1">
+          <label htmlFor="weaknesses" className="block text-sm font-medium text-gray-700">
+            Debilidades
+          </label>
+          <textarea
+            id="weaknesses"
+            name="weaknesses"
+            value={formData.weaknesses}
+            onChange={handleFieldChange}
+            rows={4}
+            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
+            placeholder="Puntos a mejorar o debilidades"
+          />
+        </div>
 
-          <div className="space-y-1">
-            <label className="block text-sm font-medium text-gray-700">
-              Debilidades
-            </label>
-            <textarea
-              name="weaknesses"
-              value={formData.weaknesses}
-              onChange={handleFieldChange}
-              rows={4}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
-              placeholder="Puntos a mejorar o debilidades"
-            />
-          </div>
-
-          <div className="space-y-1">
-            <label className="block text-sm font-medium text-gray-700">
-              A considerar
-            </label>
-            <textarea
-              name="considerations"
-              value={formData.considerations}
-              onChange={handleFieldChange}
-              rows={4}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
-              placeholder="Aspectos a considerar en la decisión"
-            />
-          </div>
-        </div> 
+        <div className="space-y-1">
+          <label htmlFor="considerations" className="block text-sm font-medium text-gray-700">
+            A considerar
+          </label>
+          <textarea
+            id="considerations"
+            name="considerations"
+            value={formData.considerations}
+            onChange={handleFieldChange}
+            rows={4}
+            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
+            placeholder="Aspectos a considerar en la decisión"
+          />
+        </div>
+      </div> 
 
       {/* Acciones */}
-      <div className="mt-6 flex flex-col sm:flex-row flex-wrap items-center justify-center sm:justify-end gap-3">
+      <div className="mt-6 flex flex-col sm:flex-row flex-wrap items-center justify-center sm:justify-end gap-3 p-6">
         <button
           type="button"
           onClick={handleDownloadPDF}
@@ -1456,4 +1458,4 @@ const handleDownloadPDF = async () => {
       </div> 
     </div>   
   ); 
-} 
+}

@@ -10,9 +10,31 @@ export default function ProtectedLayout({
 }) {
   return (
     <ProtectedRoute>
-      <div className="min-h-screen bg-white">
+      <div
+        className="
+          min-h-screen
+          flex flex-col
+          bg-gray-50
+          text-gray-900
+          transition-all duration-300
+        "
+      >
+        {/* 🔹 Header fijo arriba */}
         <Header />
-        <main>{children}</main>
+
+        {/* 🔹 Contenido principal con padding responsive */}
+        <main
+          className="
+            flex-1
+            w-full
+            max-w-7xl
+            mx-auto
+            px-3 sm:px-6 lg:px-8
+            py-4 sm:py-6 lg:py-8
+          "
+        >
+          {children}
+        </main>
       </div>
     </ProtectedRoute>
   );

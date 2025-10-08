@@ -436,7 +436,7 @@ const handleDownloadPDF = async () => {
 
   // Parte inferior: dos columnas
   const datosIzq2 = [
-    `Antigüedad: ${numero(formData.age)} años`,
+    `Antigüedad: ${numero(Number(formData.age) || 0)} años`,
     `Estado: ${formData.condition}`,
     `Ubicación: ${formData.locationQuality}`,
     `Orientación: ${formData.orientation}`,

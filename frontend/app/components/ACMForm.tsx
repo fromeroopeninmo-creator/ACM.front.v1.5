@@ -537,7 +537,8 @@ const ppm2Adj = ppm2Base * coefNum;
     doc.setFont("helvetica", "normal");
     doc.setFontSize(10);
 
-    let precioLines = doc.splitTextToSize(`Precio: ${peso(c.price)}`, cardW - innerPad * 2);
+    let precioLines = doc.splitTextToSize(`Precio: ${peso(Number(c.price) || 0)}`, cardW - innerPad * 2);
+
     doc.text(precioLines, x + innerPad, cursorY);
     cursorY += precioLines.length * 12;
 

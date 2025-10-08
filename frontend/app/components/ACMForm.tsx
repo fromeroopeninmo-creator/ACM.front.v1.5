@@ -398,18 +398,19 @@ const handleDownloadPDF = async () => {
   const lh = 15;
 
   const datosIzq = [
-    `Cliente: ${formData.clientName || "-"}`,
-    `Teléfono: ${formData.phone || "-"}`,
-    `Email: ${formData.email || "-"}`,
-    `Dirección: ${formData.address || "-"}`,
-    `Barrio: ${formData.neighborhood || "-"}`,
-    `Localidad: ${formData.locality || "-"}`,
-    `Tipología: ${formData.propertyType}`,
-    `m² Terreno: ${numero(formData.landArea)}`,
-    `m² Cubiertos: ${numero(formData.builtArea)}`,
-    `Planos: ${formData.hasPlans ? "Sí" : "No"}`,
-    `Título: ${formData.titleType}`,
-  ];
+  `Cliente: ${formData.clientName || "-"}`,
+  `Teléfono: ${formData.phone || "-"}`,
+  `Email: ${formData.email || "-"}`,
+  `Dirección: ${formData.address || "-"}`,
+  `Barrio: ${formData.neighborhood || "-"}`,
+  `Localidad: ${formData.locality || "-"}`,
+  `Tipología: ${formData.propertyType}`,
+  `m² Terreno: ${numero(Number(formData.landArea) || 0)}`,
+  `m² Cubiertos: ${numero(Number(formData.builtArea) || 0)}`,
+  `Planos: ${formData.hasPlans ? "Sí" : "No"}`,
+  `Título: ${formData.titleType}`,
+];
+
 
   let yDatos = y;
   datosIzq.forEach((line) => {

@@ -245,26 +245,39 @@ arr[index].pricePerM2 = b > 0 ? p / b : 0;
   };
 
   /** ========= Cálculos ========= */
-  const adjustedPricePerM2List = useMemo(
-    () =>
-      formData.comparables
-        .filter((c) => c.builtArea > 0 && c.price > 0)
-        .map((c) => {
-          const base = c.pricePerM2 || (c.builtArea > 0 ? c.price / c.builtArea : 0);
-          return base * (c.coefficient || 1);
-        }),
-    [formData.comparables]
+const adjustedPricePerM2List = useMemo(
+  () =>
+    formData.comparables
+      .filter((c) => {
+        const built = parseFloat(c.builtArea as string) || 0;
+        const price = parseFloat(c.price as string) || 0;
+        return built > 0 && price > 0;
+      })
+      .map((c) => {
+        const built = parseFloat(c.builtArea as string) || 0;
+        const price = parseFloat(c.price as string) || 0;
+        const coef = parseFloat(c.coefficient as string) || 1;
+        const base = c.pricePerM2 || (built > 0 ? price / built : 0);
+        return base * coef;
+      }),
+  [formData.comparables]
+);
+
+const averageAdjustedPricePerM2 = useMemo(() => {
+  if (adjustedPricePerM2List.length === 0) return 0;
+  return (
+    adjustedPricePerM2List.reduce((a, b) => a + b, 0) /
+    adjustedPricePerM2List.length
   );
+}, [adjustedPricePerM2List]);
 
-  const averageAdjustedPricePerM2 = useMemo(() => {
-    if (adjustedPricePerM2List.length === 0) return 0;
-    return adjustedPricePerM2List.reduce((a, b) => a + b, 0) / adjustedPricePerM2List.length;
-  }, [adjustedPricePerM2List]);
-
-  const suggestedPrice = useMemo(
-    () => Math.round(averageAdjustedPricePerM2 * (formData.builtArea || 0)),
+const suggestedPrice = useMemo(() => {
+  const built = parseFloat(formData.builtArea as string) || 0;
+  return Math.round(averageAdjustedPricePerM2 * built);
+}, 
     [averageAdjustedPricePerM2, formData.builtArea]
-  );
+);
+
 
   /** ========= Guardar ========= */
   const handleSaveToDB = async () => {

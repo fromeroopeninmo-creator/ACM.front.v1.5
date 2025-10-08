@@ -76,11 +76,12 @@ export interface ComparableProperty {
   neighborhood: string;
 
   // Métricas y valores
-  builtArea: number;
-  price: number;
-  pricePerM2: number;
-  coefficient: number;
-  daysPublished: number;
+builtArea: number | string;
+price: number | string;
+pricePerM2: number | string;
+coefficient: number | string;
+daysPublished: number | string;
+
 
   // Enlaces / referencias
   listingUrl?: string;
@@ -111,16 +112,17 @@ export interface ACMFormData {
   neighborhood: string;
   locality: string;
 
-  // Características principales
-  propertyType: PropertyType;
-  landArea: number;
-  builtArea: number;
-  hasPlans: boolean;
-  titleType: TitleType;
-  age: number;
-  condition: PropertyCondition;
-  locationQuality: LocationQuality;
-  orientation: Orientation;
+ // Características principales
+propertyType: PropertyType;
+landArea: number | string;
+builtArea: number | string;
+hasPlans: boolean;
+titleType: TitleType;
+age: number | string;
+condition: PropertyCondition;
+locationQuality: LocationQuality;
+orientation: Orientation;
+
 
   // Servicios
   services: Services;

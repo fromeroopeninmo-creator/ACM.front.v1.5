@@ -258,7 +258,7 @@ const adjustedPricePerM2List = useMemo(
         const price = parseFloat(c.price as string) || 0;
         const coef = parseFloat(c.coefficient as string) || 1;
         const base = c.pricePerM2 || (built > 0 ? price / built : 0);
-        return base * coef;
+        return (Number(base) || 0) * (Number(coef) || 1);
       }),
   [formData.comparables]
 );

@@ -1273,7 +1273,7 @@ cursorY += 14;
                       />
                     </div>
 
-                   {/* m² Cubiertos */}
+               {/* m² Cubiertos */}
 <div className="space-y-1">
   <label className="block text-sm font-medium text-gray-700">
     m² Cubiertos
@@ -1283,7 +1283,8 @@ cursorY += 14;
     inputMode="decimal"
     value={c.builtArea ?? ""}
     onChange={(e) => {
-      const value = e.target.value === "" ? null : parseFloat(e.target.value);
+      const raw = e.target.value;
+      const value = raw === "" ? 0 : parseFloat(raw);
       updateComparable(i, "builtArea", value);
     }}
     className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
@@ -1301,12 +1302,12 @@ cursorY += 14;
     inputMode="numeric"
     value={
       c.price !== undefined && c.price !== null
-        ? new Intl.NumberFormat("es-AR").format(c.price)
+        ? new Intl.NumberFormat("es-AR").format(Number(c.price))
         : ""
     }
     onChange={(e) => {
-      const raw = e.target.value.replace(/\./g, ""); // quita puntos de miles
-      const numericValue = raw === "" ? null : parseInt(raw, 10);
+      const raw = e.target.value.replace(/\./g, "");
+      const numericValue = raw === "" ? 0 : parseInt(raw, 10);
       updateComparable(i, "price", numericValue);
     }}
     className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-right focus:outline-none focus:ring-2 focus:ring-offset-1"
@@ -1324,13 +1325,15 @@ cursorY += 14;
     inputMode="numeric"
     value={c.daysPublished ?? ""}
     onChange={(e) => {
-      const value = e.target.value === "" ? null : parseInt(e.target.value, 10);
+      const raw = e.target.value;
+      const value = raw === "" ? 0 : parseInt(raw, 10);
       updateComparable(i, "daysPublished", value);
     }}
     className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
     placeholder="Ej: 45"
   />
 </div>
+
 
                     {/* Link */}
                     <div className="space-y-1 sm:col-span-2">
@@ -1347,19 +1350,20 @@ cursorY += 14;
                       />
                     </div>
 
-                   {/* Coeficiente */}
+                  {/* Coeficiente */}
 <div className="space-y-1">
   <label className="block text-sm font-medium text-gray-700">
     Coeficiente
   </label>
   <select
-    value={c.coefficient ?? "1.0"}
-    onChange={(e) =>
-      updateComparable(i, "coefficient", parseFloat(e.target.value))
-    }
+    value={String(c.coefficient ?? 1.0)} // 🔹 fuerza que siempre sea string para el select
+    onChange={(e) => {
+      const value = parseFloat(e.target.value);
+      updateComparable(i, "coefficient", isNaN(value) ? 1.0 : value); // 🔹 seguridad adicional
+    }}
     className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
   >
-    {Array.from({ length: 15 }, (_, idx) => ((idx + 1) / 10).toFixed(1)).map(
+    {Array.from({ length: 15 }, (_, idx) => (1.5 - idx * 0.1).toFixed(1)).map(
       (val) => (
         <option key={val} value={val}>
           {val}
@@ -1369,15 +1373,15 @@ cursorY += 14;
   </select>
 </div>
 
-                    {/* Precio/m² */}
-                    <div className="space-y-1">
-                      <label className="block text-sm font-medium text-gray-700">
-                        Precio por m² (ajustado)
-                      </label>
-                      <div className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm">
-                        {peso(ppm2Adj)}
-                      </div>
-                    </div>
+            {/* Precio/m² */}
+<div className="space-y-1">
+  <label className="block text-sm font-medium text-gray-700">
+    Precio por m² (ajustado)
+  </label>
+  <div className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm">
+    {peso(ppm2Adj)}
+  </div>
+</div>
 
                     {/* Descripción */}
                     <div className="space-y-1 sm:col-span-2 md:col-span-3">

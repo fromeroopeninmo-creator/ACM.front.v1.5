@@ -1169,10 +1169,13 @@ cursorY += 14;
           </h2>
         </div>
 
-        <div className="p-4 sm:p-6 space-y-6">
-          {formData.comparables.map((c, i) => {
-            const ppm2Base = c.builtArea > 0 ? c.price / c.builtArea : 0;
-            const ppm2Adj = ppm2Base * (c.coefficient || 1);
+       <div className="p-4 sm:p-6 space-y-6">
+  {formData.comparables.map((c, i) => {
+    const built = Number(c.builtArea) || 0;
+    const price = Number(c.price) || 0;
+    const ppm2Base = built > 0 ? price / built : 0;
+    const ppm2Adj = ppm2Base * (Number(c.coefficient) || 1);
+
 
             return (
               <div

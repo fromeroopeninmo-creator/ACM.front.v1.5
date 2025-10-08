@@ -178,10 +178,13 @@ export default function ACMForm() {
         value = isNaN(n) ? 0 : n;
       }
 
-      arr[index] = { ...arr[index], [field]: value };
-      const b = arr[index].builtArea;
-      const p = arr[index].price;
-      arr[index].pricePerM2 = b > 0 ? p / b : 0;
+     arr[index] = { ...arr[index], [field]: value };
+
+const b = parseFloat(arr[index].builtArea as string) || 0;
+const p = parseFloat(arr[index].price as string) || 0;
+
+arr[index].pricePerM2 = b > 0 ? p / b : 0;
+
 
       copy.comparables = arr;
       return copy;

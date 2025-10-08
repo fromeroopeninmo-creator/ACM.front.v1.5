@@ -527,8 +527,12 @@ const handleDownloadPDF = async () => {
     doc.text(barrioLines, x + innerPad, cursorY);
     cursorY += barrioLines.length * 12;
 
-    const ppm2Base = c.builtArea > 0 ? c.price / c.builtArea : 0;
-    const ppm2Adj = ppm2Base * (c.coefficient || 1);
+const builtAreaNum = Number(c.builtArea) || 0;
+const priceNum = Number(c.price) || 0;
+const coefNum = Number(c.coefficient) || 1;
+
+const ppm2Base = builtAreaNum > 0 ? priceNum / builtAreaNum : 0;
+const ppm2Adj = ppm2Base * coefNum;
 
     doc.setFont("helvetica", "normal");
     doc.setFontSize(10);

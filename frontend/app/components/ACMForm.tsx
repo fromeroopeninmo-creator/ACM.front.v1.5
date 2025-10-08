@@ -542,11 +542,12 @@ const ppm2Adj = ppm2Base * coefNum;
     doc.text(precioLines, x + innerPad, cursorY);
     cursorY += precioLines.length * 12;
 
-    doc.text(`m² Cubiertos: ${numero(c.builtArea)}`, x + innerPad, cursorY);
-    cursorY += 14;
+    doc.text(`m² Cubiertos: ${numero(Number(c.builtArea) || 0)}`, x + innerPad, cursorY);
+cursorY += 14;
 
-    doc.text(`Precio/m²: ${peso(ppm2Adj)}`, x + innerPad, cursorY);
-    cursorY += 14;
+doc.text(`Precio/m²: ${peso(Number(ppm2Adj) || 0)}`, x + innerPad, cursorY);
+cursorY += 14;
+
 
     if (c.listingUrl) {
       doc.setTextColor(33, 150, 243);

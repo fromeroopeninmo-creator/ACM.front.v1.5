@@ -23,10 +23,6 @@ const peso = (n: number) =>
 const numero = (n: number, dec = 0) =>
   isNaN(n) ? '-' : n.toLocaleString('es-AR', { maximumFractionDigits: dec, minimumFractionDigits: dec });
 
-const coefOpts = Array.from({ length: 15 }).map((_, i) => {
-  const v = 1.5 - i * 0.1; // 1.5 → 0.1
-  return { label: v.toFixed(1), value: v.toFixed(1) };
-});
 
 const yesNoOpts = [
   { label: 'No', value: 'false' },
@@ -532,7 +528,7 @@ const handleDownloadPDF = async () => {
 
     if (c.listingUrl) {
       doc.setTextColor(33, 150, 243);
-      doc.textWithLink("Link", x + innerPad, cursorY, { url: c.listingUrl });
+      doc.textWithLink("Ver Propiedad", x + innerPad, cursorY, { url: c.listingUrl });
       doc.setTextColor(0, 0, 0);
       cursorY += 14;
     }
@@ -873,36 +869,46 @@ const handleDownloadPDF = async () => {
             </div>
 
             {/* m² Terreno */}
-            <div className="space-y-1">
-              <label className="block text-sm font-medium text-gray-700">
-                m² Terreno
-              </label>
-              <input
-                name="landArea"
-                type="number"
-                inputMode="decimal"
-                value={formData.landArea}
-                onChange={handleFieldChange}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
-                placeholder="0"
-              />
-            </div>
+<div className="space-y-1">
+  <label className="block text-sm font-medium text-gray-700">
+    m² Terreno
+  </label>
+  <input
+    name="landArea"
+    type="number"
+    inputMode="decimal"
+    value={formData.landArea ?? ""}
+    onChange={(e) => {
+      const value = e.target.value === "" ? null : parseFloat(e.target.value);
+      handleFieldChange({
+        target: { name: "landArea", value },
+      } as any);
+    }}
+    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
+    placeholder="Ej: 250"
+  />
+</div>
 
-            {/* m² Cubiertos */}
-            <div className="space-y-1">
-              <label className="block text-sm font-medium text-gray-700">
-                m² Cubiertos
-              </label>
-              <input
-                name="builtArea"
-                type="number"
-                inputMode="decimal"
-                value={formData.builtArea}
-                onChange={handleFieldChange}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
-                placeholder="0"
-              />
-            </div>
+{/* m² Cubiertos */}
+<div className="space-y-1">
+  <label className="block text-sm font-medium text-gray-700">
+    m² Cubiertos
+  </label>
+  <input
+    name="builtArea"
+    type="number"
+    inputMode="decimal"
+    value={formData.builtArea ?? ""}
+    onChange={(e) => {
+      const value = e.target.value === "" ? null : parseFloat(e.target.value);
+      handleFieldChange({
+        target: { name: "builtArea", value },
+      } as any);
+    }}
+    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
+    placeholder="Ej: 120"
+  />
+</div>
 
             {/* Planos */}
             <div className="space-y-1">
@@ -942,21 +948,26 @@ const handleDownloadPDF = async () => {
               </select>
             </div>
 
-            {/* Antigüedad */}
-            <div className="space-y-1">
-              <label className="block text-sm font-medium text-gray-700">
-                Antigüedad (años)
-              </label>
-              <input
-                name="age"
-                type="number"
-                inputMode="numeric"
-                value={formData.age}
-                onChange={handleFieldChange}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
-                placeholder="0"
-              />
-            </div>
+           {/* Antigüedad */}
+<div className="space-y-1">
+  <label className="block text-sm font-medium text-gray-700">
+    Antigüedad (años)
+  </label>
+  <input
+    name="age"
+    type="number"
+    inputMode="numeric"
+    value={formData.age ?? ""}
+    onChange={(e) => {
+      const value = e.target.value === "" ? null : parseInt(e.target.value, 10);
+      handleFieldChange({
+        target: { name: "age", value },
+      } as any);
+    }}
+    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
+    placeholder="Ej: 10"
+  />
+</div>
 
             {/* Estado */}
             <div className="space-y-1">
@@ -1236,56 +1247,64 @@ const handleDownloadPDF = async () => {
                       />
                     </div>
 
-                    {/* m² Cubiertos */}
-                    <div className="space-y-1">
-                      <label className="block text-sm font-medium text-gray-700">
-                        m² Cubiertos
-                      </label>
-                      <input
-                        type="number"
-                        inputMode="decimal"
-                        value={c.builtArea}
-                        onChange={(e) =>
-                          updateComparable(i, "builtArea", e.target.value)
-                        }
-                        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
-                        placeholder="0"
-                      />
-                    </div>
+                   {/* m² Cubiertos */}
+<div className="space-y-1">
+  <label className="block text-sm font-medium text-gray-700">
+    m² Cubiertos
+  </label>
+  <input
+    type="number"
+    inputMode="decimal"
+    value={c.builtArea ?? ""}
+    onChange={(e) => {
+      const value = e.target.value === "" ? null : parseFloat(e.target.value);
+      updateComparable(i, "builtArea", value);
+    }}
+    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
+    placeholder="Ej: 120"
+  />
+</div>
 
-                    {/* Precio */}
-                    <div className="space-y-1">
-                      <label className="block text-sm font-medium text-gray-700">
-                        Precio ($)
-                      </label>
-                      <input
-                        type="number"
-                        inputMode="decimal"
-                        value={c.price}
-                        onChange={(e) =>
-                          updateComparable(i, "price", e.target.value)
-                        }
-                        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
-                        placeholder="0"
-                      />
-                    </div>
+{/* Precio */}
+<div className="space-y-1">
+  <label className="block text-sm font-medium text-gray-700">
+    Precio ($)
+  </label>
+  <input
+    type="text"
+    inputMode="numeric"
+    value={
+      c.price !== undefined && c.price !== null
+        ? new Intl.NumberFormat("es-AR").format(c.price)
+        : ""
+    }
+    onChange={(e) => {
+      const raw = e.target.value.replace(/\./g, ""); // quita puntos de miles
+      const numericValue = raw === "" ? null : parseInt(raw, 10);
+      updateComparable(i, "price", numericValue);
+    }}
+    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-right focus:outline-none focus:ring-2 focus:ring-offset-1"
+    placeholder="Ej: 1.200.000"
+  />
+</div>
 
-                    {/* Días publicada */}
-                    <div className="space-y-1">
-                      <label className="block text-sm font-medium text-gray-700">
-                        Días publicada
-                      </label>
-                      <input
-                        type="number"
-                        inputMode="numeric"
-                        value={c.daysPublished}
-                        onChange={(e) =>
-                          updateComparable(i, "daysPublished", e.target.value)
-                        }
-                        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
-                        placeholder="0"
-                      />
-                    </div>
+{/* Días publicada */}
+<div className="space-y-1">
+  <label className="block text-sm font-medium text-gray-700">
+    Días publicada
+  </label>
+  <input
+    type="number"
+    inputMode="numeric"
+    value={c.daysPublished ?? ""}
+    onChange={(e) => {
+      const value = e.target.value === "" ? null : parseInt(e.target.value, 10);
+      updateComparable(i, "daysPublished", value);
+    }}
+    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
+    placeholder="Ej: 45"
+  />
+</div>
 
                     {/* Link */}
                     <div className="space-y-1 sm:col-span-2">
@@ -1302,25 +1321,27 @@ const handleDownloadPDF = async () => {
                       />
                     </div>
 
-                    {/* Coeficiente */}
-                    <div className="space-y-1">
-                      <label className="block text-sm font-medium text-gray-700">
-                        Coeficiente
-                      </label>
-                      <select
-                        value={c.coefficient}
-                        onChange={(e) =>
-                          updateComparable(i, "coefficient", e.target.value)
-                        }
-                        className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
-                      >
-                        {coefOpts.map((o) => (
-                          <option key={o.value} value={o.value}>
-                            {o.label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
+                   {/* Coeficiente */}
+<div className="space-y-1">
+  <label className="block text-sm font-medium text-gray-700">
+    Coeficiente
+  </label>
+  <select
+    value={c.coefficient ?? "1.0"}
+    onChange={(e) =>
+      updateComparable(i, "coefficient", parseFloat(e.target.value))
+    }
+    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
+  >
+    {Array.from({ length: 15 }, (_, idx) => ((idx + 1) / 10).toFixed(1)).map(
+      (val) => (
+        <option key={val} value={val}>
+          {val}
+        </option>
+      )
+    )}
+  </select>
+</div>
 
                     {/* Precio/m² */}
                     <div className="space-y-1">

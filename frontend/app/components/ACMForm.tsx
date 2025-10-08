@@ -155,57 +155,68 @@ export default function ACMForm() {
       setFormData((p) => ({ ...p, orientation: value as Orientation }));
     else setFormData((prev) => ({ ...prev, [name]: value }));
   };
-  /** ========= Comparables ========= */
-  const updateComparable = <K extends keyof ComparableProperty>(
-    index: number,
-    field: K,
-    rawValue: string
-  ) => {
-    setFormData((prev) => {
-      const copy = { ...prev };
-      const arr = [...copy.comparables];
+/** ========= Comparables ========= */
+const updateComparable = <K extends keyof ComparableProperty>(
+  index: number,
+  field: K,
+  rawValue: string | number | null
+) => {
+  setFormData((prev) => {
+    const copy = { ...prev };
+    const arr = [...copy.comparables];
 
-      const numericFields: Array<keyof ComparableProperty> = [
-        'builtArea',
-        'price',
-        'daysPublished',
-        'pricePerM2',
-        'coefficient',
-      ];
-      let value: any = rawValue;
-      if (numericFields.includes(field)) {
-        const n = Number(rawValue);
-        value = isNaN(n) ? 0 : n;
-      }
+    const numericFields: Array<keyof ComparableProperty> = [
+      "builtArea",
+      "price",
+      "daysPublished",
+      "pricePerM2",
+      "coefficient",
+    ];
 
-     arr[index] = { ...arr[index], [field]: value };
+    let value: number | string | null = rawValue;
 
-const b = parseFloat(arr[index].builtArea as string) || 0;
-const p = parseFloat(arr[index].price as string) || 0;
+    // 🔹 Normalización de valores numéricos
+    if (numericFields.includes(field)) {
+      const n =
+        rawValue === null || rawValue === ""
+          ? 0
+          : typeof rawValue === "string"
+          ? parseFloat(rawValue)
+          : Number(rawValue);
+      value = isNaN(n) ? 0 : n;
+    }
 
-arr[index].pricePerM2 = b > 0 ? p / b : 0;
+    // 🔹 Actualiza el comparable
+    arr[index] = { ...arr[index], [field]: value };
 
+    // 🔹 Recalcula precio/m² seguro
+    const b = Number(arr[index].builtArea) || 0;
+    const p = Number(arr[index].price) || 0;
+    arr[index].pricePerM2 = b > 0 ? p / b : 0;
 
-      copy.comparables = arr;
-      return copy;
-    });
-  };
+    copy.comparables = arr;
+    return copy;
+  });
+};
 
-  const addComparable = () => {
-    setFormData((prev) => {
-      if (prev.comparables.length >= 4) return prev;
-      return { ...prev, comparables: [...prev.comparables, { ...emptyComparable }] };
-    });
-  };
+const addComparable = () => {
+  setFormData((prev) => {
+    if (prev.comparables.length >= 4) return prev;
+    return {
+      ...prev,
+      comparables: [...prev.comparables, { ...emptyComparable }],
+    };
+  });
+};
 
-  const removeComparable = (index: number) => {
-    setFormData((prev) => {
-      if (prev.comparables.length <= 1) return prev;
-      const arr = prev.comparables.slice();
-      arr.splice(index, 1);
-      return { ...prev, comparables: arr };
-    });
-  };
+const removeComparable = (index: number) => {
+  setFormData((prev) => {
+    if (prev.comparables.length <= 1) return prev;
+    const arr = prev.comparables.slice();
+    arr.splice(index, 1);
+    return { ...prev, comparables: arr };
+  });
+};
 
   /** ========= Uploads ========= */
   const readFileAsBase64 = (file: File): Promise<string> =>

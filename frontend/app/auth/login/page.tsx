@@ -1,7 +1,7 @@
 "use client";
 export const dynamic = "force-dynamic";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "#lib/supabaseClient";
 import AuthLayout from "@/auth/components/AuthLayout";
@@ -17,12 +17,37 @@ export default function LoginPage() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
+  // 🚀 Redirección automática si ya está logueado
+  useEffect(() => {
+    const checkSession = async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (session?.user) {
+        const role = session.user.user_metadata?.role || "empresa";
+        const roleDashboard: Record<string, string> = {
+          super_admin_root: "/dashboard/admin",
+          super_admin: "/dashboard/admin",
+          soporte: "/dashboard/soporte",
+          empresa: "/dashboard/empresa",
+          asesor: "/dashboard/asesor",
+        };
+
+        router.replace(roleDashboard[role] || "/dashboard/empresa");
+      }
+    };
+
+    checkSession();
+  }, [router]);
+
+  // 🧩 Manejo de login
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
     setLoading(true);
 
-    const { error } = await supabase.auth.signInWithPassword({
+    const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
@@ -30,12 +55,29 @@ export default function LoginPage() {
     setLoading(false);
 
     if (error) {
-      setErrorMsg(error.message);
+      setErrorMsg("Error al iniciar sesión. Verifica tus credenciales.");
       return;
     }
 
-    // ✅ Redirige al área protegida
-    router.push("/");
+    if (!data?.user) {
+      setErrorMsg("No se pudo iniciar sesión. Intenta nuevamente.");
+      return;
+    }
+
+    // 🔍 Detectar el rol desde los metadatos
+    const role = data.user.user_metadata?.role || "empresa";
+
+    const roleDashboard: Record<string, string> = {
+      super_admin_root: "/dashboard/admin",
+      super_admin: "/dashboard/admin",
+      soporte: "/dashboard/soporte",
+      empresa: "/dashboard/empresa",
+      asesor: "/dashboard/asesor",
+    };
+
+    // 🚀 Redirigir al dashboard correspondiente
+    const destino = roleDashboard[role] || "/dashboard/empresa";
+    router.push(destino);
   };
 
   return (
@@ -117,6 +159,7 @@ export default function LoginPage() {
   );
 }
 
+/* 🎨 Estilos */
 const inputStyle: React.CSSProperties = {
   width: "100%",
   height: 42,

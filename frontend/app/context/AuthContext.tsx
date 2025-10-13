@@ -11,6 +11,8 @@ interface Profile {
   matriculado_nombre?: string;
   cpi?: string;
   inmobiliaria?: string;
+  role?: "super_admin_root" | "super_admin" | "soporte" | "empresa" | "asesor";
+  empresa_id?: string | null;
 }
 
 interface AuthContextType {
@@ -29,32 +31,55 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const logout = async () => {
     await supabase.auth.signOut();
     setUser(null);
-   window.location.replace("/auth/login");
+    window.location.replace("/auth/login");
   };
 
+  // 📦 Cargar perfil extendido desde Supabase
   const loadUserProfile = async (supabaseUser: any): Promise<Profile | null> => {
     if (!supabaseUser) return null;
 
-    const { data: profile } = await supabase
+    const { data: profile, error } = await supabase
       .from("profiles")
-      .select("id, email, nombre, apellido, matriculado_nombre, cpi, inmobiliaria")
+      .select(
+        `
+        id,
+        email,
+        nombre,
+        apellido,
+        matriculado_nombre,
+        cpi,
+        inmobiliaria,
+        role,
+        empresa_id
+      `
+      )
       .eq("id", supabaseUser.id)
       .single();
 
-    return profile || {
-      id: supabaseUser.id,
-      email: supabaseUser.email,
-      nombre: supabaseUser.user_metadata?.nombre,
-      apellido: supabaseUser.user_metadata?.apellido,
-      matriculado_nombre: supabaseUser.user_metadata?.matriculado_nombre,
-      cpi: supabaseUser.user_metadata?.cpi,
-      inmobiliaria: supabaseUser.user_metadata?.inmobiliaria,
-    };
+    if (error) {
+      console.warn("⚠️ No se encontró perfil, usando metadata:", error.message);
+    }
+
+    // Fallback: si no existe el perfil en la tabla, usar metadata del usuario
+    return (
+      profile || {
+        id: supabaseUser.id,
+        email: supabaseUser.email,
+        nombre: supabaseUser.user_metadata?.nombre,
+        apellido: supabaseUser.user_metadata?.apellido,
+        matriculado_nombre: supabaseUser.user_metadata?.matriculado_nombre,
+        cpi: supabaseUser.user_metadata?.cpi,
+        inmobiliaria: supabaseUser.user_metadata?.inmobiliaria,
+        role: "empresa",
+        empresa_id: null,
+      }
+    );
   };
 
   useEffect(() => {
     const init = async () => {
       setLoading(true);
+
       const {
         data: { session },
       } = await supabase.auth.getSession();

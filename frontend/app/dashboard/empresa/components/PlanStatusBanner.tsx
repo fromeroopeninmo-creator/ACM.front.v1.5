@@ -15,7 +15,7 @@ export default function PlanStatusBanner() {
   const [activo, setActivo] = useState<boolean>(true);
   const [loading, setLoading] = useState(true);
 
-   useEffect(() => {
+  useEffect(() => {
   const fetchPlan = async () => {
     if (!user?.id) return;
 
@@ -42,22 +42,39 @@ export default function PlanStatusBanner() {
         ? planesData[0]
         : (planesData as { nombre: string } | null);
 
+    const nombrePlan = planInfo?.nombre ?? "Trial";
+
     setFechaFin(fin);
     setDiasRestantes(diff);
-    setPlanNombre(planInfo?.nombre ?? "Trial");
+    setPlanNombre(nombrePlan);
     setLoading(false);
 
     // 🚨 bloqueo si plan pago vencido +2 días
-    if (planInfo?.nombre !== "Trial" && diff < -2) {
+    if (nombrePlan !== "Trial" && diff < -2) {
       alert(
         "Su suscripción ha superado el período de tolerancia. Redirigiendo al portal de pago..."
       );
       router.replace("/dashboard/empresa/suspendido");
+      return;
+    }
+
+    // ✅ si estaba suspendido y el plan vuelve a estar activo → redirigir al dashboard normal
+    if (nombrePlan !== "Trial" && diff >= -2 && plan.activo) {
+      if (window.location.pathname.includes("/suspendido")) {
+        router.replace("/dashboard/empresa");
+      }
     }
   };
 
+  // 🔄 primera carga
   fetchPlan();
+
+  // ⏱ chequeo automático cada 60 segundos
+  const interval = setInterval(fetchPlan, 60000);
+
+  return () => clearInterval(interval);
 }, [user, router]);
+
 
 
   if (loading || !planNombre) return null;

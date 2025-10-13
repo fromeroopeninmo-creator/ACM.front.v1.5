@@ -52,7 +52,7 @@ export default function PlanStatusBanner() {
       alert(
         "Su suscripción ha superado el período de tolerancia. Redirigiendo al portal de pago..."
       );
-      router.replace("/dashboard/empresa/planes");
+      router.replace("/dashboard/empresa/suspendido");
     }
   };
 

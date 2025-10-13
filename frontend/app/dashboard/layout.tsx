@@ -6,14 +6,13 @@ import { useAuth } from "@/context/AuthContext";
 import { useTheme } from "@/context/ThemeContext";
 import DashboardHeader from "./components/DashboardHeader";
 import DashboardSidebar from "./components/DashboardSidebar";
-import PlanStatusBanner from "./empresa/components/PlanStatusBanner"; // 👈 nuevo import
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { user, loading, logout } = useAuth();
   const { primaryColor } = useTheme();
   const router = useRouter();
 
-  // Redirigir si no hay usuario
+  // 🔐 Redirigir si no hay usuario
   useEffect(() => {
     if (!loading && !user) router.replace("/login");
   }, [user, loading, router]);
@@ -38,10 +37,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         {/* Header */}
         <DashboardHeader user={user} logout={logout} color={primaryColor} />
 
-        {/* 🔔 Banner visible solo para empresas */}
-        {user.role === "empresa" && <PlanStatusBanner />}
-
-        {/* Contenido principal */}
+        {/* 📦 Contenido principal */}
         <main className="flex-1 p-6 overflow-y-auto">{children}</main>
       </div>
     </div>

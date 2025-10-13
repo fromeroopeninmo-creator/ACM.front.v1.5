@@ -1,10 +1,10 @@
 // app/layout.tsx
 import "./globals.css";
 import { Inter } from "next/font/google";
-import { AuthProvider } from "@/context/AuthContext";
-import { ThemeProvider } from "@/context/ThemeContext";
+import { AuthProvider } from "./context/AuthContext";
+import { ThemeProvider } from "./context/ThemeContext";
 import { ReactNode } from "react";
-import AppWrapper from "@/app/AppWrapper"; // ✅ mejor ruta absoluta (Next.js 13+)
+import AppWrapper from "./AppWrapper"; // ✅ mejor ruta absoluta (Next.js 13+)
 
 const inter = Inter({ subsets: ["latin"] });
 

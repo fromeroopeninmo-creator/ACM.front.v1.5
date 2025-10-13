@@ -7,6 +7,16 @@ import PlanStatusBanner from "./components/PlanStatusBanner";
 export default function EmpresaDashboardPage() {
   const { user } = useAuth();
 
+  // 🔒 Manejo seguro de metadatos (según el tipo de user)
+  const meta = (user as any)?.user_metadata || user || {};
+  const nombre = meta.nombre || "Usuario";
+  const razonSocial = meta.razon_social || "No especificado";
+  const inmobiliaria = meta.inmobiliaria || "No especificado";
+  const condicionFiscal = meta.condicion_fiscal || "No especificado";
+  const provincia = meta.provincia || "No especificado";
+  const telefono = meta.telefono || "No especificado";
+  const email = (user as any)?.email || "No especificado";
+
   return (
     <div className="space-y-6">
       {/* 🧭 Banner de plan */}
@@ -14,9 +24,7 @@ export default function EmpresaDashboardPage() {
 
       {/* 🏢 Bienvenida */}
       <section className="bg-white shadow-sm rounded-xl p-6">
-        <h1 className="text-2xl font-bold mb-2">
-          Bienvenido, {user?.user_metadata?.nombre || "Usuario"}
-        </h1>
+        <h1 className="text-2xl font-bold mb-2">Bienvenido, {nombre}</h1>
         <p className="text-gray-600 mb-4">
           Panel principal de tu inmobiliaria. Desde aquí podés gestionar tu
           equipo, tus planes y toda la configuración de tu empresa.
@@ -44,27 +52,22 @@ export default function EmpresaDashboardPage() {
         <h2 className="text-xl font-semibold mb-4">Datos de la empresa</h2>
         <ul className="space-y-2 text-gray-700">
           <li>
-            <strong>Inmobiliaria:</strong>{" "}
-            {user?.user_metadata?.inmobiliaria || "No especificado"}
+            <strong>Inmobiliaria:</strong> {inmobiliaria}
           </li>
           <li>
-            <strong>Razón Social:</strong>{" "}
-            {user?.user_metadata?.razon_social || "No especificado"}
+            <strong>Razón Social:</strong> {razonSocial}
           </li>
           <li>
-            <strong>Condición Fiscal:</strong>{" "}
-            {user?.user_metadata?.condicion_fiscal || "No especificado"}
+            <strong>Condición Fiscal:</strong> {condicionFiscal}
           </li>
           <li>
-            <strong>Provincia:</strong>{" "}
-            {user?.user_metadata?.provincia || "No especificado"}
+            <strong>Provincia:</strong> {provincia}
           </li>
           <li>
-            <strong>Email:</strong> {user?.email}
+            <strong>Email:</strong> {email}
           </li>
           <li>
-            <strong>Teléfono:</strong>{" "}
-            {user?.user_metadata?.telefono || "No especificado"}
+            <strong>Teléfono:</strong> {telefono}
           </li>
         </ul>
       </section>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useTheme } from "../../../context/ThemeContext"; // ← ruta corregida (relativa)
+import { useTheme } from "./context/ThemeContext"; 
 
 interface HeaderProps {
   user: any;

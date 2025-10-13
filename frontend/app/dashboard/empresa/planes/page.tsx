@@ -32,7 +32,7 @@ export default function EmpresaPlanesPage() {
 
       setLoading(true);
 
-      // Plan activo de la empresa
+      // 🔍 Obtener el plan activo de la empresa
       const { data: empresaPlan, error: errorEmpresaPlan } = await supabase
         .from("empresas_planes")
         .select(`
@@ -58,7 +58,7 @@ export default function EmpresaPlanesPage() {
         });
       }
 
-      // Todos los planes disponibles
+      // 🔍 Obtener todos los planes disponibles
       const { data: planes, error: errorPlanes } = await supabase
         .from("planes")
         .select("id, nombre, max_asesores")
@@ -72,14 +72,35 @@ export default function EmpresaPlanesPage() {
     fetchPlanes();
   }, [user]);
 
-  // 🚀 Simulación de solicitud de upgrade
+  // 🚀 Enviar solicitud real al endpoint /api/solicitud-upgrade
   const handleUpgrade = async (planId: string) => {
     if (!user?.id) return;
 
     setMensaje("Enviando solicitud de cambio de plan...");
-    await new Promise((resolve) => setTimeout(resolve, 1000));
 
-    setMensaje("Solicitud enviada. Un administrador revisará el cambio.");
+    try {
+      const res = await fetch("/api/solicitud-upgrade", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          empresaId: user.id,
+          planId,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (data.error) {
+        console.error("Error desde API:", data.error);
+        setMensaje("❌ Error al enviar la solicitud. Intenta nuevamente.");
+      } else {
+        setMensaje("✅ Solicitud enviada. Un administrador la revisará.");
+      }
+    } catch (err) {
+      console.error("Error de red:", err);
+      setMensaje("❌ No se pudo conectar al servidor.");
+    }
+
     setTimeout(() => setMensaje(null), 4000);
   };
 
@@ -95,6 +116,7 @@ export default function EmpresaPlanesPage() {
     <div className="p-6">
       <h1 className="text-2xl font-semibold mb-4">Planes y Suscripción</h1>
 
+      {/* 🧱 Bloque: Plan actual */}
       {planActual ? (
         <div className="bg-white shadow rounded-lg p-4 mb-8 border border-gray-200">
           <h2 className="text-lg font-medium mb-2">
@@ -125,6 +147,7 @@ export default function EmpresaPlanesPage() {
         <p className="text-gray-500 mb-6">No se encontró un plan activo.</p>
       )}
 
+      {/* 🧱 Bloque: Planes disponibles */}
       <h2 className="text-lg font-medium mb-3">Planes disponibles</h2>
       <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
         {planesDisponibles.map((plan) => (
@@ -157,6 +180,7 @@ export default function EmpresaPlanesPage() {
         ))}
       </div>
 
+      {/* 🧱 Mensaje temporal */}
       {mensaje && (
         <p className="mt-6 text-center text-blue-600 font-medium">{mensaje}</p>
       )}

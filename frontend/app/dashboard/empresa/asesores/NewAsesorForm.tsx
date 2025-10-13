@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { supabase } from "#lib/supabaseClient";
 
 interface Props {
-  empresaId: string;
+  empresaId?: string; // ✅ ahora acepta undefined sin romper el tipado
   onCreated: () => void;
 }
 
@@ -32,7 +32,7 @@ export default function NewAsesorForm({ empresaId, onCreated }: Props) {
   // 🔍 Carga datos del plan activo y cantidad de asesores
   useEffect(() => {
     const fetchPlan = async () => {
-      if (!empresaId) return;
+      if (!empresaId) return; // ✅ protección extra
 
       // Buscar plan activo de la empresa
       const { data: empresaPlan, error: errorEmpresaPlan } = await supabase
@@ -126,6 +126,15 @@ export default function NewAsesorForm({ empresaId, onCreated }: Props) {
       onCreated();
     }
   };
+
+  // 🧩 Fallback visual si todavía no hay empresaId cargado
+  if (!empresaId) {
+    return (
+      <p className="text-gray-500 text-sm">
+        Cargando datos de la empresa...
+      </p>
+    );
+  }
 
   return (
     <form

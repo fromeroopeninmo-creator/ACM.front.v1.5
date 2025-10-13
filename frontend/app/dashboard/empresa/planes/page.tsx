@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "#lib/supabaseClient";
-import { useAuth } from "@/app/context/AuthContext";
+import { useAuth } from "@/context/AuthContext";
 
 interface EmpresaPlan {
   plan_nombre: string;

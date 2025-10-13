@@ -61,6 +61,7 @@ export default function RegisterPage() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [infoMsg, setInfoMsg] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   // 📧 Validar formato de email
   const validarEmail = (email: string) =>
@@ -71,7 +72,10 @@ export default function RegisterPage() {
     setErrorMsg(null);
     setInfoMsg(null);
 
-    // ✅ Validaciones básicas
+    // ✅ Limpieza de espacios
+    const clean = (val: string) => val.trim();
+
+    // ✅ Validaciones
     if (
       !nombre ||
       !apellido ||
@@ -102,20 +106,20 @@ export default function RegisterPage() {
     setLoading(true);
 
     const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
+      email: clean(email),
+      password: clean(password),
       options: {
         data: {
-          nombre,
-          apellido,
-          telefono,
-          direccion,
-          localidad,
-          provincia,
-          razon_social: razonSocial,
-          inmobiliaria,
-          condicion_fiscal: condicionFiscal,
-          role: "empresa", // 👈 se asigna directamente
+          nombre: clean(nombre),
+          apellido: clean(apellido),
+          telefono: clean(telefono),
+          direccion: clean(direccion),
+          localidad: clean(localidad),
+          provincia: clean(provincia),
+          razon_social: clean(razonSocial),
+          inmobiliaria: clean(inmobiliaria),
+          condicion_fiscal: clean(condicionFiscal),
+          role: "empresa",
         },
       },
     });
@@ -124,7 +128,7 @@ export default function RegisterPage() {
 
     if (error) {
       console.error("Error en registro:", error);
-      setErrorMsg(error.message);
+      setErrorMsg("Error en el registro. Verificá los datos o el email.");
       return;
     }
 
@@ -190,14 +194,33 @@ export default function RegisterPage() {
         {/* 🔒 Contraseña */}
         <div>
           <label style={labelStyle}>Contraseña *</label>
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="Mínimo 6 caracteres"
-            style={inputStyle}
-            required
-          />
+          <div className="relative">
+            <input
+              type={showPassword ? "text" : "password"}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Mínimo 6 caracteres"
+              style={{ ...inputStyle, paddingRight: 40 }}
+              required
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword(!showPassword)}
+              style={{
+                position: "absolute",
+                right: 10,
+                top: "50%",
+                transform: "translateY(-50%)",
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                fontSize: 13,
+                color: "#555",
+              }}
+            >
+              {showPassword ? "Ocultar" : "Ver"}
+            </button>
+          </div>
         </div>
 
         {/* 🏢 Empresa */}

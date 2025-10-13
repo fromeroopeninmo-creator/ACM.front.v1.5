@@ -1,12 +1,11 @@
-// app/dashboard/layout.tsx
 "use client";
 
-import { useAuth } from "@/context/AuthContext";
-import { useTheme } from "@/context/ThemeContext";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
-import DashboardHeader from "@/components/DashboardHeader";
-import DashboardSidebar from "@/components/DashboardSidebar";
+import { useAuth } from "../../context/AuthContext"; // ← ruta relativa correcta
+import { useTheme } from "../../context/ThemeContext"; // ← ruta relativa correcta
+import DashboardHeader from "./components/DashboardHeader";
+import DashboardSidebar from "./components/DashboardSidebar";
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { user, loading, logout } = useAuth();

@@ -2,10 +2,11 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
-import { useAuth } from "@/context/AuthContext"; // ← ruta relativa correcta
-import { useTheme } from "@/context/ThemeContext"; // ← ruta relativa correcta
+import { useAuth } from "@/context/AuthContext";
+import { useTheme } from "@/context/ThemeContext";
 import DashboardHeader from "./components/DashboardHeader";
 import DashboardSidebar from "./components/DashboardSidebar";
+import PlanStatusBanner from "./empresa/components/PlanStatusBanner"; // 👈 nuevo import
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { user, loading, logout } = useAuth();
@@ -34,7 +35,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
       {/* Main content */}
       <div className="flex-1 flex flex-col">
+        {/* Header */}
         <DashboardHeader user={user} logout={logout} color={primaryColor} />
+
+        {/* 🔔 Banner visible solo para empresas */}
+        {user.role === "empresa" && <PlanStatusBanner />}
+
+        {/* Contenido principal */}
         <main className="flex-1 p-6 overflow-y-auto">{children}</main>
       </div>
     </div>

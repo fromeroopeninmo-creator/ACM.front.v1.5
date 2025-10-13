@@ -26,7 +26,7 @@ export default function EmpresaPlanesPage() {
   const [mensaje, setMensaje] = useState<string | null>(null);
 
   // 📡 Cargar plan actual y planes disponibles
-  useEffect(() => {
+    useEffect(() => {
     const fetchPlanes = async () => {
       if (!user?.id) return;
 
@@ -44,12 +44,16 @@ export default function EmpresaPlanesPage() {
         `)
         .eq("empresa_id", user.id)
         .eq("activo", true)
-        .single();
+        .maybeSingle();
 
       if (errorEmpresaPlan) {
         console.error("Error obteniendo plan actual:", errorEmpresaPlan);
       } else if (empresaPlan) {
-        const planData = empresaPlan.planes as { nombre: string; max_asesores: number } | null;
+        // 👇 Corregido: manejar tanto objeto como array
+        const planDataRaw = empresaPlan.planes;
+        const planData = Array.isArray(planDataRaw)
+          ? planDataRaw[0]
+          : planDataRaw;
 
         setPlanActual({
           plan_nombre: planData?.nombre || "Sin plan",

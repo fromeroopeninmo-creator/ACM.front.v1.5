@@ -2,8 +2,8 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
-import { useAuth } from "../../context/AuthContext"; // ← ruta relativa correcta
-import { useTheme } from "../../context/ThemeContext"; // ← ruta relativa correcta
+import { useAuth } from "./context/AuthContext"; // ← ruta relativa correcta
+import { useTheme } from "./context/ThemeContext"; // ← ruta relativa correcta
 import DashboardHeader from "./components/DashboardHeader";
 import DashboardSidebar from "./components/DashboardSidebar";
 

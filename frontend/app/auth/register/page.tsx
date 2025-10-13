@@ -12,16 +12,14 @@ export default function RegisterPage() {
   // Campos del formulario
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-
-  const [nombre, setNombre] = useState("");
-  const [apellido, setApellido] = useState("");
-  const [telefono, setTelefono] = useState("");
-  const [direccion, setDireccion] = useState("");
-  const [localidad, setLocalidad] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [razonSocial, setRazonSocial] = useState("");
+  const [cuit, setCuit] = useState("");
+  const [condicionFiscal, setCondicionFiscal] = useState("");
   const [provincia, setProvincia] = useState("");
+  const [localidad, setLocalidad] = useState("");
   const [matriculado, setMatriculado] = useState("");
   const [cpi, setCpi] = useState("");
-  const [inmobiliaria, setInmobiliaria] = useState("");
 
   // UI state
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -33,254 +31,203 @@ export default function RegisterPage() {
     setErrorMsg(null);
     setInfoMsg(null);
 
-    if (!email || !password || !nombre || !apellido) {
-      setErrorMsg("Completá al menos Nombre, Apellido, Email y Contraseña.");
+    if (!email || !password || !razonSocial || !cuit) {
+      setErrorMsg("Completá todos los campos obligatorios.");
       return;
     }
     if (password.length < 6) {
       setErrorMsg("La contraseña debe tener al menos 6 caracteres.");
       return;
     }
+    if (password !== confirmPassword) {
+      setErrorMsg("Las contraseñas no coinciden.");
+      return;
+    }
 
     setLoading(true);
-    const { data, error } = await supabase.auth.signUp({
+
+    // 1️⃣ Crear usuario en Supabase Auth
+    const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
       email,
       password,
       options: {
-        data: {
-          nombre,
-          apellido,
-          telefono,
-          direccion,
-          localidad,
-          provincia,
-          matriculado,
-          cpi,
-          inmobiliaria, // 👈 se guarda en user_metadata
-        },
+        data: { razonSocial, cuit, condicionFiscal, provincia, localidad },
       },
     });
+
+    if (signUpError || !signUpData.user) {
+      setErrorMsg(signUpError?.message || "Error al registrar usuario.");
+      setLoading(false);
+      return;
+    }
+
+    const userId = signUpData.user.id;
+
+    // 2️⃣ Crear empresa
+    const { data: empresa, error: empresaError } = await supabase
+      .from("empresas")
+      .insert([
+        {
+          user_id: userId,
+          razon_social: razonSocial,
+          cuit,
+          condicion_fiscal: condicionFiscal,
+          provincia,
+          localidad,
+          cpi,
+          matriculado_nombre: matriculado,
+          logo_url: null,
+          color: "#2563eb", // por defecto
+        },
+      ])
+      .select("id")
+      .single();
+
+    if (empresaError || !empresa) {
+      setErrorMsg("Error al crear la empresa.");
+      setLoading(false);
+      return;
+    }
+
+    // 3️⃣ Asignar plan Trial de 7 días
+    const trialDuration = 7;
+    const startDate = new Date();
+    const endDate = new Date();
+    endDate.setDate(startDate.getDate() + trialDuration);
+
+    await supabase.from("empresas_planes").insert([
+      {
+        empresa_id: empresa.id,
+        plan_id: "1", // ← ID del plan Trial (ajustar según DB)
+        fecha_inicio: startDate.toISOString(),
+        fecha_fin: endDate.toISOString(),
+        activo: true,
+      },
+    ]);
+
+    // 4️⃣ Crear perfil vinculado
+    await supabase.from("profiles").insert([
+      {
+        id: userId,
+        email,
+        role: "empresa",
+        empresa_id: empresa.id,
+      },
+    ]);
+
     setLoading(false);
-
-    if (error) {
-      setErrorMsg(error.message);
-      return;
-    }
-
-    if (!data.session) {
-      setInfoMsg(
-        "Registro exitoso. Revisá tu email para confirmar la cuenta y luego iniciá sesión."
-      );
-      return;
-    }
-
-    router.push("/");
+    setInfoMsg("Cuenta creada correctamente. Redirigiendo al panel...");
+    setTimeout(() => router.replace("/dashboard/empresa"), 1500);
   };
 
   return (
     <AuthLayout
-      title="Crear cuenta"
-      subtitle="Bienvenido a VAI – Registrate para continuar"
+      title="Registro de Empresa"
+      subtitle="Completá los datos para comenzar tu prueba gratuita de 7 días"
     >
-      {errorMsg && (
-        <div
-          style={alertError}
-          className="text-center text-sm sm:text-base break-words"
-        >
-          {errorMsg}
-        </div>
-      )}
-      {infoMsg && (
-        <div
-          style={alertInfo}
-          className="text-center text-sm sm:text-base break-words"
-        >
-          {infoMsg}
-        </div>
-      )}
+      {errorMsg && <div style={alertError}>{errorMsg}</div>}
+      {infoMsg && <div style={alertInfo}>{infoMsg}</div>}
 
       <form
         onSubmit={handleRegister}
         style={{ display: "grid", gap: "12px" }}
         className="w-full text-sm sm:text-base"
       >
-        {/* 🧍 Datos personales */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div>
-            <label style={labelStyle} className="block mb-1">
-              Nombre
-            </label>
-            <input
-              type="text"
-              value={nombre}
-              onChange={(e) => setNombre(e.target.value)}
-              placeholder="Nombre"
-              required
-              style={inputStyle}
-              className="focus:ring-2 focus:ring-sky-400 transition-all w-full"
-            />
-          </div>
-          <div>
-            <label style={labelStyle} className="block mb-1">
-              Apellido
-            </label>
-            <input
-              type="text"
-              value={apellido}
-              onChange={(e) => setApellido(e.target.value)}
-              placeholder="Apellido"
-              required
-              style={inputStyle}
-              className="focus:ring-2 focus:ring-sky-400 transition-all w-full"
-            />
-          </div>
-        </div>
+        <input
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value.trim())}
+          placeholder="Email *"
+          required
+          style={inputStyle}
+        />
 
-        {/* 📧 Email */}
-        <div>
-          <label style={labelStyle} className="block mb-1">
-            Email
-          </label>
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value.trim())}
-            placeholder="tu@email.com"
-            required
-            style={inputStyle}
-            className="focus:ring-2 focus:ring-sky-400 transition-all w-full"
-          />
-        </div>
+        <input
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          placeholder="Contraseña *"
+          required
+          style={inputStyle}
+        />
 
-        {/* 🔒 Contraseña */}
-        <div>
-          <label style={labelStyle} className="block mb-1">
-            Contraseña
-          </label>
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="Mínimo 6 caracteres"
-            required
-            style={inputStyle}
-            className="focus:ring-2 focus:ring-sky-400 transition-all w-full"
-          />
-        </div>
+        <input
+          type="password"
+          value={confirmPassword}
+          onChange={(e) => setConfirmPassword(e.target.value)}
+          placeholder="Confirmar contraseña *"
+          required
+          style={inputStyle}
+        />
 
-        {/* ☎️ Datos de contacto */}
-        <div>
-          <label style={labelStyle} className="block mb-1">
-            Teléfono
-          </label>
-          <input
-            type="text"
-            value={telefono}
-            onChange={(e) => setTelefono(e.target.value)}
-            placeholder="Teléfono"
-            style={inputStyle}
-            className="focus:ring-2 focus:ring-sky-400 transition-all w-full"
-          />
-        </div>
+        <input
+          type="text"
+          value={razonSocial}
+          onChange={(e) => setRazonSocial(e.target.value)}
+          placeholder="Razón Social *"
+          required
+          style={inputStyle}
+        />
 
-        <div>
-          <label style={labelStyle} className="block mb-1">
-            Dirección
-          </label>
-          <input
-            type="text"
-            value={direccion}
-            onChange={(e) => setDireccion(e.target.value)}
-            placeholder="Calle y número"
-            style={inputStyle}
-            className="focus:ring-2 focus:ring-sky-400 transition-all w-full"
-          />
-        </div>
+        <input
+          type="text"
+          value={cuit}
+          onChange={(e) => setCuit(e.target.value)}
+          placeholder="CUIT *"
+          required
+          style={inputStyle}
+        />
+
+        <input
+          type="text"
+          value={condicionFiscal}
+          onChange={(e) => setCondicionFiscal(e.target.value)}
+          placeholder="Condición fiscal"
+          style={inputStyle}
+        />
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div>
-            <label style={labelStyle} className="block mb-1">
-              Localidad
-            </label>
-            <input
-              type="text"
-              value={localidad}
-              onChange={(e) => setLocalidad(e.target.value)}
-              placeholder="Localidad"
-              style={inputStyle}
-              className="focus:ring-2 focus:ring-sky-400 transition-all w-full"
-            />
-          </div>
-          <div>
-            <label style={labelStyle} className="block mb-1">
-              Provincia
-            </label>
-            <input
-              type="text"
-              value={provincia}
-              onChange={(e) => setProvincia(e.target.value)}
-              placeholder="Provincia"
-              style={inputStyle}
-              className="focus:ring-2 focus:ring-sky-400 transition-all w-full"
-            />
-          </div>
-        </div>
-
-        {/* 📜 Datos del matriculado */}
-        <div>
-          <label style={labelStyle} className="block mb-1">
-            Nombre del Matriculado/a
-          </label>
           <input
             type="text"
-            value={matriculado}
-            onChange={(e) => setMatriculado(e.target.value)}
-            placeholder="Nombre completo del matriculado/a"
+            value={provincia}
+            onChange={(e) => setProvincia(e.target.value)}
+            placeholder="Provincia"
             style={inputStyle}
-            className="focus:ring-2 focus:ring-sky-400 transition-all w-full"
+          />
+          <input
+            type="text"
+            value={localidad}
+            onChange={(e) => setLocalidad(e.target.value)}
+            placeholder="Localidad"
+            style={inputStyle}
           />
         </div>
 
-        <div>
-          <label style={labelStyle} className="block mb-1">
-            CPI
-          </label>
-          <input
-            type="text"
-            value={cpi}
-            onChange={(e) => setCpi(e.target.value)}
-            placeholder="Matrícula / CPI"
-            style={inputStyle}
-            className="focus:ring-2 focus:ring-sky-400 transition-all w-full"
-          />
-        </div>
+        <input
+          type="text"
+          value={matriculado}
+          onChange={(e) => setMatriculado(e.target.value)}
+          placeholder="Nombre del matriculado (opcional)"
+          style={inputStyle}
+        />
 
-        {/* 🏢 Inmobiliaria */}
-        <div>
-          <label style={labelStyle} className="block mb-1">
-            Inmobiliaria
-          </label>
-          <input
-            type="text"
-            value={inmobiliaria}
-            onChange={(e) => setInmobiliaria(e.target.value)}
-            placeholder="Nombre de la inmobiliaria"
-            style={inputStyle}
-            className="focus:ring-2 focus:ring-sky-400 transition-all w-full"
-          />
-        </div>
+        <input
+          type="text"
+          value={cpi}
+          onChange={(e) => setCpi(e.target.value)}
+          placeholder="CPI / Matrícula (opcional)"
+          style={inputStyle}
+        />
 
-        {/* 🔘 Botón */}
         <button
           type="submit"
           disabled={loading}
           style={buttonStyle}
-          className="w-full text-sm sm:text-base hover:opacity-90 active:scale-[0.98] transition-all disabled:opacity-50"
+          className="w-full hover:opacity-90 transition-all disabled:opacity-50"
         >
           {loading ? "Creando cuenta..." : "Crear cuenta"}
         </button>
 
-        {/* 🔗 Link a login */}
         <p
           style={{ fontSize: 14, textAlign: "center", marginTop: 6 }}
           className="text-gray-600 text-xs sm:text-sm mt-2"
@@ -298,7 +245,7 @@ export default function RegisterPage() {
   );
 }
 
-/* 🎨 Estilos originales (sin cambios) */
+/* 🎨 Estilos (mantengo los tuyos) */
 const inputStyle: React.CSSProperties = {
   width: "100%",
   height: 42,
@@ -307,7 +254,6 @@ const inputStyle: React.CSSProperties = {
   padding: "0 12px",
   outline: "none",
 };
-const labelStyle: React.CSSProperties = { fontSize: 13, fontWeight: 600 };
 const buttonStyle: React.CSSProperties = {
   height: 42,
   borderRadius: 8,

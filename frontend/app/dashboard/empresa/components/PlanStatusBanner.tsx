@@ -15,48 +15,50 @@ export default function PlanStatusBanner() {
   const [activo, setActivo] = useState<boolean>(true);
   const [loading, setLoading] = useState(true);
 
-    useEffect(() => {
-    const fetchPlan = async () => {
-      if (!user?.id) return;
+   useEffect(() => {
+  const fetchPlan = async () => {
+    if (!user?.id) return;
 
-      const { data: plan, error } = await supabase
-        .from("empresas_planes")
-        .select("fecha_fin, activo, planes(nombre)")
-        .eq("empresa_id", user.id)
-        .eq("activo", true)
-        .maybeSingle();
+    const { data: plan, error } = await supabase
+      .from("empresas_planes")
+      .select("fecha_fin, activo, planes(nombre)")
+      .eq("empresa_id", user.id)
+      .eq("activo", true)
+      .maybeSingle();
 
-      if (error || !plan) {
-        setLoading(false);
-        return;
-      }
-
-      const fin = new Date(plan.fecha_fin);
-      const hoy = new Date();
-      const diff = Math.ceil((fin.getTime() - hoy.getTime()) / (1000 * 60 * 60 * 24));
-
-      // ✅ arreglo seguro: algunas relaciones vienen como array
-      const planInfo =
-        Array.isArray(plan.planes) && plan.planes.length > 0
-          ? plan.planes[0]
-          : plan.planes;
-
-      setFechaFin(fin);
-      setDiasRestantes(diff);
-      setPlanNombre(planInfo?.nombre || "Trial");
+    if (error || !plan) {
       setLoading(false);
+      return;
+    }
 
-      // 🚨 bloqueo si plan pago vencido +2 días
-      if (planInfo?.nombre !== "Trial" && diff < -2) {
-        alert(
-          "Su suscripción ha superado el período de tolerancia. Redirigiendo al portal de pago..."
-        );
-        router.replace("/dashboard/empresa/planes");
-      }
-    };
+    const fin = new Date(plan.fecha_fin);
+    const hoy = new Date();
+    const diff = Math.ceil((fin.getTime() - hoy.getTime()) / (1000 * 60 * 60 * 24));
 
-    fetchPlan();
-  }, [user, router]);
+    // 🩵 aseguramos el tipo correcto:
+    const planesData = (plan.planes as { nombre: string }[] | { nombre: string } | null) || null;
+    const planInfo =
+      Array.isArray(planesData) && planesData.length > 0
+        ? planesData[0]
+        : (planesData as { nombre: string } | null);
+
+    setFechaFin(fin);
+    setDiasRestantes(diff);
+    setPlanNombre(planInfo?.nombre ?? "Trial");
+    setLoading(false);
+
+    // 🚨 bloqueo si plan pago vencido +2 días
+    if (planInfo?.nombre !== "Trial" && diff < -2) {
+      alert(
+        "Su suscripción ha superado el período de tolerancia. Redirigiendo al portal de pago..."
+      );
+      router.replace("/dashboard/empresa/planes");
+    }
+  };
+
+  fetchPlan();
+}, [user, router]);
+
 
   if (loading || !planNombre) return null;
 

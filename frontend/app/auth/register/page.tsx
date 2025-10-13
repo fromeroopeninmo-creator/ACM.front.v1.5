@@ -6,124 +6,142 @@ import { useRouter } from "next/navigation";
 import { supabase } from "#lib/supabaseClient";
 import AuthLayout from "@/auth/components/AuthLayout";
 
+// 📍 Provincias argentinas
+const provincias = [
+  "Buenos Aires",
+  "Ciudad Autónoma de Buenos Aires",
+  "Catamarca",
+  "Chaco",
+  "Chubut",
+  "Córdoba",
+  "Corrientes",
+  "Entre Ríos",
+  "Formosa",
+  "Jujuy",
+  "La Pampa",
+  "La Rioja",
+  "Mendoza",
+  "Misiones",
+  "Neuquén",
+  "Río Negro",
+  "Salta",
+  "San Juan",
+  "San Luis",
+  "Santa Cruz",
+  "Santa Fe",
+  "Santiago del Estero",
+  "Tierra del Fuego",
+  "Tucumán",
+];
+
+// 💰 Condiciones fiscales
+const condicionesFiscales = [
+  "Consumidor Final (Exento)",
+  "Monotributista",
+  "Responsable Inscripto",
+];
+
 export default function RegisterPage() {
   const router = useRouter();
 
   // Campos del formulario
+  const [nombre, setNombre] = useState("");
+  const [apellido, setApellido] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [razonSocial, setRazonSocial] = useState("");
-  const [cuit, setCuit] = useState("");
-  const [condicionFiscal, setCondicionFiscal] = useState("");
-  const [provincia, setProvincia] = useState("");
+  const [telefono, setTelefono] = useState("");
+  const [direccion, setDireccion] = useState("");
   const [localidad, setLocalidad] = useState("");
-  const [matriculado, setMatriculado] = useState("");
-  const [cpi, setCpi] = useState("");
+  const [provincia, setProvincia] = useState("");
+  const [razonSocial, setRazonSocial] = useState("");
+  const [inmobiliaria, setInmobiliaria] = useState("");
+  const [condicionFiscal, setCondicionFiscal] = useState("");
 
   // UI state
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [infoMsg, setInfoMsg] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
+  // 📧 Validar formato de email
+  const validarEmail = (email: string) =>
+    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
     setInfoMsg(null);
 
-    if (!email || !password || !razonSocial || !cuit) {
-      setErrorMsg("Completá todos los campos obligatorios.");
+    // ✅ Validaciones básicas
+    if (
+      !nombre ||
+      !apellido ||
+      !email ||
+      !password ||
+      !telefono ||
+      !direccion ||
+      !localidad ||
+      !provincia ||
+      !razonSocial ||
+      !inmobiliaria ||
+      !condicionFiscal
+    ) {
+      setErrorMsg("Por favor, completá todos los campos obligatorios.");
       return;
     }
+
+    if (!validarEmail(email)) {
+      setErrorMsg("Ingresá un email válido.");
+      return;
+    }
+
     if (password.length < 6) {
       setErrorMsg("La contraseña debe tener al menos 6 caracteres.");
-      return;
-    }
-    if (password !== confirmPassword) {
-      setErrorMsg("Las contraseñas no coinciden.");
       return;
     }
 
     setLoading(true);
 
-    // 1️⃣ Crear usuario en Supabase Auth
-    const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
-        data: { razonSocial, cuit, condicionFiscal, provincia, localidad },
+        data: {
+          nombre,
+          apellido,
+          telefono,
+          direccion,
+          localidad,
+          provincia,
+          razon_social: razonSocial,
+          inmobiliaria,
+          condicion_fiscal: condicionFiscal,
+          role: "empresa", // 👈 se asigna directamente
+        },
       },
     });
 
-    if (signUpError || !signUpData.user) {
-      setErrorMsg(signUpError?.message || "Error al registrar usuario.");
-      setLoading(false);
-      return;
-    }
-
-    const userId = signUpData.user.id;
-
-    // 2️⃣ Crear empresa
-    const { data: empresa, error: empresaError } = await supabase
-      .from("empresas")
-      .insert([
-        {
-          user_id: userId,
-          razon_social: razonSocial,
-          cuit,
-          condicion_fiscal: condicionFiscal,
-          provincia,
-          localidad,
-          cpi,
-          matriculado_nombre: matriculado,
-          logo_url: null,
-          color: "#2563eb", // por defecto
-        },
-      ])
-      .select("id")
-      .single();
-
-    if (empresaError || !empresa) {
-      setErrorMsg("Error al crear la empresa.");
-      setLoading(false);
-      return;
-    }
-
-    // 3️⃣ Asignar plan Trial de 7 días
-    const trialDuration = 7;
-    const startDate = new Date();
-    const endDate = new Date();
-    endDate.setDate(startDate.getDate() + trialDuration);
-
-    await supabase.from("empresas_planes").insert([
-      {
-        empresa_id: empresa.id,
-        plan_id: "1", // ← ID del plan Trial (ajustar según DB)
-        fecha_inicio: startDate.toISOString(),
-        fecha_fin: endDate.toISOString(),
-        activo: true,
-      },
-    ]);
-
-    // 4️⃣ Crear perfil vinculado
-    await supabase.from("profiles").insert([
-      {
-        id: userId,
-        email,
-        role: "empresa",
-        empresa_id: empresa.id,
-      },
-    ]);
-
     setLoading(false);
-    setInfoMsg("Cuenta creada correctamente. Redirigiendo al panel...");
-    setTimeout(() => router.replace("/dashboard/empresa"), 1500);
+
+    if (error) {
+      console.error("Error en registro:", error);
+      setErrorMsg(error.message);
+      return;
+    }
+
+    if (!data.session) {
+      setInfoMsg(
+        "Registro exitoso. Revisá tu email para confirmar la cuenta y luego iniciá sesión."
+      );
+      return;
+    }
+
+    router.push("/dashboard/empresa");
   };
 
   return (
     <AuthLayout
       title="Registro de Empresa"
-      subtitle="Completá los datos para comenzar tu prueba gratuita de 7 días"
+      subtitle="Completá tus datos para crear la cuenta de tu inmobiliaria"
     >
       {errorMsg && <div style={alertError}>{errorMsg}</div>}
       {infoMsg && <div style={alertInfo}>{infoMsg}</div>}
@@ -133,105 +151,161 @@ export default function RegisterPage() {
         style={{ display: "grid", gap: "12px" }}
         className="w-full text-sm sm:text-base"
       >
-        <input
-          type="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value.trim())}
-          placeholder="Email *"
-          required
-          style={inputStyle}
-        />
-
-        <input
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          placeholder="Contraseña *"
-          required
-          style={inputStyle}
-        />
-
-        <input
-          type="password"
-          value={confirmPassword}
-          onChange={(e) => setConfirmPassword(e.target.value)}
-          placeholder="Confirmar contraseña *"
-          required
-          style={inputStyle}
-        />
-
-        <input
-          type="text"
-          value={razonSocial}
-          onChange={(e) => setRazonSocial(e.target.value)}
-          placeholder="Razón Social *"
-          required
-          style={inputStyle}
-        />
-
-        <input
-          type="text"
-          value={cuit}
-          onChange={(e) => setCuit(e.target.value)}
-          placeholder="CUIT *"
-          required
-          style={inputStyle}
-        />
-
-        <input
-          type="text"
-          value={condicionFiscal}
-          onChange={(e) => setCondicionFiscal(e.target.value)}
-          placeholder="Condición fiscal"
-          style={inputStyle}
-        />
-
+        {/* 🧍 Datos del responsable */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label style={labelStyle}>Nombre *</label>
+            <input
+              type="text"
+              value={nombre}
+              onChange={(e) => setNombre(e.target.value)}
+              style={inputStyle}
+              required
+            />
+          </div>
+          <div>
+            <label style={labelStyle}>Apellido *</label>
+            <input
+              type="text"
+              value={apellido}
+              onChange={(e) => setApellido(e.target.value)}
+              style={inputStyle}
+              required
+            />
+          </div>
+        </div>
+
+        {/* 📧 Email */}
+        <div>
+          <label style={labelStyle}>Email *</label>
           <input
-            type="text"
-            value={provincia}
-            onChange={(e) => setProvincia(e.target.value)}
-            placeholder="Provincia"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value.trim())}
             style={inputStyle}
-          />
-          <input
-            type="text"
-            value={localidad}
-            onChange={(e) => setLocalidad(e.target.value)}
-            placeholder="Localidad"
-            style={inputStyle}
+            required
           />
         </div>
 
-        <input
-          type="text"
-          value={matriculado}
-          onChange={(e) => setMatriculado(e.target.value)}
-          placeholder="Nombre del matriculado (opcional)"
-          style={inputStyle}
-        />
+        {/* 🔒 Contraseña */}
+        <div>
+          <label style={labelStyle}>Contraseña *</label>
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="Mínimo 6 caracteres"
+            style={inputStyle}
+            required
+          />
+        </div>
 
-        <input
-          type="text"
-          value={cpi}
-          onChange={(e) => setCpi(e.target.value)}
-          placeholder="CPI / Matrícula (opcional)"
-          style={inputStyle}
-        />
+        {/* 🏢 Empresa */}
+        <div>
+          <label style={labelStyle}>Razón Social *</label>
+          <input
+            type="text"
+            value={razonSocial}
+            onChange={(e) => setRazonSocial(e.target.value)}
+            style={inputStyle}
+            required
+          />
+        </div>
 
+        <div>
+          <label style={labelStyle}>Nombre Comercial / Inmobiliaria *</label>
+          <input
+            type="text"
+            value={inmobiliaria}
+            onChange={(e) => setInmobiliaria(e.target.value)}
+            style={inputStyle}
+            required
+          />
+        </div>
+
+        {/* 📞 Contacto */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label style={labelStyle}>Teléfono *</label>
+            <input
+              type="text"
+              value={telefono}
+              onChange={(e) => setTelefono(e.target.value)}
+              style={inputStyle}
+              required
+            />
+          </div>
+          <div>
+            <label style={labelStyle}>Dirección *</label>
+            <input
+              type="text"
+              value={direccion}
+              onChange={(e) => setDireccion(e.target.value)}
+              style={inputStyle}
+              required
+            />
+          </div>
+        </div>
+
+        {/* 📍 Ubicación */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label style={labelStyle}>Localidad *</label>
+            <input
+              type="text"
+              value={localidad}
+              onChange={(e) => setLocalidad(e.target.value)}
+              style={inputStyle}
+              required
+            />
+          </div>
+          <div>
+            <label style={labelStyle}>Provincia *</label>
+            <select
+              value={provincia}
+              onChange={(e) => setProvincia(e.target.value)}
+              style={inputStyle}
+              required
+            >
+              <option value="">Seleccionar...</option>
+              {provincias.map((p) => (
+                <option key={p} value={p}>
+                  {p}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {/* 💼 Condición fiscal */}
+        <div>
+          <label style={labelStyle}>Condición Fiscal *</label>
+          <select
+            value={condicionFiscal}
+            onChange={(e) => setCondicionFiscal(e.target.value)}
+            style={inputStyle}
+            required
+          >
+            <option value="">Seleccionar...</option>
+            {condicionesFiscales.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* 🔘 Botón */}
         <button
           type="submit"
           disabled={loading}
           style={buttonStyle}
-          className="w-full hover:opacity-90 transition-all disabled:opacity-50"
+          className="hover:opacity-90 transition-all disabled:opacity-50"
         >
           {loading ? "Creando cuenta..." : "Crear cuenta"}
         </button>
 
-        <p
-          style={{ fontSize: 14, textAlign: "center", marginTop: 6 }}
-          className="text-gray-600 text-xs sm:text-sm mt-2"
-        >
+        <p style={{ fontSize: 14, textAlign: "center", marginTop: 6 }}>
           ¿Ya tenés cuenta?{" "}
           <a
             href="/auth/login"
@@ -245,7 +319,7 @@ export default function RegisterPage() {
   );
 }
 
-/* 🎨 Estilos (mantengo los tuyos) */
+/* 🎨 Estilos */
 const inputStyle: React.CSSProperties = {
   width: "100%",
   height: 42,
@@ -254,6 +328,7 @@ const inputStyle: React.CSSProperties = {
   padding: "0 12px",
   outline: "none",
 };
+const labelStyle: React.CSSProperties = { fontSize: 13, fontWeight: 600 };
 const buttonStyle: React.CSSProperties = {
   height: 42,
   borderRadius: 8,

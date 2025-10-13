@@ -40,7 +40,7 @@ export default function EmpresaPlanesPage() {
           fecha_inicio,
           fecha_fin,
           activo,
-          planes (nombre, max_asesores)
+          planes:plan_id (nombre, max_asesores)
         `)
         .eq("empresa_id", user.id)
         .eq("activo", true)
@@ -49,12 +49,14 @@ export default function EmpresaPlanesPage() {
       if (errorEmpresaPlan) {
         console.error("Error obteniendo plan actual:", errorEmpresaPlan);
       } else if (empresaPlan) {
+        const planData = empresaPlan.planes as { nombre: string; max_asesores: number } | null;
+
         setPlanActual({
-          plan_nombre: empresaPlan.planes.nombre,
+          plan_nombre: planData?.nombre || "Sin plan",
           fecha_inicio: empresaPlan.fecha_inicio,
           fecha_fin: empresaPlan.fecha_fin,
           activo: empresaPlan.activo,
-          max_asesores: empresaPlan.planes.max_asesores,
+          max_asesores: planData?.max_asesores || 0,
         });
       }
 
@@ -71,6 +73,7 @@ export default function EmpresaPlanesPage() {
 
     fetchPlanes();
   }, [user]);
+
 
   // 🚀 Enviar solicitud real al endpoint /api/solicitud-upgrade
   const handleUpgrade = async (planId: string) => {

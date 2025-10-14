@@ -25,7 +25,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     }
   }, [user, loading, router, pathname]);
 
-  if (!authChecked) {
+  // ✅ Esperar a que AuthContext termine de cargar completamente
+  if (loading || !authChecked) {
     return (
       <div className="flex justify-center items-center h-screen text-gray-500">
         Cargando sesión...
@@ -50,10 +51,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     );
   }
 
-  // 🧠 Solo los asesores heredan el color corporativo de su empresa
+  // 🧠 Solo los asesores y empresas heredan el color corporativo de su empresa
   const sidebarColor =
-    user.role === "asesor" ? primaryColor : "#004AAD";
+    user.role === "asesor" || user.role === "empresa"
+      ? primaryColor
+      : "#004AAD";
 
+  // ✅ Renderización segura: user ya está disponible, ThemeContext puede aplicar color guardado
   return (
     <div className="flex min-h-screen bg-gray-50 text-gray-900">
       <DashboardSidebar role={user.role || "empresa"} color={sidebarColor} />

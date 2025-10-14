@@ -1,6 +1,12 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  ReactNode,
+} from "react";
 import { supabase } from "#lib/supabaseClient";
 import { useAuth } from "./AuthContext";
 
@@ -8,16 +14,18 @@ interface ThemeContextType {
   primaryColor: string;
   setPrimaryColor: (color: string) => void;
   logoUrl?: string | null;
+  hydrated: boolean;
 }
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
+  const { user } = useAuth();
   const [primaryColor, setPrimaryColor] = useState("#2563eb");
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
-  const { user } = useAuth();
+  const [hydrated, setHydrated] = useState(false); // ✅ control de carga inicial
 
-  // ✅ 1️⃣ Al montar, leemos localStorage inmediatamente
+  // 1️⃣ Primer paso: cargar del localStorage apenas se monte (antes de cualquier render visual)
   useEffect(() => {
     try {
       const storedColor = localStorage.getItem("vai_primaryColor");
@@ -28,9 +36,10 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     } catch (err) {
       console.warn("No se pudo leer localStorage del tema:", err);
     }
-  }, []); // ← se ejecuta una sola vez al inicio
+    setHydrated(true);
+  }, []);
 
-  // ✅ 2️⃣ Luego sincronizamos con Supabase y escuchamos realtime
+  // 2️⃣ Luego sincronizar con Supabase (cuando user ya está definido)
   useEffect(() => {
     const loadCompanyTheme = async () => {
       if (!user) return;
@@ -71,7 +80,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
     loadCompanyTheme();
 
-    // 🧩 Listener realtime
+    // 3️⃣ Realtime listener para cambios
     let channel: ReturnType<typeof supabase.channel> | null = null;
 
     if (user && (user.role === "empresa" || user.role === "asesor")) {
@@ -107,8 +116,19 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     };
   }, [user]);
 
+  // 4️⃣ No renderizamos nada hasta que esté hidratado (evita el “flash azul”)
+  if (!hydrated) {
+    return (
+      <div className="flex justify-center items-center h-screen text-gray-400">
+        Cargando tema...
+      </div>
+    );
+  }
+
   return (
-    <ThemeContext.Provider value={{ primaryColor, setPrimaryColor, logoUrl }}>
+    <ThemeContext.Provider
+      value={{ primaryColor, setPrimaryColor, logoUrl, hydrated }}
+    >
       {children}
     </ThemeContext.Provider>
   );

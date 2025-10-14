@@ -3,19 +3,47 @@
 import { useAuth } from "@/context/AuthContext";
 import Link from "next/link";
 import PlanStatusBanner from "./components/PlanStatusBanner";
+import { supabase } from "#lib/supabaseClient";
+import { useEffect, useState } from "react";
 
 export default function EmpresaDashboardPage() {
   const { user } = useAuth();
+  const [empresa, setEmpresa] = useState<any>(null);
 
-  // 🔒 Manejo seguro de metadatos (según el tipo de user)
+  // 🔹 Cargar datos actualizados de la empresa
+  useEffect(() => {
+    const fetchEmpresa = async () => {
+      if (!user) return;
+      const { data, error } = await supabase
+        .from("empresas")
+        .select(
+          "nombre_comercial, razon_social, condicion_fiscal, matriculado, cpi, telefono, email, logo_url"
+        )
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      if (!error && data) setEmpresa(data);
+    };
+
+    fetchEmpresa();
+  }, [user]);
+
+  // 🔒 Fallbacks de metadatos (si no hay datos en la tabla)
   const meta = (user as any)?.user_metadata || user || {};
   const nombre = meta.nombre || "Usuario";
-  const razonSocial = meta.razon_social || "No especificado";
-  const inmobiliaria = meta.inmobiliaria || "No especificado";
-  const condicionFiscal = meta.condicion_fiscal || "No especificado";
-  const provincia = meta.provincia || "No especificado";
-  const telefono = meta.telefono || "No especificado";
-  const email = (user as any)?.email || "No especificado";
+
+  const inmobiliaria =
+    empresa?.nombre_comercial || meta.inmobiliaria || "No especificado";
+  const razonSocial =
+    empresa?.razon_social || meta.razon_social || "No especificado";
+  const condicionFiscal =
+    empresa?.condicion_fiscal || meta.condicion_fiscal || "No especificado";
+  const matriculado = empresa?.matriculado || meta.matriculado || "No especificado";
+  const cpi = empresa?.cpi || meta.cpi || "No especificado";
+  const email = empresa?.email || (user as any)?.email || "No especificado";
+  const telefono = empresa?.telefono || meta.telefono || "No especificado";
+  const logoUrl =
+    empresa?.logo_url || "/images/default-logo.png"; // 🖼️ Fallback si no hay logo
 
   return (
     <div className="space-y-6">
@@ -47,29 +75,43 @@ export default function EmpresaDashboardPage() {
         </div>
       </section>
 
-      {/* 🧾 Info básica */}
-      <section className="bg-white shadow-sm rounded-xl p-6">
-        <h2 className="text-xl font-semibold mb-4">Datos de la empresa</h2>
-        <ul className="space-y-2 text-gray-700">
-          <li>
-            <strong>Inmobiliaria:</strong> {inmobiliaria}
-          </li>
-          <li>
-            <strong>Razón Social:</strong> {razonSocial}
-          </li>
-          <li>
-            <strong>Condición Fiscal:</strong> {condicionFiscal}
-          </li>
-          <li>
-            <strong>Provincia:</strong> {provincia}
-          </li>
-          <li>
-            <strong>Email:</strong> {email}
-          </li>
-          <li>
-            <strong>Teléfono:</strong> {telefono}
-          </li>
-        </ul>
+      {/* 🧾 Info básica con logo */}
+      <section className="bg-white shadow-sm rounded-xl p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+        <div className="flex-1">
+          <h2 className="text-xl font-semibold mb-4">Datos de la Empresa</h2>
+          <ul className="space-y-2 text-gray-700">
+            <li>
+              <strong>Inmobiliaria:</strong> {inmobiliaria}
+            </li>
+            <li>
+              <strong>Razón Social:</strong> {razonSocial}
+            </li>
+            <li>
+              <strong>Condición Fiscal:</strong> {condicionFiscal}
+            </li>
+            <li>
+              <strong>Matriculado:</strong> {matriculado}
+            </li>
+            <li>
+              <strong>CPI:</strong> {cpi}
+            </li>
+            <li>
+              <strong>Email:</strong> {email}
+            </li>
+            <li>
+              <strong>Teléfono:</strong> {telefono}
+            </li>
+          </ul>
+        </div>
+
+        {/* 🖼️ Logo de la empresa */}
+        <div className="flex-shrink-0 w-full md:w-48 text-center">
+          <img
+            src={logoUrl}
+            alt="Logo de la empresa"
+            className="w-40 h-40 object-contain mx-auto border rounded-xl shadow-sm"
+          />
+        </div>
       </section>
     </div>
   );

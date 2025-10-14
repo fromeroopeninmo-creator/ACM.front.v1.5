@@ -9,23 +9,50 @@ import { useEffect, useState } from "react";
 export default function EmpresaDashboardPage() {
   const { user } = useAuth();
   const [empresa, setEmpresa] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
 
   // 🔹 Cargar datos actualizados de la empresa
   useEffect(() => {
     const fetchEmpresa = async () => {
       if (!user) return;
-      const { data, error } = await supabase
-        .from("empresas")
-        .select(
-          "nombre_comercial, razon_social, condicion_fiscal, matriculado, cpi, telefono, email, logo_url"
-        )
-        .eq("user_id", user.id)
-        .maybeSingle();
 
-      if (!error && data) setEmpresa(data);
+      try {
+        const { data, error } = await supabase
+          .from("empresas")
+          .select(
+            "nombre_comercial, razon_social, condicion_fiscal, matriculado, cpi, telefono, logo_url"
+          )
+          .eq("user_id", user.id)
+          .maybeSingle();
+
+        if (error) throw error;
+        setEmpresa(data || null);
+      } catch (err) {
+        console.error("Error al obtener datos de empresa:", err);
+      } finally {
+        setLoading(false);
+      }
     };
 
     fetchEmpresa();
+
+    // 🧭 Escucha de cambios en la tabla "empresas"
+    const channel = supabase
+      .channel("empresa-updates")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "empresas" },
+        (payload) => {
+          if (payload.new?.user_id === user?.id) {
+            setEmpresa(payload.new);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [user]);
 
   // 🔒 Fallbacks de metadatos (si no hay datos en la tabla)
@@ -38,12 +65,22 @@ export default function EmpresaDashboardPage() {
     empresa?.razon_social || meta.razon_social || "No especificado";
   const condicionFiscal =
     empresa?.condicion_fiscal || meta.condicion_fiscal || "No especificado";
-  const matriculado = empresa?.matriculado || meta.matriculado || "No especificado";
+  const matriculado =
+    empresa?.matriculado || meta.matriculado || "No especificado";
   const cpi = empresa?.cpi || meta.cpi || "No especificado";
-  const email = empresa?.email || (user as any)?.email || "No especificado";
   const telefono = empresa?.telefono || meta.telefono || "No especificado";
+  const email = (user as any)?.email || "No especificado";
   const logoUrl =
-    empresa?.logo_url || "/images/default-logo.png"; // 🖼️ Fallback si no hay logo
+    empresa?.logo_url && empresa.logo_url.trim() !== ""
+      ? empresa.logo_url
+      : "/images/default-logo.png"; // 🖼️ Fallback si no hay logo
+
+  if (loading)
+    return (
+      <div className="p-6 text-center text-gray-500">
+        Cargando datos de la empresa...
+      </div>
+    );
 
   return (
     <div className="space-y-6">
@@ -77,6 +114,7 @@ export default function EmpresaDashboardPage() {
 
       {/* 🧾 Info básica con logo */}
       <section className="bg-white shadow-sm rounded-xl p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+        {/* 📋 Datos */}
         <div className="flex-1">
           <h2 className="text-xl font-semibold mb-4">Datos de la Empresa</h2>
           <ul className="space-y-2 text-gray-700">
@@ -104,7 +142,7 @@ export default function EmpresaDashboardPage() {
           </ul>
         </div>
 
-        {/* 🖼️ Logo de la empresa */}
+        {/* 🖼️ Logo */}
         <div className="flex-shrink-0 w-full md:w-48 text-center">
           <img
             src={logoUrl}

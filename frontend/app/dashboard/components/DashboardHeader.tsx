@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useTheme } from "@/context/ThemeContext";
 import { supabase } from "#lib/supabaseClient";
 
@@ -18,14 +19,12 @@ interface EmpresaData {
 }
 
 export default function DashboardHeader({ user, logout, color }: HeaderProps) {
-  const { logoUrl, primaryColor } = useTheme(); // ✅ traemos color del contexto en tiempo real
+  const { logoUrl, primaryColor } = useTheme(); // ✅ color dinámico del contexto
   const [empresa, setEmpresa] = useState<EmpresaData | null>(null);
 
   // 🔹 Detectar rol y nombre
   const role: string =
-    user?.role ||
-    user?.user_metadata?.role ||
-    "empresa";
+    user?.role || user?.user_metadata?.role || "empresa";
 
   const nombre: string =
     user?.user_metadata?.nombre ||
@@ -33,7 +32,7 @@ export default function DashboardHeader({ user, logout, color }: HeaderProps) {
     user?.email?.split("@")[0] ||
     "Usuario";
 
-  // 🔹 Si es empresa o asesor, buscar los datos del matriculado
+  // 🔹 Cargar datos de la empresa
   useEffect(() => {
     const fetchEmpresa = async () => {
       if (!user || (role !== "empresa" && role !== "asesor")) return;
@@ -50,7 +49,6 @@ export default function DashboardHeader({ user, logout, color }: HeaderProps) {
       if (role === "asesor") query = query.eq("id", user?.user_metadata?.empresa_id);
 
       const { data, error } = await query.single();
-
       if (!error && data) setEmpresa(data);
     };
 
@@ -69,26 +67,24 @@ export default function DashboardHeader({ user, logout, color }: HeaderProps) {
       ? "ADMIN"
       : "USUARIO";
 
-  // 🔹 Renderizado principal
+  // 🔹 Render principal
   return (
     <header
-      className="flex justify-between items-center px-6 py-4 shadow-sm" // 📏 aumentamos padding vertical (antes py-3)
-      style={{ backgroundColor: primaryColor || color }} // ✅ color realtime desde ThemeContext
+      className="flex justify-between items-center px-8 py-5 shadow-sm relative"
+      style={{ backgroundColor: primaryColor || color }}
     >
       {/* 🔹 IZQUIERDA */}
       <div className="flex items-center gap-3">
         {logoUrl ? (
-          <img src={logoUrl} alt="Logo" className="h-9" /> // 📏 levemente más alto
+          <img src={logoUrl} alt="Logo" className="h-10 object-contain" />
         ) : (
-          <h1 className="text-white font-semibold">VAI Dashboard</h1>
+          <h1 className="text-white font-semibold text-lg">VAI Dashboard</h1>
         )}
 
-        {/* 🔸 Texto de tipo de usuario */}
         <span className="text-white font-semibold text-sm uppercase tracking-wide">
           {roleLabel}
         </span>
 
-        {/* 🔸 Datos complementarios */}
         <div className="flex flex-col leading-tight">
           {role === "empresa" && empresa ? (
             <>
@@ -120,6 +116,18 @@ export default function DashboardHeader({ user, logout, color }: HeaderProps) {
         </div>
       </div>
 
+      {/* 🔹 CENTRO — Botón Valuador */}
+      {role === "empresa" && (
+        <div className="absolute left-1/2 transform -translate-x-1/2">
+          <Link
+            href="/app/acmforms"
+            className="bg-white text-gray-800 text-sm font-semibold px-5 py-2 rounded-lg shadow hover:bg-gray-100 transition"
+          >
+            Valuador de Activos Inmobiliarios
+          </Link>
+        </div>
+      )}
+
       {/* 🔹 DERECHA */}
       <div className="flex items-center gap-4">
         {role === "empresa" && empresa?.razon_social ? (
@@ -139,8 +147,6 @@ export default function DashboardHeader({ user, logout, color }: HeaderProps) {
             Admin: {nombre}
           </span>
         ) : null}
-
-        {/* 🧹 Sin botón de cerrar sesión */}
       </div>
     </header>
   );

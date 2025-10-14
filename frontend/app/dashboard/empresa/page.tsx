@@ -96,32 +96,42 @@ export default function EmpresaDashboardPage() {
         </p>
 
         {/* 🔹 Botones principales */}
-        <div className="flex justify-between flex-wrap gap-3">
-          {/* 🔸 Izquierda: botón Valuador */}
-          <Link
-            href="/vai/acmforms"
-            className="px-5 py-2 bg-gray-200 text-gray-800 font-semibold rounded-lg shadow hover:bg-gray-300 transition"
-          >
-            🏠 Valuador de Activos Inmobiliarios
-          </Link>
+<div className="flex justify-between flex-wrap gap-3">
+  {/* 🔸 Izquierda: botón Valuador con color corporativo */}
+  <Link
+    href="/vai/acmforms"
+    className="px-5 py-2 text-white font-semibold rounded-lg shadow transition"
+    style={{
+      backgroundColor: primaryColor,
+      boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
+    }}
+    onMouseEnter={(e) => {
+      (e.currentTarget as HTMLAnchorElement).style.filter = "brightness(1.1)";
+    }}
+    onMouseLeave={(e) => {
+      (e.currentTarget as HTMLAnchorElement).style.filter = "brightness(1)";
+    }}
+  >
+    🏠 Valuador de Activos Inmobiliarios
+  </Link>
 
-          {/* 🔸 Derecha: botones existentes */}
-          <div className="flex gap-3">
-            <Link
-              href="/dashboard/empresa/asesores"
-              className="px-5 py-2 bg-blue-600 text-white font-semibold rounded-lg shadow hover:bg-blue-700 transition"
-            >
-              👥 Gestionar Asesores
-            </Link>
+  {/* 🔸 Derecha: botones existentes */}
+  <div className="flex gap-3">
+    <Link
+      href="/dashboard/empresa/asesores"
+      className="px-5 py-2 bg-blue-600 text-white font-semibold rounded-lg shadow hover:bg-blue-700 transition"
+    >
+      👥 Gestionar Asesores
+    </Link>
 
-            <Link
-              href="/dashboard/empresa/planes"
-              className="px-5 py-2 bg-green-600 text-white font-semibold rounded-lg shadow hover:bg-green-700 transition"
-            >
-              💼 Ver Planes
-            </Link>
-          </div>
-        </div>
+    <Link
+      href="/dashboard/empresa/planes"
+      className="px-5 py-2 bg-green-600 text-white font-semibold rounded-lg shadow hover:bg-green-700 transition"
+    >
+      💼 Ver Planes
+    </Link>
+  </div>
+</div>
       </section>
 
       {/* 🧾 Info básica con logo */}

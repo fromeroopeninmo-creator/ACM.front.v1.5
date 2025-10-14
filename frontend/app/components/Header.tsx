@@ -13,7 +13,7 @@ export default function Header() {
 
   const [empresa, setEmpresa] = useState<any>(null);
 
-  // 🧠 Cargar datos de empresa o del asesor (empresa asociada)
+  // 🧠 Traer datos de empresa o empresa asociada del asesor
   useEffect(() => {
     if (!user) return;
 
@@ -21,14 +21,12 @@ export default function Header() {
       try {
         let query = supabase
           .from("empresas")
-          .select(
-            "id, nombre_comercial, razon_social, matriculado, cpi, user_id"
-          );
+          .select("id, nombre_comercial, razon_social, matriculado, cpi, user_id");
 
         if (user.role === "empresa") {
           query = query.eq("user_id", user.id);
-        } else if (user.role === "asesor" && user.empresa_id) {
-          query = query.eq("id", user.empresa_id);
+        } else if ((user as any).empresa_id) {
+          query = query.eq("id", (user as any).empresa_id);
         }
 
         const { data, error } = await query.maybeSingle();
@@ -43,18 +41,15 @@ export default function Header() {
 
   if (!user) return null;
 
-  // 🔹 Determinar rol
   const role = user.role || "empresa";
+  const safeUser = user as any; // 🔒 para evitar errores de tipo
 
   // 🔹 Datos seguros
-  const matriculado =
-    empresa?.matriculado || (role === "asesor" ? empresa?.matriculado : "—");
-  const cpi = empresa?.cpi || (role === "asesor" ? empresa?.cpi : "—");
+  const matriculado = empresa?.matriculado || "—";
+  const cpi = empresa?.cpi || "—";
   const nombreAsesor =
     role === "asesor"
-      ? `${user.nombre || user.user_metadata?.nombre || "—"} ${
-          user.apellido || user.user_metadata?.apellido || ""
-        }`
+      ? `${safeUser.nombre || safeUser.nombre_completo || "—"}`
       : "—";
 
   // 🔹 Ruta dinámica del dashboard
@@ -87,9 +82,9 @@ export default function Header() {
       <div className="flex w-full items-center justify-between md:hidden">
         {/* Izquierda: datos */}
         <div className="flex flex-col text-[11px] sm:text-sm font-semibold text-gray-700 leading-tight text-left">
-          <p>Matriculado/a: {matriculado || "—"}</p>
-          <p>CPI: {cpi || "—"}</p>
-          <p>Asesor: {nombreAsesor || "—"}</p>
+          <p>Matriculado/a: {matriculado}</p>
+          <p>CPI: {cpi}</p>
+          <p>Asesor: {nombreAsesor}</p>
 
           {/* Botones */}
           <div className="flex gap-2 mt-2">
@@ -172,7 +167,8 @@ export default function Header() {
             src="/logo-vai4.png"
             alt="Logo VAI"
             className="
-              object-contain h-full max-h-[72px] w-auto
+              object-contain
+              h-full max-h-[72px] w-auto
               scale-[1.8] sm:scale-[2] md:scale-[2.2]
               transition-transform duration-300
             "
@@ -182,9 +178,9 @@ export default function Header() {
 
         {/* Derecha: datos alineados a la izquierda */}
         <div className="flex flex-col items-start gap-0.5 text-xs sm:text-sm font-semibold text-gray-700 leading-tight text-left">
-          <p>Matriculado/a: {matriculado || "—"}</p>
-          <p>CPI: {cpi || "—"}</p>
-          <p>Asesor: {nombreAsesor || "—"}</p>
+          <p>Matriculado/a: {matriculado}</p>
+          <p>CPI: {cpi}</p>
+          <p>Asesor: {nombreAsesor}</p>
         </div>
       </div>
     </header>

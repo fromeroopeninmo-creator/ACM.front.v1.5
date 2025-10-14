@@ -12,7 +12,7 @@ interface SidebarProps {
 
 export default function DashboardSidebar({ role, color }: SidebarProps) {
   const pathname = usePathname();
-  const { logoUrl } = useTheme(); // ✅ usamos la propiedad original del contexto
+  const { logoUrl, primaryColor } = useTheme(); // ✅ traemos también el color del contexto
 
   // ==============================
   // 🔹 Menú por roles
@@ -53,9 +53,9 @@ export default function DashboardSidebar({ role, color }: SidebarProps) {
   // 🔹 Estilo visual según rol
   // ==============================
   const bgColor =
-    role === "asesor"
-      ? color || "#004AAD" // asesor hereda color corporativo
-      : "#004AAD"; // demás roles: color neutro
+    role === "asesor" || role === "empresa"
+      ? primaryColor || color || "#004AAD" // ✅ lee color realtime del contexto
+      : "#004AAD"; // roles neutros (admin, soporte)
 
   const sidebarClasses =
     "w-64 min-h-screen text-white p-5 space-y-4 flex flex-col items-center shadow-md transition-colors duration-300";
@@ -63,9 +63,9 @@ export default function DashboardSidebar({ role, color }: SidebarProps) {
   return (
     <aside className={sidebarClasses} style={{ backgroundColor: bgColor }}>
       {/* ==============================
-          🔸 Logo (solo asesores con herencia visual)
+          🔸 Logo (solo asesores o empresa con herencia visual)
          ============================== */}
-      {role === "asesor" && logoUrl && (
+      {(role === "asesor" || role === "empresa") && logoUrl && (
         <div className="w-full flex justify-center mb-4">
           <Image
             src={logoUrl}
@@ -100,11 +100,11 @@ export default function DashboardSidebar({ role, color }: SidebarProps) {
       </nav>
 
       {/* ==============================
-          🔸 Footer opcional para asesor
+          🔸 Footer opcional
          ============================== */}
-      {role === "asesor" && (
+      {(role === "asesor" || role === "empresa") && (
         <div className="mt-auto text-xs text-white/60 text-center pt-6 border-t border-white/10">
-          Panel Asesor — VAI
+          Panel {role === "asesor" ? "Asesor" : "Empresa"} — VAI
         </div>
       )}
     </aside>

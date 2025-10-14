@@ -1,35 +1,60 @@
 "use client";
+
 import { useAuth } from "@/context/AuthContext";
+import { useTheme } from "@/context/ThemeContext";
+import { supabase } from "#lib/supabaseClient";
 import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 
 export default function Header() {
   const { user, logout } = useAuth();
+  const { primaryColor } = useTheme();
   const router = useRouter();
+
+  const [empresa, setEmpresa] = useState<any>(null);
+
+  // 🧠 Cargar datos de empresa o del asesor (empresa asociada)
+  useEffect(() => {
+    if (!user) return;
+
+    const fetchEmpresa = async () => {
+      try {
+        let query = supabase
+          .from("empresas")
+          .select(
+            "id, nombre_comercial, razon_social, matriculado, cpi, user_id"
+          );
+
+        if (user.role === "empresa") {
+          query = query.eq("user_id", user.id);
+        } else if (user.role === "asesor" && user.empresa_id) {
+          query = query.eq("id", user.empresa_id);
+        }
+
+        const { data, error } = await query.maybeSingle();
+        if (!error && data) setEmpresa(data);
+      } catch (err) {
+        console.error("Error al obtener datos de empresa:", err);
+      }
+    };
+
+    fetchEmpresa();
+  }, [user]);
 
   if (!user) return null;
 
-  // ✅ Evitamos el error de tipo: usamos cast flexible
-  const meta: any = (user as any).user_metadata || {};
-
-  // 🔹 Rol dinámico (seguro)
-  const role = (user as any).role || meta.role || "empresa";
+  // 🔹 Determinar rol
+  const role = user.role || "empresa";
 
   // 🔹 Datos seguros
   const matriculado =
-    meta.matriculado_nombre ||
-    meta.matriculado ||
-    ((role === "empresa" ? (user as any).nombre : undefined) || "—");
-
-  const cpi =
-    meta.cpi ||
-    meta.cpi_numero ||
-    ((role === "empresa" ? (user as any).cpi : undefined) || "—");
-
+    empresa?.matriculado || (role === "asesor" ? empresa?.matriculado : "—");
+  const cpi = empresa?.cpi || (role === "asesor" ? empresa?.cpi : "—");
   const nombreAsesor =
     role === "asesor"
-      ? `${meta.nombre || (user as any).nombre || ""} ${
-          meta.apellido || (user as any).apellido || ""
-        }`.trim()
+      ? `${user.nombre || user.user_metadata?.nombre || "—"} ${
+          user.apellido || user.user_metadata?.apellido || ""
+        }`
       : "—";
 
   // 🔹 Ruta dinámica del dashboard
@@ -57,26 +82,23 @@ export default function Header() {
         bg-gray-100 border-b shadow-sm sticky top-0 z-50
         w-full transition-all duration-300
       "
-      style={{
-        height: "auto",
-        overflow: "hidden",
-      }}
     >
       {/* 🔹 MOBILE */}
       <div className="flex w-full items-center justify-between md:hidden">
-        {/* Izquierda */}
-        <div className="flex flex-col text-[11px] sm:text-sm font-semibold text-gray-700 leading-tight">
-          <p>Matriculado/a: {matriculado}</p>
-          <p>CPI: {cpi}</p>
-          <p>Asesor: {nombreAsesor}</p>
+        {/* Izquierda: datos */}
+        <div className="flex flex-col text-[11px] sm:text-sm font-semibold text-gray-700 leading-tight text-left">
+          <p>Matriculado/a: {matriculado || "—"}</p>
+          <p>CPI: {cpi || "—"}</p>
+          <p>Asesor: {nombreAsesor || "—"}</p>
 
-          {/* Botones en mobile */}
+          {/* Botones */}
           <div className="flex gap-2 mt-2">
             <button
               onClick={() => router.push(getDashboardRoute())}
+              style={{ backgroundColor: primaryColor }}
               className="
-                px-3 py-1 text-[11px] sm:text-xs border rounded bg-white
-                font-medium text-gray-700 hover:bg-gray-200 transition
+                px-3 py-1 text-[11px] sm:text-xs text-white font-medium
+                rounded border border-gray-200 shadow hover:opacity-90 transition
               "
             >
               ⬅️ Volver al Dashboard
@@ -84,9 +106,10 @@ export default function Header() {
 
             <button
               onClick={logout}
+              style={{ backgroundColor: "#dc2626" }}
               className="
-                px-3 py-1 text-[11px] sm:text-xs border rounded bg-white
-                font-medium text-gray-700 hover:bg-gray-200 transition
+                px-3 py-1 text-[11px] sm:text-xs text-white font-medium
+                rounded border border-gray-200 shadow hover:opacity-90 transition
               "
             >
               🚪 Cerrar sesión
@@ -94,15 +117,13 @@ export default function Header() {
           </div>
         </div>
 
-        {/* Derecha (logo centrado) */}
+        {/* Derecha: logo */}
         <div className="flex items-center justify-center flex-1">
           <img
             src="/logo-vai4.png"
             alt="Logo VAI"
             className="
-              object-contain
-              h-[88px] sm:h-[96px]
-              w-auto
+              object-contain h-[88px] sm:h-[96px] w-auto
               transition-transform duration-300
             "
             style={{
@@ -119,9 +140,10 @@ export default function Header() {
         <div className="flex gap-3">
           <button
             onClick={() => router.push(getDashboardRoute())}
+            style={{ backgroundColor: primaryColor }}
             className="
-              px-4 py-2 text-sm font-semibold text-gray-700 bg-white
-              border rounded-lg shadow hover:bg-gray-200 transition
+              px-4 py-2 text-sm font-semibold text-white
+              border rounded-lg shadow hover:opacity-90 transition
             "
           >
             ⬅️ Volver al Dashboard
@@ -129,44 +151,40 @@ export default function Header() {
 
           <button
             onClick={logout}
+            style={{ backgroundColor: "#dc2626" }}
             className="
-              px-4 py-2 text-sm font-semibold text-gray-700 bg-white
-              border rounded-lg shadow hover:bg-gray-200 transition
+              px-4 py-2 text-sm font-semibold text-white
+              border rounded-lg shadow hover:opacity-90 transition
             "
           >
             🚪 Cerrar Sesión
           </button>
         </div>
 
-        {/* Centro: logo perfectamente centrado */}
+        {/* Centro: logo centrado */}
         <div
           className="
             absolute left-1/2 transform -translate-x-1/2
-            flex justify-center items-center
-            h-full
+            flex justify-center items-center h-full
           "
         >
           <img
             src="/logo-vai4.png"
             alt="Logo VAI"
             className="
-              object-contain
-              h-full max-h-[72px] w-auto
+              object-contain h-full max-h-[72px] w-auto
               scale-[1.8] sm:scale-[2] md:scale-[2.2]
               transition-transform duration-300
             "
-            style={{
-              transformOrigin: "center center",
-              maxWidth: "none",
-            }}
+            style={{ transformOrigin: "center center", maxWidth: "none" }}
           />
         </div>
 
-        {/* Derecha: datos alineados */}
-        <div className="flex flex-col items-end gap-0.5 text-xs sm:text-sm font-semibold text-gray-700 leading-tight text-right">
-          <p>Matriculado/a: {matriculado}</p>
-          <p>CPI: {cpi}</p>
-          <p>Asesor: {nombreAsesor}</p>
+        {/* Derecha: datos alineados a la izquierda */}
+        <div className="flex flex-col items-start gap-0.5 text-xs sm:text-sm font-semibold text-gray-700 leading-tight text-left">
+          <p>Matriculado/a: {matriculado || "—"}</p>
+          <p>CPI: {cpi || "—"}</p>
+          <p>Asesor: {nombreAsesor || "—"}</p>
         </div>
       </div>
     </header>

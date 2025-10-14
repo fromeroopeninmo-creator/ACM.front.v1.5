@@ -20,7 +20,14 @@ interface ThemeContextType {
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const { user } = useAuth();
+  // 🧩 Intentamos acceder al contexto de Auth solo si existe
+  let user: any = null;
+  try {
+    user = useAuth()?.user || null;
+  } catch {
+    // En prerender (build) AuthProvider aún no existe → evitamos el crash
+  }
+
   const [primaryColor, setPrimaryColor] = useState("#2563eb");
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [hydrated, setHydrated] = useState(false); // ✅ control de carga inicial

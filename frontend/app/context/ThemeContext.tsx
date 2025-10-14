@@ -13,19 +13,28 @@ interface ThemeContextType {
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  // 🧩 Leemos color/logo del localStorage si existen
-  const storedColor = typeof window !== "undefined" ? localStorage.getItem("vai_primaryColor") : null;
-  const storedLogo = typeof window !== "undefined" ? localStorage.getItem("vai_logoUrl") : null;
-
-  const [primaryColor, setPrimaryColor] = useState(storedColor || "#2563eb"); // usa guardado o azul por defecto
-  const [logoUrl, setLogoUrl] = useState<string | null>(storedLogo || null);
+  const [primaryColor, setPrimaryColor] = useState("#2563eb");
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const { user } = useAuth();
 
+  // ✅ 1️⃣ Al montar, leemos localStorage inmediatamente
+  useEffect(() => {
+    try {
+      const storedColor = localStorage.getItem("vai_primaryColor");
+      const storedLogo = localStorage.getItem("vai_logoUrl");
+
+      if (storedColor) setPrimaryColor(storedColor);
+      if (storedLogo) setLogoUrl(storedLogo);
+    } catch (err) {
+      console.warn("No se pudo leer localStorage del tema:", err);
+    }
+  }, []); // ← se ejecuta una sola vez al inicio
+
+  // ✅ 2️⃣ Luego sincronizamos con Supabase y escuchamos realtime
   useEffect(() => {
     const loadCompanyTheme = async () => {
       if (!user) return;
 
-      // Solo empresas y asesores heredan color/branding
       if (user.role === "empresa" || user.role === "asesor") {
         const empresaId = user.role === "empresa" ? user.id : user.empresa_id;
         if (!empresaId) return;
@@ -39,16 +48,15 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
         if (!error && data) {
           if (data.color) {
             setPrimaryColor(data.color);
-            localStorage.setItem("vai_primaryColor", data.color); // ✅ guarda local
+            localStorage.setItem("vai_primaryColor", data.color);
           }
           if (data.logo_url) {
             setLogoUrl(data.logo_url);
-            localStorage.setItem("vai_logoUrl", data.logo_url); // ✅ guarda local
+            localStorage.setItem("vai_logoUrl", data.logo_url);
           }
         }
       }
 
-      // SuperAdmins y soporte mantienen el color institucional
       if (
         user.role === "super_admin_root" ||
         user.role === "super_admin" ||

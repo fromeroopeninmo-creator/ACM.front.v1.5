@@ -69,7 +69,7 @@ export default function DashboardHeader({ user, logout, color }: HeaderProps) {
         {logoUrl ? (
           <img src={logoUrl} alt="Logo" className="h-8" />
         ) : (
-          <h1 className="text-white font-semibold">ACM Dashboard</h1>
+          <h1 className="text-white font-semibold">VAI Dashboard</h1>
         )}
 
         <div className="flex flex-col leading-tight">

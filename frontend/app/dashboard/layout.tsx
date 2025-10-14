@@ -9,7 +9,7 @@ import DashboardSidebar from "./components/DashboardSidebar";
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { user, loading, logout } = useAuth();
-  const { primaryColor } = useTheme(); // ✅ usamos el contexto original
+  const { primaryColor, hydrated } = useTheme(); // 🟢 agregado hydrated
   const router = useRouter();
   const pathname = usePathname();
 
@@ -18,18 +18,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   useEffect(() => {
     if (!loading) setAuthChecked(true);
 
-    // ⚠️ Evita redirigir si ya estás en /auth/*
     const isAuthRoute = pathname?.startsWith("/auth/");
     if (!loading && !user && !isAuthRoute) {
       router.replace("/auth/login");
     }
   }, [user, loading, router, pathname]);
 
-  // ✅ Esperar a que AuthContext termine de cargar completamente
-  if (loading || !authChecked) {
+  // ✅ Esperar a que AuthContext y ThemeContext estén listos
+  if (loading || !authChecked || !hydrated) { // 🟢 agregado !hydrated
     return (
       <div className="flex justify-center items-center h-screen text-gray-500">
-        Cargando sesión...
+        Cargando entorno...
       </div>
     );
   }
@@ -57,7 +56,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       ? primaryColor
       : "#004AAD";
 
-  // ✅ Renderización segura: user ya está disponible, ThemeContext puede aplicar color guardado
+  // ✅ Renderización segura: user y theme listos
   return (
     <div className="flex min-h-screen bg-gray-50 text-gray-900">
       <DashboardSidebar role={user.role || "empresa"} color={sidebarColor} />

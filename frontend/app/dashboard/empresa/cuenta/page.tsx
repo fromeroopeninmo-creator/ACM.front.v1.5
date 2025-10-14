@@ -21,35 +21,54 @@ export default function EmpresaCuentaPage() {
 
   // 🔹 Cargar datos de la empresa al montar el componente
   useEffect(() => {
+    let isMounted = true;
+
     const fetchData = async () => {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
+      try {
+        const {
+          data: { session },
+          error: sessionError,
+        } = await supabase.auth.getSession();
 
-      if (!session?.user) {
-        setLoading(false);
-        return;
+        if (sessionError) throw sessionError;
+
+        if (!session?.user) {
+          if (isMounted) setLoading(false);
+          return;
+        }
+
+        const { data, error } = await supabase
+          .from("empresas")
+          .select(
+            "nombre_comercial, razon_social, matriculado, cpi, telefono, direccion, provincia, condicion_fiscal"
+          )
+          .eq("id_usuario", session.user.id)
+          .maybeSingle(); // ✅ más seguro que .single()
+
+        if (error) throw error;
+
+        if (data && isMounted) {
+          setFormData((prev) => ({
+            ...prev,
+            ...data,
+          }));
+        }
+      } catch (err) {
+        console.error("Error cargando datos de empresa:", err);
+        if (isMounted) setMessage("⚠️ Error al cargar los datos.");
+      } finally {
+        if (isMounted) setLoading(false);
       }
-
-      const { data, error } = await supabase
-        .from("empresas")
-        .select(
-          "nombre_comercial, razon_social, matriculado, cpi, telefono, direccion, provincia, condicion_fiscal"
-        )
-        .eq("id_usuario", session.user.id)
-        .single();
-
-      if (!error && data) {
-        setFormData({
-          ...formData,
-          ...data,
-        });
-      }
-
-      setLoading(false);
     };
 
-    fetchData();
+    // 👇 Ejecutar solo en cliente
+    if (typeof window !== "undefined") {
+      fetchData();
+    }
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   // 🔹 Actualizar estado del formulario
@@ -63,24 +82,29 @@ export default function EmpresaCuentaPage() {
     setSaving(true);
     setMessage(null);
 
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
 
-    if (!session?.user) return;
+      if (!session?.user) {
+        setMessage("⚠️ Sesión no encontrada.");
+        return;
+      }
 
-    const { error } = await supabase
-      .from("empresas")
-      .update(formData)
-      .eq("id_usuario", session.user.id);
+      const { error } = await supabase
+        .from("empresas")
+        .update(formData)
+        .eq("id_usuario", session.user.id);
 
-    setSaving(false);
+      if (error) throw error;
 
-    if (error) {
-      console.error(error);
-      setMessage("❌ Error al guardar los cambios.");
-    } else {
       setMessage("✅ Datos actualizados correctamente.");
+    } catch (err) {
+      console.error("Error guardando datos:", err);
+      setMessage("❌ Error al guardar los cambios.");
+    } finally {
+      setSaving(false);
     }
   };
 

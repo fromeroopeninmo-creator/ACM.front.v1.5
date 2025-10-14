@@ -11,7 +11,7 @@ export default function EmpresaDashboardPage() {
   const [empresa, setEmpresa] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
-  // 🔹 Cargar datos actualizados de la empresa
+    // 🔹 Cargar datos actualizados de la empresa
   useEffect(() => {
     const fetchEmpresa = async () => {
       if (!user) return;
@@ -36,15 +36,16 @@ export default function EmpresaDashboardPage() {
 
     fetchEmpresa();
 
-    // 🧭 Escucha de cambios en la tabla "empresas"
+    // 🧭 Escucha de cambios en tiempo real
     const channel = supabase
       .channel("empresa-updates")
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "empresas" },
-        (payload) => {
-          if (payload.new?.user_id === user?.id) {
-            setEmpresa(payload.new);
+        (payload: any) => {
+          const newData = payload.new as Record<string, any> | null;
+          if (newData && newData.user_id === user?.id) {
+            setEmpresa(newData);
           }
         }
       )

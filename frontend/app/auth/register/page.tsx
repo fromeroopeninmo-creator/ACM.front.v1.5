@@ -73,117 +73,104 @@ export default function RegisterPage() {
     /^[0-9]{2}-[0-9]{8}-[0-9]$/.test(cuit.trim());
 
   const handleRegister = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setErrorMsg(null);
-    setInfoMsg(null);
+  e.preventDefault();
+  setErrorMsg(null);
+  setInfoMsg(null);
 
-    // ✅ Limpieza
-    const clean = (val: string) => val.trim();
+  const clean = (val: string) => val.trim();
 
-    // ✅ Validaciones
-    if (
-      !nombre ||
-      !apellido ||
-      !email ||
-      !password ||
-      !telefono ||
-      !direccion ||
-      !localidad ||
-      !provincia ||
-      !razonSocial ||
-      !inmobiliaria ||
-      !condicionFiscal ||
-      !cuit
-    ) {
-      setErrorMsg("Por favor, completá todos los campos obligatorios.");
-      return;
-    }
+  if (
+    !nombre ||
+    !apellido ||
+    !email ||
+    !password ||
+    !telefono ||
+    !direccion ||
+    !localidad ||
+    !provincia ||
+    !razonSocial ||
+    !inmobiliaria ||
+    !condicionFiscal ||
+    !cuit
+  ) {
+    setErrorMsg("Por favor, completá todos los campos obligatorios.");
+    return;
+  }
 
-    if (!validarEmail(email)) {
-      setErrorMsg("Ingresá un email válido.");
-      return;
-    }
+  setLoading(true);
 
-    if (!validarCuit(cuit)) {
-      setErrorMsg("Ingresá un CUIT válido (formato: 00-00000000-0).");
-      return;
-    }
-
-    if (password.length < 6) {
-      setErrorMsg("La contraseña debe tener al menos 6 caracteres.");
-      return;
-    }
-
-    setLoading(true);
-
-    try {
-      // 🧩 1️⃣ Crear usuario en auth
-      const { data, error } = await supabase.auth.signUp({
-        email: clean(email),
-        password: clean(password),
-        options: {
-          data: {
-            nombre: clean(nombre),
-            apellido: clean(apellido),
-            telefono: clean(telefono),
-            direccion: clean(direccion),
-            localidad: clean(localidad),
-            provincia: clean(provincia),
-            razon_social: clean(razonSocial),
-            inmobiliaria: clean(inmobiliaria),
-            condicion_fiscal: clean(condicionFiscal),
-            cuit: clean(cuit),
-            role: "empresa",
-          },
-        },
-      });
-
-      if (error) throw error;
-
-      const userId = data.user?.id;
-      if (!userId) {
-        setInfoMsg("Registro exitoso. Revisá tu email para confirmar la cuenta.");
-        setLoading(false);
-        return;
-      }
-
-      // 🧩 2️⃣ Crear registro en tabla "empresas"
-      const { error: empresaError } = await supabase.from("empresas").insert([
-        {
-          user_id: userId,
-          nombre_comercial: clean(inmobiliaria),
-          razon_social: clean(razonSocial),
-          cuit: clean(cuit),
-          matriculado: `${clean(nombre)} ${clean(apellido)}`,
+  try {
+    // 1️⃣ Crear usuario
+    const { data, error } = await supabase.auth.signUp({
+      email: clean(email),
+      password: clean(password),
+      options: {
+        data: {
+          nombre: clean(nombre),
+          apellido: clean(apellido),
           telefono: clean(telefono),
           direccion: clean(direccion),
           localidad: clean(localidad),
           provincia: clean(provincia),
+          razon_social: clean(razonSocial),
+          inmobiliaria: clean(inmobiliaria),
           condicion_fiscal: clean(condicionFiscal),
-          color: "#E6A930",
-          logo_url: "",
+          cuit: clean(cuit),
+          role: "empresa",
         },
-      ]);
+      },
+    });
 
-      if (empresaError) {
-        console.error("Error creando empresa:", empresaError);
-        throw empresaError;
-      }
-
-      // 🧩 3️⃣ Confirmación visual
-      setInfoMsg(
-        "Registro exitoso. Revisá tu email para confirmar la cuenta e iniciá sesión."
-      );
-      router.push("/dashboard/empresa");
-    } catch (err: any) {
-      console.error("Error en registro:", err);
-      if (err.message?.includes("duplicate key value"))
-        setErrorMsg("Ya existe una empresa registrada con ese CUIT.");
-      else setErrorMsg("Error en el registro. Verificá los datos o el email.");
-    } finally {
-      setLoading(false);
+    if (error) {
+      console.error("❌ Error en supabase.auth.signUp:", error);
+      setErrorMsg(`Error en registro de usuario: ${error.message}`);
+      return;
     }
-  };
+
+    const userId = data.user?.id;
+    if (!userId) {
+      setInfoMsg(
+        "Registro exitoso. Revisá tu email para confirmar la cuenta."
+      );
+      return;
+    }
+
+    // 2️⃣ Insertar empresa
+    const { error: empresaError } = await supabase.from("empresas").insert([
+      {
+        user_id: userId,
+        nombre_comercial: clean(inmobiliaria),
+        razon_social: clean(razonSocial),
+        cuit: clean(cuit),
+        matriculado: `${clean(nombre)} ${clean(apellido)}`,
+        telefono: clean(telefono),
+        direccion: clean(direccion),
+        localidad: clean(localidad),
+        provincia: clean(provincia),
+        condicion_fiscal: clean(condicionFiscal),
+        color: "#E6A930",
+        logo_url: "",
+      },
+    ]);
+
+    if (empresaError) {
+      console.error("❌ Error insertando empresa:", empresaError);
+      setErrorMsg(`Error creando empresa: ${empresaError.message}`);
+      return;
+    }
+
+    setInfoMsg(
+      "Registro exitoso. Revisá tu email para confirmar la cuenta e iniciá sesión."
+    );
+    router.push("/dashboard/empresa");
+  } catch (err: any) {
+    console.error("🔥 Error inesperado en registro:", err);
+    setErrorMsg(`Error inesperado: ${err.message || "Desconocido"}`);
+  } finally {
+    setLoading(false);
+  }
+};
+
 
   return (
     <AuthLayout

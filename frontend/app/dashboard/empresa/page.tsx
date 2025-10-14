@@ -11,7 +11,7 @@ export default function EmpresaDashboardPage() {
   const [empresa, setEmpresa] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
-    // 🔹 Cargar datos actualizados de la empresa
+  // 🔹 Cargar datos actualizados de la empresa
   useEffect(() => {
     const fetchEmpresa = async () => {
       if (!user) return;
@@ -56,10 +56,9 @@ export default function EmpresaDashboardPage() {
     };
   }, [user]);
 
-  // 🔒 Fallbacks de metadatos (si no hay datos en la tabla)
+  // 🔒 Fallbacks de metadatos
   const meta = (user as any)?.user_metadata || user || {};
   const nombre = meta.nombre || "Usuario";
-
   const inmobiliaria =
     empresa?.nombre_comercial || meta.inmobiliaria || "No especificado";
   const razonSocial =
@@ -74,7 +73,7 @@ export default function EmpresaDashboardPage() {
   const logoUrl =
     empresa?.logo_url && empresa.logo_url.trim() !== ""
       ? empresa.logo_url
-      : "/images/default-logo.png"; // 🖼️ Fallback si no hay logo
+      : "/images/default-logo.png";
 
   if (loading)
     return (
@@ -96,20 +95,32 @@ export default function EmpresaDashboardPage() {
           equipo, tus planes y toda la configuración de tu empresa.
         </p>
 
-        <div className="flex flex-wrap gap-3">
+        {/* 🔹 Botones principales */}
+        <div className="flex justify-between flex-wrap gap-3">
+          {/* 🔸 Izquierda: botón Valuador */}
           <Link
-            href="/dashboard/empresa/asesores"
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition"
+            href="/vai/acmforms"
+            className="px-5 py-2 bg-gray-200 text-gray-800 font-semibold rounded-lg shadow hover:bg-gray-300 transition"
           >
-            👥 Gestionar Asesores
+            🏠 Valuador de Activos Inmobiliarios
           </Link>
 
-          <Link
-            href="/dashboard/empresa/planes"
-            className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition"
-          >
-            💼 Ver Planes
-          </Link>
+          {/* 🔸 Derecha: botones existentes */}
+          <div className="flex gap-3">
+            <Link
+              href="/dashboard/empresa/asesores"
+              className="px-5 py-2 bg-blue-600 text-white font-semibold rounded-lg shadow hover:bg-blue-700 transition"
+            >
+              👥 Gestionar Asesores
+            </Link>
+
+            <Link
+              href="/dashboard/empresa/planes"
+              className="px-5 py-2 bg-green-600 text-white font-semibold rounded-lg shadow hover:bg-green-700 transition"
+            >
+              💼 Ver Planes
+            </Link>
+          </div>
         </div>
       </section>
 

@@ -16,66 +16,71 @@ export default function PlanStatusBanner() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-  const fetchPlan = async () => {
-    if (!user?.id) return;
+    const fetchPlan = async () => {
+      if (!user?.id) return;
 
-    const { data: plan, error } = await supabase
-      .from("empresas_planes")
-      .select("fecha_fin, activo, planes(nombre)")
-      .eq("empresa_id", user.id)
-      .eq("activo", true)
-      .maybeSingle();
+      const { data: plan, error } = await supabase
+        .from("empresas_planes")
+        .select("fecha_fin, activo, planes(nombre)")
+        .eq("empresa_id", user.id)
+        .eq("activo", true)
+        .maybeSingle();
 
-    if (error || !plan) {
-      setLoading(false);
-      return;
-    }
-
-    const fin = new Date(plan.fecha_fin);
-    const hoy = new Date();
-    const diff = Math.ceil((fin.getTime() - hoy.getTime()) / (1000 * 60 * 60 * 24));
-
-    // 🩵 aseguramos el tipo correcto:
-    const planesData = (plan.planes as { nombre: string }[] | { nombre: string } | null) || null;
-    const planInfo =
-      Array.isArray(planesData) && planesData.length > 0
-        ? planesData[0]
-        : (planesData as { nombre: string } | null);
-
-    const nombrePlan = planInfo?.nombre ?? "Trial";
-
-    setFechaFin(fin);
-    setDiasRestantes(diff);
-    setPlanNombre(nombrePlan);
-    setLoading(false);
-
-    // 🚨 bloqueo si plan pago vencido +2 días
-    if (nombrePlan !== "Trial" && diff < -2) {
-      alert(
-        "Su suscripción ha superado el período de tolerancia. Redirigiendo al portal de pago..."
-      );
-      router.replace("/dashboard/empresa/suspendido");
-      return;
-    }
-
-    // ✅ si estaba suspendido y el plan vuelve a estar activo → redirigir al dashboard normal
-    if (nombrePlan !== "Trial" && diff >= -2 && plan.activo) {
-      if (window.location.pathname.includes("/suspendido")) {
-        router.replace("/dashboard/empresa");
+      if (error || !plan) {
+        setLoading(false);
+        return;
       }
-    }
-  };
 
-  // 🔄 primera carga
-  fetchPlan();
+      const fin = new Date(plan.fecha_fin);
+      const hoy = new Date();
+      const diff = Math.ceil((fin.getTime() - hoy.getTime()) / (1000 * 60 * 60 * 24));
 
-  // ⏱ chequeo automático cada 60 segundos
-  const interval = setInterval(fetchPlan, 60000);
+      // 🩵 aseguramos el tipo correcto:
+      const planesData = (plan.planes as { nombre: string }[] | { nombre: string } | null) || null;
+      const planInfo =
+        Array.isArray(planesData) && planesData.length > 0
+          ? planesData[0]
+          : (planesData as { nombre: string } | null);
 
-  return () => clearInterval(interval);
-}, [user, router]);
+      const nombrePlan = planInfo?.nombre ?? "Trial";
 
+      setFechaFin(fin);
+      setDiasRestantes(diff);
+      setPlanNombre(nombrePlan);
+      setLoading(false);
 
+      // 🚨 bloqueo si plan pago vencido +2 días
+      if (nombrePlan !== "Trial" && diff < -2) {
+        alert(
+          "Su suscripción ha superado el período de tolerancia. Redirigiendo al portal de pago..."
+        );
+        router.replace("/dashboard/empresa/suspendido");
+        return;
+      }
+
+      // ✅ si estaba suspendido y el plan vuelve a estar activo → redirigir al dashboard normal
+      if (nombrePlan !== "Trial" && diff >= -2 && plan.activo) {
+        if (window.location.pathname.includes("/suspendido")) {
+          router.replace("/dashboard/empresa");
+        }
+      }
+    };
+
+    // 🔄 primera carga
+    fetchPlan();
+
+    // ⏱ chequeo automático cada 60 segundos
+    const interval = setInterval(fetchPlan, 60000);
+
+    return () => clearInterval(interval);
+  }, [user, router]);
+
+  // 🧪 BYPASS TEMPORAL: permitir agregar asesores sin plan (modo development)
+  // ⚠️ Eliminar este bloque antes del lanzamiento a producción
+  if (process.env.NODE_ENV === "development") {
+    console.warn("🚧 Bypass de verificación de plan activo habilitado (solo en desarrollo)");
+    return null; // No mostramos banner ni bloqueos en desarrollo
+  }
 
   if (loading || !planNombre) return null;
 

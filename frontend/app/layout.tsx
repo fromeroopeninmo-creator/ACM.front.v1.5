@@ -4,7 +4,7 @@ import { Inter } from "next/font/google";
 import { AuthProvider } from "./context/AuthContext";
 import { ThemeProvider } from "./context/ThemeContext";
 import { ReactNode } from "react";
-import AppWrapper from "./AppWrapper"; // ✅ mejor ruta absoluta (Next.js 13+)
+import AppWrapper from "./AppWrapper";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -21,14 +21,14 @@ export default function RootLayout({ children }: LayoutProps) {
   return (
     <html lang="es">
       <body className={inter.className}>
-        {/* 🔐 Contexto de autenticación (maneja sesión y roles) */}
-        <AuthProvider>
-          {/* 🎨 Contexto de tema (color, logo) */}
-          <ThemeProvider>
+        {/* 🎨 ThemeProvider primero, para cargar color antes del render */}
+        <ThemeProvider>
+          {/* 🔐 AuthProvider adentro, para manejar sesión sin retrasar color */}
+          <AuthProvider>
             {/* 🧱 Wrapper de la app (componentes globales, modales, etc.) */}
             <AppWrapper>{children}</AppWrapper>
-          </ThemeProvider>
-        </AuthProvider>
+          </AuthProvider>
+        </ThemeProvider>
       </body>
     </html>
   );

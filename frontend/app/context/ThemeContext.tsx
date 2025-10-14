@@ -17,7 +17,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const { user } = useAuth();
 
-  // 🎨 Si el usuario pertenece a una empresa, cargar su color y logo automáticamente
+  // 🎨 Si el usuario pertenece a una empresa o asesor, cargar su color y logo automáticamente
   useEffect(() => {
     const loadCompanyTheme = async () => {
       if (!user) return;
@@ -40,13 +40,46 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       }
 
       // SuperAdmins y soporte mantienen el color institucional
-      if (user.role === "super_admin_root" || user.role === "super_admin" || user.role === "soporte") {
+      if (
+        user.role === "super_admin_root" ||
+        user.role === "super_admin" ||
+        user.role === "soporte"
+      ) {
         setPrimaryColor("#2563eb");
         setLogoUrl(null);
       }
     };
 
     loadCompanyTheme();
+
+    // 🧩 Realtime listener para cambios de color/logo en la empresa
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+
+    if (user && (user.role === "empresa" || user.role === "asesor")) {
+      const empresaId = user.role === "empresa" ? user.id : user.empresa_id;
+
+      channel = supabase
+        .channel("empresa_theme_updates")
+        .on(
+          "postgres_changes",
+          {
+            event: "UPDATE",
+            schema: "public",
+            table: "empresas",
+            filter: `id=eq.${empresaId}`,
+          },
+          (payload) => {
+            const updated = payload.new;
+            if (updated?.color) setPrimaryColor(updated.color);
+            if (updated?.logo_url) setLogoUrl(updated.logo_url);
+          }
+        )
+        .subscribe();
+    }
+
+    return () => {
+      if (channel) supabase.removeChannel(channel);
+    };
   }, [user]);
 
   return (

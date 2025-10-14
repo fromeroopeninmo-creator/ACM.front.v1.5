@@ -13,11 +13,14 @@ interface ThemeContextType {
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [primaryColor, setPrimaryColor] = useState("#2563eb"); // Azul por defecto
-  const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  // 🧩 Leemos color/logo del localStorage si existen
+  const storedColor = typeof window !== "undefined" ? localStorage.getItem("vai_primaryColor") : null;
+  const storedLogo = typeof window !== "undefined" ? localStorage.getItem("vai_logoUrl") : null;
+
+  const [primaryColor, setPrimaryColor] = useState(storedColor || "#2563eb"); // usa guardado o azul por defecto
+  const [logoUrl, setLogoUrl] = useState<string | null>(storedLogo || null);
   const { user } = useAuth();
 
-  // 🎨 Si el usuario pertenece a una empresa o asesor, cargar su color y logo automáticamente
   useEffect(() => {
     const loadCompanyTheme = async () => {
       if (!user) return;
@@ -34,8 +37,14 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
           .single();
 
         if (!error && data) {
-          if (data.color) setPrimaryColor(data.color);
-          if (data.logo_url) setLogoUrl(data.logo_url);
+          if (data.color) {
+            setPrimaryColor(data.color);
+            localStorage.setItem("vai_primaryColor", data.color); // ✅ guarda local
+          }
+          if (data.logo_url) {
+            setLogoUrl(data.logo_url);
+            localStorage.setItem("vai_logoUrl", data.logo_url); // ✅ guarda local
+          }
         }
       }
 
@@ -47,12 +56,14 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       ) {
         setPrimaryColor("#2563eb");
         setLogoUrl(null);
+        localStorage.removeItem("vai_primaryColor");
+        localStorage.removeItem("vai_logoUrl");
       }
     };
 
     loadCompanyTheme();
 
-    // 🧩 Realtime listener para cambios de color/logo en la empresa
+    // 🧩 Listener realtime
     let channel: ReturnType<typeof supabase.channel> | null = null;
 
     if (user && (user.role === "empresa" || user.role === "asesor")) {
@@ -70,8 +81,14 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
           },
           (payload) => {
             const updated = payload.new;
-            if (updated?.color) setPrimaryColor(updated.color);
-            if (updated?.logo_url) setLogoUrl(updated.logo_url);
+            if (updated?.color) {
+              setPrimaryColor(updated.color);
+              localStorage.setItem("vai_primaryColor", updated.color);
+            }
+            if (updated?.logo_url) {
+              setLogoUrl(updated.logo_url);
+              localStorage.setItem("vai_logoUrl", updated.logo_url);
+            }
           }
         )
         .subscribe();

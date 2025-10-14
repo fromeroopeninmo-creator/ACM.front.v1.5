@@ -10,6 +10,7 @@ export default function EmpresaCuentaPage() {
   const [formData, setFormData] = useState({
     nombre_comercial: "",
     razon_social: "",
+    cuit: "",
     matriculado: "",
     cpi: "",
     telefono: "",
@@ -17,47 +18,18 @@ export default function EmpresaCuentaPage() {
     localidad: "",
     provincia: "",
     condicion_fiscal: "",
+    color: "#E6A930",
+    logo_url: "",
   });
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
 
-  // 🔹 Listado de provincias (ARG) y condiciones fiscales (AFIP)
-  const provincias = [
-    "Buenos Aires",
-    "CABA",
-    "Catamarca",
-    "Chaco",
-    "Chubut",
-    "Córdoba",
-    "Corrientes",
-    "Entre Ríos",
-    "Formosa",
-    "Jujuy",
-    "La Pampa",
-    "La Rioja",
-    "Mendoza",
-    "Misiones",
-    "Neuquén",
-    "Río Negro",
-    "Salta",
-    "San Juan",
-    "San Luis",
-    "Santa Cruz",
-    "Santa Fe",
-    "Santiago del Estero",
-    "Tierra del Fuego",
-    "Tucumán",
-  ];
-
-  const condicionesFiscales = [
-    "Responsable Inscripto",
-    "Monotributista",
-    "Consumidor Final",
-  ];
-
-  // 🔹 Cargar datos de la empresa una vez que hay usuario
+  // ============================================================
+  // 🔹 Cargar datos actuales de la empresa
+  // ============================================================
   useEffect(() => {
     if (!user) return;
 
@@ -66,20 +38,15 @@ export default function EmpresaCuentaPage() {
         const { data, error } = await supabase
           .from("empresas")
           .select(
-            "nombre_comercial, razon_social, matriculado, cpi, telefono, direccion, provincia, condicion_fiscal"
+            "nombre_comercial, razon_social, cuit, matriculado, cpi, telefono, direccion, localidad, provincia, condicion_fiscal, color, logo_url"
           )
-          .eq("user_id", user.id) // 👈 corregido campo clave
-          .maybeSingle();
+          .eq("user_id", user.id)
+          .single();
 
         if (error) throw error;
-
-        if (data) {
-          setFormData((prev) => ({ ...prev, ...data }));
-        } else {
-          setMessage("⚠️ No se encontraron datos de empresa asociados a este usuario.");
-        }
+        if (data) setFormData((prev) => ({ ...prev, ...data }));
       } catch (err) {
-        console.error("Error cargando datos de la empresa:", err);
+        console.error("Error cargando datos de empresa:", err);
         setMessage("⚠️ Error al cargar los datos de la empresa.");
       } finally {
         setLoading(false);
@@ -89,14 +56,18 @@ export default function EmpresaCuentaPage() {
     fetchData();
   }, [user]);
 
-  // 🔹 Actualizar estado del formulario
+  // ============================================================
+  // 🔹 Manejo de cambios en formulario
+  // ============================================================
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
   ) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
+  // ============================================================
   // 🔹 Guardar cambios
+  // ============================================================
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
@@ -104,33 +75,66 @@ export default function EmpresaCuentaPage() {
     setMessage(null);
 
     try {
-      const updateData = {
-        nombre_comercial: formData.nombre_comercial,
-        razon_social: formData.razon_social,
-        matriculado: formData.matriculado,
-        cpi: formData.cpi,
-        telefono: formData.telefono,
-        direccion: formData.direccion,
-        provincia: formData.provincia,
-        condicion_fiscal: formData.condicion_fiscal,
-      };
-
       const { error } = await supabase
         .from("empresas")
-        .update(updateData)
-        .eq("user_id", user.id); // 👈 mismo fix aquí
+        .update(formData)
+        .eq("user_id", user.id);
 
       if (error) throw error;
-
       setMessage("✅ Datos actualizados correctamente.");
     } catch (err) {
-      console.error("Error al guardar los cambios:", err);
+      console.error("Error al guardar:", err);
       setMessage("❌ Error al guardar los cambios.");
     } finally {
       setSaving(false);
     }
   };
 
+  // ============================================================
+  // 🔹 Subir o cambiar logo
+  // ============================================================
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    try {
+      const file = e.target.files?.[0];
+      if (!file || !user) return;
+
+      setUploading(true);
+      const fileExt = file.name.split(".").pop();
+      const fileName = `empresa_${user.id}.${fileExt}`;
+      const filePath = `logos/${fileName}`;
+
+      // Subir archivo a Supabase Storage
+      const { error: uploadError } = await supabase.storage
+        .from("logos")
+        .upload(filePath, file, { upsert: true });
+
+      if (uploadError) throw uploadError;
+
+      const {
+        data: { publicUrl },
+      } = supabase.storage.from("logos").getPublicUrl(filePath);
+
+      // Actualizar en BD
+      const { error: dbError } = await supabase
+        .from("empresas")
+        .update({ logo_url: publicUrl })
+        .eq("user_id", user.id);
+
+      if (dbError) throw dbError;
+
+      setFormData((prev) => ({ ...prev, logo_url: publicUrl }));
+      setMessage("✅ Logo actualizado correctamente.");
+    } catch (err) {
+      console.error("Error subiendo logo:", err);
+      setMessage("❌ Error al subir el logo.");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  // ============================================================
+  // 🔹 Render principal
+  // ============================================================
   if (loading)
     return (
       <div className="p-6 text-center text-gray-500">
@@ -138,119 +142,35 @@ export default function EmpresaCuentaPage() {
       </div>
     );
 
-  // 🔹 Render principal
   return (
     <div className="p-6 max-w-2xl mx-auto bg-white rounded-xl shadow-sm border border-gray-200">
       <h1 className="text-2xl font-bold mb-4">Datos de la Empresa</h1>
 
       <form onSubmit={handleSave} className="space-y-4">
-        {/* Nombre comercial */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700">
-            Nombre Comercial
-          </label>
-          <input
-            type="text"
-            name="nombre_comercial"
-            value={formData.nombre_comercial || ""}
-            onChange={handleChange}
-            placeholder="Ej: Inmobiliaria Delta"
-            className="mt-1 w-full border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-sky-400"
-          />
-        </div>
-
-        {/* Razón social */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700">
-            Razón Social
-          </label>
-          <input
-            type="text"
-            name="razon_social"
-            value={formData.razon_social || ""}
-            onChange={handleChange}
-            placeholder="Ej: Delta Propiedades S.A."
-            className="mt-1 w-full border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-sky-400"
-          />
-        </div>
-
-        {/* Matriculado */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
+        {/* Campos generales */}
+        {[
+          ["nombre_comercial", "Nombre Comercial"],
+          ["razon_social", "Razón Social"],
+          ["cuit", "CUIT"],
+          ["matriculado", "Matriculado/a"],
+          ["cpi", "CPI"],
+          ["telefono", "Teléfono"],
+          ["direccion", "Dirección"],
+          ["localidad", "Localidad"],
+        ].map(([key, label]) => (
+          <div key={key}>
             <label className="block text-sm font-medium text-gray-700">
-              Matriculado/a
+              {label}
             </label>
             <input
               type="text"
-              name="matriculado"
-              value={formData.matriculado || ""}
+              name={key}
+              value={formData[key as keyof typeof formData] || ""}
               onChange={handleChange}
-              placeholder="Nombre del matriculado"
               className="mt-1 w-full border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-sky-400"
             />
           </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700">
-              CPI / CUCICBA
-            </label>
-            <input
-              type="text"
-              name="cpi"
-              value={formData.cpi || ""}
-              onChange={handleChange}
-              placeholder="Ej: CPI 3456"
-              className="mt-1 w-full border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-sky-400"
-            />
-          </div>
-        </div>
-
-        {/* Teléfono y dirección */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700">
-              Teléfono
-            </label>
-            <input
-              type="text"
-              name="telefono"
-              value={formData.telefono || ""}
-              onChange={handleChange}
-              placeholder="Ej: +54 9 11 5555-5555"
-              className="mt-1 w-full border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-sky-400"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700">
-              Dirección
-            </label>
-            <input
-              type="text"
-              name="direccion"
-              value={formData.direccion || ""}
-              onChange={handleChange}
-              placeholder="Calle, número y localidad"
-              className="mt-1 w-full border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-sky-400"
-            />
-          </div>
-        </div>
-        
-        {/* Localidad */}
-<div>
-  <label className="block text-sm font-medium text-gray-700">
-    Localidad
-  </label>
-  <input
-    type="text"
-    name="localidad"
-    value={formData.localidad || ""}
-    onChange={handleChange}
-    placeholder="Ej: Rosario, Mar del Plata, San Isidro..."
-    className="mt-1 w-full border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-sky-400"
-  />
-</div>
-
+        ))}
 
         {/* Provincia */}
         <div>
@@ -259,12 +179,37 @@ export default function EmpresaCuentaPage() {
           </label>
           <select
             name="provincia"
-            value={formData.provincia || ""}
+            value={formData.provincia}
             onChange={handleChange}
             className="mt-1 w-full border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-sky-400"
           >
-            <option value="">Seleccionar provincia</option>
-            {provincias.map((prov) => (
+            <option value="">Seleccionar provincia...</option>
+            {[
+              "CABA",
+              "Buenos Aires",
+              "Córdoba",
+              "Santa Fe",
+              "Mendoza",
+              "Tucumán",
+              "Salta",
+              "Entre Ríos",
+              "Corrientes",
+              "Misiones",
+              "Chaco",
+              "San Luis",
+              "San Juan",
+              "Neuquén",
+              "Río Negro",
+              "Chubut",
+              "Santa Cruz",
+              "La Pampa",
+              "La Rioja",
+              "Catamarca",
+              "Formosa",
+              "Santiago del Estero",
+              "Jujuy",
+              "Tierra del Fuego",
+            ].map((prov) => (
               <option key={prov} value={prov}>
                 {prov}
               </option>
@@ -272,24 +217,66 @@ export default function EmpresaCuentaPage() {
           </select>
         </div>
 
-        {/* Condición Fiscal */}
+        {/* Condición fiscal */}
         <div>
           <label className="block text-sm font-medium text-gray-700">
             Condición Fiscal
           </label>
           <select
             name="condicion_fiscal"
-            value={formData.condicion_fiscal || ""}
+            value={formData.condicion_fiscal}
             onChange={handleChange}
             className="mt-1 w-full border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-sky-400"
           >
-            <option value="">Seleccionar condición fiscal</option>
-            {condicionesFiscales.map((cond) => (
-              <option key={cond} value={cond}>
-                {cond}
-              </option>
-            ))}
+            <option value="">Seleccionar...</option>
+            <option value="Responsable Inscripto">Responsable Inscripto</option>
+            <option value="Monotributista">Monotributista</option>
+            <option value="Exento">Exento</option>
+            <option value="Consumidor Final">Consumidor Final</option>
           </select>
+        </div>
+
+        {/* 🎨 Color corporativo */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Color Corporativo
+          </label>
+          <input
+            type="color"
+            name="color"
+            value={formData.color}
+            onChange={handleChange}
+            className="w-20 h-10 border rounded cursor-pointer"
+          />
+        </div>
+
+        {/* 🖼️ Logo */}
+        <div className="flex flex-col gap-2">
+          <label className="block text-sm font-medium text-gray-700">
+            Logo de la empresa
+          </label>
+          {formData.logo_url ? (
+            <img
+              src={formData.logo_url}
+              alt="Logo actual"
+              className="h-16 object-contain border rounded"
+            />
+          ) : (
+            <p className="text-gray-400 text-sm">No hay logo cargado</p>
+          )}
+
+          <input
+            type="file"
+            accept="image/*"
+            onChange={handleLogoUpload}
+            disabled={uploading}
+            className="text-sm text-gray-600"
+          />
+          {uploading && (
+            <p className="text-xs text-gray-400 mt-1">
+              Subiendo imagen, por favor espera...
+            </p>
+          )}
         </div>
 
         {/* Botón guardar */}
@@ -301,10 +288,15 @@ export default function EmpresaCuentaPage() {
           {saving ? "Guardando..." : "Guardar cambios"}
         </button>
 
+        {/* Mensajes */}
         {message && (
           <p
             className={`mt-2 text-sm ${
-              message.startsWith("✅") ? "text-green-600" : "text-red-600"
+              message.startsWith("✅")
+                ? "text-green-600"
+                : message.startsWith("⚠️")
+                ? "text-yellow-600"
+                : "text-red-600"
             }`}
           >
             {message}

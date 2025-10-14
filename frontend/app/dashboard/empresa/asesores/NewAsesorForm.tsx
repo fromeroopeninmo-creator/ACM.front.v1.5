@@ -5,14 +5,14 @@ import { supabase } from "#lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
 
 interface Props {
-  empresaId?: string; // puede venir de props o se resuelve automáticamente
+  empresaId?: string;
   onCreated: () => void;
 }
 
 export default function NewAsesorForm({ empresaId, onCreated }: Props) {
   const { user } = useAuth();
-  const [resolvedEmpresaId, setResolvedEmpresaId] = useState<string | null>(empresaId || null);
 
+  const [resolvedEmpresaId, setResolvedEmpresaId] = useState<string | null>(empresaId || null);
   const [nombre, setNombre] = useState("");
   const [apellido, setApellido] = useState("");
   const [email, setEmail] = useState("");
@@ -33,36 +33,34 @@ export default function NewAsesorForm({ empresaId, onCreated }: Props) {
     Personalizado: 50,
   };
 
-  // 🔍 Resolver empresa asociada si no se pasa empresaId por props
+  // 🧠 Resolver empresa_id automáticamente si no vino por props
   useEffect(() => {
     const fetchEmpresaId = async () => {
-      if (empresaId) return; // ya vino por props
-      if (!user?.id) return;
+      if (resolvedEmpresaId || !user) return;
 
-      const { data: empresa, error: empresaError } = await supabase
+      const { data, error } = await supabase
         .from("empresas")
         .select("id")
         .eq("user_id", user.id)
-        .maybeSingle();
+        .single();
 
-      if (empresaError || !empresa) {
-        console.error("❌ No se encontró empresa asociada al usuario:", empresaError);
-        setError("No se encontró la empresa asociada a este usuario.");
+      if (error || !data) {
+        console.warn("⚠️ No se pudo obtener empresa_id automáticamente:", error);
+        setError("No se encontró la empresa asociada al usuario actual.");
         return;
       }
 
-      setResolvedEmpresaId(empresa.id);
+      setResolvedEmpresaId(data.id);
     };
 
     fetchEmpresaId();
-  }, [user, empresaId]);
+  }, [user, resolvedEmpresaId]);
 
   // 🔍 Carga datos del plan activo y cantidad de asesores
   useEffect(() => {
     const fetchPlan = async () => {
       if (!resolvedEmpresaId) return;
 
-      // Buscar plan activo de la empresa
       const { data: empresaPlan, error: errorEmpresaPlan } = await supabase
         .from("empresas_planes")
         .select("plan_id")
@@ -81,7 +79,6 @@ export default function NewAsesorForm({ empresaId, onCreated }: Props) {
         return;
       }
 
-      // Buscar nombre del plan
       const { data: planData } = await supabase
         .from("planes")
         .select("nombre")
@@ -92,7 +89,6 @@ export default function NewAsesorForm({ empresaId, onCreated }: Props) {
       setPlanNombre(nombrePlan);
       setPlanLimite(limitesPlanes[nombrePlan] ?? 0);
 
-      // Contar asesores activos
       const { count } = await supabase
         .from("asesores")
         .select("*", { count: "exact", head: true })
@@ -118,7 +114,6 @@ export default function NewAsesorForm({ empresaId, onCreated }: Props) {
       return;
     }
 
-    // 🚫 Verificación de límite
     if (planLimite !== null && asesoresActivos >= planLimite) {
       setError(
         `Tu plan (${planNombre}) permite un máximo de ${planLimite} asesores activos.`
@@ -129,43 +124,35 @@ export default function NewAsesorForm({ empresaId, onCreated }: Props) {
     setLoading(true);
     setError(null);
 
-    try {
-      // 🧩 Insert con FK correcta
-      const { error } = await supabase.from("asesores").insert([
-        {
-          empresa_id: resolvedEmpresaId,
-          nombre,
-          apellido,
-          email,
-          telefono,
-          activo: true,
-          fecha_creacion: new Date().toISOString(),
-        },
-      ]);
+    const { error } = await supabase.from("asesores").insert([
+      {
+        empresa_id: resolvedEmpresaId,
+        nombre,
+        apellido,
+        email,
+        telefono,
+        activo: true,
+        fecha_creacion: new Date().toISOString(),
+      },
+    ]);
 
-      if (error) throw error;
+    setLoading(false);
 
-      // Reset form y callback
+    if (error) {
+      console.error("Error al crear asesor:", error);
+      setError("No se pudo crear el asesor.");
+    } else {
       setNombre("");
       setApellido("");
       setEmail("");
       setTelefono("");
       onCreated();
-    } catch (err) {
-      console.error("Error al crear asesor:", err);
-      setError("No se pudo crear el asesor.");
-    } finally {
-      setLoading(false);
     }
   };
 
   // 🧩 Fallback visual si todavía no hay empresaId cargado
   if (!resolvedEmpresaId) {
-    return (
-      <p className="text-gray-500 text-sm">
-        Cargando datos de la empresa...
-      </p>
-    );
+    return <p className="text-gray-500 text-sm">Cargando datos de la empresa...</p>;
   }
 
   return (

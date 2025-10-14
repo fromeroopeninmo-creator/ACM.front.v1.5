@@ -3,9 +3,11 @@
 import { useEffect, useState } from "react";
 import { supabase } from "#lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
+import { useTheme } from "@/context/ThemeContext"; // 🟢 agregado para el color dinámico
 
 export default function EmpresaCuentaPage() {
   const { user } = useAuth();
+  const { setPrimaryColor } = useTheme(); // 🟢 permite cambiar el color global
 
   const [formData, setFormData] = useState({
     nombre_comercial: "",
@@ -44,7 +46,10 @@ export default function EmpresaCuentaPage() {
           .single();
 
         if (error) throw error;
-        if (data) setFormData((prev) => ({ ...prev, ...data }));
+        if (data) {
+          setFormData((prev) => ({ ...prev, ...data }));
+          setPrimaryColor(data.color || "#E6A930"); // 🟢 actualiza el color global
+        }
       } catch (err) {
         console.error("Error cargando datos de empresa:", err);
         setMessage("⚠️ Error al cargar los datos de la empresa.");
@@ -54,7 +59,7 @@ export default function EmpresaCuentaPage() {
     };
 
     fetchData();
-  }, [user]);
+  }, [user, setPrimaryColor]);
 
   // ============================================================
   // 🔹 Manejo de cambios en formulario
@@ -66,7 +71,7 @@ export default function EmpresaCuentaPage() {
   };
 
   // ============================================================
-  // 🔹 Guardar cambios
+  // 🔹 Guardar cambios (datos generales)
   // ============================================================
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -81,6 +86,8 @@ export default function EmpresaCuentaPage() {
         .eq("user_id", user.id);
 
       if (error) throw error;
+
+      setPrimaryColor(formData.color); // 🟢 cambia el color del sidebar/header
       setMessage("✅ Datos actualizados correctamente.");
     } catch (err) {
       console.error("Error al guardar:", err);
@@ -103,18 +110,18 @@ export default function EmpresaCuentaPage() {
       const fileName = `empresa_${user.id}.${fileExt}`;
       const filePath = `logos/${fileName}`;
 
-      // Subir archivo a Supabase Storage
+      // 🟢 Subir a un bucket separado (logos_empresas)
       const { error: uploadError } = await supabase.storage
-        .from("logos")
+        .from("logos_empresas")
         .upload(filePath, file, { upsert: true });
 
       if (uploadError) throw uploadError;
 
       const {
         data: { publicUrl },
-      } = supabase.storage.from("logos").getPublicUrl(filePath);
+      } = supabase.storage.from("logos_empresas").getPublicUrl(filePath);
 
-      // Actualizar en BD
+      // Actualizar en la BD
       const { error: dbError } = await supabase
         .from("empresas")
         .update({ logo_url: publicUrl })

@@ -2,13 +2,17 @@
 
 import { useState, useEffect } from "react";
 import { supabase } from "#lib/supabaseClient";
+import { useAuth } from "@/context/AuthContext";
 
 interface Props {
-  empresaId?: string; // ✅ ahora acepta undefined sin romper el tipado
+  empresaId?: string; // puede venir de props o se resuelve automáticamente
   onCreated: () => void;
 }
 
 export default function NewAsesorForm({ empresaId, onCreated }: Props) {
+  const { user } = useAuth();
+  const [resolvedEmpresaId, setResolvedEmpresaId] = useState<string | null>(empresaId || null);
+
   const [nombre, setNombre] = useState("");
   const [apellido, setApellido] = useState("");
   const [email, setEmail] = useState("");
@@ -29,16 +33,40 @@ export default function NewAsesorForm({ empresaId, onCreated }: Props) {
     Personalizado: 50,
   };
 
+  // 🔍 Resolver empresa asociada si no se pasa empresaId por props
+  useEffect(() => {
+    const fetchEmpresaId = async () => {
+      if (empresaId) return; // ya vino por props
+      if (!user?.id) return;
+
+      const { data: empresa, error: empresaError } = await supabase
+        .from("empresas")
+        .select("id")
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      if (empresaError || !empresa) {
+        console.error("❌ No se encontró empresa asociada al usuario:", empresaError);
+        setError("No se encontró la empresa asociada a este usuario.");
+        return;
+      }
+
+      setResolvedEmpresaId(empresa.id);
+    };
+
+    fetchEmpresaId();
+  }, [user, empresaId]);
+
   // 🔍 Carga datos del plan activo y cantidad de asesores
   useEffect(() => {
     const fetchPlan = async () => {
-      if (!empresaId) return; // ✅ protección extra
+      if (!resolvedEmpresaId) return;
 
       // Buscar plan activo de la empresa
       const { data: empresaPlan, error: errorEmpresaPlan } = await supabase
         .from("empresas_planes")
         .select("plan_id")
-        .eq("empresa_id", empresaId)
+        .eq("empresa_id", resolvedEmpresaId)
         .eq("activo", true)
         .maybeSingle();
 
@@ -68,19 +96,19 @@ export default function NewAsesorForm({ empresaId, onCreated }: Props) {
       const { count } = await supabase
         .from("asesores")
         .select("*", { count: "exact", head: true })
-        .eq("empresa_id", empresaId)
+        .eq("empresa_id", resolvedEmpresaId)
         .eq("activo", true);
 
       setAsesoresActivos(count || 0);
     };
 
     fetchPlan();
-  }, [empresaId]);
+  }, [resolvedEmpresaId]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!empresaId) {
+    if (!resolvedEmpresaId) {
       setError("No se encontró la empresa asociada.");
       return;
     }
@@ -101,34 +129,38 @@ export default function NewAsesorForm({ empresaId, onCreated }: Props) {
     setLoading(true);
     setError(null);
 
-    const { error } = await supabase.from("asesores").insert([
-      {
-        empresa_id: empresaId,
-        nombre,
-        apellido,
-        email,
-        telefono,
-        activo: true,
-        fecha_creacion: new Date().toISOString(),
-      },
-    ]);
+    try {
+      // 🧩 Insert con FK correcta
+      const { error } = await supabase.from("asesores").insert([
+        {
+          empresa_id: resolvedEmpresaId,
+          nombre,
+          apellido,
+          email,
+          telefono,
+          activo: true,
+          fecha_creacion: new Date().toISOString(),
+        },
+      ]);
 
-    setLoading(false);
+      if (error) throw error;
 
-    if (error) {
-      console.error("Error al crear asesor:", error);
-      setError("No se pudo crear el asesor.");
-    } else {
+      // Reset form y callback
       setNombre("");
       setApellido("");
       setEmail("");
       setTelefono("");
       onCreated();
+    } catch (err) {
+      console.error("Error al crear asesor:", err);
+      setError("No se pudo crear el asesor.");
+    } finally {
+      setLoading(false);
     }
   };
 
   // 🧩 Fallback visual si todavía no hay empresaId cargado
-  if (!empresaId) {
+  if (!resolvedEmpresaId) {
     return (
       <p className="text-gray-500 text-sm">
         Cargando datos de la empresa...

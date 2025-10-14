@@ -1,6 +1,7 @@
 "use client";
 
 import { useAuth } from "@/context/AuthContext";
+import { useTheme } from "@/context/ThemeContext"; // ✅ AGREGAR ESTA LÍNEA
 import Link from "next/link";
 import PlanStatusBanner from "./components/PlanStatusBanner";
 import { supabase } from "#lib/supabaseClient";
@@ -8,6 +9,7 @@ import { useEffect, useState } from "react";
 
 export default function EmpresaDashboardPage() {
   const { user } = useAuth();
+  const { primaryColor } = useTheme(); // ✅ Y ESTA TAMBIÉN
   const [empresa, setEmpresa] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 

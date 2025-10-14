@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import Image from "next/image";
+import { useTheme } from "@/context/ThemeContext"; // ✅ incorporamos contexto visual
 
 interface SidebarProps {
   role: string;
@@ -10,7 +12,11 @@ interface SidebarProps {
 
 export default function DashboardSidebar({ role, color }: SidebarProps) {
   const pathname = usePathname();
+  const { logo } = useTheme(); // ✅ accedemos al logo heredado (solo usado si asesor)
 
+  // ==============================
+  // 🔹 Menú por roles
+  // ==============================
   const menuByRole: Record<string, { name: string; href: string }[]> = {
     super_admin_root: [
       { name: "Inicio", href: "/dashboard/admin" },
@@ -43,12 +49,38 @@ export default function DashboardSidebar({ role, color }: SidebarProps) {
 
   const links = menuByRole[role] || menuByRole["empresa"];
 
+  // ==============================
+  // 🔹 Estilo visual según rol
+  // ==============================
+  const bgColor =
+    role === "asesor"
+      ? color || "#004AAD" // asesor hereda color corporativo
+      : "#004AAD"; // demás roles: color neutro
+
+  const sidebarClasses =
+    "w-64 min-h-screen text-white p-5 space-y-4 flex flex-col items-center shadow-md transition-colors duration-300";
+
   return (
-    <aside
-      className="w-64 min-h-screen text-white p-5 space-y-4"
-      style={{ backgroundColor: color }}
-    >
-      <nav className="space-y-2">
+    <aside className={sidebarClasses} style={{ backgroundColor: bgColor }}>
+      {/* ==============================
+          🔸 Logo (solo asesores con herencia visual)
+         ============================== */}
+      {role === "asesor" && logo && (
+        <div className="w-full flex justify-center mb-4">
+          <Image
+            src={logo}
+            alt="Logo Empresa"
+            width={140}
+            height={60}
+            className="object-contain rounded-md bg-white/10 p-2"
+          />
+        </div>
+      )}
+
+      {/* ==============================
+          🔸 Navegación
+         ============================== */}
+      <nav className="w-full space-y-2">
         {links.map((item) => {
           const active = pathname === item.href;
           return (
@@ -56,7 +88,9 @@ export default function DashboardSidebar({ role, color }: SidebarProps) {
               key={item.href}
               href={item.href}
               className={`block px-3 py-2 rounded-md text-sm font-medium transition ${
-                active ? "bg-white text-gray-900" : "text-white hover:bg-white/20"
+                active
+                  ? "bg-white text-gray-900"
+                  : "text-white hover:bg-white/20"
               }`}
             >
               {item.name}
@@ -64,6 +98,15 @@ export default function DashboardSidebar({ role, color }: SidebarProps) {
           );
         })}
       </nav>
+
+      {/* ==============================
+          🔸 Footer opcional para asesor
+         ============================== */}
+      {role === "asesor" && (
+        <div className="mt-auto text-xs text-white/60 text-center pt-6 border-t border-white/10">
+          Panel Asesor — VAI
+        </div>
+      )}
     </aside>
   );
 }

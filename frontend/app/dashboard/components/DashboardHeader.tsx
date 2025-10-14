@@ -18,7 +18,7 @@ interface EmpresaData {
 }
 
 export default function DashboardHeader({ user, logout, color }: HeaderProps) {
-  const { logoUrl } = useTheme();
+  const { logoUrl, primaryColor } = useTheme(); // ✅ traemos color del contexto en tiempo real
   const [empresa, setEmpresa] = useState<EmpresaData | null>(null);
 
   // 🔹 Detectar rol y nombre
@@ -42,7 +42,6 @@ export default function DashboardHeader({ user, logout, color }: HeaderProps) {
         user?.id || user?.user_metadata?.id_usuario || user?.user_metadata?.empresa_id;
       if (!userId) return;
 
-      // Si es asesor, buscar su empresa asociada
       let query = supabase
         .from("empresas")
         .select("nombre_comercial, matriculado, cpi, razon_social");
@@ -58,7 +57,7 @@ export default function DashboardHeader({ user, logout, color }: HeaderProps) {
     fetchEmpresa();
   }, [user, role]);
 
-  // 🔹 Determinar texto del tipo de usuario para mostrar junto a “VAI Dashboard”
+  // 🔹 Determinar texto del tipo de usuario
   const roleLabel =
     role === "empresa"
       ? "EMPRESA"
@@ -73,13 +72,13 @@ export default function DashboardHeader({ user, logout, color }: HeaderProps) {
   // 🔹 Renderizado principal
   return (
     <header
-      className="flex justify-between items-center px-6 py-3 shadow-sm"
-      style={{ backgroundColor: color }}
+      className="flex justify-between items-center px-6 py-4 shadow-sm" // 📏 aumentamos padding vertical (antes py-3)
+      style={{ backgroundColor: primaryColor || color }} // ✅ color realtime desde ThemeContext
     >
       {/* 🔹 IZQUIERDA */}
       <div className="flex items-center gap-3">
         {logoUrl ? (
-          <img src={logoUrl} alt="Logo" className="h-8" />
+          <img src={logoUrl} alt="Logo" className="h-9" /> // 📏 levemente más alto
         ) : (
           <h1 className="text-white font-semibold">VAI Dashboard</h1>
         )}
@@ -141,7 +140,7 @@ export default function DashboardHeader({ user, logout, color }: HeaderProps) {
           </span>
         ) : null}
 
-        {/* 🧹 Se eliminó el botón de Cerrar sesión (ya está en el header principal) */}
+        {/* 🧹 Sin botón de cerrar sesión */}
       </div>
     </header>
   );

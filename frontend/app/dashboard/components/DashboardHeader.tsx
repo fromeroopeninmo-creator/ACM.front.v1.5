@@ -58,6 +58,18 @@ export default function DashboardHeader({ user, logout, color }: HeaderProps) {
     fetchEmpresa();
   }, [user, role]);
 
+  // 🔹 Determinar texto del tipo de usuario para mostrar junto a “VAI Dashboard”
+  const roleLabel =
+    role === "empresa"
+      ? "EMPRESA"
+      : role === "asesor"
+      ? "ASESOR"
+      : role === "soporte"
+      ? "SOPORTE"
+      : role === "super_admin" || role === "super_admin_root"
+      ? "ADMIN"
+      : "USUARIO";
+
   // 🔹 Renderizado principal
   return (
     <header
@@ -72,6 +84,12 @@ export default function DashboardHeader({ user, logout, color }: HeaderProps) {
           <h1 className="text-white font-semibold">VAI Dashboard</h1>
         )}
 
+        {/* 🔸 Texto de tipo de usuario */}
+        <span className="text-white font-semibold text-sm uppercase tracking-wide">
+          {roleLabel}
+        </span>
+
+        {/* 🔸 Datos complementarios */}
         <div className="flex flex-col leading-tight">
           {role === "empresa" && empresa ? (
             <>
@@ -99,9 +117,7 @@ export default function DashboardHeader({ user, logout, color }: HeaderProps) {
             <span className="text-white font-semibold text-sm">
               Gerencia General
             </span>
-          ) : (
-            <span className="text-white font-semibold text-sm">Usuario</span>
-          )}
+          ) : null}
         </div>
       </div>
 
@@ -117,20 +133,15 @@ export default function DashboardHeader({ user, logout, color }: HeaderProps) {
           </span>
         ) : role === "soporte" ? (
           <span className="text-white font-semibold text-sm">
-            Asesor: {nombre}
+            Soporte: {nombre}
           </span>
         ) : role === "super_admin" || role === "super_admin_root" ? (
           <span className="text-white font-semibold text-sm">
-            Gerente: {nombre}
+            Admin: {nombre}
           </span>
         ) : null}
 
-        <button
-          onClick={logout}
-          className="bg-white text-sm text-gray-800 font-medium px-4 py-2 rounded-lg hover:bg-gray-100 transition"
-        >
-          Cerrar sesión
-        </button>
+        {/* 🧹 Se eliminó el botón de Cerrar sesión (ya está en el header principal) */}
       </div>
     </header>
   );

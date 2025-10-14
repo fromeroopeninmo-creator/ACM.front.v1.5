@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import Image from "next/image";
-import { useTheme } from "@/context/ThemeContext"; // ✅ incorporamos contexto visual
+import { useTheme } from "@/context/ThemeContext";
 
 interface SidebarProps {
   role: string;
@@ -12,7 +12,7 @@ interface SidebarProps {
 
 export default function DashboardSidebar({ role, color }: SidebarProps) {
   const pathname = usePathname();
-  const { logo } = useTheme(); // ✅ accedemos al logo heredado (solo usado si asesor)
+  const { logoUrl } = useTheme(); // ✅ usamos la propiedad original del contexto
 
   // ==============================
   // 🔹 Menú por roles
@@ -65,10 +65,10 @@ export default function DashboardSidebar({ role, color }: SidebarProps) {
       {/* ==============================
           🔸 Logo (solo asesores con herencia visual)
          ============================== */}
-      {role === "asesor" && logo && (
+      {role === "asesor" && logoUrl && (
         <div className="w-full flex justify-center mb-4">
           <Image
-            src={logo}
+            src={logoUrl}
             alt="Logo Empresa"
             width={140}
             height={60}

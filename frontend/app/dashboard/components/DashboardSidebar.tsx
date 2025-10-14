@@ -98,15 +98,6 @@ export default function DashboardSidebar({ role, color }: SidebarProps) {
           );
         })}
       </nav>
-
-      {/* ==============================
-          🔸 Footer opcional
-         ============================== */}
-      {(role === "asesor" || role === "empresa") && (
-        <div className="mt-auto text-xs text-white/60 text-center pt-6 border-t border-white/10">
-          Panel {role === "asesor" ? "Asesor" : "Empresa"} — VAI
-        </div>
-      )}
     </aside>
   );
 }

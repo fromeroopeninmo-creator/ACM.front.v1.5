@@ -116,17 +116,6 @@ export default function DashboardHeader({ user, logout, color }: HeaderProps) {
         </div>
       </div>
 
-      {/* 🔹 CENTRO — Botón Valuador */}
-      {role === "empresa" && (
-        <div className="absolute left-1/2 transform -translate-x-1/2">
-          <Link
-            href="/vai/acmforms"
-            className="bg-white text-gray-800 text-sm font-semibold px-5 py-2 rounded-lg shadow hover:bg-gray-100 transition"
-          >
-            Valuador de Activos Inmobiliarios
-          </Link>
-        </div>
-      )}
 
       {/* 🔹 DERECHA */}
       <div className="flex items-center gap-4">

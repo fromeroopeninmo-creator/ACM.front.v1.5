@@ -8,9 +8,33 @@ export default function Header() {
 
   if (!user) return null;
 
-  // 🔹 Ruta dinámica del dashboard según el rol
+  // ✅ Evitamos el error de tipo: usamos cast flexible
+  const meta: any = (user as any).user_metadata || {};
+
+  // 🔹 Rol dinámico (seguro)
+  const role = (user as any).role || meta.role || "empresa";
+
+  // 🔹 Datos seguros
+  const matriculado =
+    meta.matriculado_nombre ||
+    meta.matriculado ||
+    ((role === "empresa" ? (user as any).nombre : undefined) || "—");
+
+  const cpi =
+    meta.cpi ||
+    meta.cpi_numero ||
+    ((role === "empresa" ? (user as any).cpi : undefined) || "—");
+
+  const nombreAsesor =
+    role === "asesor"
+      ? `${meta.nombre || (user as any).nombre || ""} ${
+          meta.apellido || (user as any).apellido || ""
+        }`.trim()
+      : "—";
+
+  // 🔹 Ruta dinámica del dashboard
   const getDashboardRoute = () => {
-    switch (user.role) {
+    switch (role) {
       case "empresa":
         return "/dashboard/empresa";
       case "asesor":
@@ -24,25 +48,6 @@ export default function Header() {
         return "/dashboard";
     }
   };
-
-  // 🔹 Datos seguros desde user_metadata
-  const meta = user.user_metadata || {};
-  const role = user.role || meta.role || "empresa";
-
-  const matriculado =
-    meta.matriculado_nombre ||
-    meta.matriculado ||
-    (role === "empresa" ? user.nombre || "—" : "—");
-
-  const cpi =
-    meta.cpi ||
-    meta.cpi_numero ||
-    (role === "empresa" ? user.cpi || "—" : "—");
-
-  const nombreAsesor =
-    role === "asesor"
-      ? `${meta.nombre || user.nombre || ""} ${meta.apellido || user.apellido || ""}`.trim()
-      : "—";
 
   return (
     <header
@@ -89,7 +94,7 @@ export default function Header() {
           </div>
         </div>
 
-        {/* Derecha (logo centrado y equilibrado) */}
+        {/* Derecha (logo centrado) */}
         <div className="flex items-center justify-center flex-1">
           <img
             src="/logo-vai4.png"

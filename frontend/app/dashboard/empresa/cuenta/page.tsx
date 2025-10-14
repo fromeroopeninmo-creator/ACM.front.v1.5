@@ -2,8 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "#lib/supabaseClient";
+import { useAuth } from "@/context/AuthContext"; // 👈 usamos el contexto global
 
 export default function EmpresaCuentaPage() {
+  const { user } = useAuth(); // ✅ mismo patrón que en Asesores
   const [formData, setFormData] = useState({
     nombre_comercial: "",
     razon_social: "",
@@ -19,89 +21,57 @@ export default function EmpresaCuentaPage() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
-  // 🔹 Cargar datos de la empresa al montar el componente
+  // 🔹 Cargar datos de la empresa una vez que hay usuario
   useEffect(() => {
-    let isMounted = true;
+    if (!user) return;
 
     const fetchData = async () => {
       try {
-        const {
-          data: { session },
-          error: sessionError,
-        } = await supabase.auth.getSession();
-
-        if (sessionError) throw sessionError;
-
-        if (!session?.user) {
-          if (isMounted) setLoading(false);
-          return;
-        }
-
         const { data, error } = await supabase
           .from("empresas")
           .select(
             "nombre_comercial, razon_social, matriculado, cpi, telefono, direccion, provincia, condicion_fiscal"
           )
-          .eq("id_usuario", session.user.id)
-          .maybeSingle(); // ✅ más seguro que .single()
+          .eq("id_usuario", user.id)
+          .maybeSingle();
 
         if (error) throw error;
 
-        if (data && isMounted) {
-          setFormData((prev) => ({
-            ...prev,
-            ...data,
-          }));
+        if (data) {
+          setFormData((prev) => ({ ...prev, ...data }));
         }
       } catch (err) {
-        console.error("Error cargando datos de empresa:", err);
-        if (isMounted) setMessage("⚠️ Error al cargar los datos.");
+        console.error("Error cargando datos de la empresa:", err);
+        setMessage("⚠️ Error al cargar los datos de la empresa.");
       } finally {
-        if (isMounted) setLoading(false);
+        setLoading(false);
       }
     };
 
-    // 👇 Ejecutar solo en cliente
-    if (typeof window !== "undefined") {
-      fetchData();
-    }
+    fetchData();
+  }, [user]);
 
-    return () => {
-      isMounted = false;
-    };
-  }, []);
-
-  // 🔹 Actualizar estado del formulario
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
-  // 🔹 Guardar cambios en Supabase
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!user) return;
     setSaving(true);
     setMessage(null);
 
     try {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-
-      if (!session?.user) {
-        setMessage("⚠️ Sesión no encontrada.");
-        return;
-      }
-
       const { error } = await supabase
         .from("empresas")
         .update(formData)
-        .eq("id_usuario", session.user.id);
+        .eq("id_usuario", user.id);
 
       if (error) throw error;
 
       setMessage("✅ Datos actualizados correctamente.");
     } catch (err) {
-      console.error("Error guardando datos:", err);
+      console.error("Error al guardar los cambios:", err);
       setMessage("❌ Error al guardar los cambios.");
     } finally {
       setSaving(false);
@@ -115,7 +85,6 @@ export default function EmpresaCuentaPage() {
       </div>
     );
 
-  // 🔹 Render principal
   return (
     <div className="p-6 max-w-2xl mx-auto bg-white rounded-xl shadow-sm border border-gray-200">
       <h1 className="text-2xl font-bold mb-4">Mi Cuenta</h1>

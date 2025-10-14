@@ -25,6 +25,25 @@ export default function Header() {
     }
   };
 
+  // 🔹 Datos seguros desde user_metadata
+  const meta = user.user_metadata || {};
+  const role = user.role || meta.role || "empresa";
+
+  const matriculado =
+    meta.matriculado_nombre ||
+    meta.matriculado ||
+    (role === "empresa" ? user.nombre || "—" : "—");
+
+  const cpi =
+    meta.cpi ||
+    meta.cpi_numero ||
+    (role === "empresa" ? user.cpi || "—" : "—");
+
+  const nombreAsesor =
+    role === "asesor"
+      ? `${meta.nombre || user.nombre || ""} ${meta.apellido || user.apellido || ""}`.trim()
+      : "—";
+
   return (
     <header
       className="
@@ -34,7 +53,7 @@ export default function Header() {
         w-full transition-all duration-300
       "
       style={{
-        height: "auto", // flexible solo en mobile
+        height: "auto",
         overflow: "hidden",
       }}
     >
@@ -42,11 +61,9 @@ export default function Header() {
       <div className="flex w-full items-center justify-between md:hidden">
         {/* Izquierda */}
         <div className="flex flex-col text-[11px] sm:text-sm font-semibold text-gray-700 leading-tight">
-          <p>Matriculado/a: {user.matriculado_nombre || "—"}</p>
-          <p>CPI: {user.cpi || "—"}</p>
-          <p>
-            Asesor: {user.nombre} {user.apellido}
-          </p>
+          <p>Matriculado/a: {matriculado}</p>
+          <p>CPI: {cpi}</p>
+          <p>Asesor: {nombreAsesor}</p>
 
           {/* Botones en mobile */}
           <div className="flex gap-2 mt-2">
@@ -72,8 +89,8 @@ export default function Header() {
           </div>
         </div>
 
-        {/* Derecha (logo más grande y equilibrado) */}
-        <div className="flex items-center justify-center">
+        {/* Derecha (logo centrado y equilibrado) */}
+        <div className="flex items-center justify-center flex-1">
           <img
             src="/logo-vai4.png"
             alt="Logo VAI"
@@ -92,7 +109,7 @@ export default function Header() {
       </div>
 
       {/* 🔹 DESKTOP */}
-      <div className="hidden md:flex w-full justify-between items-center">
+      <div className="hidden md:flex w-full justify-between items-center relative">
         {/* Izquierda: botones */}
         <div className="flex gap-3">
           <button
@@ -116,8 +133,14 @@ export default function Header() {
           </button>
         </div>
 
-        {/* Centro: logo */}
-        <div className="flex justify-center items-center h-full order-first md:order-none">
+        {/* Centro: logo perfectamente centrado */}
+        <div
+          className="
+            absolute left-1/2 transform -translate-x-1/2
+            flex justify-center items-center
+            h-full
+          "
+        >
           <img
             src="/logo-vai4.png"
             alt="Logo VAI"
@@ -134,13 +157,11 @@ export default function Header() {
           />
         </div>
 
-        {/* Derecha: datos */}
-        <div className="flex flex-col items-end gap-1 text-xs sm:text-sm font-semibold text-gray-700 leading-tight">
-          <p>Matriculado/a: {user.matriculado_nombre || "—"}</p>
-          <p>CPI: {user.cpi || "—"}</p>
-          <p>
-            Asesor: {user.nombre} {user.apellido}
-          </p>
+        {/* Derecha: datos alineados */}
+        <div className="flex flex-col items-end gap-0.5 text-xs sm:text-sm font-semibold text-gray-700 leading-tight text-right">
+          <p>Matriculado/a: {matriculado}</p>
+          <p>CPI: {cpi}</p>
+          <p>Asesor: {nombreAsesor}</p>
         </div>
       </div>
     </header>

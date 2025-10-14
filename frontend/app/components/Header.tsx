@@ -1,10 +1,29 @@
 "use client";
 import { useAuth } from "@/context/AuthContext";
+import { useRouter } from "next/navigation";
 
 export default function Header() {
   const { user, logout } = useAuth();
+  const router = useRouter();
 
   if (!user) return null;
+
+  // 🔹 Ruta dinámica del dashboard según el rol
+  const getDashboardRoute = () => {
+    switch (user.role) {
+      case "empresa":
+        return "/dashboard/empresa";
+      case "asesor":
+        return "/dashboard/asesor";
+      case "soporte":
+        return "/dashboard/soporte";
+      case "super_admin":
+      case "super_admin_root":
+        return "/dashboard/admin";
+      default:
+        return "/dashboard";
+    }
+  };
 
   return (
     <header
@@ -19,27 +38,38 @@ export default function Header() {
         overflow: "hidden",
       }}
     >
-      {/* 🔹 MOBILE: info izquierda / logo derecha */}
+      {/* 🔹 MOBILE */}
       <div className="flex w-full items-center justify-between md:hidden">
         {/* Izquierda */}
         <div className="flex flex-col text-[11px] sm:text-sm font-semibold text-gray-700 leading-tight">
-          <p>{user.matriculado_nombre || "—"}</p>
+          <p>Matriculado/a: {user.matriculado_nombre || "—"}</p>
           <p>CPI: {user.cpi || "—"}</p>
           <p>
             Asesor: {user.nombre} {user.apellido}
           </p>
 
-          {/* Botón debajo del asesor */}
-          <button
-            onClick={logout}
-            className="
-              mt-2 px-3 py-1 text-[11px] sm:text-xs border rounded bg-white
-              font-medium text-gray-700 hover:bg-gray-200 transition
-              self-start
-            "
-          >
-            Cerrar sesión
-          </button>
+          {/* Botones en mobile */}
+          <div className="flex gap-2 mt-2">
+            <button
+              onClick={() => router.push(getDashboardRoute())}
+              className="
+                px-3 py-1 text-[11px] sm:text-xs border rounded bg-white
+                font-medium text-gray-700 hover:bg-gray-200 transition
+              "
+            >
+              ⬅️ Volver al Dashboard
+            </button>
+
+            <button
+              onClick={logout}
+              className="
+                px-3 py-1 text-[11px] sm:text-xs border rounded bg-white
+                font-medium text-gray-700 hover:bg-gray-200 transition
+              "
+            >
+              🚪 Cerrar sesión
+            </button>
+          </div>
         </div>
 
         {/* Derecha (logo más grande y equilibrado) */}
@@ -61,15 +91,32 @@ export default function Header() {
         </div>
       </div>
 
-      {/* 🔹 DESKTOP: estructura original */}
+      {/* 🔹 DESKTOP */}
       <div className="hidden md:flex w-full justify-between items-center">
-        {/* Izquierda */}
-        <div className="text-xs sm:text-sm font-semibold text-gray-700 text-left leading-tight">
-          <p>{user.matriculado_nombre || "—"}</p>
-          <p>CPI: {user.cpi || "—"}</p>
+        {/* Izquierda: botones */}
+        <div className="flex gap-3">
+          <button
+            onClick={() => router.push(getDashboardRoute())}
+            className="
+              px-4 py-2 text-sm font-semibold text-gray-700 bg-white
+              border rounded-lg shadow hover:bg-gray-200 transition
+            "
+          >
+            ⬅️ Volver al Dashboard
+          </button>
+
+          <button
+            onClick={logout}
+            className="
+              px-4 py-2 text-sm font-semibold text-gray-700 bg-white
+              border rounded-lg shadow hover:bg-gray-200 transition
+            "
+          >
+            🚪 Cerrar Sesión
+          </button>
         </div>
 
-        {/* Centro (logo más grande dentro del mismo alto) */}
+        {/* Centro: logo */}
         <div className="flex justify-center items-center h-full order-first md:order-none">
           <img
             src="/logo-vai4.png"
@@ -87,20 +134,13 @@ export default function Header() {
           />
         </div>
 
-        {/* Derecha */}
-        <div className="flex flex-col items-center md:items-end gap-1 text-xs sm:text-sm">
-          <span className="font-medium text-center md:text-right">
+        {/* Derecha: datos */}
+        <div className="flex flex-col items-end gap-1 text-xs sm:text-sm font-semibold text-gray-700 leading-tight">
+          <p>Matriculado/a: {user.matriculado_nombre || "—"}</p>
+          <p>CPI: {user.cpi || "—"}</p>
+          <p>
             Asesor: {user.nombre} {user.apellido}
-          </span>
-          <button
-            onClick={logout}
-            className="
-              px-3 py-1 text-xs md:text-sm border rounded bg-white
-              hover:bg-gray-200 transition
-            "
-          >
-            Cerrar sesión
-          </button>
+          </p>
         </div>
       </div>
     </header>

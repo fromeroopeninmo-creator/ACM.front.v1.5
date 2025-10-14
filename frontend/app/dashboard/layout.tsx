@@ -9,7 +9,7 @@ import DashboardSidebar from "./components/DashboardSidebar";
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { user, loading, logout } = useAuth();
-  const { color } = useTheme(); // color heredado del ThemeContext (solo si asesor)
+  const { primaryColor } = useTheme(); // ✅ usamos el contexto original
   const router = useRouter();
   const pathname = usePathname();
 
@@ -18,6 +18,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   useEffect(() => {
     if (!loading) setAuthChecked(true);
 
+    // ⚠️ Evita redirigir si ya estás en /auth/*
     const isAuthRoute = pathname?.startsWith("/auth/");
     if (!loading && !user && !isAuthRoute) {
       router.replace("/auth/login");
@@ -49,9 +50,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     );
   }
 
-  // 🧠 Condición: solo asesores heredan color corporativo
+  // 🧠 Solo los asesores heredan el color corporativo de su empresa
   const sidebarColor =
-    user.role === "asesor" ? color : "#004AAD"; // default color corporativo general
+    user.role === "asesor" ? primaryColor : "#004AAD";
 
   return (
     <div className="flex min-h-screen bg-gray-50 text-gray-900">

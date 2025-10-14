@@ -12,16 +12,21 @@ export default function AsesorDashboardPage() {
   const [empresa, setEmpresa] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
-  // 🧠 Cargar datos de empresa (heredada) y datos personales del asesor
+  const safeUser = user as any; // 👈 evitamos errores de tipo
+
+  // 🧠 Cargar datos de la empresa (heredada del asesor)
   useEffect(() => {
     const fetchEmpresa = async () => {
-      if (!user || !user.empresa_id) return;
+      if (!safeUser || !safeUser.empresa_id) {
+        setLoading(false);
+        return;
+      }
 
       try {
         const { data, error } = await supabase
           .from("empresas")
           .select("nombre_comercial, matriculado, cpi, logo_url")
-          .eq("id", user.empresa_id)
+          .eq("id", safeUser.empresa_id)
           .maybeSingle();
 
         if (error) throw error;
@@ -34,7 +39,7 @@ export default function AsesorDashboardPage() {
     };
 
     fetchEmpresa();
-  }, [user]);
+  }, [safeUser]);
 
   if (loading) {
     return (
@@ -44,9 +49,9 @@ export default function AsesorDashboardPage() {
     );
   }
 
-  const nombre = user?.nombre || user?.user_metadata?.nombre || "Asesor";
-  const email = user?.email || user?.user_metadata?.email || "—";
-  const telefono = user?.telefono || user?.user_metadata?.telefono || "—";
+  const nombre = safeUser?.nombre || "Asesor";
+  const email = safeUser?.email || "—";
+  const telefono = safeUser?.telefono || "—";
 
   return (
     <div className="space-y-6">

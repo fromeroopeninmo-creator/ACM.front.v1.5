@@ -32,7 +32,7 @@ export default function DashboardSidebar({ role, color }: SidebarProps) {
       { name: "Inicio", href: "/dashboard/empresa" },
       { name: "Asesores", href: "/dashboard/empresa/asesores" },
       { name: "Informes", href: "/dashboard/empresa/informes" },
-      { name: "Cuenta", href: "/dashboard/empresa/configuracion" },
+      { name: "Cuenta", href: "/dashboard/empresa/cuenta" },
     ],
     asesor: [
       { name: "Inicio", href: "/dashboard/asesor" },

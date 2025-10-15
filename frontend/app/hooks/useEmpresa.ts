@@ -6,15 +6,11 @@ import { useAuth } from "@/context/AuthContext";
 
 /**
  * Hook unificado para obtener los datos de la empresa asociada al usuario actual.
- * Roles: empresa, asesor, admin, soporte.
+ * Soporta roles: empresa, asesor, admin y soporte.
  *
- * - empresa  → busca por user.id
- * - asesor   → busca por user.empresa_id
- * - admin/soporte → retorna null (sin empresa vinculada)
- *
- * Uso:
- *   const { empresa, isLoading, mutate } = useEmpresa();
- *   // mutate() revalida todos los componentes que usen este hook.
+ * - Empresa → busca por user_id = user.id
+ * - Asesor → busca por empresa_id del asesor
+ * - Admin / Soporte → retorna null
  */
 export function useEmpresa() {
   const { user } = useAuth();
@@ -22,29 +18,30 @@ export function useEmpresa() {
   const fetchEmpresa = async () => {
     if (!user) return null;
 
-    let empresaId: string | null = null;
+    let empresaFilterKey: string | null = null;
+    let filterColumn = "user_id"; // 🟢 por defecto para empresa
 
     switch (user.role) {
       case "empresa":
-        empresaId = user.id;
+        empresaFilterKey = user.id; // la empresa se identifica por user_id
+        filterColumn = "user_id";
         break;
       case "asesor":
-        // asegura null si viene undefined (TS-friendly)
-        empresaId = user.empresa_id ?? null;
+        empresaFilterKey = user.empresa_id ?? null;
+        filterColumn = "id"; // los asesores referencian el id de empresa
         break;
       default:
-        // admin / soporte → sin empresa asociada
         return null;
     }
 
-    if (!empresaId) return null;
+    if (!empresaFilterKey) return null;
 
     const { data, error } = await supabase
       .from("empresas")
       .select(
         "id, user_id, nombre_comercial, razon_social, cuit, matriculado, cpi, telefono, direccion, localidad, provincia, condicion_fiscal, color, logo_url"
       )
-      .eq("id", empresaId)
+      .eq(filterColumn, empresaFilterKey)
       .single();
 
     if (error) throw error;
@@ -55,9 +52,9 @@ export function useEmpresa() {
     user ? ["empresa", user.id] : null,
     fetchEmpresa,
     {
-      revalidateOnFocus: true,
+      revalidateOnFocus: false,
       shouldRetryOnError: true,
-      dedupingInterval: 60000, // 60s
+      dedupingInterval: 60000,
     }
   );
 

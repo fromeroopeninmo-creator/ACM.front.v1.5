@@ -1,37 +1,36 @@
 import { NextResponse } from "next/server";
-import { supabase } from "#lib/supabaseClient";
+import { createClient } from "@supabase/supabase-js";
+
+// ⚙️ Crear cliente del lado del servidor
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY! // 🔑 clave de servicio, no la anon
+);
 
 export async function POST(request: Request) {
   try {
     const body = await request.json();
     const { empresaId, planId } = body || {};
 
-    console.log("📨 solicitud-upgrade body:", body);
-
     if (!empresaId || !planId) {
-      console.error("❌ Faltan datos obligatorios:", { empresaId, planId });
       return NextResponse.json(
         { error: "Faltan datos obligatorios (empresaId, planId)." },
         { status: 400 }
       );
     }
 
-    // 🔹 Buscar plan
+    // 🔍 Buscar plan
     const { data: plan, error: planError } = await supabase
       .from("planes")
       .select("id, nombre, duracion_dias")
       .eq("id", planId)
       .maybeSingle();
 
-    console.log("📘 plan:", plan);
-
-    if (planError) {
-      console.error("❌ planError:", planError);
-      return NextResponse.json({ error: planError.message }, { status: 500 });
-    }
-
-    if (!plan) {
-      return NextResponse.json({ error: "Plan inexistente." }, { status: 404 });
+    if (planError || !plan) {
+      return NextResponse.json(
+        { error: "No se encontró el plan solicitado." },
+        { status: 404 }
+      );
     }
 
     const hoy = new Date();
@@ -42,7 +41,7 @@ export async function POST(request: Request) {
       .toISOString()
       .slice(0, 10);
 
-    // 🔹 Desactivar planes anteriores
+    // 🧩 Desactivar planes previos
     const { error: deactivateErr } = await supabase
       .from("empresas_planes")
       .update({ activo: false })
@@ -50,15 +49,15 @@ export async function POST(request: Request) {
       .eq("activo", true);
 
     if (deactivateErr) {
-      console.error("❌ deactivateErr:", deactivateErr);
+      console.error("❌ Error al desactivar plan previo:", deactivateErr);
       return NextResponse.json(
-        { error: "Fallo al desactivar planes previos.", details: deactivateErr },
+        { error: "No se pudo desactivar el plan anterior." },
         { status: 500 }
       );
     }
 
-    // 🔹 Insertar nuevo plan
-    const { data: insertData, error: insertErr } = await supabase
+    // ✅ Insertar nuevo plan activo
+    const { data: nuevoPlan, error: insertErr } = await supabase
       .from("empresas_planes")
       .insert([
         {
@@ -73,17 +72,15 @@ export async function POST(request: Request) {
       .maybeSingle();
 
     if (insertErr) {
-      console.error("❌ insertErr:", insertErr);
+      console.error("❌ Error al insertar nuevo plan:", insertErr);
       return NextResponse.json(
-        { error: "Fallo al insertar nuevo plan.", details: insertErr },
+        { error: "No se pudo activar el nuevo plan." },
         { status: 500 }
       );
     }
 
-    console.log("✅ Nuevo plan insertado:", insertData);
-
-    // 🔹 Log histórico (no crítico)
-    const { error: solicitudErr } = await supabase.from("solicitudes_upgrade").insert([
+    // 🪵 Registrar solicitud (opcional, para histórico)
+    await supabase.from("solicitudes_upgrade").insert([
       {
         empresa_id: empresaId,
         plan_id: planId,
@@ -94,17 +91,16 @@ export async function POST(request: Request) {
       },
     ]);
 
-    if (solicitudErr) {
-      console.warn("⚠️ solicitudErr:", solicitudErr);
-    }
-
     return NextResponse.json({
       success: true,
       message: `✅ Plan "${plan.nombre}" activado correctamente.`,
-      data: insertData,
+      data: nuevoPlan,
     });
   } catch (err) {
     console.error("💥 Error general en route:", err);
-    return NextResponse.json({ error: "Error interno del servidor.", err }, { status: 500 });
+    return NextResponse.json(
+      { error: "Error interno del servidor.", details: err },
+      { status: 500 }
+    );
   }
 }

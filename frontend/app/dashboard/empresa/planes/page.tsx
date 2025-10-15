@@ -26,83 +26,86 @@ export default function EmpresaPlanesPage() {
   const [mensaje, setMensaje] = useState<string | null>(null);
 
   // 📡 Cargar plan actual y planes disponibles
-    useEffect(() => {
+  useEffect(() => {
     const fetchPlanes = async () => {
       if (!user?.id) return;
-
       setLoading(true);
 
-      // 🔍 Obtener el plan activo de la empresa
-      const { data: empresaPlan, error: errorEmpresaPlan } = await supabase
-        .from("empresas_planes")
-        .select(`
-          plan_id,
-          fecha_inicio,
-          fecha_fin,
-          activo,
-          planes:plan_id (nombre, max_asesores)
-        `)
-        .eq("empresa_id", user.id)
-        .eq("activo", true)
-        .maybeSingle();
+      try {
+        // 🔍 Obtener el plan activo de la empresa
+        const { data: empresaPlan, error: errorEmpresaPlan } = await supabase
+          .from("empresas_planes")
+          .select(`
+            plan_id,
+            fecha_inicio,
+            fecha_fin,
+            activo,
+            planes:plan_id (nombre, max_asesores)
+          `)
+          .eq("empresa_id", user.id)
+          .eq("activo", true)
+          .maybeSingle();
 
-      if (errorEmpresaPlan) {
-        console.error("Error obteniendo plan actual:", errorEmpresaPlan);
-      } else if (empresaPlan) {
-        // 👇 Corregido: manejar tanto objeto como array
-        const planDataRaw = empresaPlan.planes;
-        const planData = Array.isArray(planDataRaw)
-          ? planDataRaw[0]
-          : planDataRaw;
+        if (errorEmpresaPlan) {
+          console.error("Error obteniendo plan actual:", errorEmpresaPlan);
+        } else if (empresaPlan) {
+          const planDataRaw = empresaPlan.planes;
+          const planData = Array.isArray(planDataRaw)
+            ? planDataRaw[0]
+            : planDataRaw;
 
-        setPlanActual({
-          plan_nombre: planData?.nombre || "Sin plan",
-          fecha_inicio: empresaPlan.fecha_inicio,
-          fecha_fin: empresaPlan.fecha_fin,
-          activo: empresaPlan.activo,
-          max_asesores: planData?.max_asesores || 0,
-        });
+          setPlanActual({
+            plan_nombre: planData?.nombre || "Sin plan",
+            fecha_inicio: empresaPlan.fecha_inicio,
+            fecha_fin: empresaPlan.fecha_fin,
+            activo: empresaPlan.activo,
+            max_asesores: planData?.max_asesores || 0,
+          });
+        }
+
+        // 🔍 Obtener todos los planes disponibles
+        const { data: planes, error: errorPlanes } = await supabase
+          .from("planes")
+          .select("id, nombre, max_asesores")
+          .order("max_asesores", { ascending: true });
+
+        if (!errorPlanes && planes) setPlanesDisponibles(planes);
+      } catch (err) {
+        console.error("Error cargando planes:", err);
+      } finally {
+        setLoading(false);
       }
-
-      // 🔍 Obtener todos los planes disponibles
-      const { data: planes, error: errorPlanes } = await supabase
-        .from("planes")
-        .select("id, nombre, max_asesores")
-        .order("max_asesores", { ascending: true });
-
-      if (!errorPlanes && planes) setPlanesDisponibles(planes);
-
-      setLoading(false);
     };
 
     fetchPlanes();
   }, [user]);
 
-
-  // 🚀 Enviar solicitud real al endpoint /api/solicitud-upgrade
+  // 🚀 Cambiar plan (Upgrade / Downgrade instantáneo)
   const handleUpgrade = async (planId: string) => {
     if (!user?.id) return;
 
-    setMensaje("Enviando solicitud de cambio de plan...");
+    setMensaje("Aplicando nuevo plan...");
 
     try {
       const res = await fetch("/api/solicitud-upgrade", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          empresaId: user.id,
-          planId,
-        }),
+        body: JSON.stringify({ empresaId: user.id, planId }),
       });
 
       const data = await res.json();
 
-      if (data.error) {
-        console.error("Error desde API:", data.error);
-        setMensaje("❌ Error al enviar la solicitud. Intenta nuevamente.");
-      } else {
-        setMensaje("✅ Solicitud enviada. Un administrador la revisará.");
+      if (!res.ok || data.error) {
+        console.error("Error desde API:", data.error || data);
+        setMensaje("❌ No se pudo cambiar el plan. Intenta nuevamente.");
+        return;
       }
+
+      setMensaje(`✅ ${data.message}`);
+      // 🔄 Recargar los datos de planes
+      setTimeout(() => {
+        window.location.reload();
+      }, 1200);
     } catch (err) {
       console.error("Error de red:", err);
       setMensaje("❌ No se pudo conectar al servidor.");
@@ -181,7 +184,7 @@ export default function EmpresaPlanesPage() {
             >
               {plan.nombre === planActual?.plan_nombre
                 ? "Plan actual"
-                : "Solicitar Upgrade"}
+                : "Cambiar a este plan"}
             </button>
           </div>
         ))}

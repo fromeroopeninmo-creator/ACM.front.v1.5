@@ -26,7 +26,7 @@ export default function EmpresaCuentaPage() {
 
   const { data: formData, mutate, isLoading } = useSWR(
     user ? ["empresa", user.id] : null,
-    () => fetchEmpresa(user.id)
+    () => fetchEmpresa(user!.id)
   );
 
   const [message, setMessage] = useState<string | null>(null);

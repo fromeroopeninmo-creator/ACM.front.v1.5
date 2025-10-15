@@ -112,7 +112,8 @@ export default function EmpresaCuentaPage() {
 
       if (dbError) throw dbError;
 
-      mutate({ ...formData, logo_url: publicUrl }, false);
+      mutate({ ...(formData as any), logo_url: publicUrl } as typeof formData, false);
+
       setMessage("✅ Logo actualizado correctamente.");
     } catch (err) {
       console.error("Error subiendo logo:", err);

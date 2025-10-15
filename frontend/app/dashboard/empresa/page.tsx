@@ -37,18 +37,19 @@ export default function EmpresaDashboardPage() {
     if (!user) return;
 
     const channel = supabase
-      .channel("empresa-updates")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "empresas" },
-        (payload: any) => {
-          const newData = payload.new as Record<string, any> | null;
-          if (newData && newData.user_id === user.id) {
-            mutate(newData, false); // 🔁 actualiza cache sin revalidar todo
-          }
-        }
-      )
-      .subscribe();
+  .channel("empresa-updates")
+  .on(
+    "postgres_changes",
+    { event: "*", schema: "public", table: "empresas" },
+    (payload: any) => {
+      const newData = payload.new as Record<string, any> | null;
+      if (newData && newData.user_id === user?.id) {
+        mutate(newData as any, false); // ✅ fix tipado SWR
+      }
+    }
+  )
+  .subscribe();
+
 
     return () => {
       supabase.removeChannel(channel);

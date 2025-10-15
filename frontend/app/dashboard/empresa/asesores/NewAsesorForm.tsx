@@ -31,6 +31,7 @@ export default function NewAsesorForm({ empresaId, onCreated }: Props) {
     Pro: 10,
     Premium: 20,
     Personalizado: 50,
+    Desarrollo: 50,
   };
 
   // 🧠 Resolver empresa_id automáticamente si no vino por props

@@ -167,17 +167,18 @@ export default function EmpresaDashboardPage() {
           </ul>
         </div>
 
-        {/* 🖼️ Nombre + Logo centrados visualmente */}
-        <div className="flex flex-col items-center md:items-center text-center md:text-center flex-shrink-0 md:w-64 mx-auto">
-          <h3 className="text-xl font-bold text-gray-800 mb-3">
-            {inmobiliaria}
-          </h3>
-          <img
-            src={logoUrl}
-            alt="Logo de la empresa"
-            className="w-40 h-40 object-contain border rounded-xl shadow-sm"
-          />
-        </div>
+        {/* 🖼️ Nombre + Logo equilibrados */}
+<div className="flex flex-col items-center md:items-start text-center md:text-left flex-shrink-0 md:w-64 md:ml-20 lg:ml-28">
+  <h3 className="text-2xl font-bold text-gray-800 mb-3 whitespace-nowrap truncate">
+    {inmobiliaria}
+  </h3>
+  <img
+    src={logoUrl}
+    alt="Logo de la empresa"
+    className="w-40 h-40 object-contain border rounded-xl shadow-sm mx-auto md:mx-0"
+  />
+</div>
+
       </section>
     </div>
   );

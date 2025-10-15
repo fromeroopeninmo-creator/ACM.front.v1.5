@@ -58,7 +58,7 @@ export default function EmpresaCuentaPage() {
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     mutate(
-      { ...(formData as any), [e.target.name]: e.target.value } as typeof formData,
+      { ...(formData as Record<string, any>), [e.target.name]: e.target.value } as typeof formData,
       false
     );
   };
@@ -77,7 +77,7 @@ export default function EmpresaCuentaPage() {
 
       if (error) throw error;
 
-      setPrimaryColor(formData.color);
+      setPrimaryColor((formData as Record<string, any>).color);
       setMessage("✅ Datos actualizados correctamente.");
     } catch (err) {
       console.error("Error al guardar:", err);
@@ -114,7 +114,7 @@ export default function EmpresaCuentaPage() {
 
       if (dbError) throw dbError;
 
-      mutate({ ...(formData as any), logo_url: publicUrl } as typeof formData, false);
+      mutate({ ...(formData as Record<string, any>), logo_url: publicUrl } as typeof formData, false);
       setMessage("✅ Logo actualizado correctamente.");
     } catch (err) {
       console.error("Error subiendo logo:", err);
@@ -211,7 +211,7 @@ export default function EmpresaCuentaPage() {
               <input
                 type="text"
                 name={key}
-                value={formData?.[key] || ""}
+                value={(formData as Record<string, any>)[key] || ""}
                 onChange={handleChange}
                 className="mt-1 w-full border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-sky-400"
               />
@@ -222,7 +222,7 @@ export default function EmpresaCuentaPage() {
             <label className="block text-sm font-medium text-gray-700">Provincia</label>
             <select
               name="provincia"
-              value={formData.provincia}
+              value={(formData as Record<string, any>).provincia || ""}
               onChange={handleChange}
               className="mt-1 w-full border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-sky-400"
             >
@@ -266,7 +266,7 @@ export default function EmpresaCuentaPage() {
             </label>
             <select
               name="condicion_fiscal"
-              value={formData.condicion_fiscal}
+              value={(formData as Record<string, any>).condicion_fiscal || ""}
               onChange={handleChange}
               className="mt-1 w-full border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-sky-400"
             >
@@ -285,7 +285,7 @@ export default function EmpresaCuentaPage() {
             <input
               type="color"
               name="color"
-              value={formData.color}
+              value={(formData as Record<string, any>).color}
               onChange={handleChange}
               className="w-20 h-10 border rounded cursor-pointer"
             />
@@ -295,9 +295,9 @@ export default function EmpresaCuentaPage() {
             <label className="block text-sm font-medium text-gray-700">
               Logo de la empresa
             </label>
-            {formData.logo_url ? (
+            {(formData as Record<string, any>).logo_url ? (
               <img
-                src={formData.logo_url}
+                src={(formData as Record<string, any>).logo_url}
                 alt="Logo actual"
                 className="h-16 object-contain border rounded"
               />

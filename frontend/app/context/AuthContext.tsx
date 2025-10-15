@@ -38,6 +38,39 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const loadUserProfile = async (supabaseUser: any): Promise<Profile | null> => {
     if (!supabaseUser) return null;
 
+    // 🧩 1️⃣ Intentar obtener datos desde EMPRESAS (usuarios empresa)
+    const { data: empresaData, error: empresaError } = await supabase
+      .from("empresas")
+      .select(
+        `
+        id,
+        nombre_comercial,
+        razon_social,
+        matriculado,
+        cpi,
+        telefono,
+        logo_url,
+        color,
+        user_id
+      `
+      )
+      .eq("user_id", supabaseUser.id)
+      .maybeSingle();
+
+    if (empresaData) {
+      return {
+        id: supabaseUser.id,
+        email: supabaseUser.email,
+        nombre: empresaData.nombre_comercial,
+        matriculado_nombre: empresaData.matriculado,
+        cpi: empresaData.cpi,
+        inmobiliaria: empresaData.nombre_comercial,
+        role: "empresa",
+        empresa_id: empresaData.id,
+      };
+    }
+
+    // 🧩 2️⃣ Si no hay empresa asociada, intentar obtener perfil tradicional (asesores o admins)
     const { data: profile, error } = await supabase
       .from("profiles")
       .select(
@@ -54,26 +87,29 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       `
       )
       .eq("id", supabaseUser.id)
-      .single();
+      .maybeSingle();
 
-    if (error) {
-      console.warn("⚠️ No se encontró perfil, usando metadata:", error.message);
+    if (error && error.code !== "PGRST116") {
+      console.warn("⚠️ Error al buscar perfil:", error.message);
     }
 
-    // Fallback: si no existe el perfil en la tabla, usar metadata del usuario
-    return (
-      profile || {
-        id: supabaseUser.id,
-        email: supabaseUser.email,
-        nombre: supabaseUser.user_metadata?.nombre,
-        apellido: supabaseUser.user_metadata?.apellido,
-        matriculado_nombre: supabaseUser.user_metadata?.matriculado_nombre,
-        cpi: supabaseUser.user_metadata?.cpi,
-        inmobiliaria: supabaseUser.user_metadata?.inmobiliaria,
-        role: "empresa",
-        empresa_id: null,
-      }
-    );
+    // 🧩 3️⃣ Si hay perfil en la tabla profiles, retornarlo
+    if (profile) return profile;
+
+    // 🧩 4️⃣ Fallback final: usar metadata del usuario (caso de admins o soporte)
+    return {
+      id: supabaseUser.id,
+      email: supabaseUser.email,
+      nombre: supabaseUser.user_metadata?.nombre,
+      apellido: supabaseUser.user_metadata?.apellido,
+      matriculado_nombre: supabaseUser.user_metadata?.matriculado_nombre,
+      cpi: supabaseUser.user_metadata?.cpi,
+      inmobiliaria: supabaseUser.user_metadata?.inmobiliaria,
+      role:
+        supabaseUser.user_metadata?.role ||
+        "empresa", // por defecto empresa si no se define
+      empresa_id: null,
+    };
   };
 
   useEffect(() => {

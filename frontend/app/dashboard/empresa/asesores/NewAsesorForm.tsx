@@ -31,7 +31,7 @@ export default function NewAsesorForm({ empresaId, onCreated }: Props) {
     Pro: 10,
     Premium: 20,
     Personalizado: 50,
-    Desarrollo: 50,
+    Desarrollo: 50, // ✅ agregado para tu plan actual
   };
 
   // 🧠 Resolver empresa_id automáticamente si no vino por props
@@ -116,38 +116,57 @@ export default function NewAsesorForm({ empresaId, onCreated }: Props) {
     }
 
     if (planLimite !== null && asesoresActivos >= planLimite) {
-      setError(
-        `Tu plan (${planNombre}) permite un máximo de ${planLimite} asesores activos.`
-      );
+      setError(`Tu plan (${planNombre}) permite un máximo de ${planLimite} asesores activos.`);
       return;
     }
 
     setLoading(true);
     setError(null);
 
-    const { error } = await supabase.from("asesores").insert([
-      {
-        empresa_id: resolvedEmpresaId,
-        nombre,
-        apellido,
-        email,
-        telefono,
-        activo: true,
-        fecha_creacion: new Date().toISOString(),
-      },
-    ]);
+    try {
+      // ⚙️ Verificamos plan activo antes del insert (control lógico en cliente)
+      const { data: empresaPlan } = await supabase
+        .from("empresas_planes")
+        .select("activo, fecha_fin")
+        .eq("empresa_id", resolvedEmpresaId)
+        .eq("activo", true)
+        .maybeSingle();
 
-    setLoading(false);
+      if (!empresaPlan || new Date(empresaPlan.fecha_fin) < new Date()) {
+        setError("Tu plan ha expirado o no está activo.");
+        setLoading(false);
+        return;
+      }
 
-    if (error) {
-      console.error("Error al crear asesor:", error);
-      setError("No se pudo crear el asesor.");
-    } else {
-      setNombre("");
-      setApellido("");
-      setEmail("");
-      setTelefono("");
-      onCreated();
+      // ✅ Inserción del nuevo asesor
+      const { error } = await supabase.from("asesores").insert([
+        {
+          empresa_id: resolvedEmpresaId,
+          nombre,
+          apellido,
+          email,
+          telefono,
+          activo: true,
+          fecha_creacion: new Date().toISOString(),
+        },
+      ]);
+
+      setLoading(false);
+
+      if (error) {
+        console.error("Error al crear asesor:", error);
+        setError("No se pudo crear el asesor. Verificá tu plan o permisos.");
+      } else {
+        setNombre("");
+        setApellido("");
+        setEmail("");
+        setTelefono("");
+        onCreated();
+      }
+    } catch (err) {
+      console.error("Excepción al crear asesor:", err);
+      setError("Ocurrió un error inesperado.");
+      setLoading(false);
     }
   };
 

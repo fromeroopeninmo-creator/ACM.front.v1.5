@@ -123,6 +123,13 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     };
   }, [user]);
 
+  // 🟢 5️⃣ Aplicar dinámicamente el color global al DOM (asegura header/sidebar/botones)
+  useEffect(() => {
+    if (primaryColor) {
+      document.documentElement.style.setProperty("--primary-color", primaryColor);
+    }
+  }, [primaryColor]);
+
   // 4️⃣ No renderizamos nada hasta que esté hidratado (evita el “flash azul”)
   if (!hydrated) {
     return (

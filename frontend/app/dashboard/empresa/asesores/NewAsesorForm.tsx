@@ -19,14 +19,15 @@ export default function NewAsesorForm({ empresaId, onCreated }: Props) {
   const [apellido, setApellido] = useState("");
   const [email, setEmail] = useState("");
   const [telefono, setTelefono] = useState("");
-  const [password, setPassword] = useState(""); // ✅ nueva contraseña
-  const [showPassword, setShowPassword] = useState(false); // ✅ toggle ver/ocultar
+  const [password, setPassword] = useState(""); // ✅ contraseña del asesor
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [planNombre, setPlanNombre] = useState<string | null>(null);
   const [planLimite, setPlanLimite] = useState<number | null>(null);
   const [asesoresActivos, setAsesoresActivos] = useState<number>(0);
 
+  // 📦 Límites por plan
   const limitesPlanes: Record<string, number> = {
     Trial: 0,
     Prueba: 0,
@@ -37,6 +38,7 @@ export default function NewAsesorForm({ empresaId, onCreated }: Props) {
     Desarrollo: 50,
   };
 
+  // 🔍 Resolver empresa_id automáticamente si no se pasó como prop
   useEffect(() => {
     const fetchEmpresaId = async () => {
       if (resolvedEmpresaId || !user) return;
@@ -59,6 +61,7 @@ export default function NewAsesorForm({ empresaId, onCreated }: Props) {
     fetchEmpresaId();
   }, [user, resolvedEmpresaId]);
 
+  // 🔍 Cargar plan activo y cantidad de asesores
   useEffect(() => {
     const fetchPlan = async () => {
       if (!resolvedEmpresaId) return;
@@ -103,6 +106,7 @@ export default function NewAsesorForm({ empresaId, onCreated }: Props) {
     fetchPlan();
   }, [resolvedEmpresaId]);
 
+  // 🧩 Enviar datos al backend seguro
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -127,79 +131,41 @@ export default function NewAsesorForm({ empresaId, onCreated }: Props) {
     setError(null);
 
     try {
-      const { data: empresaPlan } = await supabase
-        .from("empresas_planes")
-        .select("activo, fecha_fin")
-        .eq("empresa_id", resolvedEmpresaId)
-        .eq("activo", true)
-        .maybeSingle();
-
-      if (!empresaPlan || new Date(empresaPlan.fecha_fin) < new Date()) {
-        setError("Tu plan ha expirado o no está activo.");
-        setLoading(false);
-        return;
-      }
-
-      // ✅ 1️⃣ Crear usuario auth
-      const { data: newUser, error: signUpError } =
-        await supabase.auth.admin.createUser({
-          email,
-          password,
-          email_confirm: true,
-          user_metadata: {
-            nombre,
-            apellido,
-            empresa_id: resolvedEmpresaId,
-            role: "asesor",
-          },
-        });
-
-      if (signUpError) {
-        console.error("Error creando usuario auth:", signUpError);
-        setError("No se pudo crear el usuario del asesor.");
-        setLoading(false);
-        return;
-      }
-
-      // ✅ 2️⃣ Insertar registro en tabla asesores
-      const { error: insertError } = await supabase.from("asesores").insert([
-        {
-          id_usuario: newUser.user.id,
-          empresa_id: resolvedEmpresaId,
+      // 🚀 Enviar al endpoint backend seguro
+      const res = await fetch("/api/crear-asesor", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          empresaId: resolvedEmpresaId,
           nombre,
           apellido,
           email,
           telefono,
-          activo: true,
-          fecha_creacion: new Date().toISOString(),
-        },
-      ]);
+          password,
+        }),
+      });
 
-      if (insertError) {
-        console.error("Error insertando asesor:", insertError);
-        setError("No se pudo registrar el asesor en la base de datos.");
-      } else {
-        setNombre("");
-        setApellido("");
-        setEmail("");
-        setTelefono("");
-        setPassword("");
-        onCreated();
-      }
-    } catch (err) {
-      console.error("Excepción al crear asesor:", err);
-      setError("Ocurrió un error inesperado.");
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "No se pudo crear el asesor.");
+
+      // 🔄 Reset form y recargar lista
+      setNombre("");
+      setApellido("");
+      setEmail("");
+      setTelefono("");
+      setPassword("");
+      onCreated();
+    } catch (err: any) {
+      console.error("Error al crear asesor:", err);
+      setError(err.message || "Error desconocido al crear asesor.");
+    } finally {
+      setLoading(false);
     }
-
-    setLoading(false);
   };
 
+  // 💡 Fallback visual
   if (!resolvedEmpresaId) {
-    return (
-      <p className="text-gray-500 text-sm">
-        Cargando datos de la empresa...
-      </p>
-    );
+    return <p className="text-gray-500 text-sm">Cargando datos de la empresa...</p>;
   }
 
   return (
@@ -251,14 +217,14 @@ export default function NewAsesorForm({ empresaId, onCreated }: Props) {
           className="border p-2 rounded"
         />
 
-        {/* ✅ Nuevo campo contraseña */}
+        {/* ✅ Campo de contraseña visible/oculto */}
         <div className="col-span-2 relative">
           <input
             type={showPassword ? "text" : "password"}
             placeholder="Contraseña *"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="border p-2 rounded w-full pr-10"
+            className="border p-2 rounded w-full pr-20"
           />
           <button
             type="button"

@@ -32,7 +32,6 @@ export default function EmpresaPlanesPage() {
       setLoading(true);
 
       try {
-        // 🔍 Obtener el plan activo de la empresa
         const { data: empresaPlan, error: errorEmpresaPlan } = await supabase
           .from("empresas_planes")
           .select(`
@@ -63,10 +62,10 @@ export default function EmpresaPlanesPage() {
           });
         }
 
-        // 🔍 Obtener todos los planes disponibles
         const { data: planes, error: errorPlanes } = await supabase
           .from("planes")
           .select("id, nombre, max_asesores")
+          .neq("nombre", "Trial") // 🚫 Oculta el plan Trial
           .order("max_asesores", { ascending: true });
 
         if (!errorPlanes && planes) setPlanesDisponibles(planes);
@@ -102,10 +101,7 @@ export default function EmpresaPlanesPage() {
       }
 
       setMensaje(`✅ ${data.message}`);
-      // 🔄 Recargar los datos de planes
-      setTimeout(() => {
-        window.location.reload();
-      }, 1200);
+      setTimeout(() => window.location.reload(), 1200);
     } catch (err) {
       console.error("Error de red:", err);
       setMensaje("❌ No se pudo conectar al servidor.");
@@ -121,6 +117,8 @@ export default function EmpresaPlanesPage() {
       </div>
     );
   }
+
+  const esTrial = planActual?.plan_nombre === "Trial";
 
   return (
     <div className="p-6">
@@ -152,6 +150,15 @@ export default function EmpresaPlanesPage() {
           >
             {planActual.activo ? "Activo" : "Inactivo"}
           </span>
+
+          {/* Mensaje especial para plan Trial */}
+          {esTrial && (
+            <p className="mt-4 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3">
+              🔸 Estás usando el plan <strong>Trial</strong> (prueba gratuita de
+              7 días). No podés agregar asesores con este plan.  
+              Realizá un <strong>upgrade</strong> para habilitar tus asesores.
+            </p>
+          )}
         </div>
       ) : (
         <p className="text-gray-500 mb-6">No se encontró un plan activo.</p>

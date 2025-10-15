@@ -5,37 +5,36 @@ import { useTheme } from "@/context/ThemeContext";
 import Link from "next/link";
 import PlanStatusBanner from "./components/PlanStatusBanner";
 import { supabase } from "#lib/supabaseClient";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
+import useSWR from "swr";
+
+const fetchEmpresa = async (userId: string) => {
+  const { data, error } = await supabase
+    .from("empresas")
+    .select(
+      "nombre_comercial, razon_social, condicion_fiscal, matriculado, cpi, telefono, logo_url"
+    )
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data;
+};
 
 export default function EmpresaDashboardPage() {
   const { user } = useAuth();
   const { primaryColor } = useTheme();
-  const [empresa, setEmpresa] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
 
+  const {
+    data: empresa,
+    error,
+    isLoading,
+    mutate,
+  } = useSWR(user ? ["empresa", user.id] : null, () => fetchEmpresa(user.id));
+
+  // 🧭 Realtime updates (sin recargar toda la app)
   useEffect(() => {
-    const fetchEmpresa = async () => {
-      if (!user) return;
-
-      try {
-        const { data, error } = await supabase
-          .from("empresas")
-          .select(
-            "nombre_comercial, razon_social, condicion_fiscal, matriculado, cpi, telefono, logo_url"
-          )
-          .eq("user_id", user.id)
-          .maybeSingle();
-
-        if (error) throw error;
-        setEmpresa(data || null);
-      } catch (err) {
-        console.error("Error al obtener datos de empresa:", err);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchEmpresa();
+    if (!user) return;
 
     const channel = supabase
       .channel("empresa-updates")
@@ -44,8 +43,8 @@ export default function EmpresaDashboardPage() {
         { event: "*", schema: "public", table: "empresas" },
         (payload: any) => {
           const newData = payload.new as Record<string, any> | null;
-          if (newData && newData.user_id === user?.id) {
-            setEmpresa(newData);
+          if (newData && newData.user_id === user.id) {
+            mutate(newData, false); // 🔁 actualiza cache sin revalidar todo
           }
         }
       )
@@ -54,7 +53,7 @@ export default function EmpresaDashboardPage() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [user]);
+  }, [user, mutate]);
 
   const meta = (user as any)?.user_metadata || user || {};
   const nombre = meta.nombre || "Usuario";
@@ -74,10 +73,17 @@ export default function EmpresaDashboardPage() {
       ? empresa.logo_url
       : "/images/default-logo.png";
 
-  if (loading)
+  if (isLoading)
     return (
       <div className="p-6 text-center text-gray-500">
         Cargando datos de la empresa...
+      </div>
+    );
+
+  if (error)
+    return (
+      <div className="p-6 text-center text-red-500">
+        Error al cargar datos de la empresa.
       </div>
     );
 
@@ -133,13 +139,12 @@ export default function EmpresaDashboardPage() {
         </div>
       </section>
 
-      {/* 🧾 Info básica con logo y nombre centrado */}
+      {/* 🧾 Info básica con nombre arriba y logo debajo */}
       <section className="bg-white shadow-sm rounded-xl p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
         {/* 📋 Datos */}
         <div className="flex-1">
           <h2 className="text-xl font-semibold mb-4">Datos de la Empresa</h2>
           <ul className="space-y-2 text-gray-700">
-            {/* 🔸 Se quitó “Inmobiliaria” del listado */}
             <li>
               <strong>Razón Social:</strong> {razonSocial}
             </li>
@@ -161,14 +166,16 @@ export default function EmpresaDashboardPage() {
           </ul>
         </div>
 
-        {/* 🖼️ Logo + Nombre */}
-        <div className="flex flex-col items-center md:items-start text-center md:text-left flex-shrink-0 md:w-64 ml-8">
+        {/* 🖼️ Nombre + Logo centrados visualmente */}
+        <div className="flex flex-col items-center md:items-center text-center md:text-center flex-shrink-0 md:w-64 mx-auto">
+          <h3 className="text-xl font-bold text-gray-800 mb-3">
+            {inmobiliaria}
+          </h3>
           <img
             src={logoUrl}
             alt="Logo de la empresa"
-            className="w-40 h-40 object-contain border rounded-xl shadow-sm mb-3"
+            className="w-40 h-40 object-contain border rounded-xl shadow-sm"
           />
-          <h3 className="text-xl font-bold text-gray-800">{inmobiliaria}</h3>
         </div>
       </section>
     </div>

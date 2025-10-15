@@ -1,61 +1,68 @@
 "use client";
 
+import useSWR from "swr";
 import { useAuth } from "@/context/AuthContext";
 import { useTheme } from "@/context/ThemeContext";
 import Link from "next/link";
 import PlanStatusBanner from "./components/PlanStatusBanner";
 import { supabase } from "#lib/supabaseClient";
 import { useEffect } from "react";
-import useSWR from "swr";
-
-const fetchEmpresa = async (userId: string) => {
-  const { data, error } = await supabase
-    .from("empresas")
-    .select(
-      "nombre_comercial, razon_social, condicion_fiscal, matriculado, cpi, telefono, logo_url"
-    )
-    .eq("user_id", userId)
-    .maybeSingle();
-
-  if (error) throw error;
-  return data;
-};
 
 export default function EmpresaDashboardPage() {
   const { user } = useAuth();
   const { primaryColor } = useTheme();
 
+  // 🔹 Función para obtener datos de empresa
+  const fetchEmpresa = async (userId: string) => {
+    const { data, error } = await supabase
+      .from("empresas")
+      .select(
+        "nombre_comercial, razon_social, condicion_fiscal, matriculado, cpi, telefono, logo_url"
+      )
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    if (error) throw error;
+    return data;
+  };
+
+  // 🔹 SWR: carga reactiva con cache y revalidación automática
   const {
     data: empresa,
-    error,
     isLoading,
     mutate,
   } = useSWR(user ? ["empresa", user.id] : null, () => fetchEmpresa(user!.id));
 
-  // 🧭 Realtime updates (sin recargar toda la app)
+  // 🧭 Escucha en tiempo real para actualizar sin recargar
   useEffect(() => {
     if (!user) return;
-
     const channel = supabase
-  .channel("empresa-updates")
-  .on(
-    "postgres_changes",
-    { event: "*", schema: "public", table: "empresas" },
-    (payload: any) => {
-      const newData = payload.new as Record<string, any> | null;
-      if (newData && newData.user_id === user?.id) {
-        mutate(newData as any, false); // ✅ fix tipado SWR
-      }
-    }
-  )
-  .subscribe();
-
+      .channel("empresa-updates")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "empresas" },
+        (payload: any) => {
+          const newData = payload.new as Record<string, any> | null;
+          if (newData && newData.user_id === user.id) {
+            mutate(newData as any, false); // ✅ Fix tipado SWR
+          }
+        }
+      )
+      .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
     };
   }, [user, mutate]);
 
+  if (isLoading)
+    return (
+      <div className="p-6 text-center text-gray-500">
+        Cargando datos de la empresa...
+      </div>
+    );
+
+  // 🔒 Fallbacks de datos
   const meta = (user as any)?.user_metadata || user || {};
   const nombre = meta.nombre || "Usuario";
   const inmobiliaria =
@@ -74,23 +81,9 @@ export default function EmpresaDashboardPage() {
       ? empresa.logo_url
       : "/images/default-logo.png";
 
-  if (isLoading)
-    return (
-      <div className="p-6 text-center text-gray-500">
-        Cargando datos de la empresa...
-      </div>
-    );
-
-  if (error)
-    return (
-      <div className="p-6 text-center text-red-500">
-        Error al cargar datos de la empresa.
-      </div>
-    );
-
   return (
     <div className="space-y-6">
-      {/* 🧭 Banner de plan */}
+      {/* 🧭 Banner del plan */}
       <PlanStatusBanner />
 
       {/* 🏢 Bienvenida */}
@@ -103,6 +96,7 @@ export default function EmpresaDashboardPage() {
 
         {/* 🔹 Botones principales */}
         <div className="flex justify-between flex-wrap gap-3">
+          {/* 🟦 Valuador (color corporativo) */}
           <Link
             href="/vai/acmforms"
             className="px-5 py-2 text-white font-semibold rounded-lg shadow transition"
@@ -122,6 +116,7 @@ export default function EmpresaDashboardPage() {
             🏠 Valuador de Activos Inmobiliarios
           </Link>
 
+          {/* 🟩 Acciones */}
           <div className="flex gap-3">
             <Link
               href="/dashboard/empresa/asesores"
@@ -140,12 +135,15 @@ export default function EmpresaDashboardPage() {
         </div>
       </section>
 
-      {/* 🧾 Info básica con nombre arriba y logo debajo */}
+      {/* 🧾 Info básica con logo (versión original) */}
       <section className="bg-white shadow-sm rounded-xl p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
         {/* 📋 Datos */}
         <div className="flex-1">
           <h2 className="text-xl font-semibold mb-4">Datos de la Empresa</h2>
           <ul className="space-y-2 text-gray-700">
+            <li>
+              <strong>Inmobiliaria:</strong> {inmobiliaria}
+            </li>
             <li>
               <strong>Razón Social:</strong> {razonSocial}
             </li>
@@ -167,18 +165,14 @@ export default function EmpresaDashboardPage() {
           </ul>
         </div>
 
-        {/* 🖼️ Nombre + Logo equilibrados */}
-<div className="flex flex-col items-center md:items-start text-center md:text-left flex-shrink-0 md:w-64 md:ml-20 lg:ml-28">
-  <h3 className="text-2xl font-bold text-gray-800 mb-3 whitespace-nowrap truncate">
-    {inmobiliaria}
-  </h3>
-  <img
-    src={logoUrl}
-    alt="Logo de la empresa"
-    className="w-40 h-40 object-contain border rounded-xl shadow-sm mx-auto md:mx-0"
-  />
-</div>
-
+        {/* 🖼️ Logo */}
+        <div className="flex-shrink-0 w-full md:w-48 text-center">
+          <img
+            src={logoUrl}
+            alt="Logo de la empresa"
+            className="w-40 h-40 object-contain mx-auto border rounded-xl shadow-sm"
+          />
+        </div>
       </section>
     </div>
   );

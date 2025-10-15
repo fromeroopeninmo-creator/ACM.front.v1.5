@@ -1,33 +1,24 @@
-
-
 "use client";
 
 import { useState } from "react";
-import useSWR from "swr";
+// ❌ ya no necesitamos useSWR local aquí
+// import useSWR from "swr";
 import { supabase } from "#lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
 import { useTheme } from "@/context/ThemeContext";
+// ✅ usamos el hook compartido
+import { useEmpresa } from "@/hooks/useEmpresa";
 
 export default function EmpresaCuentaPage() {
   const { user } = useAuth();
   const { setPrimaryColor } = useTheme();
 
-  const fetchEmpresa = async (userId: string) => {
-    const { data, error } = await supabase
-      .from("empresas")
-      .select(
-        "nombre_comercial, razon_social, cuit, matriculado, cpi, telefono, direccion, localidad, provincia, condicion_fiscal, color, logo_url"
-      )
-      .eq("user_id", userId)
-      .single();
-    if (error) throw error;
-    return data;
-  };
-
-  const { data: formData, mutate, isLoading } = useSWR(
-    user ? ["empresa", user.id] : null,
-    () => fetchEmpresa(user!.id)
-  );
+  // ==========================
+  // Datos de empresa (SWR global)
+  // ==========================
+  // Antes: useSWR(user ? ["empresa", user.id] : null, () => fetchEmpresa(user!.id))
+  // Ahora: usamos el hook centralizado, manteniendo la misma interfaz (formData + mutate)
+  const { empresa: formData, mutate, isLoading } = useEmpresa();
 
   const [message, setMessage] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -56,9 +47,15 @@ export default function EmpresaCuentaPage() {
       </div>
     );
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+  const handleChange = (
+    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
+  ) => {
+    // ✅ seguimos usando actualización optimista con la misma firma que tenías
     mutate(
-      { ...(formData as Record<string, any>), [e.target.name]: e.target.value } as typeof formData,
+      {
+        ...(formData as Record<string, any>),
+        [e.target.name]: e.target.value,
+      } as typeof formData,
       false
     );
   };
@@ -70,14 +67,26 @@ export default function EmpresaCuentaPage() {
     setMessage(null);
 
     try {
+      // 🔒 persistimos en DB
       const { error } = await supabase
         .from("empresas")
-        .update(formData)
-        .eq("user_id", user.id);
+        .update(formData as Record<string, any>)
+        .eq("id", (formData as any).id); // ✅ usamos el id real de la empresa
 
       if (error) throw error;
 
-      setPrimaryColor((formData as Record<string, any>).color);
+      // 🎨 sincronizamos ThemeContext + localStorage con el color actual
+      const newColor = (formData as Record<string, any>).color;
+      if (newColor) {
+        setPrimaryColor(newColor);
+        try {
+          localStorage.setItem("vai_primaryColor", newColor);
+        } catch {}
+      }
+
+      // 🔄 revalidación global: actualiza todos los componentes que usan useEmpresa()
+      await mutate();
+
       setMessage("✅ Datos actualizados correctamente.");
     } catch (err) {
       console.error("Error al guardar:", err);
@@ -94,7 +103,7 @@ export default function EmpresaCuentaPage() {
 
       setUploading(true);
       const fileExt = file.name.split(".").pop();
-      const fileName = `empresa_${user.id}.${fileExt}`;
+      const fileName = `empresa_${(formData as any).id || user.id}.${fileExt}`;
       const filePath = `logos/${fileName}`;
 
       const { error: uploadError } = await supabase.storage
@@ -107,14 +116,31 @@ export default function EmpresaCuentaPage() {
         data: { publicUrl },
       } = supabase.storage.from("logos_empresas").getPublicUrl(filePath);
 
+      // 🔒 guardamos en DB
       const { error: dbError } = await supabase
         .from("empresas")
         .update({ logo_url: publicUrl })
-        .eq("user_id", user.id);
+        .eq("id", (formData as any).id);
 
       if (dbError) throw dbError;
 
-      mutate({ ...(formData as Record<string, any>), logo_url: publicUrl } as typeof formData, false);
+      // ✅ optimista local
+      await mutate(
+        {
+          ...(formData as Record<string, any>),
+          logo_url: publicUrl,
+        } as typeof formData,
+        false
+      );
+
+      // 🧠 sincronizamos localStorage para que ThemeContext pueda leerlo si corresponde
+      try {
+        localStorage.setItem("vai_logoUrl", publicUrl);
+      } catch {}
+
+      // 🔄 revalidación global
+      await mutate();
+
       setMessage("✅ Logo actualizado correctamente.");
     } catch (err) {
       console.error("Error subiendo logo:", err);
@@ -195,6 +221,8 @@ export default function EmpresaCuentaPage() {
       {/* ================= DATOS DE LA EMPRESA ================= */}
       <section>
         <h1 className="text-2xl font-bold mb-6">Datos de la Empresa</h1>
+
+        {/* ✅ mantenemos tu formulario y su onSubmit */}
         <form onSubmit={handleSave} className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {[
             ["nombre_comercial", "Nombre Comercial"],
@@ -261,9 +289,7 @@ export default function EmpresaCuentaPage() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700">
-              Condición Fiscal
-            </label>
+            <label className="block text-sm font-medium text-gray-700">Condición Fiscal</label>
             <select
               name="condicion_fiscal"
               value={(formData as Record<string, any>).condicion_fiscal || ""}
@@ -312,17 +338,20 @@ export default function EmpresaCuentaPage() {
               className="text-sm text-gray-600"
             />
           </div>
+
+          {/* 🔘 Muevo el botón DENTRO del form para asegurar submit semántico
+              (si preferís mantener el layout exacto, podés dejarlo fuera y agregar onClick={handleSave as any}) */}
+          <div className="md:col-span-2 flex justify-center mt-2">
+            <button
+              type="submit"
+              disabled={saving}
+              className="bg-sky-600 text-white font-semibold px-6 py-2 rounded-md hover:bg-sky-700 transition disabled:opacity-50"
+            >
+              {saving ? "Guardando..." : "Guardar cambios"}
+            </button>
+          </div>
         </form>
 
-        <div className="flex justify-center mt-6">
-          <button
-            type="submit"
-            disabled={saving}
-            className="bg-sky-600 text-white font-semibold px-6 py-2 rounded-md hover:bg-sky-700 transition disabled:opacity-50"
-          >
-            {saving ? "Guardando..." : "Guardar cambios"}
-          </button>
-        </div>
         {message && (
           <p
             className={`mt-3 text-center text-sm ${
@@ -380,7 +409,10 @@ export default function EmpresaCuentaPage() {
               type={showPasswords ? "text" : "password"}
               value={passwordForm.currentPassword}
               onChange={(e) =>
-                setPasswordForm({ ...passwordForm, currentPassword: e.target.value })
+                setPasswordForm({
+                  ...passwordForm,
+                  currentPassword: e.target.value,
+                })
               }
               className="mt-1 w-full border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-sky-400"
             />
@@ -394,7 +426,10 @@ export default function EmpresaCuentaPage() {
               type={showPasswords ? "text" : "password"}
               value={passwordForm.newPassword}
               onChange={(e) =>
-                setPasswordForm({ ...passwordForm, newPassword: e.target.value })
+                setPasswordForm({
+                  ...passwordForm,
+                  newPassword: e.target.value,
+                })
               }
               placeholder="Opcional - dejar vacío si no cambia"
               className="mt-1 w-full border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-sky-400"

@@ -30,7 +30,7 @@ export default function EmpresaDashboardPage() {
     error,
     isLoading,
     mutate,
-  } = useSWR(user ? ["empresa", user.id] : null, () => fetchEmpresa(user.id));
+  } = useSWR(user ? ["empresa", user.id] : null, () => fetchEmpresa(user!.id));
 
   // 🧭 Realtime updates (sin recargar toda la app)
   useEffect(() => {

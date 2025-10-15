@@ -31,7 +31,7 @@ export default function AsesoresPage() {
     const { data, error } = await supabase
       .from("asesores")
       .select("*")
-      .eq("empresa_id", user.id)
+      .eq("empresa_id", user.empresa_id ?? user.id)
       .order("fecha_creacion", { ascending: false });
 
     if (error) {
@@ -73,7 +73,10 @@ export default function AsesoresPage() {
 
       {showForm && (
         <div className="mb-8">
-          <NewAsesorForm empresaId={user?.id} onCreated={fetchAsesores} />
+          <NewAsesorForm
+            empresaId={user?.empresa_id ?? user?.id}
+            onCreated={fetchAsesores}
+          />
         </div>
       )}
 

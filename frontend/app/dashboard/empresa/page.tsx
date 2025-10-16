@@ -41,17 +41,24 @@ export default function EmpresaDashboardPage() {
       .channel("empresa-updates")
       .on(
         "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "empresas" },
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "empresas",
+          filter: `user_id=eq.${user.id}`,
+        },
         (payload: any) => {
           const newData = payload.new as Record<string, any> | null;
-          if (newData && newData.user_id === user.id) {
-            mutate(newData as any, false); // ✅ Actualiza datos en SWR
-            // 🔄 Sincroniza color y logo globales
-            if (newData.color) setPrimaryColor(newData.color);
-            if (newData.logo_url) {
-              setLogoUrl(newData.logo_url);
-              localStorage.setItem("vai_logoUrl", newData.logo_url);
-            }
+          if (!newData) return;
+
+          mutate(newData as any, false); // ✅ Actualiza datos SWR
+          if (newData.color) {
+            setPrimaryColor(newData.color);
+            localStorage.setItem("vai_primaryColor", newData.color);
+          }
+          if (newData.logo_url) {
+            setLogoUrl(newData.logo_url);
+            localStorage.setItem("vai_logoUrl", newData.logo_url);
           }
         }
       )
@@ -61,6 +68,20 @@ export default function EmpresaDashboardPage() {
       supabase.removeChannel(channel);
     };
   }, [user, mutate, setPrimaryColor, setLogoUrl]);
+
+  // 🔹 Hook auxiliar: forzar refresco cuando cambia empresa
+  useEffect(() => {
+    if (empresa) {
+      if (empresa.color) {
+        setPrimaryColor(empresa.color);
+        localStorage.setItem("vai_primaryColor", empresa.color);
+      }
+      if (empresa.logo_url) {
+        setLogoUrl(empresa.logo_url);
+        localStorage.setItem("vai_logoUrl", empresa.logo_url);
+      }
+    }
+  }, [empresa, setPrimaryColor, setLogoUrl]);
 
   if (isLoading)
     return (

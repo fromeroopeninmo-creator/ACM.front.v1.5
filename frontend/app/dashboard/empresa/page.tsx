@@ -1,57 +1,63 @@
 "use client";
 
-import useSWR from "swr";
-import { useAuth } from "@/context/AuthContext";
-import { useTheme } from "@/context/ThemeContext";
-import Link from "next/link";
-import PlanStatusBanner from "./components/PlanStatusBanner";
-import { supabase } from "#lib/supabaseClient";
 import { useEffect } from "react";
+import { useTheme } from "@/context/ThemeContext";
+import { useAuth } from "@/context/AuthContext";
+import { useEmpresa } from "@/hooks/useEmpresa";
+import { supabase } from "#lib/supabaseClient";
+import PlanStatusBanner from "./components/PlanStatusBanner";
+import Link from "next/link";
 
 export default function EmpresaDashboardPage() {
   const { user } = useAuth();
+  const { empresa, isLoading, mutate } = useEmpresa();
   const { setPrimaryColor, setLogoUrl, primaryColor } = useTheme();
 
-  // 🔹 Función para obtener datos de empresa
-  const fetchEmpresa = async (userId: string) => {
-    const { data, error } = await supabase
-      .from("empresas")
-      .select(
-        "nombre_comercial, razon_social, condicion_fiscal, matriculado, cpi, telefono, logo_url, color"
-      )
-      .eq("user_id", userId)
-      .maybeSingle();
+  // 🎯 Aplicar color/logo al cargar empresa
+  useEffect(() => {
+    if (!empresa) return;
+    if (empresa.color) {
+      setPrimaryColor(empresa.color);
+      localStorage.setItem("vai_primaryColor", empresa.color);
+    }
+    if (empresa.logo_url) {
+      setLogoUrl(empresa.logo_url);
+      localStorage.setItem("vai_logoUrl", empresa.logo_url);
+    }
+  }, [empresa, setPrimaryColor, setLogoUrl]);
 
-    if (error) throw error;
-    return data;
-  };
-
-  // 🔹 SWR: carga reactiva con cache y revalidación automática
-  const {
-    data: empresa,
-    isLoading,
-    mutate,
-  } = useSWR(user ? ["empresa", user.id] : null, () => fetchEmpresa(user!.id));
-
-  // 🧭 Escucha en tiempo real para actualizar sin recargar
+  // 🔴 Realtime: escuchar updates de la empresa y actualizar el cache central del hook
   useEffect(() => {
     if (!user) return;
+
+    // Filtro: si es empresa → user_id; si es asesor → empresa.id (cuando esté disponible)
+    const filter =
+      (user.role || "empresa") === "empresa" && user.id
+        ? `user_id=eq.${user.id}`
+        : empresa?.id
+        ? `id=eq.${empresa.id}`
+        : null;
+
+    if (!filter) return;
 
     const channel = supabase
       .channel("empresa-updates")
       .on(
         "postgres_changes",
         {
-          event: "UPDATE",
+          event: "*",
           schema: "public",
           table: "empresas",
-          filter: `user_id=eq.${user.id}`,
+          filter,
         },
         (payload: any) => {
-          const newData = payload.new as Record<string, any> | null;
+          const newData = payload.new as typeof empresa | null;
           if (!newData) return;
 
-          mutate(newData as any, false); // ✅ Actualiza datos SWR
+          // Actualizar cache central sin revalidación remota
+          mutate(newData as any, false);
+
+          // Sincronizar tema
           if (newData.color) {
             setPrimaryColor(newData.color);
             localStorage.setItem("vai_primaryColor", newData.color);
@@ -67,21 +73,7 @@ export default function EmpresaDashboardPage() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [user, mutate, setPrimaryColor, setLogoUrl]);
-
-  // 🔹 Hook auxiliar: forzar refresco cuando cambia empresa
-  useEffect(() => {
-    if (empresa) {
-      if (empresa.color) {
-        setPrimaryColor(empresa.color);
-        localStorage.setItem("vai_primaryColor", empresa.color);
-      }
-      if (empresa.logo_url) {
-        setLogoUrl(empresa.logo_url);
-        localStorage.setItem("vai_logoUrl", empresa.logo_url);
-      }
-    }
-  }, [empresa, setPrimaryColor, setLogoUrl]);
+  }, [user, empresa?.id, mutate, setPrimaryColor, setLogoUrl]);
 
   if (isLoading)
     return (
@@ -90,7 +82,6 @@ export default function EmpresaDashboardPage() {
       </div>
     );
 
-  // 🔒 Fallbacks de datos
   const meta = (user as any)?.user_metadata || user || {};
   const nombre = meta.nombre || "Usuario";
   const inmobiliaria =

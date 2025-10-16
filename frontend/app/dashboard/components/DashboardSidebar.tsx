@@ -6,10 +6,9 @@ import { useTheme } from "@/context/ThemeContext";
 
 interface SidebarProps {
   role: string;
-  color?: string;
 }
 
-export default function DashboardSidebar({ role, color }: SidebarProps) {
+export default function DashboardSidebar({ role }: SidebarProps) {
   const pathname = usePathname();
   const { primaryColor } = useTheme();
 
@@ -49,11 +48,11 @@ export default function DashboardSidebar({ role, color }: SidebarProps) {
   const links = menuByRole[role] || menuByRole["empresa"];
 
   // ==============================
-  // 🎨 Color de fondo (heredado)
+  // 🎨 Color de fondo (heredado del ThemeContext)
   // ==============================
   const bgColor =
     role === "asesor" || role === "empresa"
-      ? primaryColor || color || "#004AAD"
+      ? primaryColor || "#004AAD"
       : "#004AAD";
 
   // ==============================

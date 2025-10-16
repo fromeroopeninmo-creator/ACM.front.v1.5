@@ -103,7 +103,7 @@ const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
 
     setUploading(true);
     const fileExt = file.name.split(".").pop();
-    const fileName = `empresa_${user.id}.${fileExt}`; // ✅ nombre consistente por user_id
+    const fileName = `empresa_${user.id}.${fileExt}`;
     const filePath = `logos/${fileName}`;
 
     const { error: uploadError } = await supabase.storage
@@ -116,7 +116,7 @@ const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
       data: { publicUrl },
     } = supabase.storage.from("logos_empresas").getPublicUrl(filePath);
 
-    // 🔒 Guardamos en DB con user_id correcto
+    // 🔒 Guardar en DB usando user_id (empresa)
     const { error: dbError } = await supabase
       .from("empresas")
       .update({ logo_url: publicUrl })
@@ -124,24 +124,24 @@ const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
 
     if (dbError) throw dbError;
 
-    // ✅ Actualizamos inmediatamente el estado local y el ThemeContext
-    await mutate(
-      {
-        ...(formData as Record<string, any>),
-        logo_url: publicUrl,
-      } as typeof formData,
+    // ✅ Actualizar el estado local del formulario inmediatamente
+    mutate(
+      { ...(formData as Record<string, any>), logo_url: publicUrl } as typeof formData,
       false
     );
 
-    // 🧠 Sincronizamos localStorage + contexto (cambio instantáneo en header/sidebar)
+    // ✅ Refrescar el preview visual directamente
+    (formData as any).logo_url = publicUrl; // 🔁 esto fuerza que el <img src={formData.logo_url}> se actualice
+
+    // 🧠 Sincronizar ThemeContext y localStorage
     try {
       localStorage.setItem("vai_logoUrl", publicUrl);
-      setLogoUrl(publicUrl); // ✅ actualización instantánea sin esperar el realtime
+      setLogoUrl(publicUrl);
     } catch (err) {
-      console.warn("No se pudo actualizar localStorage del logo:", err);
+      console.warn("Error actualizando localStorage:", err);
     }
 
-    // 🔄 Revalidación global de SWR
+    // 🔄 Revalidar SWR global para mantener consistencia
     await mutate();
 
     setMessage("✅ Logo actualizado correctamente.");

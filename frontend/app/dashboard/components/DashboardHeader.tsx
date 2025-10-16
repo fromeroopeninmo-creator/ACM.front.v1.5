@@ -49,40 +49,39 @@ export default function DashboardHeader({ user, logout, color }: HeaderProps) {
   // ==============================
   const roleLabel =
     role === "empresa"
-      ? "DASHBOARD EMPRESA"
+      ? "Dashboard Empresa"
       : role === "asesor"
-      ? "DASHBOARD ASESOR"
+      ? "Dashboard Asesor"
       : role === "soporte"
-      ? "DASHBOARD SOPORTE"
+      ? "Dashboard Soporte"
       : role === "super_admin" || role === "super_admin_root"
-      ? "DASHBOARD ADMIN"
-      : "DASHBOARD";
+      ? "Dashboard Admin"
+      : "Dashboard";
 
   // ==============================
   // 🔹 Render principal
   // ==============================
   return (
     <header
-      className="flex items-center justify-between px-8 py-4 shadow-sm relative"
+      className="flex justify-between items-center px-8 py-4 shadow-sm"
       style={{ backgroundColor: primaryColor || color }}
     >
-      {/* IZQUIERDA - LOGO */}
-      <div className="flex items-center gap-3">
+      {/* IZQUIERDA - LOGO + TÍTULO */}
+      <div className="flex items-center gap-4">
         {logoUrl ? (
           <img
             src={logoUrl}
             alt="Logo Empresa"
-            className="h-8 w-auto object-contain rounded-md bg-white/10 p-1"
+            className="h-10 w-auto object-contain rounded-md bg-white/10 p-1"
           />
         ) : (
-          <div className="h-8 w-8 rounded-md bg-white/20" />
+          <div className="h-10 w-10 rounded-md bg-white/20" />
         )}
-      </div>
 
-      {/* CENTRO - TÍTULO */}
-      <h1 className="absolute left-1/2 transform -translate-x-1/2 text-white font-semibold text-lg tracking-wide text-center select-none">
-        {roleLabel}
-      </h1>
+        <h1 className="text-white font-semibold text-lg tracking-wide select-none">
+          {roleLabel}
+        </h1>
+      </div>
 
       {/* DERECHA - BOTÓN SALIR */}
       <div className="flex items-center">

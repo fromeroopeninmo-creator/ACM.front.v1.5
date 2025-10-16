@@ -51,189 +51,207 @@ export default function EmpresaCuentaPage() {
   // =====================================================
   // 💾 GUARDAR DATOS EMPRESA
   // =====================================================
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!user) return;
-    setSaving(true);
-    setMessage(null);
-
-    try {
-      // 🧩 Campos válidos según tabla "empresas"
-      const allowedFields = [
-        "nombre_comercial",
-        "razon_social",
-        "cuit",
-        "matriculado",
-        "cpi",
-        "telefono",
-        "direccion",
-        "localidad",
-        "provincia",
-        "condicion_fiscal",
-        "color",
-        "logo_url",
-      ];
-
-      const cleanData = Object.fromEntries(
-        Object.entries(formData).filter(([key]) =>
-          allowedFields.includes(key)
-        )
-      );
-
-      const { error } = await supabase
-        .from("empresas")
-        .update(cleanData)
-        .eq("user_id", user.id);
-
-      if (error) throw error;
-
-      // 🎨 Color instantáneo
-      if (cleanData.color) {
-        setPrimaryColor(cleanData.color);
-        localStorage.setItem("vai_primaryColor", cleanData.color);
-        window.dispatchEvent(
-          new CustomEvent("themeUpdated", {
-            detail: { color: cleanData.color },
-          })
-        );
-      }
-
-      // 🔄 Revalidar SWR global
-      await mutate();
-      setMessage("✅ Datos actualizados correctamente.");
-    } catch (err) {
-      console.error("Error al guardar:", err);
-      setMessage("❌ Error al guardar los cambios.");
-    } finally {
-      setSaving(false);
-    }
-  };
-
   // =====================================================
-  // 🖼️ SUBIR LOGO EMPRESA
-  // =====================================================
-  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    try {
-      const file = e.target.files?.[0];
-      if (!file || !user) return;
+// 💾 GUARDAR DATOS EMPRESA (100% SEGURO)
+// =====================================================
+const handleSave = async (e: React.FormEvent) => {
+  e.preventDefault();
+  if (!user) return;
+  setSaving(true);
+  setMessage(null);
 
-      setUploading(true);
-      const fileExt = file.name.split(".").pop();
-      const fileName = `empresa_${user.id}.${fileExt}`;
-      const filePath = `logos/${fileName}`;
+  try {
+    // 🧩 Campos válidos según tabla "empresas"
+    const allowedFields = [
+      "nombre_comercial",
+      "razon_social",
+      "cuit",
+      "matriculado",
+      "cpi",
+      "telefono",
+      "direccion",
+      "localidad",
+      "provincia",
+      "condicion_fiscal",
+      "color",
+      "logo_url",
+    ];
 
-      const { error: uploadError } = await supabase.storage
-        .from("logos_empresas")
-        .upload(filePath, file, { upsert: true });
+    // 🧹 Limpiar datos antes del update
+    const cleanData = Object.fromEntries(
+      Object.entries(formData || {}).filter(([key]) =>
+        allowedFields.includes(key)
+      )
+    );
 
-      if (uploadError) throw uploadError;
+    // 🚫 Eliminar cualquier anidado o alias residual
+    delete (cleanData as any).a;
+    delete (cleanData as any).empresa;
+    delete (cleanData as any).id;
+    delete (cleanData as any).user_id;
+    delete (cleanData as any).created_at;
+    delete (cleanData as any).updated_at;
 
-      const {
-        data: { publicUrl },
-      } = supabase.storage.from("logos_empresas").getPublicUrl(filePath);
+    // ✅ Ejecutar update limpio
+    const { error } = await supabase
+      .from("empresas")
+      .update(cleanData)
+      .eq("user_id", user.id);
 
-      // 🗃️ Actualizar DB
-      const { error: dbError } = await supabase
-        .from("empresas")
-        .update({ logo_url: publicUrl })
-        .eq("user_id", user.id);
+    if (error) throw error;
 
-      if (dbError) throw dbError;
-
-      // ✅ Actualizar instantáneamente
-      mutate(
-        {
-          ...(formData as Record<string, any>),
-          logo_url: publicUrl,
-        } as typeof formData,
-        false
-      );
-
-      localStorage.setItem("vai_logoUrl", publicUrl);
-      setLogoUrl(publicUrl);
-
-      // 🚀 Evento global
+    // 🎨 Actualizar color global instantáneamente
+    if (cleanData.color) {
+      setPrimaryColor(cleanData.color);
+      localStorage.setItem("vai_primaryColor", cleanData.color);
       window.dispatchEvent(
         new CustomEvent("themeUpdated", {
-          detail: { logoUrl: publicUrl },
+          detail: { color: cleanData.color },
         })
       );
-
-      await mutate();
-      setMessage("✅ Logo actualizado correctamente.");
-    } catch (err) {
-      console.error("Error subiendo logo:", err);
-      setMessage("❌ Error al subir el logo.");
-    } finally {
-      setUploading(false);
     }
-  };
 
-  // =====================================================
-  // 🔐 ACTUALIZAR EMAIL / PASSWORD
-  // =====================================================
-  const handleAccountUpdate = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!user) return;
-    setUpdatingAccount(true);
-    setAccountMessage(null);
+    // 🔄 Revalidar SWR global
+    await mutate();
+    setMessage("✅ Datos actualizados correctamente.");
+  } catch (err) {
+    console.error("Error al guardar:", err);
+    setMessage("❌ Error al guardar los cambios.");
+  } finally {
+    setSaving(false);
+  }
+};
 
-    try {
-      if (
-        passwordForm.newPassword &&
-        passwordForm.newPassword !== passwordForm.confirmPassword
-      ) {
-        setAccountMessage("❌ Las contraseñas nuevas no coinciden.");
-        setUpdatingAccount(false);
-        return;
-      }
+// =====================================================
+// 🖼️ SUBIR LOGO EMPRESA (100% SEGURO)
+// =====================================================
+const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  try {
+    const file = e.target.files?.[0];
+    if (!file || !user) return;
 
-      const { error: signInError } = await supabase.auth.signInWithPassword({
-        email: user.email!,
-        password: passwordForm.currentPassword,
-      });
+    setUploading(true);
+    const fileExt = file.name.split(".").pop();
+    const fileName = `empresa_${user.id}.${fileExt}`;
+    const filePath = `logos/${fileName}`;
 
-      if (signInError) {
-        setAccountMessage("❌ Contraseña actual incorrecta.");
-        setUpdatingAccount(false);
-        return;
-      }
+    // 📦 Subir logo al Storage
+    const { error: uploadError } = await supabase.storage
+      .from("logos_empresas")
+      .upload(filePath, file, { upsert: true });
 
-      if (
-        emailForm.newEmail &&
-        emailForm.newEmail !== user.email &&
-        emailForm.newEmail.includes("@")
-      ) {
-        const { error: emailError } = await supabase.auth.updateUser({
-          email: emailForm.newEmail,
-        });
-        if (emailError) throw emailError;
-      }
+    if (uploadError) throw uploadError;
 
-      if (passwordForm.newPassword) {
-        const { error: passError } = await supabase.auth.updateUser({
-          password: passwordForm.newPassword,
-        });
-        if (passError) throw passError;
-      }
+    // 🌐 Obtener URL pública
+    const {
+      data: { publicUrl },
+    } = supabase.storage.from("logos_empresas").getPublicUrl(filePath);
 
-      setAccountMessage("✅ Credenciales actualizadas correctamente.");
-      setEmailForm({
-        actualEmail: emailForm.newEmail || user.email!,
-        newEmail: "",
-      });
-      setPasswordForm({
-        currentPassword: "",
-        newPassword: "",
-        confirmPassword: "",
-      });
-    } catch (err) {
-      console.error("Error actualizando cuenta:", err);
-      setAccountMessage("❌ Error al actualizar credenciales.");
-    } finally {
+    // 🗃️ Guardar en tabla empresas
+    const { error: dbError } = await supabase
+      .from("empresas")
+      .update({ logo_url: publicUrl })
+      .eq("user_id", user.id);
+
+    if (dbError) throw dbError;
+
+    // ✅ Actualizar preview local
+    mutate(
+      {
+        ...(formData as Record<string, any>),
+        logo_url: publicUrl,
+      } as typeof formData,
+      false
+    );
+
+    // 🧠 Sincronizar ThemeContext + LocalStorage
+    localStorage.setItem("vai_logoUrl", publicUrl);
+    setLogoUrl(publicUrl);
+
+    // 🚀 Disparar evento global (para ThemeContext)
+    window.dispatchEvent(
+      new CustomEvent("themeUpdated", {
+        detail: { logoUrl: publicUrl },
+      })
+    );
+
+    // 🔄 Revalidar SWR global
+    await mutate();
+
+    setMessage("✅ Logo actualizado correctamente.");
+  } catch (err) {
+    console.error("Error subiendo logo:", err);
+    setMessage("❌ Error al subir el logo.");
+  } finally {
+    setUploading(false);
+  }
+};
+
+// =====================================================
+// 🔐 ACTUALIZAR EMAIL / PASSWORD (sin cambios lógicos)
+// =====================================================
+const handleAccountUpdate = async (e: React.FormEvent) => {
+  e.preventDefault();
+  if (!user) return;
+  setUpdatingAccount(true);
+  setAccountMessage(null);
+
+  try {
+    if (
+      passwordForm.newPassword &&
+      passwordForm.newPassword !== passwordForm.confirmPassword
+    ) {
+      setAccountMessage("❌ Las contraseñas nuevas no coinciden.");
       setUpdatingAccount(false);
+      return;
     }
-  };
+
+    const { error: signInError } = await supabase.auth.signInWithPassword({
+      email: user.email!,
+      password: passwordForm.currentPassword,
+    });
+
+    if (signInError) {
+      setAccountMessage("❌ Contraseña actual incorrecta.");
+      setUpdatingAccount(false);
+      return;
+    }
+
+    if (
+      emailForm.newEmail &&
+      emailForm.newEmail !== user.email &&
+      emailForm.newEmail.includes("@")
+    ) {
+      const { error: emailError } = await supabase.auth.updateUser({
+        email: emailForm.newEmail,
+      });
+      if (emailError) throw emailError;
+    }
+
+    if (passwordForm.newPassword) {
+      const { error: passError } = await supabase.auth.updateUser({
+        password: passwordForm.newPassword,
+      });
+      if (passError) throw passError;
+    }
+
+    setAccountMessage("✅ Credenciales actualizadas correctamente.");
+    setEmailForm({
+      actualEmail: emailForm.newEmail || user.email!,
+      newEmail: "",
+    });
+    setPasswordForm({
+      currentPassword: "",
+      newPassword: "",
+      confirmPassword: "",
+    });
+  } catch (err) {
+    console.error("Error actualizando cuenta:", err);
+    setAccountMessage("❌ Error al actualizar credenciales.");
+  } finally {
+    setUpdatingAccount(false);
+  }
+};
 
   // =====================================================
   // 🧱 Render principal

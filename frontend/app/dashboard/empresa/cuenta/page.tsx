@@ -113,53 +113,80 @@ export default function EmpresaCuentaPage() {
     }
   };
 
-  // =====================================================
-  // 🖼️ SUBIR LOGO EMPRESA (via API server-side segura)
-  // =====================================================
-  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    try {
-      const file = e.target.files?.[0];
-      if (!file || !user) return;
+ // =====================================================
+// 🖼️ SUBIR LOGO EMPRESA (via API server-side + cache-busting)
+// =====================================================
+const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  try {
+    const file = e.target.files?.[0];
+    if (!file || !user) return;
 
-      setUploading(true);
-      const fileExt = file.name.split(".").pop();
-      const fileName = `empresa_${user.id}.${fileExt}`;
-      const filePath = `logos/${fileName}`;
+    setUploading(true);
+    const fileExt = file.name.split(".").pop();
+    const fileName = `empresa_${user.id}.${fileExt}`;
+    const filePath = `logos/${fileName}`;
 
-      // subir al storage
-      const { error: uploadError } = await supabase.storage
-        .from("logos_empresas")
-        .upload(filePath, file, { upsert: true });
-      if (uploadError) throw uploadError;
+    // 1) Subir al storage (con cacheControl=0 para evitar nuevo cache)
+    const { error: uploadError } = await supabase.storage
+      .from("logos_empresas")
+      .upload(filePath, file, { upsert: true, cacheControl: "0" });
 
-      const { data: { publicUrl } } = supabase.storage.from("logos_empresas").getPublicUrl(filePath);
+    if (uploadError) throw uploadError;
 
-      console.log("🔒 usando API /api/empresa/update (logo)");
-      const res = await fetch("/api/empresa/update", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ user_id: user.id, update: { logo_url: publicUrl } }),
-      });
-      if (!res.ok) {
-        const j = await res.json().catch(() => ({}));
-        console.error("API error:", j);
-        throw new Error(j?.error?.message || "Error en actualización de logo");
-      }
+    // 2) Obtener URL pública base (la que guardamos en BD)
+    const {
+      data: { publicUrl },
+    } = supabase.storage.from("logos_empresas").getPublicUrl(filePath);
 
-      mutate({ ...(formData as Record<string, any>), logo_url: publicUrl } as typeof formData, false);
-      localStorage.setItem("vai_logoUrl", publicUrl);
-      setLogoUrl(publicUrl);
-      window.dispatchEvent(new CustomEvent("themeUpdated", { detail: { logoUrl: publicUrl }, bubbles: false }));
+    // 3) Actualizar en DB vía API server-side (guardamos la URL BASE)
+    const res = await fetch("/api/empresa/update", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ user_id: user.id, update: { logo_url: publicUrl } }),
+    });
 
-      await mutate();
-      setMessage("✅ Logo actualizado correctamente.");
-    } catch (err) {
-      console.error("Error subiendo logo:", err);
-      setMessage("❌ Error al subir el logo.");
-    } finally {
-      setUploading(false);
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({}));
+      console.error("API error:", j);
+      throw new Error(j?.error?.message || "Error en actualización de logo");
     }
-  };
+
+    // 4) Cache-busting para el preview inmediato
+    const bustedUrl = `${publicUrl}?v=${Date.now()}`;
+
+    // 5) Actualizar UI inmediata (SWR + ThemeContext + localStorage)
+    mutate(
+      {
+        ...(formData as Record<string, any>),
+        // guardamos la VERSIÓN bustead en el estado local para que el <img> refresque YA
+        logo_url: bustedUrl,
+      } as typeof formData,
+      false
+    );
+
+    localStorage.setItem("vai_logoUrl", bustedUrl);
+    setLogoUrl(bustedUrl);
+    setLogoBust(Date.now()); // incrementa versión para el <img>
+
+    window.dispatchEvent(
+      new CustomEvent("themeUpdated", {
+        detail: { logoUrl: bustedUrl },
+        bubbles: false,
+      })
+    );
+
+    // 6) Revalidar (traerá la URL base desde BD; el <img> seguirá bustead por el query param)
+    await mutate();
+
+    setMessage("✅ Logo actualizado correctamente.");
+  } catch (err) {
+    console.error("Error subiendo logo:", err);
+    setMessage("❌ Error al subir el logo.");
+  } finally {
+    setUploading(false);
+  }
+};
+
 
   // =====================================================
   // 🔐 ACTUALIZAR EMAIL / PASSWORD (igual)

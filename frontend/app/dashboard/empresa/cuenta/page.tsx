@@ -11,7 +11,7 @@ import { useEmpresa } from "@/hooks/useEmpresa";
 
 export default function EmpresaCuentaPage() {
   const { user } = useAuth();
-  const { setPrimaryColor } = useTheme();
+  const { setPrimaryColor, setLogoUrl } = useTheme();
 
   // ==========================
   // Datos de empresa (SWR global)

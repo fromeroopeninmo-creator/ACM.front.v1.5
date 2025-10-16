@@ -10,14 +10,14 @@ import { useEffect } from "react";
 
 export default function EmpresaDashboardPage() {
   const { user } = useAuth();
-  const { primaryColor } = useTheme();
+  const { setPrimaryColor, setLogoUrl, primaryColor } = useTheme();
 
   // 🔹 Función para obtener datos de empresa
   const fetchEmpresa = async (userId: string) => {
     const { data, error } = await supabase
       .from("empresas")
       .select(
-        "nombre_comercial, razon_social, condicion_fiscal, matriculado, cpi, telefono, logo_url"
+        "nombre_comercial, razon_social, condicion_fiscal, matriculado, cpi, telefono, logo_url, color"
       )
       .eq("user_id", userId)
       .maybeSingle();
@@ -36,15 +36,22 @@ export default function EmpresaDashboardPage() {
   // 🧭 Escucha en tiempo real para actualizar sin recargar
   useEffect(() => {
     if (!user) return;
+
     const channel = supabase
       .channel("empresa-updates")
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "empresas" },
+        { event: "UPDATE", schema: "public", table: "empresas" },
         (payload: any) => {
           const newData = payload.new as Record<string, any> | null;
           if (newData && newData.user_id === user.id) {
-            mutate(newData as any, false); // ✅ Fix tipado SWR
+            mutate(newData as any, false); // ✅ Actualiza datos en SWR
+            // 🔄 Sincroniza color y logo globales
+            if (newData.color) setPrimaryColor(newData.color);
+            if (newData.logo_url) {
+              setLogoUrl(newData.logo_url);
+              localStorage.setItem("vai_logoUrl", newData.logo_url);
+            }
           }
         }
       )
@@ -53,7 +60,7 @@ export default function EmpresaDashboardPage() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [user, mutate]);
+  }, [user, mutate, setPrimaryColor, setLogoUrl]);
 
   if (isLoading)
     return (
@@ -135,7 +142,7 @@ export default function EmpresaDashboardPage() {
         </div>
       </section>
 
-      {/* 🧾 Info básica con logo (versión original) */}
+      {/* 🧾 Info básica con logo */}
       <section className="bg-white shadow-sm rounded-xl p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
         {/* 📋 Datos */}
         <div className="flex-1">

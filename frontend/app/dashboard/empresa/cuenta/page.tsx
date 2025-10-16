@@ -48,11 +48,8 @@ export default function EmpresaCuentaPage() {
     );
   };
 
-  // =====================================================
-  // 💾 GUARDAR DATOS EMPRESA
-  // =====================================================
-  // =====================================================
-// 💾 GUARDAR DATOS EMPRESA (100% SEGURO)
+ // =====================================================
+// 💾 GUARDAR DATOS EMPRESA (100% SEGURO Y DEFINITIVO)
 // =====================================================
 const handleSave = async (e: React.FormEvent) => {
   e.preventDefault();
@@ -77,14 +74,18 @@ const handleSave = async (e: React.FormEvent) => {
       "logo_url",
     ];
 
-    // 🧹 Limpiar datos antes del update
-    const cleanData = Object.fromEntries(
-      Object.entries(formData || {}).filter(([key]) =>
-        allowedFields.includes(key)
+    // ✅ Crear un objeto PLANO (sin prototipos ni alias)
+    const cleanData = JSON.parse(
+      JSON.stringify(
+        Object.fromEntries(
+          Object.entries(formData || {}).filter(([key]) =>
+            allowedFields.includes(key)
+          )
+        )
       )
     );
 
-    // 🚫 Eliminar cualquier anidado o alias residual
+    // 🚫 Eliminar campos indeseados
     delete (cleanData as any).a;
     delete (cleanData as any).empresa;
     delete (cleanData as any).id;
@@ -186,6 +187,73 @@ const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     setUploading(false);
   }
 };
+
+// =====================================================
+// 🔐 ACTUALIZAR EMAIL / PASSWORD (sin cambios lógicos)
+// =====================================================
+const handleAccountUpdate = async (e: React.FormEvent) => {
+  e.preventDefault();
+  if (!user) return;
+  setUpdatingAccount(true);
+  setAccountMessage(null);
+
+  try {
+    if (
+      passwordForm.newPassword &&
+      passwordForm.newPassword !== passwordForm.confirmPassword
+    ) {
+      setAccountMessage("❌ Las contraseñas nuevas no coinciden.");
+      setUpdatingAccount(false);
+      return;
+    }
+
+    const { error: signInError } = await supabase.auth.signInWithPassword({
+      email: user.email!,
+      password: passwordForm.currentPassword,
+    });
+
+    if (signInError) {
+      setAccountMessage("❌ Contraseña actual incorrecta.");
+      setUpdatingAccount(false);
+      return;
+    }
+
+    if (
+      emailForm.newEmail &&
+      emailForm.newEmail !== user.email &&
+      emailForm.newEmail.includes("@")
+    ) {
+      const { error: emailError } = await supabase.auth.updateUser({
+        email: emailForm.newEmail,
+      });
+      if (emailError) throw emailError;
+    }
+
+    if (passwordForm.newPassword) {
+      const { error: passError } = await supabase.auth.updateUser({
+        password: passwordForm.newPassword,
+      });
+      if (passError) throw passError;
+    }
+
+    setAccountMessage("✅ Credenciales actualizadas correctamente.");
+    setEmailForm({
+      actualEmail: emailForm.newEmail || user.email!,
+      newEmail: "",
+    });
+    setPasswordForm({
+      currentPassword: "",
+      newPassword: "",
+      confirmPassword: "",
+    });
+  } catch (err) {
+    console.error("Error actualizando cuenta:", err);
+    setAccountMessage("❌ Error al actualizar credenciales.");
+  } finally {
+    setUpdatingAccount(false);
+  }
+};
+
 
 // =====================================================
 // 🔐 ACTUALIZAR EMAIL / PASSWORD (sin cambios lógicos)

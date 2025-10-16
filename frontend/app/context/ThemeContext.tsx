@@ -43,21 +43,25 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // =====================================================
-  // 2️⃣ Función principal de carga desde DB
+  // 2️⃣ Función principal de carga desde DB (por user_id)
   // =====================================================
   const loadCompanyTheme = async () => {
     if (!user) return;
 
-    const empresaId = user.role === "empresa" ? user.id : user.empresa_id;
+    const empresaId =
+      user.role === "empresa"
+        ? user.id
+        : user.empresa_id || user.user_metadata?.empresa_id;
+
     if (!empresaId) return;
 
     const { data, error } = await supabase
       .from("empresas")
       .select("color, logo_url")
-      .eq("id", empresaId)
-      .single();
+      .eq("user_id", empresaId) // ✅ unificado: siempre por user_id
+      .maybeSingle();
 
-    if (error) return;
+    if (error || !data) return;
 
     if (data.color) {
       setPrimaryColor(data.color);
@@ -70,12 +74,13 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  // 🔁 Forzar recarga manual del tema (desde Cuenta o Header)
   const reloadTheme = async () => {
     await loadCompanyTheme();
   };
 
   // =====================================================
-  // 3️⃣ Escuchar actualizaciones manuales (custom event)
+  // 3️⃣ Escuchar actualizaciones manuales (evento global)
   // =====================================================
   useEffect(() => {
     const handleThemeUpdate = (e: CustomEvent) => {
@@ -96,13 +101,16 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // =====================================================
-  // 4️⃣ Realtime listener como respaldo (asesores)
+  // 4️⃣ Listener realtime (empresa/asesor → herencia de color/logo)
   // =====================================================
   useEffect(() => {
     loadCompanyTheme();
     if (!user) return;
 
-    const empresaId = user.role === "empresa" ? user.id : user.empresa_id;
+    const empresaId =
+      user.role === "empresa"
+        ? user.id
+        : user.empresa_id || user.user_metadata?.empresa_id;
     if (!empresaId) return;
 
     const channel = supabase
@@ -113,15 +121,17 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
           event: "UPDATE",
           schema: "public",
           table: "empresas",
-          filter: `id=eq.${empresaId}`,
+          filter: `user_id=eq.${empresaId}`, // ✅ corregido a user_id
         },
         (payload) => {
           const updated = payload.new;
-          if (updated?.color) {
+          if (!updated) return;
+
+          if (updated.color) {
             setPrimaryColor(updated.color);
             localStorage.setItem("vai_primaryColor", updated.color);
           }
-          if (updated?.logo_url) {
+          if (updated.logo_url) {
             setLogoUrl(updated.logo_url);
             localStorage.setItem("vai_logoUrl", updated.logo_url);
           }
@@ -141,6 +151,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     document.documentElement.style.setProperty("--primary-color", primaryColor);
   }, [primaryColor]);
 
+  // =====================================================
+  // 6️⃣ Hidratar correctamente (sin flash)
+  // =====================================================
   if (!hydrated) {
     return (
       <div className="flex justify-center items-center h-screen text-gray-400">
@@ -149,6 +162,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     );
   }
 
+  // =====================================================
+  // 7️⃣ Proveer contexto global
+  // =====================================================
   return (
     <ThemeContext.Provider
       value={{
@@ -165,6 +181,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   );
 }
 
+// =====================================================
+// 🔹 Hook de uso del contexto
+// =====================================================
 export function useTheme() {
   const context = useContext(ThemeContext);
   if (!context) {

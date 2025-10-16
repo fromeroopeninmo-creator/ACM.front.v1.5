@@ -8,11 +8,12 @@ import { useEffect, useState } from "react";
 
 export default function AsesorDashboardPage() {
   const { user } = useAuth();
-  const { primaryColor, logoUrl } = useTheme();
+  const { primaryColor } = useTheme();
+
   const [empresa, setEmpresa] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
-  const safeUser = user as any; // 👈 evitamos errores de tipo
+  const safeUser = user as any; // evitar errores de tipo
 
   // 🧠 Cargar datos de la empresa (heredada del asesor)
   useEffect(() => {
@@ -25,7 +26,9 @@ export default function AsesorDashboardPage() {
       try {
         const { data, error } = await supabase
           .from("empresas")
-          .select("nombre_comercial, matriculado, cpi, logo_url")
+          .select(
+            "nombre_comercial, razon_social, condicion_fiscal, matriculado, cpi, telefono, logo_url, updated_at"
+          )
           .eq("id", safeUser.empresa_id)
           .maybeSingle();
 
@@ -49,26 +52,40 @@ export default function AsesorDashboardPage() {
     );
   }
 
-  const nombre = safeUser?.nombre || "Asesor";
+  // 👤 Datos del asesor
+  const nombreAsesor =
+    `${safeUser?.nombre ?? ""} ${safeUser?.apellido ?? ""}`.trim() || "Asesor";
   const email = safeUser?.email || "—";
-  const telefono = safeUser?.telefono || "—";
+  const telefonoPersonal = safeUser?.telefono || "—";
+
+  // 🏢 Datos de la empresa (con fallbacks)
+  const nombreEmpresa = empresa?.nombre_comercial || "—";
+  const razonSocial = empresa?.razon_social || "—";
+  const condicionFiscal = empresa?.condicion_fiscal || "—";
+  const matriculado = empresa?.matriculado || "—";
+  const cpi = empresa?.cpi || "—";
+  const telefonoEmpresa = empresa?.telefono || "—";
+
+  // 🖼️ Logo con cache-busting basado en updated_at
+  const logoUrl =
+    empresa?.logo_url && empresa.logo_url.trim() !== ""
+      ? `${empresa.logo_url}${
+          empresa.logo_url.includes("?")
+            ? ""
+            : `?v=${new Date(empresa.updated_at || Date.now()).getTime()}`
+        }`
+      : "/images/default-logo.png";
 
   return (
     <div className="space-y-6">
-      {/* 🏠 Bienvenida */}
-      <section className="bg-white shadow-sm rounded-xl p-6 text-center">
-        <h1 className="text-2xl font-bold mb-2">
-          Bienvenido, {nombre}
+      {/* ⚙️ Botón principal (sin logo arriba) */}
+      <section className="bg-white shadow-sm rounded-xl p-6 flex items-center justify-between">
+        <h1 className="text-xl md:text-2xl font-bold">
+          Bienvenido, {nombreAsesor}
         </h1>
-        <p className="text-gray-600">
-          Este es el panel principal para asesores. Desde aquí podrás gestionar tus informes y tus datos personales.
-        </p>
-      </section>
 
-      {/* ⚙️ Botón principal */}
-      <section className="bg-white shadow-sm rounded-xl p-6 flex flex-col md:flex-row items-center justify-between gap-4">
         <Link
-          href="/app/acmforms"
+          href="/vai/acmforms"
           className="px-6 py-3 text-white font-semibold rounded-lg shadow transition text-center"
           style={{
             backgroundColor: primaryColor,
@@ -77,38 +94,54 @@ export default function AsesorDashboardPage() {
         >
           🧾 Valuador de Activos Inmobiliarios
         </Link>
-
-        {logoUrl && (
-          <div className="flex justify-center md:justify-end w-full md:w-48">
-            <img
-              src={logoUrl}
-              alt="Logo Empresa"
-              className="w-40 h-40 object-contain border rounded-xl shadow-sm bg-white p-2"
-            />
-          </div>
-        )}
       </section>
 
-      {/* 🧾 Datos básicos */}
-      <section className="bg-white shadow-sm rounded-xl p-6">
-        <h2 className="text-xl font-semibold mb-4">Datos de la Empresa</h2>
-        <ul className="space-y-2 text-gray-700">
-          <li>
-            <strong>Inmobiliaria:</strong> {empresa?.nombre_comercial || "—"}
-          </li>
-          <li>
-            <strong>Matriculado:</strong> {empresa?.matriculado || "—"}
-          </li>
-          <li>
-            <strong>CPI:</strong> {empresa?.cpi || "—"}
-          </li>
-          <li>
-            <strong>Email Personal:</strong> {email}
-          </li>
-          <li>
-            <strong>Teléfono Personal:</strong> {telefono}
-          </li>
-        </ul>
+      {/* 🧾 Datos del Asesor + Empresa (logo abajo) */}
+      <section className="bg-white shadow-sm rounded-xl p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+        {/* 📋 Datos */}
+        <div className="flex-1">
+          <h2 className="text-xl font-semibold mb-4">Datos del Asesor</h2>
+          <ul className="space-y-2 text-gray-700">
+            {/* Empresa */}
+            <li>
+              <strong>Nombre:</strong> {nombreEmpresa}
+            </li>
+            <li>
+              <strong>Razón Social:</strong> {razonSocial}
+            </li>
+            <li>
+              <strong>Condición Fiscal:</strong> {condicionFiscal}
+            </li>
+            <li>
+              <strong>Matriculado:</strong> {matriculado}
+            </li>
+            <li>
+              <strong>CPI:</strong> {cpi}
+            </li>
+
+            {/* Asesor */}
+            <li className="pt-2">
+              <strong>Email Personal:</strong> {email}
+            </li>
+            <li>
+              <strong>Teléfono Personal:</strong> {telefonoPersonal}
+            </li>
+
+            {/* (Opcional) Teléfono de la empresa si querés mostrarlo */}
+            <li>
+              <strong>Teléfono Empresa:</strong> {telefonoEmpresa}
+            </li>
+          </ul>
+        </div>
+
+        {/* 🖼️ Logo (abajo a la derecha) */}
+        <div className="flex-shrink-0 w-full md:w-48 text-center">
+          <img
+            src={logoUrl}
+            alt="Logo de la empresa"
+            className="w-40 h-40 object-contain mx-auto border rounded-xl shadow-sm bg-white"
+          />
+        </div>
       </section>
     </div>
   );

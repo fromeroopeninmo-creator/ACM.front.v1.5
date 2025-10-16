@@ -47,229 +47,177 @@ export default function EmpresaCuentaPage() {
     );
   };
 
-// =====================================================
-// 💾 GUARDAR DATOS EMPRESA (payload blindado, sin select)
-// =====================================================
-const handleSave = async (e: React.FormEvent) => {
-  e.preventDefault();
-  if (!user) return;
-  setSaving(true);
-  setMessage(null);
+  // =====================================================
+  // 💾 GUARDAR DATOS EMPRESA (via API server-side segura)
+  // =====================================================
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user) return;
+    setSaving(true);
+    setMessage(null);
 
-  try {
-    // Helper para leer del tope o, si vino “contaminado”, desde a.*
-    const pick = (key: string) => {
-      const anyForm = formData as any;
+    try {
+      // helper para leer del tope o desde posible a.*
+      const pick = (key: string) => {
+        const anyForm = formData as any;
+        if (anyForm && anyForm[key] != null) return anyForm[key];
+        if (anyForm && anyForm.a && typeof anyForm.a === "object" && anyForm.a[key] != null) return anyForm.a[key];
+        if (anyForm && Object.prototype.hasOwnProperty.call(anyForm, `a.${key}`)) return anyForm[`a.${key}`];
+        return undefined;
+      };
 
-      if (anyForm && anyForm[key] !== undefined && anyForm[key] !== null) {
-        return anyForm[key];
-      }
-      if (
-        anyForm &&
-        anyForm.a &&
-        typeof anyForm.a === "object" &&
-        anyForm.a[key] !== undefined &&
-        anyForm.a[key] !== null
-      ) {
-        return anyForm.a[key];
-      }
-      if (
-        anyForm &&
-        typeof anyForm === "object" &&
-        Object.prototype.hasOwnProperty.call(anyForm, `a.${key}`)
-      ) {
-        return anyForm[`a.${key}`];
-      }
-      return undefined;
-    };
+      const update: Record<string, any> = {};
+      const put = (k: string, v: any) => { if (v !== undefined) update[k] = v; };
 
-    // Construimos payload campo por campo (sin spreads de objetos “sospechosos”)
-    const cleanData: Record<string, any> = {};
-    const put = (k: string, v: any) => {
-      if (v !== undefined) cleanData[k] = v;
-    };
+      put("nombre_comercial", pick("nombre_comercial"));
+      put("razon_social",     pick("razon_social"));
+      put("cuit",             pick("cuit"));
+      put("matriculado",      pick("matriculado"));
+      put("cpi",              pick("cpi"));
+      put("telefono",         pick("telefono"));
+      put("direccion",        pick("direccion"));
+      put("localidad",        pick("localidad"));
+      put("provincia",        pick("provincia"));
+      put("condicion_fiscal", pick("condicion_fiscal"));
+      put("color",            pick("color"));
+      put("logo_url",         pick("logo_url"));
 
-    put("nombre_comercial", pick("nombre_comercial"));
-    put("razon_social",     pick("razon_social"));
-    put("cuit",             pick("cuit"));
-    put("matriculado",      pick("matriculado"));
-    put("cpi",              pick("cpi"));
-    put("telefono",         pick("telefono"));
-    put("direccion",        pick("direccion"));
-    put("localidad",        pick("localidad"));
-    put("provincia",        pick("provincia"));
-    put("condicion_fiscal", pick("condicion_fiscal"));
-    put("color",            pick("color"));
-    put("logo_url",         pick("logo_url"));
+      console.log("🔒 usando API /api/empresa/update");
+      console.log("🧪 Payload hacia API:", { user_id: user.id, update });
 
-    // 🚫 Eliminar cualquier rastro de alias/contaminación
-    delete (cleanData as any).a;
-    delete (cleanData as any)["a.color"];
-    delete (cleanData as any)["a.logo_url"];
-    delete (cleanData as any).empresa;
-    delete (cleanData as any).id;
-    delete (cleanData as any).user_id;
-    delete (cleanData as any).created_at;
-    delete (cleanData as any).updated_at;
-
-    // 🔍 Log de diagnóstico
-    console.log("🧪 Keys en formData:", Object.keys(formData as any));
-    console.log("🧪 Payload limpio a enviar:", cleanData);
-
-    // ✅ Update por user_id; en supabase-js v2, SIN .select() = return=minimal
-    const { error } = await supabase
-      .from("empresas")
-      .update(cleanData)
-      .eq("user_id", user.id);
-
-    if (error) throw error;
-
-    // 🎨 Actualizar color global instantáneamente si cambió
-    if (cleanData.color) {
-      setPrimaryColor(cleanData.color);
-      localStorage.setItem("vai_primaryColor", cleanData.color);
-      window.dispatchEvent(
-        new CustomEvent("themeUpdated", {
-          detail: { color: cleanData.color },
-        })
-      );
-    }
-
-    await mutate(); // revalidar datos
-    setMessage("✅ Datos actualizados correctamente.");
-  } catch (err) {
-    console.error("Error al guardar:", err);
-    setMessage("❌ Error al guardar los cambios.");
-  } finally {
-    setSaving(false);
-  }
-};
-
-// =====================================================
-// 🖼️ SUBIR LOGO EMPRESA (sin select)
-// =====================================================
-const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-  try {
-    const file = e.target.files?.[0];
-    if (!file || !user) return;
-
-    setUploading(true);
-    const fileExt = file.name.split(".").pop();
-    const fileName = `empresa_${user.id}.${fileExt}`;
-    const filePath = `logos/${fileName}`;
-
-    const { error: uploadError } = await supabase.storage
-      .from("logos_empresas")
-      .upload(filePath, file, { upsert: true });
-
-    if (uploadError) throw uploadError;
-
-    const {
-      data: { publicUrl },
-    } = supabase.storage.from("logos_empresas").getPublicUrl(filePath);
-
-    // 🔒 Update sin representación (no encadenamos .select())
-    const { error: dbError } = await supabase
-      .from("empresas")
-      .update({ logo_url: publicUrl })
-      .eq("user_id", user.id);
-
-    if (dbError) throw dbError;
-
-    mutate(
-      {
-        ...(formData as Record<string, any>),
-        logo_url: publicUrl,
-      } as typeof formData,
-      false
-    );
-
-    localStorage.setItem("vai_logoUrl", publicUrl);
-    setLogoUrl(publicUrl);
-
-    window.dispatchEvent(
-      new CustomEvent("themeUpdated", {
-        detail: { logoUrl: publicUrl },
-        bubbles: false,
-      })
-    );
-
-    await mutate();
-    setMessage("✅ Logo actualizado correctamente.");
-  } catch (err) {
-    console.error("Error subiendo logo:", err);
-    setMessage("❌ Error al subir el logo.");
-  } finally {
-    setUploading(false);
-  }
-};
-
-// =====================================================
-// 🔐 ACTUALIZAR EMAIL / PASSWORD (sin cambios lógicos)
-// =====================================================
-const handleAccountUpdate = async (e: React.FormEvent) => {
-  e.preventDefault();
-  if (!user) return;
-  setUpdatingAccount(true);
-  setAccountMessage(null);
-
-  try {
-    if (
-      passwordForm.newPassword &&
-      passwordForm.newPassword !== passwordForm.confirmPassword
-    ) {
-      setAccountMessage("❌ Las contraseñas nuevas no coinciden.");
-      setUpdatingAccount(false);
-      return;
-    }
-
-    const { error: signInError } = await supabase.auth.signInWithPassword({
-      email: user.email!,
-      password: passwordForm.currentPassword,
-    });
-
-    if (signInError) {
-      setAccountMessage("❌ Contraseña actual incorrecta.");
-      setUpdatingAccount(false);
-      return;
-    }
-
-    if (
-      emailForm.newEmail &&
-      emailForm.newEmail !== user.email &&
-      emailForm.newEmail.includes("@")
-    ) {
-      const { error: emailError } = await supabase.auth.updateUser({
-        email: emailForm.newEmail,
+      const res = await fetch("/api/empresa/update", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_id: user.id, update }),
       });
-      if (emailError) throw emailError;
-    }
 
-    if (passwordForm.newPassword) {
-      const { error: passError } = await supabase.auth.updateUser({
-        password: passwordForm.newPassword,
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        console.error("API error:", j);
+        throw new Error(j?.error?.message || "Error en actualización");
+      }
+
+      if (update.color) {
+        setPrimaryColor(update.color);
+        localStorage.setItem("vai_primaryColor", update.color);
+        window.dispatchEvent(new CustomEvent("themeUpdated", { detail: { color: update.color } }));
+      }
+
+      await mutate(); // revalidar datos
+      setMessage("✅ Datos actualizados correctamente.");
+    } catch (err) {
+      console.error("Error al guardar:", err);
+      setMessage("❌ Error al guardar los cambios.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // =====================================================
+  // 🖼️ SUBIR LOGO EMPRESA (via API server-side segura)
+  // =====================================================
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    try {
+      const file = e.target.files?.[0];
+      if (!file || !user) return;
+
+      setUploading(true);
+      const fileExt = file.name.split(".").pop();
+      const fileName = `empresa_${user.id}.${fileExt}`;
+      const filePath = `logos/${fileName}`;
+
+      // subir al storage
+      const { error: uploadError } = await supabase.storage
+        .from("logos_empresas")
+        .upload(filePath, file, { upsert: true });
+      if (uploadError) throw uploadError;
+
+      const { data: { publicUrl } } = supabase.storage.from("logos_empresas").getPublicUrl(filePath);
+
+      console.log("🔒 usando API /api/empresa/update (logo)");
+      const res = await fetch("/api/empresa/update", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_id: user.id, update: { logo_url: publicUrl } }),
       });
-      if (passError) throw passError;
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        console.error("API error:", j);
+        throw new Error(j?.error?.message || "Error en actualización de logo");
+      }
+
+      mutate({ ...(formData as Record<string, any>), logo_url: publicUrl } as typeof formData, false);
+      localStorage.setItem("vai_logoUrl", publicUrl);
+      setLogoUrl(publicUrl);
+      window.dispatchEvent(new CustomEvent("themeUpdated", { detail: { logoUrl: publicUrl }, bubbles: false }));
+
+      await mutate();
+      setMessage("✅ Logo actualizado correctamente.");
+    } catch (err) {
+      console.error("Error subiendo logo:", err);
+      setMessage("❌ Error al subir el logo.");
+    } finally {
+      setUploading(false);
     }
+  };
 
-    setAccountMessage("✅ Credenciales actualizadas correctamente.");
-    setEmailForm({
-      actualEmail: emailForm.newEmail || user.email!,
-      newEmail: "",
-    });
-    setPasswordForm({
-      currentPassword: "",
-      newPassword: "",
-      confirmPassword: "",
-    });
-  } catch (err) {
-    console.error("Error actualizando cuenta:", err);
-    setAccountMessage("❌ Error al actualizar credenciales.");
-  } finally {
-       setUpdatingAccount(false);
-  }
-};
+  // =====================================================
+  // 🔐 ACTUALIZAR EMAIL / PASSWORD (igual)
+  // =====================================================
+  const handleAccountUpdate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user) return;
+    setUpdatingAccount(true);
+    setAccountMessage(null);
 
+    try {
+      if (
+        passwordForm.newPassword &&
+        passwordForm.newPassword !== passwordForm.confirmPassword
+      ) {
+        setAccountMessage("❌ Las contraseñas nuevas no coinciden.");
+        setUpdatingAccount(false);
+        return;
+      }
+
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email: user.email!,
+        password: passwordForm.currentPassword,
+      });
+      if (signInError) {
+        setAccountMessage("❌ Contraseña actual incorrecta.");
+        setUpdatingAccount(false);
+        return;
+      }
+
+      if (
+        emailForm.newEmail &&
+        emailForm.newEmail !== user.email &&
+        emailForm.newEmail.includes("@")
+      ) {
+        const { error: emailError } = await supabase.auth.updateUser({
+          email: emailForm.newEmail,
+        });
+        if (emailError) throw emailError;
+      }
+
+      if (passwordForm.newPassword) {
+        const { error: passError } = await supabase.auth.updateUser({
+          password: passwordForm.newPassword,
+        });
+        if (passError) throw passError;
+      }
+
+      setAccountMessage("✅ Credenciales actualizadas correctamente.");
+      setEmailForm({ actualEmail: emailForm.newEmail || user.email!, newEmail: "" });
+      setPasswordForm({ currentPassword: "", newPassword: "", confirmPassword: "" });
+    } catch (err) {
+      console.error("Error actualizando cuenta:", err);
+      setAccountMessage("❌ Error al actualizar credenciales.");
+    } finally {
+      setUpdatingAccount(false);
+    }
+  };
 
   // =====================================================
   // 🧱 Render principal
@@ -317,34 +265,12 @@ const handleAccountUpdate = async (e: React.FormEvent) => {
             >
               <option value="">Seleccionar provincia...</option>
               {[
-                "CABA",
-                "Buenos Aires",
-                "Córdoba",
-                "Santa Fe",
-                "Mendoza",
-                "Tucumán",
-                "Salta",
-                "Entre Ríos",
-                "Corrientes",
-                "Misiones",
-                "Chaco",
-                "San Luis",
-                "San Juan",
-                "Neuquén",
-                "Río Negro",
-                "Chubut",
-                "Santa Cruz",
-                "La Pampa",
-                "La Rioja",
-                "Catamarca",
-                "Formosa",
-                "Santiago del Estero",
-                "Jujuy",
-                "Tierra del Fuego",
+                "CABA","Buenos Aires","Córdoba","Santa Fe","Mendoza","Tucumán","Salta",
+                "Entre Ríos","Corrientes","Misiones","Chaco","San Luis","San Juan",
+                "Neuquén","Río Negro","Chubut","Santa Cruz","La Pampa","La Rioja",
+                "Catamarca","Formosa","Santiago del Estero","Jujuy","Tierra del Fuego",
               ].map((prov) => (
-                <option key={prov} value={prov}>
-                  {prov}
-                </option>
+                <option key={prov} value={prov}>{prov}</option>
               ))}
             </select>
           </div>
@@ -413,14 +339,9 @@ const handleAccountUpdate = async (e: React.FormEvent) => {
       {/* CUENTA / CREDENCIALES */}
       <section>
         <h2 className="text-xl font-bold mb-6">Cuenta de Acceso</h2>
-        <form
-          onSubmit={handleAccountUpdate}
-          className="grid grid-cols-1 md:grid-cols-2 gap-6"
-        >
+        <form onSubmit={handleAccountUpdate} className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div>
-            <label className="block text-sm font-medium text-gray-700">
-              Email actual
-            </label>
+            <label className="block text-sm font-medium text-gray-700">Email actual</label>
             <input
               type="email"
               value={emailForm.actualEmail}
@@ -430,75 +351,46 @@ const handleAccountUpdate = async (e: React.FormEvent) => {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700">
-              Nuevo email
-            </label>
+            <label className="block text-sm font-medium text-gray-700">Nuevo email</label>
             <input
               type="email"
               value={emailForm.newEmail}
-              onChange={(e) =>
-                setEmailForm({ ...emailForm, newEmail: e.target.value })
-              }
+              onChange={(e) => setEmailForm({ ...emailForm, newEmail: e.target.value })}
               placeholder="Opcional - dejar vacío si no cambia"
               className="mt-1 w-full border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-sky-400"
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700">
-              Contraseña actual
-            </label>
+            <label className="block text-sm font-medium text-gray-700">Contraseña actual</label>
             <input
               type={showPasswords ? "text" : "password"}
               value={passwordForm.currentPassword}
-              onChange={(e) =>
-                setPasswordForm({
-                  ...passwordForm,
-                  currentPassword: e.target.value,
-                })
-              }
+              onChange={(e) => setPasswordForm({ ...passwordForm, currentPassword: e.target.value })}
               className="mt-1 w-full border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-sky-400"
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700">
-              Nueva contraseña
-            </label>
+            <label className="block text-sm font-medium text-gray-700">Nueva contraseña</label>
             <input
               type={showPasswords ? "text" : "password"}
               value={passwordForm.newPassword}
-              onChange={(e) =>
-                setPasswordForm({
-                  ...passwordForm,
-                  newPassword: e.target.value,
-                })
-              }
+              onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })}
               placeholder="Opcional - dejar vacío si no cambia"
               className="mt-1 w-full border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-sky-400"
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700">
-              Confirmar nueva contraseña
-            </label>
+            <label className="block text-sm font-medium text-gray-700">Confirmar nueva contraseña</label>
             <input
               type={showPasswords ? "text" : "password"}
               value={passwordForm.confirmPassword}
-              onChange={(e) =>
-                setPasswordForm({
-                  ...passwordForm,
-                  confirmPassword: e.target.value,
-                })
-              }
+              onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })}
               className="mt-1 w-full border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-sky-400"
             />
-            <button
-              type="button"
-              onClick={() => setShowPasswords(!showPasswords)}
-              className="text-xs text-sky-600 mt-1"
-            >
+            <button type="button" onClick={() => setShowPasswords(!showPasswords)} className="text-xs text-sky-600 mt-1">
               {showPasswords ? "🙈 Ocultar contraseñas" : "👁️ Ver contraseñas"}
             </button>
           </div>

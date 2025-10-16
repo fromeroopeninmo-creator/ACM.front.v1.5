@@ -137,6 +137,7 @@ const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     try {
       localStorage.setItem("vai_logoUrl", publicUrl);
       setLogoUrl(publicUrl);
+      await reloadTheme();
     } catch (err) {
       console.warn("Error actualizando localStorage:", err);
     }

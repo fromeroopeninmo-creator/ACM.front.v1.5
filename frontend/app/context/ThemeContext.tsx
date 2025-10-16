@@ -14,31 +14,29 @@ interface ThemeContextType {
   primaryColor: string;
   setPrimaryColor: (color: string) => void;
   logoUrl?: string | null;
-  setLogoUrl: (url: string | null) => void; // 🆕 Nuevo setter público
+  setLogoUrl: (url: string | null) => void;
   hydrated: boolean;
 }
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  // 🧩 Intentamos acceder al contexto de Auth solo si existe
   let user: any = null;
   try {
     user = useAuth()?.user || null;
   } catch {
-    // En prerender (build) AuthProvider aún no existe → evitamos el crash
+    // durante el prerender puede no existir AuthContext todavía
   }
 
   const [primaryColor, setPrimaryColor] = useState("#2563eb");
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
-  const [hydrated, setHydrated] = useState(false); // ✅ control de carga inicial
+  const [hydrated, setHydrated] = useState(false);
 
-  // 1️⃣ Primer paso: cargar del localStorage apenas se monte
+  // 1️⃣ Cargar tema desde localStorage apenas se monta
   useEffect(() => {
     try {
       const storedColor = localStorage.getItem("vai_primaryColor");
       const storedLogo = localStorage.getItem("vai_logoUrl");
-
       if (storedColor) setPrimaryColor(storedColor);
       if (storedLogo) setLogoUrl(storedLogo);
     } catch (err) {
@@ -47,19 +45,29 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     setHydrated(true);
   }, []);
 
-  // 2️⃣ Luego sincronizar con Supabase (cuando user ya está definido)
+  // 2️⃣ Sincronizar con Supabase según el rol
   useEffect(() => {
     const loadCompanyTheme = async () => {
       if (!user) return;
 
-      if (user.role === "empresa" || user.role === "asesor") {
-        const empresaId = user.role === "empresa" ? user.id : user.empresa_id;
-        if (!empresaId) return;
+      let filterColumn = "";
+      let filterValue = "";
 
+      if (user.role === "empresa") {
+        // Empresa: busca por su propio user_id
+        filterColumn = "user_id";
+        filterValue = user.id;
+      } else if (user.role === "asesor") {
+        // Asesor: busca por la empresa a la que pertenece
+        filterColumn = "id";
+        filterValue = user.empresa_id;
+      }
+
+      if (filterValue) {
         const { data, error } = await supabase
           .from("empresas")
           .select("color, logo_url")
-          .eq("id", empresaId)
+          .eq(filterColumn, filterValue)
           .single();
 
         if (!error && data) {
@@ -74,6 +82,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
         }
       }
 
+      // Roles globales (sin empresa asociada)
       if (
         user.role === "super_admin_root" ||
         user.role === "super_admin" ||
@@ -88,35 +97,40 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
     loadCompanyTheme();
 
-    // 3️⃣ Realtime listener para cambios
+    // 3️⃣ Suscripción en tiempo real a cambios en la empresa correspondiente
     let channel: ReturnType<typeof supabase.channel> | null = null;
 
     if (user && (user.role === "empresa" || user.role === "asesor")) {
-      const empresaId = user.role === "empresa" ? user.id : user.empresa_id;
+      const filterColumn =
+        user.role === "empresa" ? "user_id" : "id";
+      const filterValue =
+        user.role === "empresa" ? user.id : user.empresa_id;
 
-      channel = supabase
-        .channel("empresa_theme_updates")
-        .on(
-          "postgres_changes",
-          {
-            event: "UPDATE",
-            schema: "public",
-            table: "empresas",
-            filter: `id=eq.${empresaId}`,
-          },
-          (payload) => {
-            const updated = payload.new;
-            if (updated?.color) {
-              setPrimaryColor(updated.color);
-              localStorage.setItem("vai_primaryColor", updated.color);
+      if (filterValue) {
+        channel = supabase
+          .channel("empresa_theme_updates")
+          .on(
+            "postgres_changes",
+            {
+              event: "UPDATE",
+              schema: "public",
+              table: "empresas",
+              filter: `${filterColumn}=eq.${filterValue}`,
+            },
+            (payload) => {
+              const updated = payload.new;
+              if (updated?.color) {
+                setPrimaryColor(updated.color);
+                localStorage.setItem("vai_primaryColor", updated.color);
+              }
+              if (updated?.logo_url) {
+                setLogoUrl(updated.logo_url);
+                localStorage.setItem("vai_logoUrl", updated.logo_url);
+              }
             }
-            if (updated?.logo_url) {
-              setLogoUrl(updated.logo_url);
-              localStorage.setItem("vai_logoUrl", updated.logo_url);
-            }
-          }
-        )
-        .subscribe();
+          )
+          .subscribe();
+      }
     }
 
     return () => {
@@ -124,14 +138,14 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     };
   }, [user]);
 
-  // 🟢 Aplicar dinámicamente el color global al DOM
+  // 4️⃣ Aplicar el color global al DOM dinámicamente
   useEffect(() => {
     if (primaryColor) {
       document.documentElement.style.setProperty("--primary-color", primaryColor);
     }
   }, [primaryColor]);
 
-  // 4️⃣ No renderizamos nada hasta que esté hidratado
+  // 5️⃣ Evita el flash azul inicial antes de hidratar
   if (!hydrated) {
     return (
       <div className="flex justify-center items-center h-screen text-gray-400">
@@ -146,7 +160,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
         primaryColor,
         setPrimaryColor,
         logoUrl,
-        setLogoUrl, // 🆕 agregado aquí
+        setLogoUrl,
         hydrated,
       }}
     >

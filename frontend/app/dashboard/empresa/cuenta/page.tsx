@@ -1,32 +1,21 @@
 "use client";
 
 import { useState } from "react";
-// ❌ ya no necesitamos useSWR local aquí
-// import useSWR from "swr";
 import { supabase } from "#lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
 import { useTheme } from "@/context/ThemeContext";
-// ✅ usamos el hook compartido
 import { useEmpresa } from "@/hooks/useEmpresa";
 
 export default function EmpresaCuentaPage() {
   const { user } = useAuth();
   const { setPrimaryColor, setLogoUrl, reloadTheme } = useTheme();
 
-  // ==========================
-  // Datos de empresa (SWR global)
-  // ==========================
-  // Antes: useSWR(user ? ["empresa", user.id] : null, () => fetchEmpresa(user!.id))
-  // Ahora: usamos el hook centralizado, manteniendo la misma interfaz (formData + mutate)
   const { empresa: formData, mutate, isLoading } = useEmpresa();
 
   const [message, setMessage] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  // ==========================
-  // Cuenta y Credenciales
-  // ==========================
   const [emailForm, setEmailForm] = useState({
     actualEmail: user?.email || "",
     newEmail: "",
@@ -50,7 +39,6 @@ export default function EmpresaCuentaPage() {
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
   ) => {
-    // ✅ seguimos usando actualización optimista con la misma firma que tenías
     mutate(
       {
         ...(formData as Record<string, any>),
@@ -60,188 +48,202 @@ export default function EmpresaCuentaPage() {
     );
   };
 
- const handleSave = async (e: React.FormEvent) => {
-  e.preventDefault();
-  if (!user) return;
-  setSaving(true);
-  setMessage(null);
+  // =====================================================
+  // 💾 GUARDAR DATOS EMPRESA
+  // =====================================================
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user) return;
+    setSaving(true);
+    setMessage(null);
 
-  try {
-    // 🔒 Guardar datos en DB
-    const { error } = await supabase
-      .from("empresas")
-      .update(formData as Record<string, any>)
-      .eq("user_id", user.id);
+    try {
+      // 🧩 Campos válidos según tabla "empresas"
+      const allowedFields = [
+        "nombre_comercial",
+        "razon_social",
+        "cuit",
+        "matriculado",
+        "cpi",
+        "telefono",
+        "direccion",
+        "localidad",
+        "provincia",
+        "condicion_fiscal",
+        "color",
+        "logo_url",
+      ];
 
-    if (error) throw error;
+      const cleanData = Object.fromEntries(
+        Object.entries(formData).filter(([key]) =>
+          allowedFields.includes(key)
+        )
+      );
 
-    // 🎨 Actualizar color global instantáneamente
-    const newColor = (formData as Record<string, any>).color;
-    if (newColor) {
-      setPrimaryColor(newColor);
-      localStorage.setItem("vai_primaryColor", newColor);
+      const { error } = await supabase
+        .from("empresas")
+        .update(cleanData)
+        .eq("user_id", user.id);
 
-      // 🚀 Disparar evento global para ThemeContext
+      if (error) throw error;
+
+      // 🎨 Color instantáneo
+      if (cleanData.color) {
+        setPrimaryColor(cleanData.color);
+        localStorage.setItem("vai_primaryColor", cleanData.color);
+        window.dispatchEvent(
+          new CustomEvent("themeUpdated", {
+            detail: { color: cleanData.color },
+          })
+        );
+      }
+
+      // 🔄 Revalidar SWR global
+      await mutate();
+      setMessage("✅ Datos actualizados correctamente.");
+    } catch (err) {
+      console.error("Error al guardar:", err);
+      setMessage("❌ Error al guardar los cambios.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // =====================================================
+  // 🖼️ SUBIR LOGO EMPRESA
+  // =====================================================
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    try {
+      const file = e.target.files?.[0];
+      if (!file || !user) return;
+
+      setUploading(true);
+      const fileExt = file.name.split(".").pop();
+      const fileName = `empresa_${user.id}.${fileExt}`;
+      const filePath = `logos/${fileName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from("logos_empresas")
+        .upload(filePath, file, { upsert: true });
+
+      if (uploadError) throw uploadError;
+
+      const {
+        data: { publicUrl },
+      } = supabase.storage.from("logos_empresas").getPublicUrl(filePath);
+
+      // 🗃️ Actualizar DB
+      const { error: dbError } = await supabase
+        .from("empresas")
+        .update({ logo_url: publicUrl })
+        .eq("user_id", user.id);
+
+      if (dbError) throw dbError;
+
+      // ✅ Actualizar instantáneamente
+      mutate(
+        {
+          ...(formData as Record<string, any>),
+          logo_url: publicUrl,
+        } as typeof formData,
+        false
+      );
+
+      localStorage.setItem("vai_logoUrl", publicUrl);
+      setLogoUrl(publicUrl);
+
+      // 🚀 Evento global
       window.dispatchEvent(
         new CustomEvent("themeUpdated", {
-          detail: { color: newColor },
+          detail: { logoUrl: publicUrl },
         })
       );
+
+      await mutate();
+      setMessage("✅ Logo actualizado correctamente.");
+    } catch (err) {
+      console.error("Error subiendo logo:", err);
+      setMessage("❌ Error al subir el logo.");
+    } finally {
+      setUploading(false);
     }
+  };
 
-    // 🔄 Revalidar cache SWR
-    await mutate();
+  // =====================================================
+  // 🔐 ACTUALIZAR EMAIL / PASSWORD
+  // =====================================================
+  const handleAccountUpdate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user) return;
+    setUpdatingAccount(true);
+    setAccountMessage(null);
 
-    setMessage("✅ Datos actualizados correctamente.");
-  } catch (err) {
-    console.error("Error al guardar:", err);
-    setMessage("❌ Error al guardar los cambios.");
-  } finally {
-    setSaving(false);
-  }
-};
+    try {
+      if (
+        passwordForm.newPassword &&
+        passwordForm.newPassword !== passwordForm.confirmPassword
+      ) {
+        setAccountMessage("❌ Las contraseñas nuevas no coinciden.");
+        setUpdatingAccount(false);
+        return;
+      }
 
-// =====================================================
-// 🖼️ SUBIR LOGO DE EMPRESA
-// =====================================================
-
-const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-  try {
-    const file = e.target.files?.[0];
-    if (!file || !user) return;
-
-    setUploading(true);
-    const fileExt = file.name.split(".").pop();
-    const fileName = `empresa_${user.id}.${fileExt}`;
-    const filePath = `logos/${fileName}`;
-
-    // 📦 Subir a Supabase Storage
-    const { error: uploadError } = await supabase.storage
-      .from("logos_empresas")
-      .upload(filePath, file, { upsert: true });
-
-    if (uploadError) throw uploadError;
-
-    const {
-      data: { publicUrl },
-    } = supabase.storage.from("logos_empresas").getPublicUrl(filePath);
-
-    // 🗃️ Guardar en la tabla empresas
-    const { error: dbError } = await supabase
-      .from("empresas")
-      .update({ logo_url: publicUrl })
-      .eq("user_id", user.id);
-
-    if (dbError) throw dbError;
-
-    // ✅ Actualizar preview localmente sin esperar realtime
-    (formData as any).logo_url = publicUrl;
-    mutate(
-      { ...(formData as Record<string, any>), logo_url: publicUrl } as typeof formData,
-      false
-    );
-
-    // 🧠 Sincronizar ThemeContext + localStorage
-    localStorage.setItem("vai_logoUrl", publicUrl);
-    setLogoUrl(publicUrl);
-
-    // 🚀 Notificar cambio global (ThemeContext y vistas abiertas)
-    window.dispatchEvent(
-      new CustomEvent("themeUpdated", {
-        detail: { logoUrl: publicUrl },
-      })
-    );
-
-    // 🔄 Revalidar SWR para coherencia global
-    await mutate();
-
-    setMessage("✅ Logo actualizado correctamente.");
-  } catch (err) {
-    console.error("Error subiendo logo:", err);
-    setMessage("❌ Error al subir el logo.");
-  } finally {
-    setUploading(false);
-  }
-};
-
-// =====================================================
-// 🔐 ACTUALIZAR EMAIL / PASSWORD
-// =====================================================
-
-const handleAccountUpdate = async (e: React.FormEvent) => {
-  e.preventDefault();
-  if (!user) return;
-  setUpdatingAccount(true);
-  setAccountMessage(null);
-
-  try {
-    if (
-      passwordForm.newPassword &&
-      passwordForm.newPassword !== passwordForm.confirmPassword
-    ) {
-      setAccountMessage("❌ Las contraseñas nuevas no coinciden.");
-      setUpdatingAccount(false);
-      return;
-    }
-
-    const { error: signInError } = await supabase.auth.signInWithPassword({
-      email: user.email!,
-      password: passwordForm.currentPassword,
-    });
-
-    if (signInError) {
-      setAccountMessage("❌ Contraseña actual incorrecta.");
-      setUpdatingAccount(false);
-      return;
-    }
-
-    if (
-      emailForm.newEmail &&
-      emailForm.newEmail !== user.email &&
-      emailForm.newEmail.includes("@")
-    ) {
-      const { error: emailError } = await supabase.auth.updateUser({
-        email: emailForm.newEmail,
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email: user.email!,
+        password: passwordForm.currentPassword,
       });
-      if (emailError) throw emailError;
-    }
 
-    if (passwordForm.newPassword) {
-      const { error: passError } = await supabase.auth.updateUser({
-        password: passwordForm.newPassword,
+      if (signInError) {
+        setAccountMessage("❌ Contraseña actual incorrecta.");
+        setUpdatingAccount(false);
+        return;
+      }
+
+      if (
+        emailForm.newEmail &&
+        emailForm.newEmail !== user.email &&
+        emailForm.newEmail.includes("@")
+      ) {
+        const { error: emailError } = await supabase.auth.updateUser({
+          email: emailForm.newEmail,
+        });
+        if (emailError) throw emailError;
+      }
+
+      if (passwordForm.newPassword) {
+        const { error: passError } = await supabase.auth.updateUser({
+          password: passwordForm.newPassword,
+        });
+        if (passError) throw passError;
+      }
+
+      setAccountMessage("✅ Credenciales actualizadas correctamente.");
+      setEmailForm({
+        actualEmail: emailForm.newEmail || user.email!,
+        newEmail: "",
       });
-      if (passError) throw passError;
+      setPasswordForm({
+        currentPassword: "",
+        newPassword: "",
+        confirmPassword: "",
+      });
+    } catch (err) {
+      console.error("Error actualizando cuenta:", err);
+      setAccountMessage("❌ Error al actualizar credenciales.");
+    } finally {
+      setUpdatingAccount(false);
     }
+  };
 
-    setAccountMessage("✅ Credenciales actualizadas correctamente.");
-    setEmailForm({
-      actualEmail: emailForm.newEmail || user.email!,
-      newEmail: "",
-    });
-    setPasswordForm({
-      currentPassword: "",
-      newPassword: "",
-      confirmPassword: "",
-    });
-  } catch (err) {
-    console.error("Error actualizando cuenta:", err);
-    setAccountMessage("❌ Error al actualizar credenciales.");
-  } finally {
-    setUpdatingAccount(false);
-  }
-};
-
-
-  // ============================================================
-  // 🔹 Render principal
-  // ============================================================
+  // =====================================================
+  // 🧱 Render principal
+  // =====================================================
   return (
     <div className="p-6 max-w-5xl mx-auto bg-white rounded-xl shadow-sm border border-gray-200 space-y-10">
-      {/* ================= DATOS DE LA EMPRESA ================= */}
+      {/* DATOS EMPRESA */}
       <section>
         <h1 className="text-2xl font-bold mb-6">Datos de la Empresa</h1>
 
-        {/* ✅ mantenemos tu formulario y su onSubmit */}
         <form onSubmit={handleSave} className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {[
             ["nombre_comercial", "Nombre Comercial"],
@@ -254,7 +256,9 @@ const handleAccountUpdate = async (e: React.FormEvent) => {
             ["localidad", "Localidad"],
           ].map(([key, label]) => (
             <div key={key}>
-              <label className="block text-sm font-medium text-gray-700">{label}</label>
+              <label className="block text-sm font-medium text-gray-700">
+                {label}
+              </label>
               <input
                 type="text"
                 name={key}
@@ -266,7 +270,9 @@ const handleAccountUpdate = async (e: React.FormEvent) => {
           ))}
 
           <div>
-            <label className="block text-sm font-medium text-gray-700">Provincia</label>
+            <label className="block text-sm font-medium text-gray-700">
+              Provincia
+            </label>
             <select
               name="provincia"
               value={(formData as Record<string, any>).provincia || ""}
@@ -308,7 +314,9 @@ const handleAccountUpdate = async (e: React.FormEvent) => {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700">Condición Fiscal</label>
+            <label className="block text-sm font-medium text-gray-700">
+              Condición Fiscal
+            </label>
             <select
               name="condicion_fiscal"
               value={(formData as Record<string, any>).condicion_fiscal || ""}
@@ -330,7 +338,7 @@ const handleAccountUpdate = async (e: React.FormEvent) => {
             <input
               type="color"
               name="color"
-              value={(formData as Record<string, any>).color}
+              value={(formData as Record<string, any>).color || "#2563eb"}
               onChange={handleChange}
               className="w-20 h-10 border rounded cursor-pointer"
             />
@@ -358,8 +366,6 @@ const handleAccountUpdate = async (e: React.FormEvent) => {
             />
           </div>
 
-          {/* 🔘 Muevo el botón DENTRO del form para asegurar submit semántico
-              (si preferís mantener el layout exacto, podés dejarlo fuera y agregar onClick={handleSave as any}) */}
           <div className="md:col-span-2 flex justify-center mt-2">
             <button
               type="submit"
@@ -386,7 +392,7 @@ const handleAccountUpdate = async (e: React.FormEvent) => {
         )}
       </section>
 
-      {/* ================= CUENTA / CREDENCIALES ================= */}
+      {/* CUENTA / CREDENCIALES */}
       <section>
         <h2 className="text-xl font-bold mb-6">Cuenta de Acceso</h2>
         <form

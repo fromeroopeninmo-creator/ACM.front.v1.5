@@ -28,6 +28,9 @@ export default function EmpresaCuentaPage() {
   const [accountMessage, setAccountMessage] = useState<string | null>(null);
   const [updatingAccount, setUpdatingAccount] = useState(false);
 
+  // 🚀 cache-busting para el preview del logo
+  const [logoBust, setLogoBust] = useState<number>(0);
+
   if (isLoading || !formData)
     return (
       <div className="p-6 text-center text-gray-500">
@@ -61,26 +64,38 @@ export default function EmpresaCuentaPage() {
       const pick = (key: string) => {
         const anyForm = formData as any;
         if (anyForm && anyForm[key] != null) return anyForm[key];
-        if (anyForm && anyForm.a && typeof anyForm.a === "object" && anyForm.a[key] != null) return anyForm.a[key];
-        if (anyForm && Object.prototype.hasOwnProperty.call(anyForm, `a.${key}`)) return anyForm[`a.${key}`];
+        if (
+          anyForm &&
+          anyForm.a &&
+          typeof anyForm.a === "object" &&
+          anyForm.a[key] != null
+        )
+          return anyForm.a[key];
+        if (
+          anyForm &&
+          Object.prototype.hasOwnProperty.call(anyForm, `a.${key}`)
+        )
+          return anyForm[`a.${key}`];
         return undefined;
       };
 
       const update: Record<string, any> = {};
-      const put = (k: string, v: any) => { if (v !== undefined) update[k] = v; };
+      const put = (k: string, v: any) => {
+        if (v !== undefined) update[k] = v;
+      };
 
       put("nombre_comercial", pick("nombre_comercial"));
-      put("razon_social",     pick("razon_social"));
-      put("cuit",             pick("cuit"));
-      put("matriculado",      pick("matriculado"));
-      put("cpi",              pick("cpi"));
-      put("telefono",         pick("telefono"));
-      put("direccion",        pick("direccion"));
-      put("localidad",        pick("localidad"));
-      put("provincia",        pick("provincia"));
+      put("razon_social", pick("razon_social"));
+      put("cuit", pick("cuit"));
+      put("matriculado", pick("matriculado"));
+      put("cpi", pick("cpi"));
+      put("telefono", pick("telefono"));
+      put("direccion", pick("direccion"));
+      put("localidad", pick("localidad"));
+      put("provincia", pick("provincia"));
       put("condicion_fiscal", pick("condicion_fiscal"));
-      put("color",            pick("color"));
-      put("logo_url",         pick("logo_url"));
+      put("color", pick("color"));
+      put("logo_url", pick("logo_url"));
 
       console.log("🔒 usando API /api/empresa/update");
       console.log("🧪 Payload hacia API:", { user_id: user.id, update });
@@ -100,7 +115,9 @@ export default function EmpresaCuentaPage() {
       if (update.color) {
         setPrimaryColor(update.color);
         localStorage.setItem("vai_primaryColor", update.color);
-        window.dispatchEvent(new CustomEvent("themeUpdated", { detail: { color: update.color } }));
+        window.dispatchEvent(
+          new CustomEvent("themeUpdated", { detail: { color: update.color } })
+        );
       }
 
       await mutate(); // revalidar datos
@@ -113,80 +130,78 @@ export default function EmpresaCuentaPage() {
     }
   };
 
- // =====================================================
-// 🖼️ SUBIR LOGO EMPRESA (via API server-side + cache-busting)
-// =====================================================
-const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-  try {
-    const file = e.target.files?.[0];
-    if (!file || !user) return;
+  // =====================================================
+  // 🖼️ SUBIR LOGO EMPRESA (via API server-side + cache-busting)
+  // =====================================================
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    try {
+      const file = e.target.files?.[0];
+      if (!file || !user) return;
 
-    setUploading(true);
-    const fileExt = file.name.split(".").pop();
-    const fileName = `empresa_${user.id}.${fileExt}`;
-    const filePath = `logos/${fileName}`;
+      setUploading(true);
+      const fileExt = file.name.split(".").pop();
+      const fileName = `empresa_${user.id}.${fileExt}`;
+      const filePath = `logos/${fileName}`;
 
-    // 1) Subir al storage (con cacheControl=0 para evitar nuevo cache)
-    const { error: uploadError } = await supabase.storage
-      .from("logos_empresas")
-      .upload(filePath, file, { upsert: true, cacheControl: "0" });
+      // 1) Subir al storage (con cacheControl=0 para evitar nuevo cache)
+      const { error: uploadError } = await supabase.storage
+        .from("logos_empresas")
+        .upload(filePath, file, { upsert: true, cacheControl: "0" });
 
-    if (uploadError) throw uploadError;
+      if (uploadError) throw uploadError;
 
-    // 2) Obtener URL pública base (la que guardamos en BD)
-    const {
-      data: { publicUrl },
-    } = supabase.storage.from("logos_empresas").getPublicUrl(filePath);
+      // 2) Obtener URL pública base (la que guardamos en BD)
+      const {
+        data: { publicUrl },
+      } = supabase.storage.from("logos_empresas").getPublicUrl(filePath);
 
-    // 3) Actualizar en DB vía API server-side (guardamos la URL BASE)
-    const res = await fetch("/api/empresa/update", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ user_id: user.id, update: { logo_url: publicUrl } }),
-    });
+      // 3) Actualizar en DB vía API server-side (guardamos la URL BASE)
+      const res = await fetch("/api/empresa/update", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_id: user.id, update: { logo_url: publicUrl } }),
+      });
 
-    if (!res.ok) {
-      const j = await res.json().catch(() => ({}));
-      console.error("API error:", j);
-      throw new Error(j?.error?.message || "Error en actualización de logo");
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        console.error("API error:", j);
+        throw new Error(j?.error?.message || "Error en actualización de logo");
+      }
+
+      // 4) Cache-busting para el preview inmediato (no cambiamos lo guardado en BD)
+      const bustedUrl = `${publicUrl}?v=${Date.now()}`;
+
+      // 5) Actualizar UI inmediata (SWR + ThemeContext + localStorage)
+      mutate(
+        {
+          ...(formData as Record<string, any>),
+          logo_url: bustedUrl, // preview bustead
+        } as typeof formData,
+        false
+      );
+
+      localStorage.setItem("vai_logoUrl", bustedUrl);
+      setLogoUrl(bustedUrl);
+      setLogoBust(Date.now()); // fuerza rerender del <img>
+
+      window.dispatchEvent(
+        new CustomEvent("themeUpdated", {
+          detail: { logoUrl: bustedUrl },
+          bubbles: false,
+        })
+      );
+
+      // 6) Revalidar (traerá la URL base desde BD; el <img> seguirá bustead por el query param)
+      await mutate();
+
+      setMessage("✅ Logo actualizado correctamente.");
+    } catch (err) {
+      console.error("Error subiendo logo:", err);
+      setMessage("❌ Error al subir el logo.");
+    } finally {
+      setUploading(false);
     }
-
-    // 4) Cache-busting para el preview inmediato
-    const bustedUrl = `${publicUrl}?v=${Date.now()}`;
-
-    // 5) Actualizar UI inmediata (SWR + ThemeContext + localStorage)
-    mutate(
-      {
-        ...(formData as Record<string, any>),
-        // guardamos la VERSIÓN bustead en el estado local para que el <img> refresque YA
-        logo_url: bustedUrl,
-      } as typeof formData,
-      false
-    );
-
-    localStorage.setItem("vai_logoUrl", bustedUrl);
-    setLogoUrl(bustedUrl);
-    setLogoBust(Date.now()); // incrementa versión para el <img>
-
-    window.dispatchEvent(
-      new CustomEvent("themeUpdated", {
-        detail: { logoUrl: bustedUrl },
-        bubbles: false,
-      })
-    );
-
-    // 6) Revalidar (traerá la URL base desde BD; el <img> seguirá bustead por el query param)
-    await mutate();
-
-    setMessage("✅ Logo actualizado correctamente.");
-  } catch (err) {
-    console.error("Error subiendo logo:", err);
-    setMessage("❌ Error al subir el logo.");
-  } finally {
-    setUploading(false);
-  }
-};
-
+  };
 
   // =====================================================
   // 🔐 ACTUALIZAR EMAIL / PASSWORD (igual)
@@ -236,8 +251,15 @@ const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
       }
 
       setAccountMessage("✅ Credenciales actualizadas correctamente.");
-      setEmailForm({ actualEmail: emailForm.newEmail || user.email!, newEmail: "" });
-      setPasswordForm({ currentPassword: "", newPassword: "", confirmPassword: "" });
+      setEmailForm({
+        actualEmail: emailForm.newEmail || user.email!,
+        newEmail: "",
+      });
+      setPasswordForm({
+        currentPassword: "",
+        newPassword: "",
+        confirmPassword: "",
+      });
     } catch (err) {
       console.error("Error actualizando cuenta:", err);
       setAccountMessage("❌ Error al actualizar credenciales.");
@@ -255,7 +277,10 @@ const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
       <section>
         <h1 className="text-2xl font-bold mb-6">Datos de la Empresa</h1>
 
-        <form onSubmit={handleSave} className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <form
+          onSubmit={handleSave}
+          className="grid grid-cols-1 md:grid-cols-2 gap-6"
+        >
           {[
             ["nombre_comercial", "Nombre Comercial"],
             ["razon_social", "Razón Social"],
@@ -292,12 +317,34 @@ const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
             >
               <option value="">Seleccionar provincia...</option>
               {[
-                "CABA","Buenos Aires","Córdoba","Santa Fe","Mendoza","Tucumán","Salta",
-                "Entre Ríos","Corrientes","Misiones","Chaco","San Luis","San Juan",
-                "Neuquén","Río Negro","Chubut","Santa Cruz","La Pampa","La Rioja",
-                "Catamarca","Formosa","Santiago del Estero","Jujuy","Tierra del Fuego",
+                "CABA",
+                "Buenos Aires",
+                "Córdoba",
+                "Santa Fe",
+                "Mendoza",
+                "Tucumán",
+                "Salta",
+                "Entre Ríos",
+                "Corrientes",
+                "Misiones",
+                "Chaco",
+                "San Luis",
+                "San Juan",
+                "Neuquén",
+                "Río Negro",
+                "Chubut",
+                "Santa Cruz",
+                "La Pampa",
+                "La Rioja",
+                "Catamarca",
+                "Formosa",
+                "Santiago del Estero",
+                "Jujuy",
+                "Tierra del Fuego",
               ].map((prov) => (
-                <option key={prov} value={prov}>{prov}</option>
+                <option key={prov} value={prov}>
+                  {prov}
+                </option>
               ))}
             </select>
           </div>
@@ -321,7 +368,9 @@ const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
             </label>
             {(formData as Record<string, any>).logo_url ? (
               <img
-                src={(formData as Record<string, any>).logo_url}
+                src={`${
+                  (formData as Record<string, any>).logo_url
+                }${(formData as Record<string, any>).logo_url.includes("?") ? "" : `?v=${logoBust}`}`}
                 alt="Logo actual"
                 className="h-16 object-contain border rounded"
               />
@@ -366,9 +415,14 @@ const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
       {/* CUENTA / CREDENCIALES */}
       <section>
         <h2 className="text-xl font-bold mb-6">Cuenta de Acceso</h2>
-        <form onSubmit={handleAccountUpdate} className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <form
+          onSubmit={handleAccountUpdate}
+          className="grid grid-cols-1 md:grid-cols-2 gap-6"
+        >
           <div>
-            <label className="block text-sm font-medium text-gray-700">Email actual</label>
+            <label className="block text-sm font-medium text-gray-700">
+              Email actual
+            </label>
             <input
               type="email"
               value={emailForm.actualEmail}
@@ -378,46 +432,75 @@ const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700">Nuevo email</label>
+            <label className="block text-sm font-medium text-gray-700">
+              Nuevo email
+            </label>
             <input
               type="email"
               value={emailForm.newEmail}
-              onChange={(e) => setEmailForm({ ...emailForm, newEmail: e.target.value })}
+              onChange={(e) =>
+                setEmailForm({ ...emailForm, newEmail: e.target.value })
+              }
               placeholder="Opcional - dejar vacío si no cambia"
               className="mt-1 w-full border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-sky-400"
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700">Contraseña actual</label>
+            <label className="block text-sm font-medium text-gray-700">
+              Contraseña actual
+            </label>
             <input
               type={showPasswords ? "text" : "password"}
               value={passwordForm.currentPassword}
-              onChange={(e) => setPasswordForm({ ...passwordForm, currentPassword: e.target.value })}
+              onChange={(e) =>
+                setPasswordForm({
+                  ...passwordForm,
+                  currentPassword: e.target.value,
+                })
+              }
               className="mt-1 w-full border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-sky-400"
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700">Nueva contraseña</label>
+            <label className="block text-sm font-medium text-gray-700">
+              Nueva contraseña
+            </label>
             <input
               type={showPasswords ? "text" : "password"}
               value={passwordForm.newPassword}
-              onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })}
+              onChange={(e) =>
+                setPasswordForm({
+                  ...passwordForm,
+                  newPassword: e.target.value,
+                })
+              }
               placeholder="Opcional - dejar vacío si no cambia"
               className="mt-1 w-full border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-sky-400"
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700">Confirmar nueva contraseña</label>
+            <label className="block text-sm font-medium text-gray-700">
+              Confirmar nueva contraseña
+            </label>
             <input
               type={showPasswords ? "text" : "password"}
               value={passwordForm.confirmPassword}
-              onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })}
+              onChange={(e) =>
+                setPasswordForm({
+                  ...passwordForm,
+                  confirmPassword: e.target.value,
+                })
+              }
               className="mt-1 w-full border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-sky-400"
             />
-            <button type="button" onClick={() => setShowPasswords(!showPasswords)} className="text-xs text-sky-600 mt-1">
+            <button
+              type="button"
+              onClick={() => setShowPasswords(!showPasswords)}
+              className="text-xs text-sky-600 mt-1"
+            >
               {showPasswords ? "🙈 Ocultar contraseñas" : "👁️ Ver contraseñas"}
             </button>
           </div>

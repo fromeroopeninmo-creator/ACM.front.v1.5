@@ -47,8 +47,8 @@ export default function EmpresaCuentaPage() {
     );
   };
 
- // =====================================================
-// 💾 GUARDAR DATOS EMPRESA (payload blindado + return=minimal)
+// =====================================================
+// 💾 GUARDAR DATOS EMPRESA (payload blindado, sin select)
 // =====================================================
 const handleSave = async (e: React.FormEvent) => {
   e.preventDefault();
@@ -116,10 +116,10 @@ const handleSave = async (e: React.FormEvent) => {
     console.log("🧪 Keys en formData:", Object.keys(formData as any));
     console.log("🧪 Payload limpio a enviar:", cleanData);
 
-    // ✅ Update por user_id, forzando return=minimal para evitar cualquier SELECT con alias previo
+    // ✅ Update por user_id; en supabase-js v2, SIN .select() = return=minimal
     const { error } = await supabase
       .from("empresas")
-      .update(cleanData, { returning: "minimal" })
+      .update(cleanData)
       .eq("user_id", user.id);
 
     if (error) throw error;
@@ -146,7 +146,7 @@ const handleSave = async (e: React.FormEvent) => {
 };
 
 // =====================================================
-// 🖼️ SUBIR LOGO EMPRESA (también con return=minimal)
+// 🖼️ SUBIR LOGO EMPRESA (sin select)
 // =====================================================
 const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
   try {
@@ -168,10 +168,10 @@ const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
       data: { publicUrl },
     } = supabase.storage.from("logos_empresas").getPublicUrl(filePath);
 
-    // 🔒 Update sin representación para evitar el mismo problema
+    // 🔒 Update sin representación (no encadenamos .select())
     const { error: dbError } = await supabase
       .from("empresas")
-      .update({ logo_url: publicUrl }, { returning: "minimal" })
+      .update({ logo_url: publicUrl })
       .eq("user_id", user.id);
 
     if (dbError) throw dbError;

@@ -67,24 +67,29 @@ export default function EmpresaCuentaPage() {
   setMessage(null);
 
   try {
-    // 🔒 persistimos en DB — corregido: usamos user_id en vez de id
+    // 🔒 Guardar datos en DB
     const { error } = await supabase
       .from("empresas")
       .update(formData as Record<string, any>)
-      .eq("user_id", user.id); // ✅ identificador correcto
+      .eq("user_id", user.id);
 
     if (error) throw error;
 
-    // 🎨 sincronizamos ThemeContext + localStorage con el color actual
+    // 🎨 Actualizar color global instantáneamente
     const newColor = (formData as Record<string, any>).color;
     if (newColor) {
       setPrimaryColor(newColor);
-      try {
-        localStorage.setItem("vai_primaryColor", newColor);
-      } catch {}
+      localStorage.setItem("vai_primaryColor", newColor);
+
+      // 🚀 Disparar evento global para ThemeContext
+      window.dispatchEvent(
+        new CustomEvent("themeUpdated", {
+          detail: { color: newColor },
+        })
+      );
     }
 
-    // 🔄 revalidación global: actualiza todos los componentes que usan useEmpresa()
+    // 🔄 Revalidar cache SWR
     await mutate();
 
     setMessage("✅ Datos actualizados correctamente.");
@@ -96,6 +101,10 @@ export default function EmpresaCuentaPage() {
   }
 };
 
+// =====================================================
+// 🖼️ SUBIR LOGO DE EMPRESA
+// =====================================================
+
 const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
   try {
     const file = e.target.files?.[0];
@@ -106,6 +115,7 @@ const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const fileName = `empresa_${user.id}.${fileExt}`;
     const filePath = `logos/${fileName}`;
 
+    // 📦 Subir a Supabase Storage
     const { error: uploadError } = await supabase.storage
       .from("logos_empresas")
       .upload(filePath, file, { upsert: true });
@@ -116,7 +126,7 @@ const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
       data: { publicUrl },
     } = supabase.storage.from("logos_empresas").getPublicUrl(filePath);
 
-    // 🔒 Guardar en DB usando user_id (empresa)
+    // 🗃️ Guardar en la tabla empresas
     const { error: dbError } = await supabase
       .from("empresas")
       .update({ logo_url: publicUrl })
@@ -124,25 +134,25 @@ const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
 
     if (dbError) throw dbError;
 
-    // ✅ Actualizar el estado local del formulario inmediatamente
+    // ✅ Actualizar preview localmente sin esperar realtime
+    (formData as any).logo_url = publicUrl;
     mutate(
       { ...(formData as Record<string, any>), logo_url: publicUrl } as typeof formData,
       false
     );
 
-    // ✅ Refrescar el preview visual directamente
-    (formData as any).logo_url = publicUrl; // 🔁 esto fuerza que el <img src={formData.logo_url}> se actualice
+    // 🧠 Sincronizar ThemeContext + localStorage
+    localStorage.setItem("vai_logoUrl", publicUrl);
+    setLogoUrl(publicUrl);
 
-    // 🧠 Sincronizar ThemeContext y localStorage
-    try {
-      localStorage.setItem("vai_logoUrl", publicUrl);
-      setLogoUrl(publicUrl);
-      await reloadTheme();
-    } catch (err) {
-      console.warn("Error actualizando localStorage:", err);
-    }
+    // 🚀 Notificar cambio global (ThemeContext y vistas abiertas)
+    window.dispatchEvent(
+      new CustomEvent("themeUpdated", {
+        detail: { logoUrl: publicUrl },
+      })
+    );
 
-    // 🔄 Revalidar SWR global para mantener consistencia
+    // 🔄 Revalidar SWR para coherencia global
     await mutate();
 
     setMessage("✅ Logo actualizado correctamente.");
@@ -153,6 +163,10 @@ const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     setUploading(false);
   }
 };
+
+// =====================================================
+// 🔐 ACTUALIZAR EMAIL / PASSWORD
+// =====================================================
 
 const handleAccountUpdate = async (e: React.FormEvent) => {
   e.preventDefault();
@@ -216,6 +230,7 @@ const handleAccountUpdate = async (e: React.FormEvent) => {
     setUpdatingAccount(false);
   }
 };
+
 
   // ============================================================
   // 🔹 Render principal

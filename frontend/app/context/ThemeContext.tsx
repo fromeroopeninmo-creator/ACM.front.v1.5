@@ -16,6 +16,7 @@ interface ThemeContextType {
   logoUrl?: string | null;
   setLogoUrl: (url: string | null) => void;
   hydrated: boolean;
+  reloadTheme: () => Promise<void>; // 🆕 Nueva función pública
 }
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
@@ -25,18 +26,21 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   try {
     user = useAuth()?.user || null;
   } catch {
-    // durante el prerender puede no existir AuthContext todavía
+    // En prerender, AuthContext aún no está disponible
   }
 
   const [primaryColor, setPrimaryColor] = useState("#2563eb");
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [hydrated, setHydrated] = useState(false);
 
-  // 1️⃣ Cargar tema desde localStorage apenas se monta
+  // =====================================================
+  // 1️⃣ Cargar valores iniciales desde localStorage
+  // =====================================================
   useEffect(() => {
     try {
       const storedColor = localStorage.getItem("vai_primaryColor");
       const storedLogo = localStorage.getItem("vai_logoUrl");
+
       if (storedColor) setPrimaryColor(storedColor);
       if (storedLogo) setLogoUrl(storedLogo);
     } catch (err) {
@@ -45,92 +49,89 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     setHydrated(true);
   }, []);
 
-  // 2️⃣ Sincronizar con Supabase según el rol
-  useEffect(() => {
-    const loadCompanyTheme = async () => {
-      if (!user) return;
+  // =====================================================
+  // 2️⃣ Función principal: carga datos de empresa/asesor
+  // =====================================================
+  const loadCompanyTheme = async () => {
+    if (!user) return;
 
-      let filterColumn = "";
-      let filterValue = "";
+    if (user.role === "empresa" || user.role === "asesor") {
+      const empresaId = user.role === "empresa" ? user.id : user.empresa_id;
+      if (!empresaId) return;
 
-      if (user.role === "empresa") {
-        // Empresa: busca por su propio user_id
-        filterColumn = "user_id";
-        filterValue = user.id;
-      } else if (user.role === "asesor") {
-        // Asesor: busca por la empresa a la que pertenece
-        filterColumn = "id";
-        filterValue = user.empresa_id;
-      }
+      const { data, error } = await supabase
+        .from("empresas")
+        .select("color, logo_url")
+        .eq("id", empresaId)
+        .single();
 
-      if (filterValue) {
-        const { data, error } = await supabase
-          .from("empresas")
-          .select("color, logo_url")
-          .eq(filterColumn, filterValue)
-          .single();
-
-        if (!error && data) {
-          if (data.color) {
-            setPrimaryColor(data.color);
-            localStorage.setItem("vai_primaryColor", data.color);
-          }
-          if (data.logo_url) {
-            setLogoUrl(data.logo_url);
-            localStorage.setItem("vai_logoUrl", data.logo_url);
-          }
+      if (!error && data) {
+        if (data.color) {
+          setPrimaryColor(data.color);
+          localStorage.setItem("vai_primaryColor", data.color);
+        }
+        if (data.logo_url) {
+          setLogoUrl(data.logo_url);
+          localStorage.setItem("vai_logoUrl", data.logo_url);
         }
       }
+    }
 
-      // Roles globales (sin empresa asociada)
-      if (
-        user.role === "super_admin_root" ||
-        user.role === "super_admin" ||
-        user.role === "soporte"
-      ) {
-        setPrimaryColor("#2563eb");
-        setLogoUrl(null);
-        localStorage.removeItem("vai_primaryColor");
-        localStorage.removeItem("vai_logoUrl");
-      }
-    };
+    if (
+      user.role === "super_admin_root" ||
+      user.role === "super_admin" ||
+      user.role === "soporte"
+    ) {
+      setPrimaryColor("#2563eb");
+      setLogoUrl(null);
+      localStorage.removeItem("vai_primaryColor");
+      localStorage.removeItem("vai_logoUrl");
+    }
+  };
 
+  // 🆕 3️⃣ Exponer función pública para forzar recarga manual
+  const reloadTheme = async () => {
+    await loadCompanyTheme();
+  };
+
+  // =====================================================
+  // 4️⃣ Cargar tema inicial desde Supabase (una vez logueado)
+  // =====================================================
+  useEffect(() => {
     loadCompanyTheme();
 
-    // 3️⃣ Suscripción en tiempo real a cambios en la empresa correspondiente
+    // Realtime listener
     let channel: ReturnType<typeof supabase.channel> | null = null;
 
     if (user && (user.role === "empresa" || user.role === "asesor")) {
-      const filterColumn =
-        user.role === "empresa" ? "user_id" : "id";
-      const filterValue =
-        user.role === "empresa" ? user.id : user.empresa_id;
+      const empresaId = user.role === "empresa" ? user.id : user.empresa_id;
 
-      if (filterValue) {
-        channel = supabase
-          .channel("empresa_theme_updates")
-          .on(
-            "postgres_changes",
-            {
-              event: "UPDATE",
-              schema: "public",
-              table: "empresas",
-              filter: `${filterColumn}=eq.${filterValue}`,
-            },
-            (payload) => {
-              const updated = payload.new;
-              if (updated?.color) {
-                setPrimaryColor(updated.color);
-                localStorage.setItem("vai_primaryColor", updated.color);
-              }
-              if (updated?.logo_url) {
-                setLogoUrl(updated.logo_url);
-                localStorage.setItem("vai_logoUrl", updated.logo_url);
-              }
+      channel = supabase
+        .channel("empresa_theme_updates")
+        .on(
+          "postgres_changes",
+          {
+            event: "UPDATE",
+            schema: "public",
+            table: "empresas",
+            filter: `id=eq.${empresaId}`,
+          },
+          (payload) => {
+            const updated = payload.new;
+            if (!updated) return;
+
+            // 🔁 Actualización instantánea sin depender de Edge realtime delays
+            if (updated.color) {
+              setPrimaryColor(updated.color);
+              localStorage.setItem("vai_primaryColor", updated.color);
             }
-          )
-          .subscribe();
-      }
+            if (updated.logo_url) {
+              setLogoUrl(updated.logo_url);
+              localStorage.setItem("vai_logoUrl", updated.logo_url);
+            }
+          }
+        )
+        .subscribe();
     }
 
     return () => {
@@ -138,14 +139,18 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     };
   }, [user]);
 
-  // 4️⃣ Aplicar el color global al DOM dinámicamente
+  // =====================================================
+  // 5️⃣ Aplicar color global al DOM (CSS variable)
+  // =====================================================
   useEffect(() => {
     if (primaryColor) {
       document.documentElement.style.setProperty("--primary-color", primaryColor);
     }
   }, [primaryColor]);
 
-  // 5️⃣ Evita el flash azul inicial antes de hidratar
+  // =====================================================
+  // 6️⃣ Evitar flash visual antes de hidratar
+  // =====================================================
   if (!hydrated) {
     return (
       <div className="flex justify-center items-center h-screen text-gray-400">
@@ -154,6 +159,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     );
   }
 
+  // =====================================================
+  // 7️⃣ Devolver provider
+  // =====================================================
   return (
     <ThemeContext.Provider
       value={{
@@ -162,6 +170,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
         logoUrl,
         setLogoUrl,
         hydrated,
+        reloadTheme, // ✅ nueva función pública expuesta
       }}
     >
       {children}

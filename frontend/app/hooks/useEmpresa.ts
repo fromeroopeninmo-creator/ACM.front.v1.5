@@ -7,10 +7,6 @@ import { useAuth } from "@/context/AuthContext";
 /**
  * Hook unificado para obtener los datos de la empresa asociada al usuario actual.
  * Soporta roles: empresa, asesor, admin y soporte.
- *
- * - Empresa → busca por user_id = user.id
- * - Asesor → busca por empresa_id del asesor
- * - Admin / Soporte → retorna null
  */
 export function useEmpresa() {
   const { user } = useAuth();
@@ -19,16 +15,16 @@ export function useEmpresa() {
     if (!user) return null;
 
     let empresaFilterKey: string | null = null;
-    let filterColumn = "user_id"; // 🟢 por defecto para empresa
+    let filterColumn = "user_id";
 
     switch (user.role) {
       case "empresa":
-        empresaFilterKey = user.id; // la empresa se identifica por user_id
+        empresaFilterKey = user.id;
         filterColumn = "user_id";
         break;
       case "asesor":
         empresaFilterKey = user.empresa_id ?? null;
-        filterColumn = "id"; // los asesores referencian el id de empresa
+        filterColumn = "id";
         break;
       default:
         return null;
@@ -45,7 +41,9 @@ export function useEmpresa() {
       .single();
 
     if (error) throw error;
-    return data;
+
+    // 🧹 Limpieza total del proxy SWR / alias interno
+    return data ? JSON.parse(JSON.stringify(data)) : null;
   };
 
   const { data, error, isLoading, mutate } = useSWR(

@@ -2,7 +2,6 @@
 
 import useSWR from "swr";
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import { useTheme } from "@/context/ThemeContext";
 import { supabase } from "#lib/supabaseClient";
 
@@ -14,31 +13,19 @@ interface HeaderProps {
 
 interface EmpresaData {
   nombre_comercial: string | null;
-  matriculado: string | null;
-  cpi: string | null;
-  razon_social: string | null;
 }
 
 export default function DashboardHeader({ user, logout, color }: HeaderProps) {
   const { logoUrl, primaryColor } = useTheme();
   const [empresa, setEmpresa] = useState<EmpresaData | null>(null);
 
-  const role: string =
-    user?.role || user?.user_metadata?.role || "empresa";
-
-  const nombre: string =
-    user?.user_metadata?.nombre ||
-    user?.nombre ||
-    user?.email?.split("@")[0] ||
-    "Usuario";
+  const role: string = user?.role || user?.user_metadata?.role || "empresa";
 
   // ==============================
   // 🔹 Fetch con SWR
   // ==============================
   const fetchEmpresa = async (id: string) => {
-    let query = supabase
-      .from("empresas")
-      .select("nombre_comercial, matriculado, cpi, razon_social");
+    let query = supabase.from("empresas").select("nombre_comercial");
 
     if (role === "empresa") query = query.eq("id_usuario", id);
     if (role === "asesor") query = query.eq("id", user?.user_metadata?.empresa_id);
@@ -58,69 +45,53 @@ export default function DashboardHeader({ user, logout, color }: HeaderProps) {
   }, [data]);
 
   // ==============================
-  // 🔹 Render principal
+  // 🔹 Etiqueta por rol
   // ==============================
   const roleLabel =
     role === "empresa"
-      ? "EMPRESA"
+      ? "DASHBOARD EMPRESA"
       : role === "asesor"
-      ? "ASESOR"
+      ? "DASHBOARD ASESOR"
       : role === "soporte"
-      ? "SOPORTE"
+      ? "DASHBOARD SOPORTE"
       : role === "super_admin" || role === "super_admin_root"
-      ? "ADMIN"
-      : "USUARIO";
+      ? "DASHBOARD ADMIN"
+      : "DASHBOARD";
 
+  // ==============================
+  // 🔹 Render principal
+  // ==============================
   return (
     <header
-      className="flex justify-between items-center px-8 py-5 shadow-sm relative"
+      className="flex items-center justify-between px-8 py-4 shadow-sm relative"
       style={{ backgroundColor: primaryColor || color }}
     >
-      {/* IZQUIERDA */}
+      {/* IZQUIERDA - LOGO */}
       <div className="flex items-center gap-3">
         {logoUrl ? (
-          <img src={logoUrl} alt="Logo" className="h-10 object-contain" />
+          <img
+            src={logoUrl}
+            alt="Logo Empresa"
+            className="h-8 w-auto object-contain rounded-md bg-white/10 p-1"
+          />
         ) : (
-          <h1 className="text-white font-semibold text-lg">VAI Dashboard</h1>
+          <div className="h-8 w-8 rounded-md bg-white/20" />
         )}
-
-        <span className="text-white font-semibold text-sm uppercase tracking-wide">
-          {roleLabel}
-        </span>
-
-        <div className="flex flex-col leading-tight">
-          {empresa && (
-            <>
-              <span className="text-white font-medium text-sm">
-                Matriculado: {empresa.matriculado || "—"}
-              </span>
-              <span className="text-white/80 text-xs">
-                CPI: {empresa.cpi || "—"}
-              </span>
-            </>
-          )}
-        </div>
       </div>
 
-      {/* DERECHA */}
-      <div className="flex items-center gap-4">
-        {role === "empresa" && empresa?.razon_social ? (
-          <span className="text-white font-semibold text-sm">
-            Razón Social: {empresa.razon_social}
-          </span>
-        ) : role === "asesor" ? (
-          <span className="text-white font-semibold text-sm">
-            Asesor: {nombre}
-          </span>
-        ) : role === "soporte" ? (
-          <span className="text-white font-semibold text-sm">
-            Soporte: {nombre}
-          </span>
-        ) : role === "super_admin" || role === "super_admin_root" ? (
-          <span className="text-white font-semibold text-sm">
-            Admin: {nombre}
-          </span>
-        ) : null}
+      {/* CENTRO - TÍTULO */}
+      <h1 className="absolute left-1/2 transform -translate-x-1/2 text-white font-semibold text-lg tracking-wide text-center select-none">
+        {roleLabel}
+      </h1>
+
+      {/* DERECHA - BOTÓN SALIR */}
+      <div className="flex items-center">
+        <button
+          onClick={logout}
+          className="bg-red-400 hover:bg-red-500 text-white font-medium text-sm px-4 py-2 rounded-md transition"
+        >
+          Cerrar sesión
+        </button>
       </div>
     </header>
   );

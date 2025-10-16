@@ -16,7 +16,7 @@ interface ThemeContextType {
   logoUrl?: string | null;
   setLogoUrl: (url: string | null) => void;
   hydrated: boolean;
-  reloadTheme: () => Promise<void>; // 🆕 Nueva función pública
+  reloadTheme: () => Promise<void>;
 }
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
@@ -50,7 +50,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // =====================================================
-  // 2️⃣ Función principal: carga datos de empresa/asesor
+  // 2️⃣ Carga datos de empresa o asesor desde Supabase
   // =====================================================
   const loadCompanyTheme = async () => {
     if (!user) return;
@@ -89,18 +89,19 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  // 🆕 3️⃣ Exponer función pública para forzar recarga manual
+  // =====================================================
+  // 3️⃣ Función pública para forzar recarga manual
+  // =====================================================
   const reloadTheme = async () => {
     await loadCompanyTheme();
   };
 
   // =====================================================
-  // 4️⃣ Cargar tema inicial desde Supabase (una vez logueado)
+  // 4️⃣ Carga inicial y listener realtime (empresa/asesor)
   // =====================================================
   useEffect(() => {
     loadCompanyTheme();
 
-    // Realtime listener
     let channel: ReturnType<typeof supabase.channel> | null = null;
 
     if (user && (user.role === "empresa" || user.role === "asesor")) {
@@ -114,13 +115,13 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
             event: "UPDATE",
             schema: "public",
             table: "empresas",
-            filter: `id=eq.${empresaId}`,
+            // ⚠️ usamos OR en el filtro: puede actualizarse por id o user_id
+            filter: `id=eq.${empresaId},user_id=eq.${empresaId}`,
           },
           (payload) => {
             const updated = payload.new;
             if (!updated) return;
 
-            // 🔁 Actualización instantánea sin depender de Edge realtime delays
             if (updated.color) {
               setPrimaryColor(updated.color);
               localStorage.setItem("vai_primaryColor", updated.color);
@@ -144,12 +145,35 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   // =====================================================
   useEffect(() => {
     if (primaryColor) {
-      document.documentElement.style.setProperty("--primary-color", primaryColor);
+      document.documentElement.style.setProperty(
+        "--primary-color",
+        primaryColor
+      );
     }
   }, [primaryColor]);
 
   // =====================================================
-  // 6️⃣ Evitar flash visual antes de hidratar
+  // 6️⃣ Escucha global de cambios en localStorage (nuevo FIX)
+  // =====================================================
+  useEffect(() => {
+    const handleStorageChange = (event: StorageEvent) => {
+      // Si se actualiza desde handleLogoUpload o cualquier pestaña
+      if (event.key === "vai_logoUrl" && event.newValue) {
+        setLogoUrl(event.newValue);
+      }
+      if (event.key === "vai_primaryColor" && event.newValue) {
+        setPrimaryColor(event.newValue);
+      }
+    };
+
+    window.addEventListener("storage", handleStorageChange);
+    return () => {
+      window.removeEventListener("storage", handleStorageChange);
+    };
+  }, []);
+
+  // =====================================================
+  // 7️⃣ Evitar flash antes de hidratar
   // =====================================================
   if (!hydrated) {
     return (
@@ -160,7 +184,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   }
 
   // =====================================================
-  // 7️⃣ Devolver provider
+  // 8️⃣ Devolver provider
   // =====================================================
   return (
     <ThemeContext.Provider
@@ -170,7 +194,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
         logoUrl,
         setLogoUrl,
         hydrated,
-        reloadTheme, // ✅ nueva función pública expuesta
+        reloadTheme,
       }}
     >
       {children}

@@ -103,7 +103,7 @@ const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
 
     setUploading(true);
     const fileExt = file.name.split(".").pop();
-    const fileName = `empresa_${user.id}.${fileExt}`; // ✅ más consistente
+    const fileName = `empresa_${user.id}.${fileExt}`; // ✅ nombre consistente por user_id
     const filePath = `logos/${fileName}`;
 
     const { error: uploadError } = await supabase.storage
@@ -116,15 +116,15 @@ const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
       data: { publicUrl },
     } = supabase.storage.from("logos_empresas").getPublicUrl(filePath);
 
-    // 🔒 guardamos en DB — corregido: usamos user_id
+    // 🔒 Guardamos en DB con user_id correcto
     const { error: dbError } = await supabase
       .from("empresas")
       .update({ logo_url: publicUrl })
-      .eq("user_id", user.id); // ✅ identificador correcto
+      .eq("user_id", user.id);
 
     if (dbError) throw dbError;
 
-    // ✅ optimista local
+    // ✅ Actualizamos inmediatamente el estado local y el ThemeContext
     await mutate(
       {
         ...(formData as Record<string, any>),
@@ -133,12 +133,15 @@ const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
       false
     );
 
-    // 🧠 sincronizamos localStorage para que ThemeContext pueda leerlo si corresponde
+    // 🧠 Sincronizamos localStorage + contexto (cambio instantáneo en header/sidebar)
     try {
       localStorage.setItem("vai_logoUrl", publicUrl);
-    } catch {}
+      setLogoUrl(publicUrl); // ✅ actualización instantánea sin esperar el realtime
+    } catch (err) {
+      console.warn("No se pudo actualizar localStorage del logo:", err);
+    }
 
-    // 🔄 revalidación global
+    // 🔄 Revalidación global de SWR
     await mutate();
 
     setMessage("✅ Logo actualizado correctamente.");

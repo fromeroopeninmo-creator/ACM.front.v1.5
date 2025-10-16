@@ -2,10 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import Image from "next/image";
-import useSWR from "swr";
 import { useTheme } from "@/context/ThemeContext";
-import { supabase } from "#lib/supabaseClient";
 
 interface SidebarProps {
   role: string;
@@ -14,7 +11,7 @@ interface SidebarProps {
 
 export default function DashboardSidebar({ role, color }: SidebarProps) {
   const pathname = usePathname();
-  const { logoUrl, primaryColor } = useTheme();
+  const { primaryColor } = useTheme();
 
   // ==============================
   // 🔹 Menú por roles
@@ -63,23 +60,11 @@ export default function DashboardSidebar({ role, color }: SidebarProps) {
   // 🔹 Render principal
   // ==============================
   const sidebarClasses =
-    "w-64 min-h-screen text-white p-5 space-y-4 flex flex-col items-center shadow-md transition-colors duration-300";
+    // 🟢 Ancho reducido de 16rem (64) a 13rem (52)
+    "w-52 min-h-screen text-white p-5 space-y-4 flex flex-col items-center shadow-md transition-colors duration-300";
 
   return (
     <aside className={sidebarClasses} style={{ backgroundColor: bgColor }}>
-      {/* Logo */}
-      {(role === "asesor" || role === "empresa") && logoUrl && (
-        <div className="w-full flex justify-center mb-4">
-          <Image
-            src={logoUrl}
-            alt="Logo Empresa"
-            width={140}
-            height={60}
-            className="object-contain rounded-md bg-white/10 p-2"
-          />
-        </div>
-      )}
-
       {/* Navegación */}
       <nav className="w-full space-y-2">
         {links.map((item) => {

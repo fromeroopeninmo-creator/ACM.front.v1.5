@@ -14,6 +14,7 @@ interface ThemeContextType {
   primaryColor: string;
   setPrimaryColor: (color: string) => void;
   logoUrl?: string | null;
+  setLogoUrl: (url: string | null) => void; // 🆕 Nuevo setter público
   hydrated: boolean;
 }
 
@@ -32,7 +33,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [hydrated, setHydrated] = useState(false); // ✅ control de carga inicial
 
-  // 1️⃣ Primer paso: cargar del localStorage apenas se monte (antes de cualquier render visual)
+  // 1️⃣ Primer paso: cargar del localStorage apenas se monte
   useEffect(() => {
     try {
       const storedColor = localStorage.getItem("vai_primaryColor");
@@ -123,14 +124,14 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     };
   }, [user]);
 
-  // 🟢 5️⃣ Aplicar dinámicamente el color global al DOM (asegura header/sidebar/botones)
+  // 🟢 Aplicar dinámicamente el color global al DOM
   useEffect(() => {
     if (primaryColor) {
       document.documentElement.style.setProperty("--primary-color", primaryColor);
     }
   }, [primaryColor]);
 
-  // 4️⃣ No renderizamos nada hasta que esté hidratado (evita el “flash azul”)
+  // 4️⃣ No renderizamos nada hasta que esté hidratado
   if (!hydrated) {
     return (
       <div className="flex justify-center items-center h-screen text-gray-400">
@@ -141,7 +142,13 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   return (
     <ThemeContext.Provider
-      value={{ primaryColor, setPrimaryColor, logoUrl, hydrated }}
+      value={{
+        primaryColor,
+        setPrimaryColor,
+        logoUrl,
+        setLogoUrl, // 🆕 agregado aquí
+        hydrated,
+      }}
     >
       {children}
     </ThemeContext.Provider>

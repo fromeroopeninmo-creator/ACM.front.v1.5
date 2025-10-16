@@ -47,8 +47,8 @@ export default function EmpresaCuentaPage() {
     );
   };
 
-  // =====================================================
-// 💾 GUARDAR DATOS EMPRESA (payload blindado sin alias)
+ // =====================================================
+// 💾 GUARDAR DATOS EMPRESA (payload blindado + return=minimal)
 // =====================================================
 const handleSave = async (e: React.FormEvent) => {
   e.preventDefault();
@@ -61,12 +61,9 @@ const handleSave = async (e: React.FormEvent) => {
     const pick = (key: string) => {
       const anyForm = formData as any;
 
-      // Top-level
       if (anyForm && anyForm[key] !== undefined && anyForm[key] !== null) {
         return anyForm[key];
       }
-
-      // Posible contaminación: a.{key}
       if (
         anyForm &&
         anyForm.a &&
@@ -76,9 +73,6 @@ const handleSave = async (e: React.FormEvent) => {
       ) {
         return anyForm.a[key];
       }
-
-      // Posible forma plana “a.key” (clave con punto): NO la usamos en el payload,
-      // pero si existiera, la tomamos solo como valor (nunca como clave).
       if (
         anyForm &&
         typeof anyForm === "object" &&
@@ -86,7 +80,6 @@ const handleSave = async (e: React.FormEvent) => {
       ) {
         return anyForm[`a.${key}`];
       }
-
       return undefined;
     };
 
@@ -123,10 +116,10 @@ const handleSave = async (e: React.FormEvent) => {
     console.log("🧪 Keys en formData:", Object.keys(formData as any));
     console.log("🧪 Payload limpio a enviar:", cleanData);
 
-    // ✅ Update por user_id (rol empresa)
+    // ✅ Update por user_id, forzando return=minimal para evitar cualquier SELECT con alias previo
     const { error } = await supabase
       .from("empresas")
-      .update(cleanData)
+      .update(cleanData, { returning: "minimal" })
       .eq("user_id", user.id);
 
     if (error) throw error;
@@ -153,7 +146,7 @@ const handleSave = async (e: React.FormEvent) => {
 };
 
 // =====================================================
-// 🖼️ SUBIR LOGO EMPRESA
+// 🖼️ SUBIR LOGO EMPRESA (también con return=minimal)
 // =====================================================
 const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
   try {
@@ -175,9 +168,10 @@ const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
       data: { publicUrl },
     } = supabase.storage.from("logos_empresas").getPublicUrl(filePath);
 
+    // 🔒 Update sin representación para evitar el mismo problema
     const { error: dbError } = await supabase
       .from("empresas")
-      .update({ logo_url: publicUrl })
+      .update({ logo_url: publicUrl }, { returning: "minimal" })
       .eq("user_id", user.id);
 
     if (dbError) throw dbError;
@@ -272,9 +266,10 @@ const handleAccountUpdate = async (e: React.FormEvent) => {
     console.error("Error actualizando cuenta:", err);
     setAccountMessage("❌ Error al actualizar credenciales.");
   } finally {
-    setUpdatingAccount(false);
+       setUpdatingAccount(false);
   }
 };
+
 
   // =====================================================
   // 🧱 Render principal

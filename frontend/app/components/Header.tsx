@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 export default function Header() {
-  const { user, logout } = useAuth();
+  const { user } = useAuth(); // ⛔️ sacamos logout de acá (queda solo en DashboardHeader)
   const { primaryColor } = useTheme();
   const router = useRouter();
 
@@ -42,14 +42,14 @@ export default function Header() {
   if (!user) return null;
 
   const role = user.role || "empresa";
-  const safeUser = user as any; // 🔒 para evitar errores de tipo
+  const safeUser = user as any;
 
   // 🔹 Datos seguros
   const matriculado = empresa?.matriculado || "—";
   const cpi = empresa?.cpi || "—";
   const nombreAsesor =
     role === "asesor"
-      ? `${safeUser.nombre || safeUser.nombre_completo || "—"}`
+      ? `${safeUser.nombre ?? ""} ${safeUser.apellido ?? ""}`.trim() || "—"
       : "—";
 
   // 🔹 Ruta dinámica del dashboard
@@ -86,7 +86,7 @@ export default function Header() {
           <p>CPI: {cpi}</p>
           <p>Asesor: {nombreAsesor}</p>
 
-          {/* Botones */}
+          {/* Botón volver */}
           <div className="flex gap-2 mt-2">
             <button
               onClick={() => router.push(getDashboardRoute())}
@@ -97,17 +97,6 @@ export default function Header() {
               "
             >
               ⬅️ Volver al Dashboard
-            </button>
-
-            <button
-              onClick={logout}
-              style={{ backgroundColor: "#dc2626" }}
-              className="
-                px-3 py-1 text-[11px] sm:text-xs text-white font-medium
-                rounded border border-gray-200 shadow hover:opacity-90 transition
-              "
-            >
-              🚪 Cerrar sesión
             </button>
           </div>
         </div>
@@ -131,7 +120,7 @@ export default function Header() {
 
       {/* 🔹 DESKTOP */}
       <div className="hidden md:flex w-full justify-between items-center relative">
-        {/* Izquierda: botones */}
+        {/* Izquierda: botón volver */}
         <div className="flex gap-3">
           <button
             onClick={() => router.push(getDashboardRoute())}
@@ -142,17 +131,6 @@ export default function Header() {
             "
           >
             ⬅️ Volver al Dashboard
-          </button>
-
-          <button
-            onClick={logout}
-            style={{ backgroundColor: "#dc2626" }}
-            className="
-              px-4 py-2 text-sm font-semibold text-white
-              border rounded-lg shadow hover:opacity-90 transition
-            "
-          >
-            🚪 Cerrar Sesión
           </button>
         </div>
 

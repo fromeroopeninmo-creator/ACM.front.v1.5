@@ -4,9 +4,11 @@ import { useRouter, usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useAuth } from "./AuthContext";
 import { supabase } from "#lib/supabaseClient";
+import { useEmpresa } from "@/hooks/useEmpresa";
 
 export default function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
+  const { empresa, isLoading: isEmpresaLoading } = useEmpresa();
   const router = useRouter();
   const pathname = usePathname();
   const [checkingPlan, setCheckingPlan] = useState(true);
@@ -16,13 +18,12 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
 
     // Si no hay usuario → redirigir al login
     if (!user) {
-      router.replace("/login");
+      router.replace("/auth/login");
       return;
     }
 
     // 🧭 Control de acceso por rol
     const role = user.role || "empresa";
-
     const roleDashboard: Record<string, string> = {
       super_admin_root: "/dashboard/admin",
       super_admin: "/dashboard/admin",
@@ -30,7 +31,6 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
       empresa: "/dashboard/empresa",
       asesor: "/dashboard/asesor",
     };
-
     const target = roleDashboard[role];
 
     // Redirigir a su dashboard correspondiente
@@ -40,9 +40,19 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
       }
     }
 
-    // 🧩 Validación de plan solo para EMPRESAS
+    // 🧩 Validación de plan solo para EMPRESAS, usando empresa.id real
     const checkPlanStatus = async () => {
       if (role !== "empresa") {
+        setCheckingPlan(false);
+        return;
+      }
+
+      // Esperar a que cargue la empresa (para obtener su id)
+      if (isEmpresaLoading) return;
+
+      const empresaId = empresa?.id;
+      if (!empresaId) {
+        // Si no hay empresa todavía, no bloquear
         setCheckingPlan(false);
         return;
       }
@@ -50,7 +60,7 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
       const { data: plan, error } = await supabase
         .from("empresas_planes")
         .select("id, fecha_fin, activo")
-        .eq("empresa_id", user.id)
+        .eq("empresa_id", empresaId)
         .eq("activo", true)
         .maybeSingle();
 
@@ -71,7 +81,9 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
             .update({ activo: false })
             .eq("id", plan.id);
 
-          alert("⏰ Tu plan de prueba ha expirado. Actualizá tu plan para continuar usando la app.");
+          alert(
+            "⏰ Tu plan de prueba ha expirado. Actualizá tu plan para continuar usando la app."
+          );
           router.replace("/dashboard/empresa/planes");
           return;
         }
@@ -81,7 +93,7 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
     };
 
     checkPlanStatus();
-  }, [loading, user, pathname, router]);
+  }, [loading, user, pathname, router, empresa?.id, isEmpresaLoading]);
 
   // Mostrar pantalla de carga mientras se verifica sesión o plan
   if (loading || checkingPlan) {

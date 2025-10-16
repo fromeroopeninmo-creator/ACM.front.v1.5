@@ -1,71 +1,90 @@
 "use client";
 
-import { useEffect } from "react";
-import { useTheme } from "@/context/ThemeContext";
+import useSWR from "swr";
 import { useAuth } from "@/context/AuthContext";
-import { useEmpresa } from "@/hooks/useEmpresa";
-import { supabase } from "#lib/supabaseClient";
-import PlanStatusBanner from "./components/PlanStatusBanner";
+import { useTheme } from "@/context/ThemeContext";
 import Link from "next/link";
+import PlanStatusBanner from "./components/PlanStatusBanner";
+import { supabase } from "#lib/supabaseClient";
+import { useEffect } from "react";
 
 export default function EmpresaDashboardPage() {
   const { user } = useAuth();
-  const { empresa, isLoading, mutate } = useEmpresa();
   const { setPrimaryColor, setLogoUrl, primaryColor } = useTheme();
 
-  // 🎯 Aplicar color/logo al cargar empresa
-  useEffect(() => {
-    if (!empresa) return;
-    if (empresa.color) {
-      setPrimaryColor(empresa.color);
-      localStorage.setItem("vai_primaryColor", empresa.color);
-    }
-    if (empresa.logo_url) {
-      setLogoUrl(empresa.logo_url);
-      localStorage.setItem("vai_logoUrl", empresa.logo_url);
-    }
-  }, [empresa, setPrimaryColor, setLogoUrl]);
+  // 🔹 Función para obtener datos de empresa (incluye updated_at para bust)
+  const fetchEmpresa = async (userId: string) => {
+    const { data, error } = await supabase
+      .from("empresas")
+      .select(
+        "nombre_comercial, razon_social, condicion_fiscal, matriculado, cpi, telefono, logo_url, color, updated_at"
+      )
+      .eq("user_id", userId)
+      .maybeSingle();
 
-  // 🔴 Realtime: escuchar updates de la empresa y actualizar el cache central del hook
+    if (error) throw error;
+    return data;
+  };
+
+  // 🔹 SWR: carga reactiva con cache y revalidación automática
+  const {
+    data: empresa,
+    isLoading,
+    mutate,
+  } = useSWR(user ? ["empresa", user.id] : null, () => fetchEmpresa(user!.id));
+
+  // 🧭 Escucha en tiempo real para actualizar sin recargar
   useEffect(() => {
     if (!user) return;
-
-    // Filtro: si es empresa → user_id; si es asesor → empresa.id (cuando esté disponible)
-    const filter =
-      (user.role || "empresa") === "empresa" && user.id
-        ? `user_id=eq.${user.id}`
-        : empresa?.id
-        ? `id=eq.${empresa.id}`
-        : null;
-
-    if (!filter) return;
 
     const channel = supabase
       .channel("empresa-updates")
       .on(
         "postgres_changes",
         {
-          event: "*",
+          event: "UPDATE",
           schema: "public",
           table: "empresas",
-          filter,
+          filter: `user_id=eq.${user.id}`,
         },
         (payload: any) => {
-          const newData = payload.new as typeof empresa | null;
+          const newData = payload.new as Record<string, any> | null;
           if (!newData) return;
 
-          // Actualizar cache central sin revalidación remota
-          mutate(newData as any, false);
+          // ✅ Cache-busting de logo con updated_at del payload
+          const bustedLogo =
+            newData.logo_url && newData.logo_url.trim() !== ""
+              ? `${newData.logo_url}${
+                  newData.logo_url.includes("?") ? "" : `?v=${new Date(newData.updated_at || Date.now()).getTime()}`
+                }`
+              : "";
 
-          // Sincronizar tema
+          // Actualiza SWR (preview al instante)
+          mutate(
+            {
+              ...(empresa as any),
+              ...newData,
+              logo_url: bustedLogo || newData.logo_url || (empresa as any)?.logo_url || "",
+            } as any,
+            false
+          );
+
+          // 🎨 Tema
           if (newData.color) {
             setPrimaryColor(newData.color);
             localStorage.setItem("vai_primaryColor", newData.color);
           }
-          if (newData.logo_url) {
-            setLogoUrl(newData.logo_url);
-            localStorage.setItem("vai_logoUrl", newData.logo_url);
+          if (bustedLogo) {
+            setLogoUrl(bustedLogo);
+            localStorage.setItem("vai_logoUrl", bustedLogo);
           }
+
+          // Evento global
+          window.dispatchEvent(
+            new CustomEvent("themeUpdated", {
+              detail: { color: newData.color, logoUrl: bustedLogo },
+            })
+          );
         }
       )
       .subscribe();
@@ -73,7 +92,28 @@ export default function EmpresaDashboardPage() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [user, empresa?.id, mutate, setPrimaryColor, setLogoUrl]);
+  }, [user, mutate, setPrimaryColor, setLogoUrl, empresa]);
+
+  // 🔹 Hook auxiliar: sincronizar tema cuando cambia empresa (con bust)
+  useEffect(() => {
+    if (empresa) {
+      if (empresa.color) {
+        setPrimaryColor(empresa.color);
+        localStorage.setItem("vai_primaryColor", empresa.color);
+      }
+      const bustedLogo =
+        empresa.logo_url && empresa.logo_url.trim() !== ""
+          ? `${empresa.logo_url}${
+              empresa.logo_url.includes("?") ? "" : `?v=${new Date(empresa.updated_at || Date.now()).getTime()}`
+            }`
+          : "";
+
+      if (bustedLogo) {
+        setLogoUrl(bustedLogo);
+        localStorage.setItem("vai_logoUrl", bustedLogo);
+      }
+    }
+  }, [empresa, setPrimaryColor, setLogoUrl]);
 
   if (isLoading)
     return (
@@ -82,10 +122,11 @@ export default function EmpresaDashboardPage() {
       </div>
     );
 
+  // 🔒 Fallbacks de datos
   const meta = (user as any)?.user_metadata || user || {};
   const nombre = meta.nombre || "Usuario";
   const inmobiliaria =
-    empresa?.nombre_comercial || meta.inmobiliaria || "No especificado";
+    empresa?.nombre_comercial || meta.empresa || "No especificado";
   const razonSocial =
     empresa?.razon_social || meta.razon_social || "No especificado";
   const condicionFiscal =
@@ -95,9 +136,15 @@ export default function EmpresaDashboardPage() {
   const cpi = empresa?.cpi || meta.cpi || "No especificado";
   const telefono = empresa?.telefono || meta.telefono || "No especificado";
   const email = (user as any)?.email || "No especificado";
+
+  // 🖼️ Logo con bust (si ThemeContext todavía no inyectó, usamos bust local)
   const logoUrl =
     empresa?.logo_url && empresa.logo_url.trim() !== ""
-      ? empresa.logo_url
+      ? `${empresa.logo_url}${
+          empresa.logo_url.includes("?")
+            ? ""
+            : `?v=${new Date(empresa.updated_at || Date.now()).getTime()}`
+        }`
       : "/images/default-logo.png";
 
   return (
@@ -161,7 +208,7 @@ export default function EmpresaDashboardPage() {
           <h2 className="text-xl font-semibold mb-4">Datos de la Empresa</h2>
           <ul className="space-y-2 text-gray-700">
             <li>
-              <strong>Inmobiliaria:</strong> {inmobiliaria}
+              <strong>Nombre:</strong> {empresa}
             </li>
             <li>
               <strong>Razón Social:</strong> {razonSocial}

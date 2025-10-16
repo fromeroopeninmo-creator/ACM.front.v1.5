@@ -1,9 +1,8 @@
 "use client";
 
-import useSWR from "swr";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useTheme } from "@/context/ThemeContext";
-import { supabase } from "#lib/supabaseClient";
+import { useEmpresa } from "@/hooks/useEmpresa";
 
 interface HeaderProps {
   user: any;
@@ -11,54 +10,23 @@ interface HeaderProps {
   color?: string;
 }
 
-interface EmpresaData {
-  nombre_comercial: string | null;
-}
-
 export default function DashboardHeader({ user, logout, color }: HeaderProps) {
-  const { logoUrl, primaryColor, reloadTheme } = useTheme(); // ✅ agregamos reloadTheme
-  const [empresa, setEmpresa] = useState<EmpresaData | null>(null);
+  const { logoUrl, primaryColor, reloadTheme } = useTheme();
+  const { empresa } = useEmpresa();
 
   const role: string = user?.role || user?.user_metadata?.role || "empresa";
 
-  // ==============================
-  // 🔹 Fetch con SWR
-  // ==============================
-  const fetchEmpresa = async (id: string) => {
-    let query = supabase.from("empresas").select("nombre_comercial");
-
-    if (role === "empresa") query = query.eq("id_usuario", id);
-    if (role === "asesor") query = query.eq("id", user?.user_metadata?.empresa_id);
-
-    const { data, error } = await query.single();
-    if (error) throw error;
-    return data;
-  };
-
-  const { data } = useSWR(
-    user ? ["empresa_header", user.id] : null,
-    () => fetchEmpresa(user!.id)
-  );
-
-  useEffect(() => {
-    if (data) setEmpresa(data);
-  }, [data]);
-
-  // ==============================
-  // 🔹 Actualización en tiempo real de tema (evento global)
-  // ==============================
+  // 🔄 Cuando se dispare el evento global de tema, recargamos color/logo
   useEffect(() => {
     const handleThemeUpdate = async () => {
-      await reloadTheme(); // ✅ recarga el logo/color global
+      await reloadTheme();
     };
     window.addEventListener("themeUpdated", handleThemeUpdate);
     return () => window.removeEventListener("themeUpdated", handleThemeUpdate);
   }, [reloadTheme]);
 
-  // ==============================
-  // 🔹 Etiqueta por rol
-  // ==============================
-  const roleLabel =
+  // Etiqueta por rol (podemos incluir el nombre comercial si existe)
+  const roleLabelBase =
     role === "empresa"
       ? "Dashboard Empresa"
       : role === "asesor"
@@ -69,9 +37,11 @@ export default function DashboardHeader({ user, logout, color }: HeaderProps) {
       ? "Dashboard Admin"
       : "Dashboard";
 
-  // ==============================
-  // 🔹 Render principal
-  // ==============================
+  const roleLabel =
+    role === "empresa" && empresa?.nombre_comercial
+      ? `${roleLabelBase} · ${empresa.nombre_comercial}`
+      : roleLabelBase;
+
   return (
     <header
       className="flex justify-between items-center px-8 py-4 shadow-sm"
@@ -81,7 +51,7 @@ export default function DashboardHeader({ user, logout, color }: HeaderProps) {
       <div className="flex items-center gap-4">
         {logoUrl ? (
           <img
-            key={logoUrl} // ✅ fuerza re-render instantáneo
+            key={logoUrl}
             src={logoUrl}
             alt="Logo Empresa"
             className="h-10 w-auto object-contain rounded-md bg-white/10 p-1 transition-all duration-300"

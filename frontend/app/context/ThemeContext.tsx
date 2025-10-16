@@ -25,156 +25,122 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   let user: any = null;
   try {
     user = useAuth()?.user || null;
-  } catch {
-    // En prerender, AuthContext aún no está disponible
-  }
+  } catch {}
 
   const [primaryColor, setPrimaryColor] = useState("#2563eb");
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [hydrated, setHydrated] = useState(false);
 
   // =====================================================
-  // 1️⃣ Cargar valores iniciales desde localStorage
+  // 1️⃣ Cargar desde localStorage al montar
   // =====================================================
   useEffect(() => {
-    try {
-      const storedColor = localStorage.getItem("vai_primaryColor");
-      const storedLogo = localStorage.getItem("vai_logoUrl");
-
-      if (storedColor) setPrimaryColor(storedColor);
-      if (storedLogo) setLogoUrl(storedLogo);
-    } catch (err) {
-      console.warn("No se pudo leer localStorage del tema:", err);
-    }
+    const color = localStorage.getItem("vai_primaryColor");
+    const logo = localStorage.getItem("vai_logoUrl");
+    if (color) setPrimaryColor(color);
+    if (logo) setLogoUrl(logo);
     setHydrated(true);
   }, []);
 
   // =====================================================
-  // 2️⃣ Carga datos de empresa o asesor desde Supabase
+  // 2️⃣ Función principal de carga desde DB
   // =====================================================
   const loadCompanyTheme = async () => {
     if (!user) return;
 
-    if (user.role === "empresa" || user.role === "asesor") {
-      const empresaId = user.role === "empresa" ? user.id : user.empresa_id;
-      if (!empresaId) return;
+    const empresaId = user.role === "empresa" ? user.id : user.empresa_id;
+    if (!empresaId) return;
 
-      const { data, error } = await supabase
-        .from("empresas")
-        .select("color, logo_url")
-        .eq("id", empresaId)
-        .single();
+    const { data, error } = await supabase
+      .from("empresas")
+      .select("color, logo_url")
+      .eq("id", empresaId)
+      .single();
 
-      if (!error && data) {
-        if (data.color) {
-          setPrimaryColor(data.color);
-          localStorage.setItem("vai_primaryColor", data.color);
-        }
-        if (data.logo_url) {
-          setLogoUrl(data.logo_url);
-          localStorage.setItem("vai_logoUrl", data.logo_url);
-        }
-      }
+    if (error) return;
+
+    if (data.color) {
+      setPrimaryColor(data.color);
+      localStorage.setItem("vai_primaryColor", data.color);
     }
 
-    if (
-      user.role === "super_admin_root" ||
-      user.role === "super_admin" ||
-      user.role === "soporte"
-    ) {
-      setPrimaryColor("#2563eb");
-      setLogoUrl(null);
-      localStorage.removeItem("vai_primaryColor");
-      localStorage.removeItem("vai_logoUrl");
+    if (data.logo_url) {
+      setLogoUrl(data.logo_url);
+      localStorage.setItem("vai_logoUrl", data.logo_url);
     }
   };
 
-  // =====================================================
-  // 3️⃣ Función pública para forzar recarga manual
-  // =====================================================
   const reloadTheme = async () => {
     await loadCompanyTheme();
   };
 
   // =====================================================
-  // 4️⃣ Carga inicial y listener realtime (empresa/asesor)
+  // 3️⃣ Escuchar actualizaciones manuales (custom event)
   // =====================================================
   useEffect(() => {
-    loadCompanyTheme();
-
-    let channel: ReturnType<typeof supabase.channel> | null = null;
-
-    if (user && (user.role === "empresa" || user.role === "asesor")) {
-      const empresaId = user.role === "empresa" ? user.id : user.empresa_id;
-
-      channel = supabase
-        .channel("empresa_theme_updates")
-        .on(
-          "postgres_changes",
-          {
-            event: "UPDATE",
-            schema: "public",
-            table: "empresas",
-            // ⚠️ usamos OR en el filtro: puede actualizarse por id o user_id
-            filter: `id=eq.${empresaId},user_id=eq.${empresaId}`,
-          },
-          (payload) => {
-            const updated = payload.new;
-            if (!updated) return;
-
-            if (updated.color) {
-              setPrimaryColor(updated.color);
-              localStorage.setItem("vai_primaryColor", updated.color);
-            }
-            if (updated.logo_url) {
-              setLogoUrl(updated.logo_url);
-              localStorage.setItem("vai_logoUrl", updated.logo_url);
-            }
-          }
-        )
-        .subscribe();
-    }
-
-    return () => {
-      if (channel) supabase.removeChannel(channel);
-    };
-  }, [user]);
-
-  // =====================================================
-  // 5️⃣ Aplicar color global al DOM (CSS variable)
-  // =====================================================
-  useEffect(() => {
-    if (primaryColor) {
-      document.documentElement.style.setProperty(
-        "--primary-color",
-        primaryColor
-      );
-    }
-  }, [primaryColor]);
-
-  // =====================================================
-  // 6️⃣ Escucha global de cambios en localStorage (nuevo FIX)
-  // =====================================================
-  useEffect(() => {
-    const handleStorageChange = (event: StorageEvent) => {
-      // Si se actualiza desde handleLogoUpload o cualquier pestaña
-      if (event.key === "vai_logoUrl" && event.newValue) {
-        setLogoUrl(event.newValue);
+    const handleThemeUpdate = (e: CustomEvent) => {
+      if (e.detail?.color) {
+        setPrimaryColor(e.detail.color);
+        localStorage.setItem("vai_primaryColor", e.detail.color);
       }
-      if (event.key === "vai_primaryColor" && event.newValue) {
-        setPrimaryColor(event.newValue);
+      if (e.detail?.logoUrl) {
+        setLogoUrl(e.detail.logoUrl);
+        localStorage.setItem("vai_logoUrl", e.detail.logoUrl);
       }
     };
 
-    window.addEventListener("storage", handleStorageChange);
+    window.addEventListener("themeUpdated", handleThemeUpdate as EventListener);
     return () => {
-      window.removeEventListener("storage", handleStorageChange);
+      window.removeEventListener("themeUpdated", handleThemeUpdate as EventListener);
     };
   }, []);
 
   // =====================================================
-  // 7️⃣ Evitar flash antes de hidratar
+  // 4️⃣ Realtime listener como respaldo (asesores)
   // =====================================================
+  useEffect(() => {
+    loadCompanyTheme();
+    if (!user) return;
+
+    const empresaId = user.role === "empresa" ? user.id : user.empresa_id;
+    if (!empresaId) return;
+
+    const channel = supabase
+      .channel("empresa_theme_realtime")
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "empresas",
+          filter: `id=eq.${empresaId}`,
+        },
+        (payload) => {
+          const updated = payload.new;
+          if (updated?.color) {
+            setPrimaryColor(updated.color);
+            localStorage.setItem("vai_primaryColor", updated.color);
+          }
+          if (updated?.logo_url) {
+            setLogoUrl(updated.logo_url);
+            localStorage.setItem("vai_logoUrl", updated.logo_url);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user]);
+
+  // =====================================================
+  // 5️⃣ Aplicar color al DOM
+  // =====================================================
+  useEffect(() => {
+    document.documentElement.style.setProperty("--primary-color", primaryColor);
+  }, [primaryColor]);
+
   if (!hydrated) {
     return (
       <div className="flex justify-center items-center h-screen text-gray-400">
@@ -183,9 +149,6 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     );
   }
 
-  // =====================================================
-  // 8️⃣ Devolver provider
-  // =====================================================
   return (
     <ThemeContext.Provider
       value={{

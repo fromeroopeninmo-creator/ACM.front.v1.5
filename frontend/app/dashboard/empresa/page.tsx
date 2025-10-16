@@ -55,7 +55,9 @@ export default function EmpresaDashboardPage() {
           const bustedLogo =
             newData.logo_url && newData.logo_url.trim() !== ""
               ? `${newData.logo_url}${
-                  newData.logo_url.includes("?") ? "" : `?v=${new Date(newData.updated_at || Date.now()).getTime()}`
+                  newData.logo_url.includes("?")
+                    ? ""
+                    : `?v=${new Date(newData.updated_at || Date.now()).getTime()}`
                 }`
               : "";
 
@@ -64,7 +66,11 @@ export default function EmpresaDashboardPage() {
             {
               ...(empresa as any),
               ...newData,
-              logo_url: bustedLogo || newData.logo_url || (empresa as any)?.logo_url || "",
+              logo_url:
+                bustedLogo ||
+                newData.logo_url ||
+                (empresa as any)?.logo_url ||
+                "",
             } as any,
             false
           );
@@ -104,7 +110,9 @@ export default function EmpresaDashboardPage() {
       const bustedLogo =
         empresa.logo_url && empresa.logo_url.trim() !== ""
           ? `${empresa.logo_url}${
-              empresa.logo_url.includes("?") ? "" : `?v=${new Date(empresa.updated_at || Date.now()).getTime()}`
+              empresa.logo_url.includes("?")
+                ? ""
+                : `?v=${new Date(empresa.updated_at || Date.now()).getTime()}`
             }`
           : "";
 
@@ -125,8 +133,11 @@ export default function EmpresaDashboardPage() {
   // 🔒 Fallbacks de datos
   const meta = (user as any)?.user_metadata || user || {};
   const nombre = meta.nombre || "Usuario";
-  const inmobiliaria =
-    empresa?.nombre_comercial || meta.empresa || "No especificado";
+  const nombreEmpresa =
+    empresa?.nombre_comercial ||
+    meta.inmobiliaria ||
+    meta.empresa ||
+    "No especificado";
   const razonSocial =
     empresa?.razon_social || meta.razon_social || "No especificado";
   const condicionFiscal =
@@ -208,7 +219,7 @@ export default function EmpresaDashboardPage() {
           <h2 className="text-xl font-semibold mb-4">Datos de la Empresa</h2>
           <ul className="space-y-2 text-gray-700">
             <li>
-              <strong>Nombre:</strong> {empresa}
+              <strong>Nombre:</strong> {nombreEmpresa}
             </li>
             <li>
               <strong>Razón Social:</strong> {razonSocial}

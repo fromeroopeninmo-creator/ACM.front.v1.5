@@ -16,7 +16,7 @@ interface EmpresaData {
 }
 
 export default function DashboardHeader({ user, logout, color }: HeaderProps) {
-  const { logoUrl, primaryColor } = useTheme();
+  const { logoUrl, primaryColor, reloadTheme } = useTheme(); // ✅ agregamos reloadTheme
   const [empresa, setEmpresa] = useState<EmpresaData | null>(null);
 
   const role: string = user?.role || user?.user_metadata?.role || "empresa";
@@ -45,6 +45,17 @@ export default function DashboardHeader({ user, logout, color }: HeaderProps) {
   }, [data]);
 
   // ==============================
+  // 🔹 Actualización en tiempo real de tema (evento global)
+  // ==============================
+  useEffect(() => {
+    const handleThemeUpdate = async () => {
+      await reloadTheme(); // ✅ recarga el logo/color global
+    };
+    window.addEventListener("themeUpdated", handleThemeUpdate);
+    return () => window.removeEventListener("themeUpdated", handleThemeUpdate);
+  }, [reloadTheme]);
+
+  // ==============================
   // 🔹 Etiqueta por rol
   // ==============================
   const roleLabel =
@@ -70,9 +81,10 @@ export default function DashboardHeader({ user, logout, color }: HeaderProps) {
       <div className="flex items-center gap-4">
         {logoUrl ? (
           <img
+            key={logoUrl} // ✅ fuerza re-render instantáneo
             src={logoUrl}
             alt="Logo Empresa"
-            className="h-10 w-auto object-contain rounded-md bg-white/10 p-1"
+            className="h-10 w-auto object-contain rounded-md bg-white/10 p-1 transition-all duration-300"
           />
         ) : (
           <div className="h-10 w-10 rounded-md bg-white/20" />

@@ -59,7 +59,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   // ✅ Renderización segura: user y theme listos
   return (
     <div className="flex min-h-screen bg-gray-50 text-gray-900">
-      <DashboardSidebar role={user.role || "empresa"} color={sidebarColor} />
+      {/* 🟢 Sidebar ya toma el color desde ThemeContext internamente */}
+      <DashboardSidebar role={user.role || "empresa"} />
       <div className="flex-1 flex flex-col">
         <DashboardHeader user={user} logout={logout} color={sidebarColor} />
         <main className="flex-1 p-6 overflow-y-auto">{children}</main>

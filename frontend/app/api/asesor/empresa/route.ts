@@ -4,23 +4,47 @@ import { createClient } from "@supabase/supabase-js";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY! // ⚠️ Server-side ONLY
+  process.env.SUPABASE_SERVICE_ROLE_KEY! // ⚠️ server-side ONLY
 );
 
 /**
- * Body esperado:
- *  - { empresa_id: string }   (para asesores)
- *  - ó { user_id: string }    (para empresa dueña)
- * Devuelve campos públicos necesarios para UI (herencia en asesor).
+ * Body aceptado:
+ *  - { asesor_id: string }  -> busca profiles.empresa_id y luego trae empresas.*
+ *  - { empresa_id: string } -> trae empresas.* directo
+ *  - { user_id: string }    -> para empresa dueña (opcional)
  */
 export async function POST(req: Request) {
   try {
     const body = await req.json().catch(() => ({}));
-    const { empresa_id, user_id } = body || {};
+    let { asesor_id, empresa_id, user_id } = body || {};
+
+    // Si viene asesor_id, resolvemos empresa_id desde profiles
+    if (asesor_id && !empresa_id) {
+      const { data: prof, error: perr } = await supabase
+        .from("profiles")
+        .select("empresa_id")
+        .eq("id", asesor_id)
+        .maybeSingle();
+
+      if (perr) {
+        return NextResponse.json(
+          { error: `DB error (profiles): ${perr.message}` },
+          { status: 500 }
+        );
+      }
+
+      empresa_id = prof?.empresa_id ?? null;
+      if (!empresa_id) {
+        return NextResponse.json(
+          { error: "El asesor no tiene empresa asociada." },
+          { status: 404 }
+        );
+      }
+    }
 
     if (!empresa_id && !user_id) {
       return NextResponse.json(
-        { error: "Debe enviar empresa_id o user_id" },
+        { error: "Debe enviar asesor_id, empresa_id o user_id." },
         { status: 400 }
       );
     }
@@ -39,16 +63,12 @@ export async function POST(req: Request) {
 
     if (error) {
       return NextResponse.json(
-        { error: `DB error: ${error.message}` },
+        { error: `DB error (empresas): ${error.message}` },
         { status: 500 }
       );
     }
-
     if (!data) {
-      return NextResponse.json(
-        { error: "Empresa no encontrada" },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: "Empresa no encontrada." }, { status: 404 });
     }
 
     return NextResponse.json({ data }, { status: 200 });

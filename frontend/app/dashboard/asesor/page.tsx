@@ -2,20 +2,30 @@
 
 import { useAuth } from "@/context/AuthContext";
 import { useTheme } from "@/context/ThemeContext";
-import { supabase } from "#lib/supabaseClient";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+
+type EmpresaMin = {
+  id: string;
+  nombre_comercial: string | null;
+  matriculado: string | null;
+  cpi: string | null;
+  telefono: string | null;
+  logo_url: string | null;
+  color: string | null;
+  updated_at: string | null;
+};
 
 export default function AsesorDashboardPage() {
   const { user } = useAuth();
   const { primaryColor, setPrimaryColor, setLogoUrl } = useTheme();
 
-  const [empresa, setEmpresa] = useState<any>(null);
+  const [empresa, setEmpresa] = useState<EmpresaMin | null>(null);
   const [loading, setLoading] = useState(true);
 
   const safeUser = user as any; // evita errores de tipo
 
-  // 🧮 Derivados del asesor
+  // 👤 Derivados del asesor
   const nombreAsesor = useMemo(
     () =>
       `${safeUser?.nombre ?? ""} ${safeUser?.apellido ?? ""}`.trim() ||
@@ -25,65 +35,57 @@ export default function AsesorDashboardPage() {
   const emailAsesor = safeUser?.email || "—";
   const telefonoAsesor = safeUser?.telefono || "—";
 
-  // 🧠 Cargar datos de la empresa (heredada del asesor) + aplicar tema y logo
+  // 🧠 Cargar datos de la empresa (heredada del asesor) via API (Service Role)
   useEffect(() => {
     const fetchEmpresa = async () => {
-      if (!safeUser || !safeUser.empresa_id) {
-        setLoading(false);
-        return;
-      }
-
       try {
-        const { data, error } = await supabase
-          .from("empresas")
-          .select(
-            "id, nombre_comercial, matriculado, cpi, telefono, logo_url, color, updated_at"
-          )
-          .eq("id", safeUser.empresa_id)
-          .maybeSingle();
-
-        if (error) throw error;
-
-        if (data) {
-          setEmpresa(data);
-
-          // 🎨 color corporativo heredado
-          if (data.color) {
-            setPrimaryColor(data.color);
-            localStorage.setItem("vai_primaryColor", data.color);
-          }
-
-          // 🖼️ logo con cache-busting
-          if (data.logo_url && data.logo_url.trim() !== "") {
-            const bustedLogo = `${data.logo_url}${
-              data.logo_url.includes("?")
-                ? ""
-                : `?v=${new Date(data.updated_at || Date.now()).getTime()}`
-            }`;
-            setLogoUrl(bustedLogo);
-            localStorage.setItem("vai_logoUrl", bustedLogo);
-          }
-
-          // 📢 informar a otros headers/partes
-          window.dispatchEvent(
-            new CustomEvent("themeUpdated", {
-              detail: {
-                color: data.color,
-                logoUrl:
-                  data.logo_url &&
-                  `${data.logo_url}${
-                    data.logo_url.includes("?")
-                      ? ""
-                      : `?v=${new Date(
-                          data.updated_at || Date.now()
-                        ).getTime()}`
-                  }`,
-              },
-            })
-          );
+        if (!safeUser?.empresa_id) {
+          setEmpresa(null);
+          return;
         }
-      } catch (err) {
-        console.error("Error al obtener datos de empresa:", err);
+
+        const res = await fetch("/api/asesor/empresa", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ empresa_id: safeUser.empresa_id }),
+        });
+
+        const j = await res.json();
+        if (!res.ok) throw new Error(j?.error || "Error consultando empresa");
+
+        const data = j.data as EmpresaMin;
+        setEmpresa(data);
+
+        // 🎨 Color corporativo heredado
+        if (data?.color) {
+          setPrimaryColor(data.color);
+          localStorage.setItem("vai_primaryColor", data.color);
+        }
+
+        // 🖼️ Logo con cache-busting
+        if (data?.logo_url && data.logo_url.trim() !== "") {
+          const busted = `${data.logo_url}${
+            data.logo_url.includes("?")
+              ? ""
+              : `?v=${new Date(data.updated_at || Date.now()).getTime()}`
+          }`;
+          setLogoUrl(busted);
+          localStorage.setItem("vai_logoUrl", busted);
+        }
+
+        // 📢 Notificar a otros componentes (ej: Header) para Matriculado/CPI
+        window.dispatchEvent(
+          new CustomEvent("empresaDataUpdated", {
+            detail: {
+              nombre_comercial: data?.nombre_comercial ?? "—",
+              matriculado: data?.matriculado ?? "—",
+              cpi: data?.cpi ?? "—",
+            },
+          })
+        );
+      } catch (e) {
+        console.error(e);
+        setEmpresa(null);
       } finally {
         setLoading(false);
       }
@@ -92,66 +94,8 @@ export default function AsesorDashboardPage() {
     fetchEmpresa();
   }, [safeUser, setPrimaryColor, setLogoUrl]);
 
-  // 🔴 Realtime: si la empresa cambia (logo/color/matriculado/cpi), reflejar al instante
-  useEffect(() => {
-    if (!safeUser?.empresa_id) return;
-
-    const channel = supabase
-      .channel("asesor-empresa-updates")
-      .on(
-        "postgres_changes",
-        {
-          event: "UPDATE",
-          schema: "public",
-          table: "empresas",
-          filter: `id=eq.${safeUser.empresa_id}`,
-        },
-        (payload: any) => {
-          const e = payload.new as any;
-          setEmpresa((prev: any) => ({ ...(prev || {}), ...e }));
-
-          // 🎨 color
-          if (e.color) {
-            setPrimaryColor(e.color);
-            localStorage.setItem("vai_primaryColor", e.color);
-          }
-
-          // 🖼️ logo bust
-          if (e.logo_url && e.logo_url.trim() !== "") {
-            const bustedLogo = `${e.logo_url}${
-              e.logo_url.includes("?")
-                ? ""
-                : `?v=${new Date(e.updated_at || Date.now()).getTime()}`
-            }`;
-            setLogoUrl(bustedLogo);
-            localStorage.setItem("vai_logoUrl", bustedLogo);
-          }
-
-          // 📢 notificar
-          window.dispatchEvent(
-            new CustomEvent("themeUpdated", {
-              detail: {
-                color: e.color,
-                logoUrl:
-                  e.logo_url &&
-                  `${e.logo_url}${
-                    e.logo_url.includes("?")
-                      ? ""
-                      : `?v=${new Date(
-                          e.updated_at || Date.now()
-                        ).getTime()}`
-                  }`,
-              },
-            })
-          );
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [safeUser?.empresa_id, setPrimaryColor, setLogoUrl]);
+  // (Opcional) Suscripción realtime si querés reflejar cambios en caliente:
+  // La podríamos agregar luego usando otro endpoint o un canal público.
 
   if (loading) {
     return (
@@ -162,10 +106,12 @@ export default function AsesorDashboardPage() {
   }
 
   // 🏢 Datos heredados (con fallbacks)
-  const nombreEmpresa = empresa?.nombre_comercial || "—";
+  const empresaNombre = empresa?.nombre_comercial || "—";
   const matriculado = empresa?.matriculado || "—";
   const cpi = empresa?.cpi || "—";
   const telefonoEmpresa = empresa?.telefono || "—";
+
+  // 🖼️ Logo para tarjeta inferior (cache-busting)
   const logoBusted =
     empresa?.logo_url && empresa.logo_url.trim() !== ""
       ? `${empresa.logo_url}${
@@ -174,6 +120,10 @@ export default function AsesorDashboardPage() {
             : `?v=${new Date(empresa.updated_at || Date.now()).getTime()}`
         }`
       : "/images/default-logo.png";
+
+  // 📞 Teléfono preferido: del asesor; si no tiene, de la empresa
+  const telefonoPreferido =
+    telefonoAsesor !== "—" ? telefonoAsesor : telefonoEmpresa;
 
   return (
     <div className="space-y-6">
@@ -195,9 +145,9 @@ export default function AsesorDashboardPage() {
         </Link>
       </section>
 
-      {/* 🧾 Datos del Asesor (con logo y datos de la empresa) */}
+      {/* 🧾 Datos del Asesor (con logo y herencia de empresa) */}
       <section className="bg-white shadow-sm rounded-xl p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
-        {/* 📋 Datos en el orden solicitado */}
+        {/* 📋 Campos en el orden solicitado */}
         <div className="flex-1">
           <h2 className="text-xl font-semibold mb-4">Datos del Asesor</h2>
           <ul className="space-y-2 text-gray-700">
@@ -205,14 +155,13 @@ export default function AsesorDashboardPage() {
               <strong>Nombre:</strong> {nombreAsesor}
             </li>
             <li>
-              <strong>Teléfono:</strong>{" "}
-              {telefonoAsesor !== "—" ? telefonoAsesor : telefonoEmpresa}
+              <strong>Teléfono:</strong> {telefonoPreferido}
             </li>
             <li>
               <strong>Email:</strong> {emailAsesor}
             </li>
             <li>
-              <strong>Empresa:</strong> {nombreEmpresa}
+              <strong>Empresa:</strong> {empresaNombre}
             </li>
             <li>
               <strong>Matriculado:</strong> {matriculado}

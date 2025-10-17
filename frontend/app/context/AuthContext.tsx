@@ -2,18 +2,7 @@
 
 import { createContext, useContext, useEffect, useState } from "react";
 import { supabase } from "#lib/supabaseClient";
-
-interface Profile {
-  id: string;
-  email: string;
-  nombre?: string;
-  apellido?: string;
-  matriculado_nombre?: string;
-  cpi?: string;
-  inmobiliaria?: string;
-  role?: "super_admin_root" | "super_admin" | "soporte" | "empresa" | "asesor";
-  empresa_id?: string | null;
-}
+import type { Profile } from "@/types/acm.types"; // <-- Unificamos el tipo Profile
 
 interface AuthContextType {
   user: Profile | null;
@@ -69,7 +58,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         cpi: empresaLimpia.cpi,
         inmobiliaria: empresaLimpia.nombre_comercial,
         role: "empresa",
-          telefono: (empresaLimpia as any)?.telefono || undefined,
+        telefono: (empresaLimpia as any)?.telefono || undefined, // <-- ahora válido en Profile
         empresa_id: empresaLimpia.id,
       };
     }
@@ -90,7 +79,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     // 🔹 Limpiar proxies si existen
     const perfilLimpio = profile ? JSON.parse(JSON.stringify(profile)) : null;
 
-    if (perfilLimpio) return perfilLimpio;
+    if (perfilLimpio) return perfilLimpio as Profile;
 
     // 🧩 3️⃣ Fallback: usar metadata (admins / soporte)
     return {
@@ -101,7 +90,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       matriculado_nombre: supabaseUser.user_metadata?.matriculado_nombre,
       cpi: supabaseUser.user_metadata?.cpi,
       inmobiliaria: supabaseUser.user_metadata?.inmobiliaria,
-      role: supabaseUser.user_metadata?.role || "empresa",
+      role: (supabaseUser.user_metadata?.role as Profile["role"]) || "empresa",
       empresa_id: null,
     };
   };

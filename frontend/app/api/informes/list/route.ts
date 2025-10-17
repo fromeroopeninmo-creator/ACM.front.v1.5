@@ -5,22 +5,19 @@ import { NextResponse } from "next/server";
 import { supabaseServer } from "#lib/supabaseServer";
 
 /**
- * Devuelve la lista de informes visible para el usuario autenticado.
- * Soporta ?scope=empresa | asesor
+ * Lista informes visibles para el usuario autenticado.
+ * ?scope=empresa | asesor
  * - empresa: todos los informes de la empresa
- * - asesor: solo informes creados por el asesor (autor_id = user.id)
- *
- * Si no llega scope, se infiere por el rol del usuario.
+ * - asesor: solo los del usuario actual
+ * Si no llega scope, se infiere por el rol.
  */
 export async function GET(req: Request) {
   try {
-    // ⬅️ sin cookies(): supabaseServer ya las lee internamente
     const server = supabaseServer();
-
     const { searchParams } = new URL(req.url);
     const scopeParam = searchParams.get("scope") as "empresa" | "asesor" | null;
 
-    // 1) Usuario actual
+    // 1) Usuario
     const { data: userRes, error: userErr } = await server.auth.getUser();
     if (userErr) throw userErr;
     const user = userRes?.user;
@@ -33,17 +30,31 @@ export async function GET(req: Request) {
       (user.app_metadata?.role as string) ||
       "empresa";
 
-    // 2) Resolver empresa_id según rol
+    // 2) Resolver empresa_id de forma robusta
     let empresaId: string | null = null;
 
     if (role === "empresa") {
-      const { data: empRow, error: empErr } = await server
+      // Buscamos por user_id y si no, por id_usuario (ya que tu tabla tiene ambas)
+      const { data: empByUserId, error: e1 } = await server
         .from("empresas")
         .select("id")
         .eq("user_id", user.id)
         .maybeSingle();
-      if (empErr) throw empErr;
-      empresaId = empRow?.id ?? null;
+
+      if (e1) throw e1;
+
+      if (empByUserId?.id) {
+        empresaId = empByUserId.id;
+      } else {
+        const { data: empByAlt, error: e2 } = await server
+          .from("empresas")
+          .select("id")
+          .eq("id_usuario", user.id)
+          .maybeSingle();
+
+        if (e2) throw e2;
+        empresaId = empByAlt?.id ?? null;
+      }
     } else if (role === "asesor") {
       const { data: asRow, error: asErr } = await server
         .from("asesores")
@@ -56,21 +67,25 @@ export async function GET(req: Request) {
 
     if (!empresaId) {
       return NextResponse.json(
-        { error: "No se pudo resolver la empresa del usuario." },
+        {
+          error:
+            "No se pudo resolver la empresa del usuario (revisar empresas.user_id / empresas.id_usuario o la fila del asesor).",
+        },
         { status: 400 }
       );
     }
 
-    // 3) Construir query según scope/rol
-    let query = server
-      .from("informes")
-      .select(
-        "id, empresa_id, autor_id, titulo, tipo, etiquetas, estado, payload, created_at, updated_at"
-      );
-
+    // 3) Query según scope
     const scope =
       scopeParam ??
       (role === "empresa" ? "empresa" : role === "asesor" ? "asesor" : "empresa");
+
+    let query = server
+      .from("informes")
+      .select(
+        // columnas existentes en tu tabla informes:
+        "id, empresa_id, autor_id, titulo, tipo, etiquetas, estado, payload, created_at, updated_at"
+      );
 
     if (scope === "empresa") {
       query = query.eq("empresa_id", empresaId);
@@ -78,16 +93,24 @@ export async function GET(req: Request) {
       query = query.eq("autor_id", user.id);
     }
 
-    // Orden (si tu tabla tiene created_at)
-    query = query.order("created_at", { ascending: false });
-
-    const { data, error } = await query;
+    // Ordenar de forma segura (si no existe created_at en tu tabla, ordenamos por updated_at)
+    // En tu script más reciente, informes sí tiene created_at y updated_at.
+    // Aun así, si hay error lo atrapamos y reintentamos sin ordenar.
+    let data, error;
+    ({ data, error } = await query.order("created_at", { ascending: false }));
+    if (error?.message?.includes("column") && error.message.includes("created_at")) {
+      // reintento: ordenar por updated_at
+      ({ data, error } = await query.order("updated_at", { ascending: false }));
+    }
     if (error) throw error;
 
     return NextResponse.json({ ok: true, scope, data });
   } catch (err: any) {
     console.error("❌ /api/informes/list error:", err);
-    const message = err?.message || "Error listando informes.";
-    return NextResponse.json({ error: message }, { status: 400 });
+    // devolvemos el mensaje exacto para que lo veas en la Network tab
+    return NextResponse.json(
+      { error: err?.message || "Error listando informes." },
+      { status: 400 }
+    );
   }
 }

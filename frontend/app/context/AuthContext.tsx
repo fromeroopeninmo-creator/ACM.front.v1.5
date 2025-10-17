@@ -69,6 +69,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         cpi: empresaLimpia.cpi,
         inmobiliaria: empresaLimpia.nombre_comercial,
         role: "empresa",
+          telefono: (empresaLimpia as any)?.telefono || undefined,
         empresa_id: empresaLimpia.id,
       };
     }
@@ -77,7 +78,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     const { data: profile, error } = await supabase
       .from("profiles")
       .select(
-        "id, email, nombre, apellido, matriculado_nombre, cpi, inmobiliaria, role, empresa_id"
+        "id, email, nombre, apellido, matriculado_nombre, cpi, inmobiliaria, role, empresa_id, telefono"
       )
       .eq("id", supabaseUser.id)
       .maybeSingle();

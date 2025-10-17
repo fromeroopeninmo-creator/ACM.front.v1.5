@@ -2,7 +2,6 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
 import sharp from "sharp";
 import { createClient } from "@supabase/supabase-js";
 import { supabaseServer } from "#lib/supabaseServer";
@@ -16,7 +15,7 @@ const supabaseAdmin = createClient(
 export async function POST(req: Request) {
   try {
     // 🔒 Usuario autenticado
-    const server = supabaseServer(cookies());
+    const server = supabaseServer();
     const { data: userRes } = await server.auth.getUser();
     const user = userRes?.user;
     if (!user) {

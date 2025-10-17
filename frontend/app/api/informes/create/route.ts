@@ -1,129 +1,101 @@
-// frontend/app/api/informes/create/route.ts
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 import { NextResponse } from "next/server";
 import { supabaseServer } from "#lib/supabaseServer";
 
-// Importante en Vercel para poder usar node APIs si las necesitás en el futuro
-export const runtime = "nodejs";
-
-type CreateInformeBody = {
+type Body = {
   titulo?: string;
-  tipo?: string;             // ej: "VAI"
-  data: any;                 // JSON con todos los campos del formulario
-  thumb_path?: string | null; // opcional, miniatura en Storage si la tenés
+  data: any;           // JSON del informe (obligatorio)
+  fotos?: string[];    // URLs públicas (opcional)
 };
-
-const MAX_INFORMES_POR_EMPRESA = 250;
 
 export async function POST(req: Request) {
   try {
-    const server = supabaseServer(); // ✅ sin argumentos
-    const { data: userRes } = await server.auth.getUser();
-    const user = userRes?.user;
-    if (!user) {
+    const server = supabaseServer();
+
+    // 🔐 Usuario actual
+    const { data: userRes, error: userErr } = await server.auth.getUser();
+    if (userErr || !userRes?.user) {
       return NextResponse.json({ error: "No autenticado." }, { status: 401 });
     }
+    const user = userRes.user;
 
-    const body = (await req.json()) as CreateInformeBody;
-    if (!body?.data) {
-      return NextResponse.json({ error: "Falta 'data' (JSON del informe)." }, { status: 400 });
-    }
+    // 🧠 Resolver empresa_id y rol del autor
+    // - Si existe fila en asesores(id = user.id) => rol=asesor y empresa_id = asesores.empresa_id
+    // - Si no, buscamos empresas(user_id = user.id) => rol=empresa y empresa_id = empresas.id
+    let empresaId: string | null = null;
+    let autorRole: "asesor" | "empresa" = "empresa";
 
-    // === Determinar empresa_id del dueño ===
-    // Si es empresa -> empresas.user_id = user.id
-    // Si es asesor  -> asesores.id = user.id  => tomar asesores.empresa_id
-    let empresa_id: string | null = null;
-    let autor_role = "empresa";
-
-    // ¿Existe en empresas con este user?
+    // ¿Es asesor?
     {
-      const { data: emp } = await server
-        .from("empresas")
-        .select("id")
-        .eq("user_id", user.id)
-        .maybeSingle();
-
-      if (emp?.id) {
-        empresa_id = emp.id;
-        autor_role = "empresa";
-      }
-    }
-
-    if (!empresa_id) {
-      // Probar como asesor
-      const { data: as } = await server
+      const { data: rowAsesor } = await server
         .from("asesores")
         .select("empresa_id")
         .eq("id", user.id)
         .maybeSingle();
 
-      if (as?.empresa_id) {
-        empresa_id = as.empresa_id;
-        autor_role = "asesor";
+      if (rowAsesor?.empresa_id) {
+        empresaId = rowAsesor.empresa_id;
+        autorRole = "asesor";
       }
     }
 
-    if (!empresa_id) {
+    // ¿Es empresa?
+    if (!empresaId) {
+      const { data: rowEmpresa } = await server
+        .from("empresas")
+        .select("id")
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      if (rowEmpresa?.id) {
+        empresaId = rowEmpresa.id;
+        autorRole = "empresa";
+      }
+    }
+
+    if (!empresaId) {
       return NextResponse.json(
-        { error: "No se pudo determinar la empresa asociada." },
+        { error: "No se pudo resolver la empresa del autor." },
         { status: 400 }
       );
     }
 
-    // Insertar informe
-    const insertPayload = {
-      empresa_id,
-      autor_id: user.id,
-      autor_role,
-      titulo: body.titulo ?? null,
-      tipo: body.tipo ?? "VAI",
-      data: body.data,            // JSONB
-      thumb_path: body.thumb_path ?? null,
-      // Si tu tabla tiene created_at con default now(), no hace falta setearlo
-    };
-
-    const { data: inserted, error: insertError } = await server
-      .from("informes")
-      .insert(insertPayload)
-      .select("id, empresa_id, created_at")
-      .single();
-
-    if (insertError) {
-      console.error("❌ Error insertando informe:", insertError);
-      return NextResponse.json({ error: insertError.message }, { status: 400 });
+    // 📦 Body
+    const body = (await req.json()) as Body;
+    if (body == null || body.data == null) {
+      return NextResponse.json(
+        { error: "Falta 'data' (JSON del informe)." },
+        { status: 400 }
+      );
     }
 
-    // Enforce: máximo 250 informes por empresa -> borrar más antiguos
-    // 1) Contar total
-    const { count } = await server
+    const titulo = (body.titulo || "Informe sin título").slice(0, 200);
+    const fotos = Array.isArray(body.fotos) ? body.fotos : [];
+
+    // 📝 Insert en la tabla INFORMES (columnas finales)
+    const { data: inserted, error: insErr } = await server
       .from("informes")
-      .select("*", { count: "exact", head: true })
-      .eq("empresa_id", empresa_id);
+      .insert({
+        empresa_id: empresaId,
+        autor_id: user.id,
+        autor_role: autorRole,
+        titulo,
+        data: body.data,
+        fotos, // JSONB array de URLs
+      })
+      .select("id")
+      .maybeSingle();
 
-    if ((count ?? 0) > MAX_INFORMES_POR_EMPRESA) {
-      // 2) Buscar IDs ordenados por antigüedad y eliminar los sobrantes
-      const exceso = (count as number) - MAX_INFORMES_POR_EMPRESA;
-
-      const { data: viejos } = await server
-        .from("informes")
-        .select("id")
-        .eq("empresa_id", empresa_id)
-        .order("created_at", { ascending: true })
-        .limit(exceso);
-
-      if (viejos && viejos.length > 0) {
-        const ids = viejos.map((v) => v.id);
-        await server.from("informes").delete().in("id", ids);
-      }
+    if (insErr) {
+      return NextResponse.json({ error: insErr.message }, { status: 400 });
     }
 
-    return NextResponse.json(
-      { ok: true, id: inserted?.id, empresa_id },
-      { status: 201 }
-    );
+    return NextResponse.json({ id: inserted?.id || null }, { status: 201 });
   } catch (err: any) {
-    console.error("💥 Error en /api/informes/create:", err);
     return NextResponse.json(
-      { error: err?.message ?? "Error interno del servidor." },
+      { error: err?.message || "Error inesperado." },
       { status: 500 }
     );
   }

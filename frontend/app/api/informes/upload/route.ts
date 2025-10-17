@@ -1,101 +1,122 @@
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
-
-
 // frontend/app/api/informes/upload/route.ts
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
 import sharp from "sharp";
-import { createClient } from "@supabase/supabase-js";
 import { supabaseServer } from "#lib/supabaseServer";
 
-const URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+export const runtime = "nodejs";
 
-// Client con service role (para Storage y queries sin RLS)
-const admin = createClient(URL, SERVICE_KEY);
+// Límite razonable de archivo (ej. 10 MB)
+const MAX_FILE_BYTES = 10 * 1024 * 1024;
 
-async function resolveEmpresaId(userId: string) {
-  // 1) ¿Es empresa?
-  const { data: empByUser } = await admin
-    .from("empresas")
-    .select("id")
-    .eq("user_id", userId)
-    .maybeSingle();
+// Redimensionar a 800px (lado mayor), salida JPEG calidad 75
+async function compressToJpeg800(input: ArrayBuffer) {
+  const buf = Buffer.from(input);
+  const image = sharp(buf, { failOn: "none" });
+  const meta = await image.metadata();
 
-  if (empByUser?.id) return empByUser.id;
+  // Si no es imagen válida:
+  if (!meta || !(meta.width && meta.height)) {
+    throw new Error("Archivo subido no es una imagen válida.");
+  }
 
-  // 2) ¿Es asesor?
-  const { data: asesor } = await admin
-    .from("asesores")
-    .select("empresa_id")
-    .eq("id", userId)
-    .maybeSingle();
+  // Redimensiona manteniendo aspecto; si ya es más chica, no pasa nada
+  const out = await image
+    .resize({ width: 800, height: 800, fit: "inside", withoutEnlargement: true })
+    .jpeg({ quality: 75, mozjpeg: true })
+    .toBuffer();
 
-  if (asesor?.empresa_id) return asesor.empresa_id;
-
-  return null;
+  return out;
 }
 
 export async function POST(req: Request) {
   try {
-    // Obtener usuario autenticado desde cookie
-    const server = supabaseServer(cookies());
+    const server = supabaseServer(); // ✅ sin cookies()
     const { data: userRes } = await server.auth.getUser();
     const user = userRes?.user;
     if (!user) {
       return NextResponse.json({ error: "No autenticado." }, { status: 401 });
     }
 
-    const empresaId = await resolveEmpresaId(user.id);
-    if (!empresaId) {
-      return NextResponse.json({ error: "No se pudo resolver empresa." }, { status: 400 });
-    }
-
-    // Leer multipart/form-data
     const form = await req.formData();
     const file = form.get("file") as File | null;
-    const kind = (form.get("kind") as string | null) || "misc"; // "main" | "comp1"..."comp4" | "misc"
-
     if (!file) {
-      return NextResponse.json({ error: "Falta 'file'." }, { status: 400 });
+      return NextResponse.json({ error: "Falta archivo 'file'." }, { status: 400 });
     }
 
-    // Comprimir a 800px de ancho, JPG calidad 72
-    const arrayBuffer = await file.arrayBuffer();
-    const input = Buffer.from(arrayBuffer);
-    const output = await sharp(input)
-      .rotate()
-      .resize({ width: 800, withoutEnlargement: true })
-      .jpeg({ quality: 72, mozjpeg: true })
-      .toBuffer();
+    if (file.size > MAX_FILE_BYTES) {
+      return NextResponse.json({ error: "El archivo excede el tamaño permitido (10MB)." }, { status: 400 });
+    }
 
-    const key = `empresa_${empresaId}/${Date.now()}_${crypto.randomUUID()}_${kind}.jpg`;
+    // Determinar empresa_id del dueño
+    let empresa_id: string | null = null;
 
-    const { error: upErr } = await admin.storage
+    // ¿Es empresa (empresas.user_id = user.id)?
+    {
+      const { data: emp } = await server
+        .from("empresas")
+        .select("id")
+        .eq("user_id", user.id)
+        .maybeSingle();
+      if (emp?.id) empresa_id = emp.id;
+    }
+
+    // Si no, ¿es asesor?
+    if (!empresa_id) {
+      const { data: as } = await server
+        .from("asesores")
+        .select("empresa_id")
+        .eq("id", user.id)
+        .maybeSingle();
+      if (as?.empresa_id) empresa_id = as.empresa_id;
+    }
+
+    if (!empresa_id) {
+      return NextResponse.json(
+        { error: "No se pudo determinar la empresa asociada." },
+        { status: 400 }
+      );
+    }
+
+    // Leer y comprimir
+    const ab = await file.arrayBuffer();
+    const output = await compressToJpeg800(ab);
+
+    // Construir ruta en Storage (bucket 'informes')
+    const stamp = Date.now();
+    // Opcionalmente, podés aceptar un "subfolder" desde formData (p.ej. "main" o "comp1")
+    const sub = (form.get("subfolder") as string | null) || "misc";
+    const path = `${empresa_id}/${sub}/${stamp}.jpg`;
+
+    const { error: upErr } = await server.storage
       .from("informes")
-      .upload(key, output, {
+      .upload(path, output, {
         contentType: "image/jpeg",
-        cacheControl: "3600",
-        upsert: true,
+        upsert: false,
+        cacheControl: "31536000",
       });
 
     if (upErr) {
+      console.error("❌ Error subiendo imagen:", upErr);
       return NextResponse.json({ error: upErr.message }, { status: 400 });
     }
 
-    const { data: pub } = admin.storage.from("informes").getPublicUrl(key);
+    // Public URL (si el bucket es público) o generá URL firmada
+    const { data: pub } = server.storage.from("informes").getPublicUrl(path);
+    const publicUrl = pub?.publicUrl || null;
 
     return NextResponse.json(
       {
-        url: pub.publicUrl,
-        key,
-        empresa_id: empresaId,
+        ok: true,
+        path,
+        url: publicUrl,
       },
-      { status: 200 }
+      { status: 201 }
     );
   } catch (err: any) {
-    console.error("💥 /api/informes/upload:", err);
-    return NextResponse.json({ error: "Error interno." }, { status: 500 });
+    console.error("💥 Error en /api/informes/upload:", err);
+    return NextResponse.json(
+      { error: err?.message ?? "Error interno del servidor." },
+      { status: 500 }
+    );
   }
 }

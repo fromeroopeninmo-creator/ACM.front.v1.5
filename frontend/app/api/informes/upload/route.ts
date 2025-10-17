@@ -2,110 +2,124 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
-import { supabaseServer } from "#lib/supabaseServer";
+import { cookies } from "next/headers";
 import sharp from "sharp";
+import { createClient } from "@supabase/supabase-js";
+import { supabaseServer } from "#lib/supabaseServer";
 
-const BUCKET = "informes";
-// 🔧 Mantener la compresión pedida: ancho máximo 800px, jpeg 70
-const MAX_WIDTH = 800;
-const JPEG_QUALITY = 70;
+// ⚙️ Cliente admin (solo en servidor) para subir al Storage
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
 
 export async function POST(req: Request) {
   try {
-    const server = supabaseServer();
-
-    // 🔐 Usuario actual
-    const { data: userRes, error: userErr } = await server.auth.getUser();
-    if (userErr || !userRes?.user) {
+    // 🔒 Usuario autenticado
+    const server = supabaseServer(cookies());
+    const { data: userRes } = await server.auth.getUser();
+    const user = userRes?.user;
+    if (!user) {
       return NextResponse.json({ error: "No autenticado." }, { status: 401 });
     }
-    const user = userRes.user;
 
-    // 🧠 Resolver empresa_id (mismo criterio que en create)
-    let empresaId: string | null = null;
-
-    // ¿Es asesor?
-    {
-      const { data: rowAsesor } = await server
-        .from("asesores")
-        .select("empresa_id")
-        .eq("id", user.id)
-        .maybeSingle();
-
-      if (rowAsesor?.empresa_id) {
-        empresaId = rowAsesor.empresa_id;
-      }
+    // 📦 Recibir archivo
+    const form = await req.formData();
+    const file = form.get("file") as File | null;
+    if (!file) {
+      return NextResponse.json({ error: "Falta el archivo 'file'." }, { status: 400 });
     }
 
-    // ¿Es empresa?
-    if (!empresaId) {
-      const { data: rowEmpresa } = await server
+    // 🏢 Resolver empresa_id según rol (empresa/asesor)
+    let empresaId: string | null = null;
+    const role =
+      (user.user_metadata as any)?.role ||
+      (user as any)?.role ||
+      "empresa";
+
+    if (role === "empresa") {
+      const { data: emp, error: empErr } = await server
         .from("empresas")
         .select("id")
         .eq("user_id", user.id)
         .maybeSingle();
-
-      if (rowEmpresa?.id) {
-        empresaId = rowEmpresa.id;
+      if (empErr) {
+        return NextResponse.json(
+          { error: empErr.message || "Error obteniendo empresa." },
+          { status: 400 }
+        );
       }
+      if (!emp?.id) {
+        return NextResponse.json(
+          { error: "No se encontró empresa asociada al usuario." },
+          { status: 400 }
+        );
+      }
+      empresaId = emp.id;
+    } else if (role === "asesor") {
+      const { data: as, error: asErr } = await server
+        .from("asesores")
+        .select("empresa_id")
+        .eq("id", user.id)
+        .maybeSingle();
+      if (asErr) {
+        return NextResponse.json(
+          { error: asErr.message || "Error obteniendo empresa del asesor." },
+          { status: 400 }
+        );
+      }
+      if (!as?.empresa_id) {
+        return NextResponse.json(
+          { error: "El asesor no tiene empresa asociada." },
+          { status: 400 }
+        );
+      }
+      empresaId = as.empresa_id;
+    } else {
+      return NextResponse.json(
+        { error: "Solo empresas y asesores pueden subir fotos." },
+        { status: 403 }
+      );
     }
 
-    if (!empresaId) {
+    // 🗜️ Comprimir a 800px (sin ampliar) y JPEG ~72%
+    const arrayBuffer = await file.arrayBuffer();
+    const inputBuffer = Buffer.from(arrayBuffer);
+    const outputBuffer = await sharp(inputBuffer)
+      .rotate() // respeta EXIF
+      .resize({ width: 800, withoutEnlargement: true })
+      .jpeg({ quality: 72 })
+      .toBuffer();
+
+    // 🧾 Nombre y ruta
+    const ext = "jpg";
+    const filename = `${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+    const path = `emp_${empresaId}/autor_${user.id}/${filename}`;
+
+    // ⬆️ Subir a bucket 'informes'
+    const { error: uploadErr } = await supabaseAdmin.storage
+      .from("informes")
+      .upload(path, outputBuffer, {
+        contentType: "image/jpeg",
+        cacheControl: "3600",
+        upsert: false,
+      });
+
+    if (uploadErr) {
       return NextResponse.json(
-        { error: "No se pudo resolver la empresa para el almacenamiento." },
+        { error: uploadErr.message || "Error subiendo imagen." },
         { status: 400 }
       );
     }
 
-    // 📥 Files (multipart/form-data)
-    const form = await req.formData();
-    const files = form.getAll("file");
-    if (!files?.length) {
-      return NextResponse.json({ error: "No se recibieron archivos." }, { status: 400 });
-    }
+    // 🌐 URL pública
+    const { data: pub } = supabaseAdmin.storage.from("informes").getPublicUrl(path);
+    const publicUrl = pub.publicUrl;
 
-    const urls: string[] = [];
-
-    for (const f of files) {
-      if (!(f instanceof File)) continue;
-
-      const arrayBuf = await f.arrayBuffer();
-      const inputBuffer = Buffer.from(arrayBuf);
-
-      // 🗜️ Comprimir con sharp
-      let output = sharp(inputBuffer).rotate();
-      const metadata = await output.metadata();
-
-      if ((metadata.width || 0) > MAX_WIDTH) {
-        output = output.resize({ width: MAX_WIDTH });
-      }
-
-      const jpegBuffer = await output.jpeg({ quality: JPEG_QUALITY }).toBuffer();
-
-      // 📁 Path: informes/{empresa_id}/{user_id}/{uuid}.jpg
-      const uid = crypto.randomUUID();
-      const path = `${empresaId}/${user.id}/${uid}.jpg`;
-
-      const { error: upErr } = await server.storage
-        .from(BUCKET)
-        .upload(path, jpegBuffer, {
-          cacheControl: "3600",
-          contentType: "image/jpeg",
-          upsert: false,
-        });
-
-      if (upErr) {
-        return NextResponse.json({ error: upErr.message }, { status: 400 });
-      }
-
-      const { data: pub } = server.storage.from(BUCKET).getPublicUrl(path);
-      urls.push(pub.publicUrl);
-    }
-
-    return NextResponse.json({ urls }, { status: 201 });
-  } catch (err: any) {
+    return NextResponse.json({ url: publicUrl });
+  } catch (e: any) {
     return NextResponse.json(
-      { error: err?.message || "Error inesperado." },
+      { error: e?.message || "Error interno." },
       { status: 500 }
     );
   }

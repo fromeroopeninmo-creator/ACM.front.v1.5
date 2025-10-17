@@ -1,101 +1,118 @@
-export const runtime = "nodejs";
+export const runtime = "edge";
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 import { supabaseServer } from "#lib/supabaseServer";
 
-type Body = {
+type CreateBody = {
   titulo?: string;
-  data: any;           // JSON del informe (obligatorio)
-  fotos?: string[];    // URLs públicas (opcional)
+  data: any;            // JSON del informe (obligatorio)
+  fotos?: string[];     // URLs públicas (opcional)
 };
 
 export async function POST(req: Request) {
   try {
     const server = supabaseServer();
-
-    // 🔐 Usuario actual
-    const { data: userRes, error: userErr } = await server.auth.getUser();
-    if (userErr || !userRes?.user) {
+    const { data: userRes } = await server.auth.getUser();
+    const user = userRes?.user;
+    if (!user) {
       return NextResponse.json({ error: "No autenticado." }, { status: 401 });
     }
-    const user = userRes.user;
 
-    // 🧠 Resolver empresa_id y rol del autor
-    // - Si existe fila en asesores(id = user.id) => rol=asesor y empresa_id = asesores.empresa_id
-    // - Si no, buscamos empresas(user_id = user.id) => rol=empresa y empresa_id = empresas.id
-    let empresaId: string | null = null;
-    let autorRole: "asesor" | "empresa" = "empresa";
-
-    // ¿Es asesor?
-    {
-      const { data: rowAsesor } = await server
-        .from("asesores")
-        .select("empresa_id")
-        .eq("id", user.id)
-        .maybeSingle();
-
-      if (rowAsesor?.empresa_id) {
-        empresaId = rowAsesor.empresa_id;
-        autorRole = "asesor";
-      }
-    }
-
-    // ¿Es empresa?
-    if (!empresaId) {
-      const { data: rowEmpresa } = await server
-        .from("empresas")
-        .select("id")
-        .eq("user_id", user.id)
-        .maybeSingle();
-
-      if (rowEmpresa?.id) {
-        empresaId = rowEmpresa.id;
-        autorRole = "empresa";
-      }
-    }
-
-    if (!empresaId) {
-      return NextResponse.json(
-        { error: "No se pudo resolver la empresa del autor." },
-        { status: 400 }
-      );
-    }
-
-    // 📦 Body
-    const body = (await req.json()) as Body;
-    if (body == null || body.data == null) {
+    const body = (await req.json()) as CreateBody | null;
+    if (!body || body.data == null) {
       return NextResponse.json(
         { error: "Falta 'data' (JSON del informe)." },
         { status: 400 }
       );
     }
 
-    const titulo = (body.titulo || "Informe sin título").slice(0, 200);
-    const fotos = Array.isArray(body.fotos) ? body.fotos : [];
+    const titulo = (body.titulo ?? "").toString().trim() || "Informe";
+    const fotos = Array.isArray(body.fotos) ? body.fotos.slice(0, 5) : [];
 
-    // 📝 Insert en la tabla INFORMES (columnas finales)
+    // Resolver empresa_id según el rol:
+    // - empresa: buscar empresas.id donde user_id = auth.uid()
+    // - asesor:  buscar asesores.empresa_id donde asesores.id = auth.uid()
+    // (admins/soporte: por ahora bloqueamos; si luego quieres habilitarlo, lo ajustamos)
+    let empresaId: string | null = null;
+    const role =
+      (user.user_metadata as any)?.role ||
+      (user as any)?.role ||
+      "empresa";
+
+    if (role === "empresa") {
+      const { data: emp, error: empErr } = await server
+        .from("empresas")
+        .select("id")
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      if (empErr) {
+        return NextResponse.json(
+          { error: empErr.message || "Error obteniendo empresa." },
+          { status: 400 }
+        );
+      }
+      if (!emp?.id) {
+        return NextResponse.json(
+          { error: "No se encontró empresa asociada al usuario." },
+          { status: 400 }
+        );
+      }
+      empresaId = emp.id;
+    } else if (role === "asesor") {
+      const { data: as, error: asErr } = await server
+        .from("asesores")
+        .select("empresa_id")
+        .eq("id", user.id)
+        .maybeSingle();
+
+      if (asErr) {
+        return NextResponse.json(
+          { error: asErr.message || "Error obteniendo empresa del asesor." },
+          { status: 400 }
+        );
+      }
+      if (!as?.empresa_id) {
+        return NextResponse.json(
+          { error: "El asesor no tiene empresa asociada." },
+          { status: 400 }
+        );
+      }
+      empresaId = as.empresa_id;
+    } else {
+      return NextResponse.json(
+        { error: "Solo empresas y asesores pueden crear informes por ahora." },
+        { status: 403 }
+      );
+    }
+
+    // Insert limpio: solo columnas existentes en la tabla
     const { data: inserted, error: insErr } = await server
       .from("informes")
-      .insert({
-        empresa_id: empresaId,
-        autor_id: user.id,
-        autor_role: autorRole,
-        titulo,
-        data: body.data,
-        fotos, // JSONB array de URLs
-      })
+      .insert([
+        {
+          empresa_id: empresaId,
+          autor_id: user.id,
+          titulo,
+          data: body.data,
+          fotos, // text[] en la tabla
+        },
+      ])
       .select("id")
       .maybeSingle();
 
     if (insErr) {
-      return NextResponse.json({ error: insErr.message }, { status: 400 });
+      return NextResponse.json(
+        { error: insErr.message || "Error creando informe." },
+        { status: 400 }
+      );
     }
 
-    return NextResponse.json({ id: inserted?.id || null }, { status: 201 });
-  } catch (err: any) {
+    return NextResponse.json({ id: inserted?.id || null });
+  } catch (e: any) {
     return NextResponse.json(
-      { error: err?.message || "Error inesperado." },
+      { error: e?.message || "Error interno." },
       { status: 500 }
     );
   }

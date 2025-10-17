@@ -1,3 +1,7 @@
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+
 // frontend/app/api/informes/upload/route.ts
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";

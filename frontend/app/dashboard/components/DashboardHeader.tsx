@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { useTheme } from "@/context/ThemeContext";
 import { useEmpresa } from "@/hooks/useEmpresa";
 
 interface HeaderProps {
   user: any;
   logout: () => void;
-  color?: string;
+  color?: string; // opcional: compat con layouts anteriores
 }
 
 export default function DashboardHeader({ user, logout, color }: HeaderProps) {
@@ -16,7 +16,7 @@ export default function DashboardHeader({ user, logout, color }: HeaderProps) {
 
   const role: string = user?.role || user?.user_metadata?.role || "empresa";
 
-  // 🔄 Cuando se dispare el evento global de tema, recargamos color/logo
+  // 🔄 Recarga de tema cuando haya cambios globales (logo/color)
   useEffect(() => {
     const handleThemeUpdate = async () => {
       await reloadTheme();
@@ -25,22 +25,14 @@ export default function DashboardHeader({ user, logout, color }: HeaderProps) {
     return () => window.removeEventListener("themeUpdated", handleThemeUpdate);
   }, [reloadTheme]);
 
-  // Etiqueta por rol (podemos incluir el nombre comercial si existe)
-  const roleLabelBase =
-    role === "empresa"
-      ? "Dashboard Empresa"
-      : role === "asesor"
-      ? "Dashboard Asesor"
-      : role === "soporte"
-      ? "Dashboard Soporte"
-      : role === "super_admin" || role === "super_admin_root"
-      ? "Dashboard Admin"
-      : "Dashboard";
-
-  const roleLabel =
-    role === "empresa" && empresa?.nombre_comercial
-      ? `${roleLabelBase} · ${empresa.nombre_comercial}`
-      : roleLabelBase;
+  // 🏷️ Título por rol
+  const title = useMemo(() => {
+    if (role === "asesor") return "Dashboard Asesor";
+    if (role === "empresa") return "Dashboard Empresa";
+    if (role === "soporte") return "Dashboard Soporte";
+    if (role === "super_admin" || role === "super_admin_root") return "Dashboard Admin";
+    return "Dashboard";
+  }, [role]);
 
   return (
     <header
@@ -53,7 +45,7 @@ export default function DashboardHeader({ user, logout, color }: HeaderProps) {
           <img
             key={logoUrl}
             src={logoUrl}
-            alt="Logo Empresa"
+            alt="Logo"
             className="h-10 w-auto object-contain rounded-md bg-white/10 p-1 transition-all duration-300"
           />
         ) : (
@@ -61,7 +53,7 @@ export default function DashboardHeader({ user, logout, color }: HeaderProps) {
         )}
 
         <h1 className="text-white font-semibold text-lg tracking-wide select-none">
-          {roleLabel}
+          {title}
         </h1>
       </div>
 
@@ -70,6 +62,7 @@ export default function DashboardHeader({ user, logout, color }: HeaderProps) {
         <button
           onClick={logout}
           className="bg-red-400 hover:bg-red-500 text-white font-medium text-sm px-4 py-2 rounded-md transition"
+          aria-label="Cerrar sesión"
         >
           Cerrar sesión
         </button>

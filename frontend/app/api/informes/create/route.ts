@@ -1,85 +1,130 @@
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
-
-
 // frontend/app/api/informes/create/route.ts
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
-import { createClient } from "@supabase/supabase-js";
 import { supabaseServer } from "#lib/supabaseServer";
 
-const URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const admin = createClient(URL, SERVICE_KEY);
+// Importante en Vercel para poder usar node APIs si las necesitás en el futuro
+export const runtime = "nodejs";
 
-async function resolveEmpresaId(userId: string) {
-  const { data: empByUser } = await admin
-    .from("empresas")
-    .select("id")
-    .eq("user_id", userId)
-    .maybeSingle();
-  if (empByUser?.id) return empByUser.id;
+type CreateInformeBody = {
+  titulo?: string;
+  tipo?: string;             // ej: "VAI"
+  data: any;                 // JSON con todos los campos del formulario
+  thumb_path?: string | null; // opcional, miniatura en Storage si la tenés
+};
 
-  const { data: asesor } = await admin
-    .from("asesores")
-    .select("empresa_id")
-    .eq("id", userId)
-    .maybeSingle();
-  if (asesor?.empresa_id) return asesor.empresa_id;
-
-  return null;
-}
+const MAX_INFORMES_POR_EMPRESA = 250;
 
 export async function POST(req: Request) {
   try {
-    const server = supabaseServer(cookies());
+    const server = supabaseServer(); // ✅ sin argumentos
     const { data: userRes } = await server.auth.getUser();
     const user = userRes?.user;
-    if (!user) return NextResponse.json({ error: "No autenticado." }, { status: 401 });
-
-    const empresaId = await resolveEmpresaId(user.id);
-    if (!empresaId) {
-      return NextResponse.json({ error: "No se pudo resolver empresa." }, { status: 400 });
+    if (!user) {
+      return NextResponse.json({ error: "No autenticado." }, { status: 401 });
     }
 
-    const body = await req.json();
-    const {
-      titulo = "Informe VAI",
-      tipo = "VAI",
-      payload = {},
-      imagen_principal_url,
-      comp1_url,
-      comp2_url,
-      comp3_url,
-      comp4_url,
-    } = body || {};
+    const body = (await req.json()) as CreateInformeBody;
+    if (!body?.data) {
+      return NextResponse.json({ error: "Falta 'data' (JSON del informe)." }, { status: 400 });
+    }
 
-    const insertObj = {
-      empresa_id: empresaId,
+    // === Determinar empresa_id del dueño ===
+    // Si es empresa -> empresas.user_id = user.id
+    // Si es asesor  -> asesores.id = user.id  => tomar asesores.empresa_id
+    let empresa_id: string | null = null;
+    let autor_role = "empresa";
+
+    // ¿Existe en empresas con este user?
+    {
+      const { data: emp } = await server
+        .from("empresas")
+        .select("id")
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      if (emp?.id) {
+        empresa_id = emp.id;
+        autor_role = "empresa";
+      }
+    }
+
+    if (!empresa_id) {
+      // Probar como asesor
+      const { data: as } = await server
+        .from("asesores")
+        .select("empresa_id")
+        .eq("id", user.id)
+        .maybeSingle();
+
+      if (as?.empresa_id) {
+        empresa_id = as.empresa_id;
+        autor_role = "asesor";
+      }
+    }
+
+    if (!empresa_id) {
+      return NextResponse.json(
+        { error: "No se pudo determinar la empresa asociada." },
+        { status: 400 }
+      );
+    }
+
+    // Insertar informe
+    const insertPayload = {
+      empresa_id,
       autor_id: user.id,
-      titulo,
-      tipo,
-      payload,
-      imagen_principal_url: imagen_principal_url ?? null,
-      comp1_url: comp1_url ?? null,
-      comp2_url: comp2_url ?? null,
-      comp3_url: comp3_url ?? null,
-      comp4_url: comp4_url ?? null,
+      autor_role,
+      titulo: body.titulo ?? null,
+      tipo: body.tipo ?? "VAI",
+      data: body.data,            // JSONB
+      thumb_path: body.thumb_path ?? null,
+      // Si tu tabla tiene created_at con default now(), no hace falta setearlo
     };
 
-    const { data, error } = await admin
+    const { data: inserted, error: insertError } = await server
       .from("informes")
-      .insert(insertObj)
-      .select("id")
-      .maybeSingle();
+      .insert(insertPayload)
+      .select("id, empresa_id, created_at")
+      .single();
 
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 400 });
+    if (insertError) {
+      console.error("❌ Error insertando informe:", insertError);
+      return NextResponse.json({ error: insertError.message }, { status: 400 });
     }
 
-    return NextResponse.json({ success: true, id: data?.id }, { status: 200 });
+    // Enforce: máximo 250 informes por empresa -> borrar más antiguos
+    // 1) Contar total
+    const { count } = await server
+      .from("informes")
+      .select("*", { count: "exact", head: true })
+      .eq("empresa_id", empresa_id);
+
+    if ((count ?? 0) > MAX_INFORMES_POR_EMPRESA) {
+      // 2) Buscar IDs ordenados por antigüedad y eliminar los sobrantes
+      const exceso = (count as number) - MAX_INFORMES_POR_EMPRESA;
+
+      const { data: viejos } = await server
+        .from("informes")
+        .select("id")
+        .eq("empresa_id", empresa_id)
+        .order("created_at", { ascending: true })
+        .limit(exceso);
+
+      if (viejos && viejos.length > 0) {
+        const ids = viejos.map((v) => v.id);
+        await server.from("informes").delete().in("id", ids);
+      }
+    }
+
+    return NextResponse.json(
+      { ok: true, id: inserted?.id, empresa_id },
+      { status: 201 }
+    );
   } catch (err: any) {
-    console.error("💥 /api/informes/create:", err);
-    return NextResponse.json({ error: "Error interno." }, { status: 500 });
+    console.error("💥 Error en /api/informes/create:", err);
+    return NextResponse.json(
+      { error: err?.message ?? "Error interno del servidor." },
+      { status: 500 }
+    );
   }
 }

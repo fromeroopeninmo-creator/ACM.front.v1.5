@@ -1,110 +1,100 @@
-// frontend/app/api/informes/list/route.ts
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { supabaseServer } from "#lib/supabaseServer";
 
-export const runtime = "nodejs";
-
+/**
+ * Devuelve la lista de informes visible para el usuario autenticado.
+ * Soporta ?scope=empresa | asesor
+ * - empresa: todos los informes de la empresa
+ * - asesor: solo informes creados por el asesor (autor_id = user.id)
+ *
+ * Si no llega scope, se infiere por el rol del usuario.
+ */
 export async function GET(req: Request) {
   try {
-    const server = supabaseServer(); // ✅ sin cookies()
-    const { data: userRes } = await server.auth.getUser();
+    const server = supabaseServer(cookies());
+    const { searchParams } = new URL(req.url);
+    const scopeParam = searchParams.get("scope") as "empresa" | "asesor" | null;
+
+    // 1) Usuario actual
+    const { data: userRes, error: userErr } = await server.auth.getUser();
+    if (userErr) throw userErr;
     const user = userRes?.user;
     if (!user) {
       return NextResponse.json({ error: "No autenticado." }, { status: 401 });
     }
 
-    // Querystring ?page=1&perPage=20
-    const { searchParams } = new URL(req.url);
-    const page = Math.max(parseInt(searchParams.get("page") || "1", 10), 1);
-    const perPage = Math.min(
-      Math.max(parseInt(searchParams.get("perPage") || "20", 10), 1),
-      100
-    );
-    const from = (page - 1) * perPage;
-    const to = from + perPage - 1;
+    const role =
+      (user.user_metadata?.role as string) ||
+      (user.app_metadata?.role as string) ||
+      "empresa";
 
-    // Determinar empresa_id y rol de vista
-    let empresa_id: string | null = null;
-    let isEmpresa = false;
+    // 2) Resolver empresa_id según rol (y asegurar que existe)
+    let empresaId: string | null = null;
 
-    // ¿Es empresa?
-    {
-      const { data: emp } = await server
+    if (role === "empresa") {
+      // empresa: buscar su fila en 'empresas' por user_id
+      const { data: empRow, error: empErr } = await server
         .from("empresas")
         .select("id")
         .eq("user_id", user.id)
         .maybeSingle();
-      if (emp?.id) {
-        empresa_id = emp.id;
-        isEmpresa = true;
-      }
-    }
 
-    // ¿Es asesor?
-    if (!empresa_id) {
-      const { data: as } = await server
+      if (empErr) throw empErr;
+      empresaId = empRow?.id ?? null;
+    } else if (role === "asesor") {
+      // asesor: buscar en 'asesores' su empresa_id por id = auth.user.id
+      const { data: asRow, error: asErr } = await server
         .from("asesores")
         .select("empresa_id")
         .eq("id", user.id)
         .maybeSingle();
-      if (as?.empresa_id) {
-        empresa_id = as.empresa_id;
-        isEmpresa = false;
-      }
+
+      if (asErr) throw asErr;
+      empresaId = asRow?.empresa_id ?? null;
     }
 
-    if (!empresa_id) {
+    // Si no pudimos determinar empresa_id, no hay acceso a informes
+    if (!empresaId) {
       return NextResponse.json(
-        { error: "No se pudo determinar la empresa asociada." },
+        { error: "No se pudo resolver la empresa del usuario." },
         { status: 400 }
       );
     }
 
-    // Consulta: empresa ve todos sus informes; asesor ve SOLO sus informes
+    // 3) Construir query según scope/rol
     let query = server
       .from("informes")
-      .select("id, empresa_id, autor_id, autor_role, titulo, tipo, created_at, thumb_path", {
-        count: "exact",
-      })
-      .eq("empresa_id", empresa_id)
-      .order("created_at", { ascending: false })
-      .range(from, to);
+      .select(
+        // seleccionamos campos habituales; ajustá si tu tabla tiene otros nombres
+        "id, empresa_id, autor_id, titulo, tipo, etiquetas, estado, payload, created_at, updated_at"
+      );
 
-    if (!isEmpresa) {
-      query = query.eq("autor_id", user.id); // Asesor: sólo los propios
+    // Decidir alcance
+    const scope =
+      scopeParam ??
+      (role === "empresa" ? "empresa" : role === "asesor" ? "asesor" : "empresa");
+
+    if (scope === "empresa") {
+      query = query.eq("empresa_id", empresaId);
+    } else {
+      // asesor: solo los propios
+      query = query.eq("autor_id", user.id);
     }
 
-    const { data, error, count } = await query;
-    if (error) {
-      console.error("❌ Error listando informes:", error);
-      return NextResponse.json({ error: error.message }, { status: 400 });
-    }
+    // Si tu tabla tiene created_at, podés descomentar el order:
+    // query = query.order("created_at", { ascending: false });
 
-    // Si el bucket es público, podés enviar URL pública de thumb si existe
-    const withUrls = (data || []).map((row) => {
-      let thumb_url: string | null = null;
-      if (row.thumb_path) {
-        const { data: pub } = server.storage.from("informes").getPublicUrl(row.thumb_path);
-        thumb_url = pub?.publicUrl || null;
-      }
-      return { ...row, thumb_url };
-    });
+    const { data, error } = await query;
+    if (error) throw error;
 
-    return NextResponse.json(
-      {
-        ok: true,
-        page,
-        perPage,
-        total: count ?? 0,
-        items: withUrls,
-      },
-      { status: 200 }
-    );
+    return NextResponse.json({ ok: true, scope, data });
   } catch (err: any) {
-    console.error("💥 Error en /api/informes/list:", err);
-    return NextResponse.json(
-      { error: err?.message ?? "Error interno del servidor." },
-      { status: 500 }
-    );
+    console.error("❌ /api/informes/list error:", err);
+    const message = err?.message || "Error listando informes.";
+    return NextResponse.json({ error: message }, { status: 400 });
   }
 }

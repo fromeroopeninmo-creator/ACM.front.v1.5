@@ -4,6 +4,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useTheme } from "@/context/ThemeContext";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { supabase } from "#lib/supabaseClient";
 
 type EmpresaMin = {
   id: string;
@@ -23,9 +24,9 @@ export default function AsesorDashboardPage() {
   const [empresa, setEmpresa] = useState<EmpresaMin | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const safeUser = user as any; // evita errores de tipo
+  const safeUser = user as any;
 
-  // 👤 Derivados del asesor
+  // 👤 Datos del asesor
   const nombreAsesor = useMemo(
     () =>
       `${safeUser?.nombre ?? ""} ${safeUser?.apellido ?? ""}`.trim() ||
@@ -35,11 +36,11 @@ export default function AsesorDashboardPage() {
   const emailAsesor = safeUser?.email || "—";
   const telefonoAsesor = safeUser?.telefono || "—";
 
-  // 🧠 Cargar datos de la empresa (heredada del asesor) via API (Service Role)
+  // 🧠 Cargar datos de empresa desde API (Service Role) usando asesor_id
   useEffect(() => {
     const fetchEmpresa = async () => {
       try {
-        if (!safeUser?.empresa_id) {
+        if (!safeUser?.id) {
           setEmpresa(null);
           return;
         }
@@ -47,7 +48,7 @@ export default function AsesorDashboardPage() {
         const res = await fetch("/api/asesor/empresa", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ empresa_id: safeUser.empresa_id }),
+          body: JSON.stringify({ asesor_id: safeUser.id }),
         });
 
         const j = await res.json();
@@ -94,8 +95,50 @@ export default function AsesorDashboardPage() {
     fetchEmpresa();
   }, [safeUser, setPrimaryColor, setLogoUrl]);
 
-  // (Opcional) Suscripción realtime si querés reflejar cambios en caliente:
-  // La podríamos agregar luego usando otro endpoint o un canal público.
+  // 🔴 Realtime: reflejar cambios de empresa al instante (si hay permisos de realtime)
+  useEffect(() => {
+    if (!empresa?.id) return;
+
+    const channel = supabase
+      .channel("asesor-empresa-updates")
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "empresas", filter: `id=eq.${empresa.id}` },
+        (payload: any) => {
+          const e = payload.new as EmpresaMin;
+          setEmpresa((prev) => ({ ...(prev || {}), ...e }));
+
+          if (e.color) {
+            setPrimaryColor(e.color);
+            localStorage.setItem("vai_primaryColor", e.color);
+          }
+          if (e.logo_url && e.logo_url.trim() !== "") {
+            const busted = `${e.logo_url}${
+              e.logo_url.includes("?")
+                ? ""
+                : `?v=${new Date(e.updated_at || Date.now()).getTime()}`
+            }`;
+            setLogoUrl(busted);
+            localStorage.setItem("vai_logoUrl", busted);
+          }
+
+          window.dispatchEvent(
+            new CustomEvent("empresaDataUpdated", {
+              detail: {
+                nombre_comercial: e?.nombre_comercial ?? "—",
+                matriculado: e?.matriculado ?? "—",
+                cpi: e?.cpi ?? "—",
+              },
+            })
+          );
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [empresa?.id, setPrimaryColor, setLogoUrl]);
 
   if (loading) {
     return (
@@ -105,13 +148,12 @@ export default function AsesorDashboardPage() {
     );
   }
 
-  // 🏢 Datos heredados (con fallbacks)
+  // 🏢 Datos heredados y fallbacks
   const empresaNombre = empresa?.nombre_comercial || "—";
   const matriculado = empresa?.matriculado || "—";
   const cpi = empresa?.cpi || "—";
   const telefonoEmpresa = empresa?.telefono || "—";
 
-  // 🖼️ Logo para tarjeta inferior (cache-busting)
   const logoBusted =
     empresa?.logo_url && empresa.logo_url.trim() !== ""
       ? `${empresa.logo_url}${
@@ -145,9 +187,9 @@ export default function AsesorDashboardPage() {
         </Link>
       </section>
 
-      {/* 🧾 Datos del Asesor (con logo y herencia de empresa) */}
+      {/* 🧾 Datos del Asesor (orden exacto) */}
       <section className="bg-white shadow-sm rounded-xl p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
-        {/* 📋 Campos en el orden solicitado */}
+        {/* 📋 Datos */}
         <div className="flex-1">
           <h2 className="text-xl font-semibold mb-4">Datos del Asesor</h2>
           <ul className="space-y-2 text-gray-700">

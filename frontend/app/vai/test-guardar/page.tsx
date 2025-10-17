@@ -3,106 +3,127 @@
 import { useState } from "react";
 
 export default function TestGuardarInformePage() {
-  const [titulo, setTitulo] = useState("");
-  const [cuerpo, setCuerpo] = useState("{\n  \"nota\": \"Ejemplo de informe\"\n}");
-  const [status, setStatus] = useState<string | null>(null);
-  const [guardando, setGuardando] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<any>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setStatus(null);
-    setGuardando(true);
+  const handleCrear = async () => {
+    setLoading(true);
+    setResult(null);
+    setError(null);
 
     try {
-      // Validar JSON
-      let cuerpoJson: any = null;
-      try {
-        cuerpoJson = JSON.parse(cuerpo);
-      } catch {
-        setStatus("❌ El cuerpo no es JSON válido.");
-        setGuardando(false);
-        return;
-      }
+      const body = {
+        titulo: "Informe de prueba",
+        data: {
+          // 👇 JSON mínimo requerido por /api/informes/create
+          propiedad: { direccion: "Av. Siempreviva 742", ciudad: "Córdoba" },
+          precioSugerido: 123456,
+          comparables: [],
+        },
+        // Si antes subes imágenes con /api/informes/upload, mete acá esas URLs:
+        fotos: [],
+      };
 
       const res = await fetch("/api/informes/create", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          titulo: titulo.trim() || "Informe sin título",
-          cuerpo_json: cuerpoJson,
-          fotos: [], // sin fotos por ahora (probamos sólo el guardado)
-        }),
+        body: JSON.stringify(body),
       });
 
-      const data = await res.json();
+      const json = await res.json();
+
       if (!res.ok) {
-        setStatus(`❌ Error: ${data?.error || "No se pudo guardar"}`);
+        setError(json?.error || "Error desconocido");
       } else {
-        setStatus(`✅ Informe creado (id: ${data.id}). Andá a Dashboard → Informes para verlo.`);
-        setTitulo("");
-        setCuerpo("{\n  \"nota\": \"Ejemplo de informe\"\n}");
+        setResult(json);
       }
-    } catch (err: any) {
-      setStatus(`❌ Error inesperado: ${err?.message || err}`);
+    } catch (e: any) {
+      setError(e?.message || "Error inesperado");
     } finally {
-      setGuardando(false);
+      setLoading(false);
+    }
+  };
+
+  const handleSubirFotosYCrear = async (evt: React.ChangeEvent<HTMLInputElement>) => {
+    const files = evt.target.files;
+    if (!files || files.length === 0) return;
+
+    setLoading(true);
+    setResult(null);
+    setError(null);
+
+    try {
+      const fd = new FormData();
+      for (const f of Array.from(files)) {
+        fd.append("file", f);
+      }
+
+      // 1) Subir fotos (se comprimen a 800px y se guardan en el bucket)
+      const up = await fetch("/api/informes/upload", { method: "POST", body: fd });
+      const upJson = await up.json();
+      if (!up.ok) throw new Error(upJson?.error || "Error subiendo imágenes");
+      const urls: string[] = upJson.urls || [];
+
+      // 2) Crear informe usando esas URLs
+      const body = {
+        titulo: "Informe con fotos",
+        data: {
+          propiedad: { direccion: "Bv. San Juan 100", ciudad: "Córdoba" },
+          precioSugerido: 987654,
+          comparables: [],
+        },
+        fotos: urls,
+      };
+
+      const res = await fetch("/api/informes/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error || "Error creando informe");
+      setResult(json);
+    } catch (e: any) {
+      setError(e?.message || "Error inesperado");
+    } finally {
+      setLoading(false);
+      // Limpia input para poder volver a elegir el mismo archivo si querés
+      evt.target.value = "";
     }
   };
 
   return (
-    <div className="max-w-2xl mx-auto p-6 space-y-4">
-      <h1 className="text-2xl font-bold">Test — Guardar Informe</h1>
-      <p className="text-gray-600">
-        Esta es una página temporal para comprobar que <code>/api/informes/create</code> funciona.
-        No sube fotos todavía; sólo título y JSON.
-      </p>
+    <div className="max-w-xl mx-auto p-6 space-y-4">
+      <h1 className="text-xl font-bold">Test: Crear Informe</h1>
 
-      <form onSubmit={handleSubmit} className="space-y-4 bg-white p-4 rounded-lg border">
-        <div>
-          <label className="block text-sm font-medium text-gray-700">Título</label>
-          <input
-            type="text"
-            value={titulo}
-            onChange={(e) => setTitulo(e.target.value)}
-            className="mt-1 w-full border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-sky-400"
-            placeholder="Ej: Av. Siempre Viva 123 - Córdoba"
-          />
-        </div>
+      <button
+        onClick={handleCrear}
+        disabled={loading}
+        className="px-4 py-2 rounded bg-blue-600 text-white disabled:opacity-60"
+      >
+        {loading ? "Creando..." : "Crear informe de prueba (sin fotos)"}
+      </button>
 
-        <div>
-          <label className="block text-sm font-medium text-gray-700">
-            Cuerpo (JSON)
-          </label>
-          <textarea
-            value={cuerpo}
-            onChange={(e) => setCuerpo(e.target.value)}
-            rows={10}
-            className="mt-1 w-full border rounded-md px-3 py-2 text-sm font-mono focus:ring-2 focus:ring-sky-400"
-          />
-        </div>
+      <div className="space-y-2">
+        <label className="block text-sm font-medium">Subir fotos y crear informe</label>
+        <input
+          type="file"
+          accept="image/*"
+          multiple
+          onChange={handleSubirFotosYCrear}
+          disabled={loading}
+        />
+      </div>
 
-        <button
-          type="submit"
-          disabled={guardando}
-          className="bg-sky-600 text-white font-semibold px-6 py-2 rounded-md hover:bg-sky-700 transition disabled:opacity-50"
-        >
-          {guardando ? "Guardando..." : "Guardar informe"}
-        </button>
-      </form>
-
-      {status && (
-        <p
-          className={`text-sm ${
-            status.startsWith("✅")
-              ? "text-green-600"
-              : status.startsWith("❌")
-              ? "text-red-600"
-              : "text-gray-700"
-          }`}
-        >
-          {status}
-        </p>
+      {result && (
+        <pre className="bg-gray-100 p-3 rounded text-sm overflow-auto">
+          {JSON.stringify(result, null, 2)}
+        </pre>
       )}
+
+      {error && <p className="text-red-600">❌ {error}</p>}
     </div>
   );
 }

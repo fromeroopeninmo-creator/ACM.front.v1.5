@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+
 import { useTheme } from "@/app/context/ThemeContext";
 import {
   ACMFormData,
@@ -97,9 +98,7 @@ export default function ACMForm() {
   const [logoBase64, setLogoBase64] = useState<string | undefined>(undefined);
 
   const [formData, setFormData] = useState<ACMFormData>(() => makeInitialData());
-  const [isSubmitting, setIsSubmitting] = 
-  const effectivePrimaryColor = (theme?.primaryColor as string) ?? (primaryColor as string) ?? "#0ea5e9";
-useState(false);
+  const [isSubmitting, setIsSubmitting] =  useState(false);
   const logoInputRef = useRef<HTMLInputElement | null>(null);
   const mainPhotoInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -1594,4 +1593,3 @@ cursorY += 14;
   </div>
 </div>
 {/* === /ACMForms Footer (actions) === */}
-

@@ -6,7 +6,7 @@ import { useTheme } from "@/context/ThemeContext";
 
 interface SidebarProps {
   role: string;
-  color?: string; // opcional: compat con layouts anteriores
+  color?: string;
 }
 
 export default function DashboardSidebar({ role, color }: SidebarProps) {
@@ -14,10 +14,9 @@ export default function DashboardSidebar({ role, color }: SidebarProps) {
   const { primaryColor } = useTheme();
 
   // ==============================
-  // 🔹 Menú por roles (según pedido)
+  // 🔹 Menú por roles
   // ==============================
   const menuByRole: Record<string, { name: string; href: string }[]> = {
-    // Admins (opcional, por si los usás)
     super_admin_root: [
       { name: "Inicio", href: "/dashboard/admin" },
       { name: "Empresas", href: "/dashboard/admin/empresas" },
@@ -34,16 +33,13 @@ export default function DashboardSidebar({ role, color }: SidebarProps) {
       { name: "Empresas", href: "/dashboard/soporte/empresas" },
       { name: "Registros", href: "/dashboard/soporte/logs" },
     ],
-
-    // Empresa → Inicio / Plan / Asesores / Configuración
     empresa: [
       { name: "Inicio", href: "/dashboard/empresa" },
-      { name: "Plan", href: "/dashboard/empresa/planes" },
       { name: "Asesores", href: "/dashboard/empresa/asesores" },
+      { name: "Informes", href: "/dashboard/empresa/informes" }, // 👈 agregado acá
+      { name: "Planes", href: "/dashboard/empresa/planes" },
       { name: "Configuración", href: "/dashboard/empresa/cuenta" },
     ],
-
-    // Asesor → Inicio / Mis Informes / Configuración
     asesor: [
       { name: "Inicio", href: "/dashboard/asesor" },
       { name: "Mis Informes", href: "/dashboard/asesor/informes" },
@@ -54,11 +50,11 @@ export default function DashboardSidebar({ role, color }: SidebarProps) {
   const links = menuByRole[role] || menuByRole["empresa"];
 
   // ==============================
-  // 🎨 Color de fondo (heredado del ThemeContext)
+  // 🎨 Color de fondo (heredado)
   // ==============================
   const bgColor =
     role === "asesor" || role === "empresa"
-      ? (color || primaryColor || "#004AAD")
+      ? primaryColor || color || "#004AAD"
       : "#004AAD";
 
   // ==============================
@@ -67,16 +63,11 @@ export default function DashboardSidebar({ role, color }: SidebarProps) {
   const sidebarClasses =
     "w-52 min-h-screen text-white p-5 space-y-4 flex flex-col items-center shadow-md transition-colors duration-300";
 
-  // helper: activo si la ruta actual empieza con el href
-  const isActive = (href: string) =>
-    pathname === href || pathname.startsWith(href + "/");
-
   return (
     <aside className={sidebarClasses} style={{ backgroundColor: bgColor }}>
-      {/* Navegación */}
       <nav className="w-full space-y-2">
         {links.map((item) => {
-          const active = isActive(item.href);
+          const active = pathname === item.href;
           return (
             <Link
               key={item.href}
@@ -84,7 +75,6 @@ export default function DashboardSidebar({ role, color }: SidebarProps) {
               className={`block px-3 py-2 rounded-md text-sm font-medium transition ${
                 active ? "bg-white text-gray-900" : "text-white hover:bg-white/20"
               }`}
-              aria-current={active ? "page" : undefined}
             >
               {item.name}
             </Link>

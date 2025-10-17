@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "#lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
-import NewAsesorForm from "./NewAsesorForm"; // ✅ import del formulario
+import NewAsesorForm from "./NewAsesorForm"; // si lo movés a /components, ajustá el import
 
 interface Asesor {
   id: string;
@@ -13,25 +13,71 @@ interface Asesor {
   telefono: string;
   activo: boolean;
   fecha_creacion: string;
+  empresa_id: string;
 }
 
 export default function AsesoresPage() {
   const { user } = useAuth();
   const [asesores, setAsesores] = useState<Asesor[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingEmpresaId, setLoadingEmpresaId] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const [empresaId, setEmpresaId] = useState<string | null>(null);
 
-  const fetchAsesores = async () => {
-    if (!user) return;
+  const role = user?.role || "empresa";
 
+  // ===========================
+  // Resolver empresaId (robusto)
+  // ===========================
+  useEffect(() => {
+    const resolveEmpresaId = async () => {
+      try {
+        if (!user) {
+          setEmpresaId(null);
+          return;
+        }
+
+        // 1) Si AuthContext ya trae empresa_id (para empresa) úsalo.
+        if (user.empresa_id) {
+          setEmpresaId(user.empresa_id);
+          return;
+        }
+
+        // 2) Fallback: traer empresa por user_id (esto corre si hubiera algún perfil legacy)
+        const { data, error } = await supabase
+          .from("empresas")
+          .select("id")
+          .eq("user_id", user.id)
+          .maybeSingle();
+
+        if (error) {
+          console.warn("No se pudo resolver empresa_id por user_id:", error.message);
+          setEmpresaId(null);
+          return;
+        }
+
+        setEmpresaId(data?.id ?? null);
+      } finally {
+        setLoadingEmpresaId(false);
+      }
+    };
+
+    setLoadingEmpresaId(true);
+    resolveEmpresaId();
+  }, [user]);
+
+  // ===========================
+  // Cargar asesores
+  // ===========================
+  const fetchAsesores = async (empId: string) => {
     setLoading(true);
     setError(null);
 
     const { data, error } = await supabase
       .from("asesores")
-      .select("*")
-      .eq("empresa_id", user.empresa_id ?? user.id)
+      .select("id, nombre, apellido, email, telefono, activo, fecha_creacion, empresa_id")
+      .eq("empresa_id", empId)
       .order("fecha_creacion", { ascending: false });
 
     if (error) {
@@ -44,20 +90,71 @@ export default function AsesoresPage() {
     setLoading(false);
   };
 
+  // Re-cargar cuando cambie empresaId
   useEffect(() => {
-    fetchAsesores();
-  }, [user]);
+    if (!empresaId) return;
+    fetchAsesores(empresaId);
+    // suscripción realtime opcional (si querés):
+    const channel = supabase
+      .channel("empresa-asesores-updates")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "asesores", filter: `empresa_id=eq.${empresaId}` },
+        () => fetchAsesores(empresaId)
+      )
+      .subscribe();
 
+    return () => {
+      supabase.removeChannel(channel);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [empresaId]);
+
+  // ===========================
+  // Acciones
+  // ===========================
   const toggleActivo = async (id: string, current: boolean) => {
     await supabase.from("asesores").update({ activo: !current }).eq("id", id);
-    fetchAsesores();
+    if (empresaId) fetchAsesores(empresaId);
   };
 
   const eliminarAsesor = async (id: string) => {
     if (!confirm("¿Seguro que deseas eliminar este asesor?")) return;
     await supabase.from("asesores").delete().eq("id", id);
-    fetchAsesores();
+    if (empresaId) fetchAsesores(empresaId);
   };
+
+  // ===========================
+  // Guards y render
+  // ===========================
+  const noAutorizado = useMemo(
+    () => !user || (role !== "empresa" && role !== "super_admin" && role !== "super_admin_root"),
+    [user, role]
+  );
+
+  if (noAutorizado) {
+    return (
+      <div className="p-6 text-center text-gray-500">
+        No autorizado.
+      </div>
+    );
+  }
+
+  if (loadingEmpresaId) {
+    return (
+      <div className="p-6 text-center text-gray-500">
+        Resolviendo empresa...
+      </div>
+    );
+  }
+
+  if (!empresaId) {
+    return (
+      <div className="p-6 text-center text-gray-500">
+        No se pudo determinar la empresa actual.
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -74,14 +171,14 @@ export default function AsesoresPage() {
       {showForm && (
         <div className="mb-8">
           <NewAsesorForm
-            empresaId={user?.empresa_id ?? user?.id}
-            onCreated={fetchAsesores}
+            empresaId={empresaId}
+            onCreated={() => fetchAsesores(empresaId)}
           />
         </div>
       )}
 
       {loading ? (
-        <p>Cargando...</p>
+        <p className="text-gray-500">Cargando...</p>
       ) : error ? (
         <p className="text-red-500">{error}</p>
       ) : (
@@ -103,7 +200,7 @@ export default function AsesoresPage() {
                     {a.nombre} {a.apellido}
                   </td>
                   <td className="p-3">{a.email}</td>
-                  <td className="p-3">{a.telefono}</td>
+                  <td className="p-3">{a.telefono || "—"}</td>
                   <td className="p-3">
                     <button
                       onClick={() => toggleActivo(a.id, a.activo)}

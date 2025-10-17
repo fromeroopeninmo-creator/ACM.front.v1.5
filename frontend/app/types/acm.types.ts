@@ -151,3 +151,21 @@ orientation: Orientation;
   primaryColorHex?: string;
   suggestedPrice?: number;
 }
+// ==== Perfil de usuario para AuthContext ====
+export type Profile = {
+  id: string;
+  email: string;
+  nombre?: string;
+  apellido?: string;
+  direccion?: string;
+  localidad?: string;
+  provincia?: string;
+  matriculado_nombre?: string;
+  cpi?: string;
+  inmobiliaria?: string;
+  telefono?: string; // coincide con public.profiles.telefono y empresas.telefono
+  role: 'empresa' | 'asesor' | 'soporte' | 'super_admin' | 'super_admin_root';
+  user_id?: string;
+  empresa_id?: string | null;
+};
+

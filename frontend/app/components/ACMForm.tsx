@@ -96,9 +96,14 @@ export default function ACMForm() {
   const [formData, setFormData] = useState<ACMFormData>(() => makeInitialData());
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Theme
-  const { primaryColor: themePrimaryColor, logoUrlBusted: themeLogoUrl, companyName: themeCompanyName } = useTheme();
-  const effectivePrimaryColor = themePrimaryColor || "#0ea5e9";
+  // Theme (evita error TS: logoUrlBusted no está en ThemeContextType)
+const theme = useTheme();
+const themePrimaryColor = (theme as any)?.primaryColor as string | undefined;
+const themeCompanyName = (theme as any)?.companyName as string | undefined;
+// Usa logoUrlBusted si existe; si no, fallback a logoUrl; si no, undefined
+const themeLogoUrl = (theme as any)?.logoUrlBusted ?? (theme as any)?.logoUrl ?? undefined;
+const effectivePrimaryColor = themePrimaryColor || "#0ea5e9";
+
 
   // Refs para inputs de imagen
   const mainPhotoInputRef = useRef<HTMLInputElement | null>(null);

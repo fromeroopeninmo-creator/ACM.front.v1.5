@@ -13,7 +13,7 @@ import {
   Services,
   TitleType,
 } from "@/app/types/acm.types";
-import { createACMAnalysis } from '../lib/api';
+// import { createACMAnalysis } from '../lib/api'; // ← no se usa hoy, lo dejo comentado para evitar warnings
 import { useAuth } from "@/app/context/AuthContext";
 
 /** =========================
@@ -24,7 +24,6 @@ const peso = (n: number) =>
 
 const numero = (n: number, dec = 0) =>
   isNaN(n) ? '-' : n.toLocaleString('es-AR', { maximumFractionDigits: dec, minimumFractionDigits: dec });
-
 
 const yesNoOpts = [
   { label: 'No', value: 'false' },
@@ -94,16 +93,16 @@ const makeInitialData = (): ACMFormData => ({
  *  ========================= */
 export default function ACMForm() {
   const { user } = useAuth();
-  const [primaryColor, setPrimaryColor] = useState<string>('#0ea5e9');
-  const [logoBase64, setLogoBase64] = useState<string | undefined>(undefined);
-
   const [formData, setFormData] = useState<ACMFormData>(() => makeInitialData());
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Theme
   const { primaryColor: themePrimaryColor, logoUrlBusted: themeLogoUrl, companyName: themeCompanyName } = useTheme();
   const effectivePrimaryColor = themePrimaryColor || "#0ea5e9";
 
-  const logoInputRef = useRef<HTMLInputElement | null>(null);
+  // Refs para inputs de imagen
   const mainPhotoInputRef = useRef<HTMLInputElement | null>(null);
+  const compPhotoInputsRef = useRef<Array<HTMLInputElement | null>>([]);
 
   /** ========= Fecha auto ========= */
   useEffect(() => {
@@ -160,68 +159,66 @@ export default function ACMForm() {
       setFormData((p) => ({ ...p, orientation: value as Orientation }));
     else setFormData((prev) => ({ ...prev, [name]: value }));
   };
-/** ========= Comparables ========= */
-const updateComparable = <K extends keyof ComparableProperty>(
-  index: number,
-  field: K,
-  rawValue: string | number | null
-) => {
-  setFormData((prev) => {
-    const copy = { ...prev };
-    const arr = [...copy.comparables];
 
-    const numericFields: Array<keyof ComparableProperty> = [
-      "builtArea",
-      "price",
-      "daysPublished",
-      "pricePerM2",
-      "coefficient",
-    ];
+  /** ========= Comparables ========= */
+  const updateComparable = <K extends keyof ComparableProperty>(
+    index: number,
+    field: K,
+    rawValue: string | number | null
+  ) => {
+    setFormData((prev) => {
+      const copy = { ...prev };
+      const arr = [...copy.comparables];
 
-    let value: number | string | null = rawValue;
+      const numericFields: Array<keyof ComparableProperty> = [
+        "builtArea",
+        "price",
+        "daysPublished",
+        "pricePerM2",
+        "coefficient",
+      ];
 
-    // 🔹 Normalización de valores numéricos
-    if (numericFields.includes(field)) {
-      const n =
-        rawValue === null || rawValue === ""
-          ? 0
-          : typeof rawValue === "string"
-          ? parseFloat(rawValue)
-          : Number(rawValue);
-      value = isNaN(n) ? 0 : n;
-    }
+      let value: number | string | null = rawValue;
 
-    // 🔹 Actualiza el comparable
-    arr[index] = { ...arr[index], [field]: value };
+      if (numericFields.includes(field)) {
+        const n =
+          rawValue === null || rawValue === ""
+            ? 0
+            : typeof rawValue === "string"
+            ? parseFloat(rawValue)
+            : Number(rawValue);
+        value = isNaN(n) ? 0 : n;
+      }
 
-    // 🔹 Recalcula precio/m² seguro
-    const b = Number(arr[index].builtArea) || 0;
-    const p = Number(arr[index].price) || 0;
-    arr[index].pricePerM2 = b > 0 ? p / b : 0;
+      arr[index] = { ...arr[index], [field]: value };
 
-    copy.comparables = arr;
-    return copy;
-  });
-};
+      const b = Number(arr[index].builtArea) || 0;
+      const p = Number(arr[index].price) || 0;
+      arr[index].pricePerM2 = b > 0 ? p / b : 0;
 
-const addComparable = () => {
-  setFormData((prev) => {
-    if (prev.comparables.length >= 4) return prev;
-    return {
-      ...prev,
-      comparables: [...prev.comparables, { ...emptyComparable }],
-    };
-  });
-};
+      copy.comparables = arr;
+      return copy;
+    });
+  };
 
-const removeComparable = (index: number) => {
-  setFormData((prev) => {
-    if (prev.comparables.length <= 1) return prev;
-    const arr = prev.comparables.slice();
-    arr.splice(index, 1);
-    return { ...prev, comparables: arr };
-  });
-};
+  const addComparable = () => {
+    setFormData((prev) => {
+      if (prev.comparables.length >= 4) return prev;
+      return {
+        ...prev,
+        comparables: [...prev.comparables, { ...emptyComparable }],
+      };
+    });
+  };
+
+  const removeComparable = (index: number) => {
+    setFormData((prev) => {
+      if (prev.comparables.length <= 1) return prev;
+      const arr = prev.comparables.slice();
+      arr.splice(index, 1);
+      return { ...prev, comparables: arr };
+    });
+  };
 
   /** ========= Uploads ========= */
   const readFileAsBase64 = (file: File): Promise<string> =>
@@ -231,14 +228,6 @@ const removeComparable = (index: number) => {
       reader.onerror = reject;
       reader.readAsDataURL(file);
     });
-
-  const handleLogoSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0];
-    if (!f) return;
-    const b64 = await readFileAsBase64(f);
-    setLogoBase64(b64);
-    if (logoInputRef.current) logoInputRef.current.value = '';
-  };
 
   const handleMainPhotoSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
@@ -260,25 +249,11 @@ const removeComparable = (index: number) => {
     e.target.value = '';
   };
 
-  /** ========= Cálculos ========= */
-const adjustedPricePerM2List = useMemo(
-  () =>
-    formData.comparables
-      .filter((c) => {
-        const built = parseFloat(c.builtArea as string) || 0;
-        const price = parseFloat(c.price as string) || 0;
-        return built > 0 && price > 0;
-      })
-      .map((c) => {
-        const built = parseFloat(c.builtArea as string) || 0;
-        const price = parseFloat(c.price as string) || 0;
-        const coef = parseFloat(c.coefficient as string) || 1;
-        const base = c.pricePerM2 || (built > 0 ? price / built : 0);
-        
-  // === Guardar Informe ===
+  /** ========= Guardar / Cargar Informe (API) ========= */
   const saveInforme = async () => {
     try {
-      const payload = { datos: formData, titulo: (formData && (formData as any).titulo) || "Informe VAI" };
+      setIsSubmitting(true);
+      const payload = { datos: formData, titulo: (formData as any)?.titulo || "Informe VAI" };
       const res = await fetch("/api/informes/create", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -294,10 +269,11 @@ const adjustedPricePerM2List = useMemo(
     } catch (err:any) {
       console.error("Guardar Informe", err);
       alert(err?.message || "No se pudo guardar el informe");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
-  // === Cargar Informe ===
   const loadInforme = async () => {
     try {
       const id = typeof window !== 'undefined' ? window.prompt("Ingrese el ID del informe a cargar:") : null;
@@ -306,115 +282,382 @@ const adjustedPricePerM2List = useMemo(
       if (!res.ok) throw new Error("No se pudo obtener el informe");
       const data = await res.json();
       if (!data?.informe?.datos_json) throw new Error("El informe no contiene datos_json");
-      if (typeof setFormData === 'function') setFormData(data.informe.datos_json);
+      setFormData(data.informe.datos_json);
       alert("Informe cargado.");
     } catch (err:any) {
       console.error("Cargar Informe", err);
       alert(err?.message || "No se pudo cargar el informe");
     }
   };
-return (Number(base) || 0) * (Number(coef) || 1);
-      }),
-  [formData.comparables]
-);
 
-const averageAdjustedPricePerM2 = useMemo(() => {
-  if (adjustedPricePerM2List.length === 0) return 0;
-  return (
-    adjustedPricePerM2List.reduce((a, b) => a + b, 0) /
-    adjustedPricePerM2List.length
+  /** ========= Cálculos ========= */
+  const adjustedPricePerM2List = useMemo(
+    () =>
+      formData.comparables
+        .filter((c) => {
+          const built = parseFloat(c.builtArea as string) || 0;
+          const price = parseFloat(c.price as string) || 0;
+          return built > 0 && price > 0;
+        })
+        .map((c) => {
+          const built = parseFloat(c.builtArea as string) || 0;
+          const price = parseFloat(c.price as string) || 0;
+          const coef = parseFloat(c.coefficient as string) || 1;
+          const base = (c.pricePerM2 as number) || (built > 0 ? price / built : 0);
+          return (Number(base) || 0) * (Number(coef) || 1);
+        }),
+    [formData.comparables]
   );
-}, [adjustedPricePerM2List]);
 
-const suggestedPrice = useMemo(() => {
-  const built = parseFloat(formData.builtArea as string) || 0;
-  return Math.round(averageAdjustedPricePerM2 * built);
-}, 
-    [averageAdjustedPricePerM2, formData.builtArea]
-);
+  const averageAdjustedPricePerM2 = useMemo(() => {
+    if (adjustedPricePerM2List.length === 0) return 0;
+    return adjustedPricePerM2List.reduce((a, b) => a + b, 0) / adjustedPricePerM2List.length;
+  }, [adjustedPricePerM2List]);
 
+  const suggestedPrice = useMemo(() => {
+    const built = parseFloat(formData.builtArea as string) || 0;
+    return Math.round(averageAdjustedPricePerM2 * built);
+  }, [averageAdjustedPricePerM2, formData.builtArea]);
 
-  /** ========= Guardar ========= */
-  const handleSaveToDB = async () => {
-    try {
-      const res = await fetch("/api/acm", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId: "TU-USER-ID", formData }),
-      });
-      const result = await res.json();
-      if (result.error) alert("Error guardando en la base: " + result.error);
-      else alert("✅ Análisis guardado con éxito");
-    } catch (err: any) {
-      alert("Error inesperado: " + err.message);
+  /** ========= PDF ========= */
+  const handleDownloadPDF = async () => {
+    const { jsPDF } = await import("jspdf");
+
+    const doc = new jsPDF("p", "pt", "a4");
+    const pageW = doc.internal.pageSize.getWidth();
+    const pageH = doc.internal.pageSize.getHeight();
+    const margin = 40;
+    let y = margin;
+
+    // Datos (desde AuthContext / Theme)
+    const matriculado = user?.matriculado_nombre || "—";
+    const cpi = user?.cpi || "—";
+    const inmobiliaria = themeCompanyName || user?.inmobiliaria || "—";
+    const asesorNombre =
+      user?.nombre && user?.apellido ? `${user.nombre} ${user.apellido}` : "—";
+
+    // Logo desde Theme si existe
+    const themeLogo = themeLogoUrl || null;
+
+    // Color primario
+    const hexToRgb = (hex: string) => {
+      const m = hex.replace("#", "");
+      const int = parseInt(
+        m.length === 3 ? m.split("").map((c) => c + c).join("") : m,
+        16
+      );
+      return { r: (int >> 16) & 255, g: (int >> 8) & 255, b: int & 255 };
+    };
+    const pc = hexToRgb(effectivePrimaryColor);
+
+    // === Título centrado ===
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(16);
+    doc.setTextColor(pc.r, pc.g, pc.b);
+    doc.text("VAI - Valuador de Activos Inmobiliarios", pageW / 2, y, {
+      align: "center",
+    });
+    doc.setTextColor(0, 0, 0);
+    y += 30;
+
+    // === Encabezado ===
+    const colLeftX = margin;
+    const colRightX = pageW - margin - 200;
+
+    doc.setFontSize(11);
+    doc.setFont("helvetica", "normal");
+
+    // Columna izquierda
+    doc.text(`Inmobiliaria: ${inmobiliaria}`, colLeftX, y);
+    // “Asesor” solo si corresponde (si el rol es asesor)
+    const isAsesor = (user?.role || "").toLowerCase() === "asesor";
+    if (isAsesor) {
+      doc.text(`Asesor: ${asesorNombre}`, colLeftX, y + 15);
+    } else {
+      doc.text(`Asesor: —`, colLeftX, y + 15);
     }
-  };
 
-/** ========= PDF ========= */
-const handleDownloadPDF = async () => {
-  const { jsPDF } = await import("jspdf");
-
-  const doc = new jsPDF("p", "pt", "a4");
-  const pageW = doc.internal.pageSize.getWidth();
-  const pageH = doc.internal.pageSize.getHeight();
-  const margin = 40;
-  let y = margin;
-
-  // Datos de usuario (desde AuthContext)
-  const matriculado = user?.matriculado_nombre || "—";
-  const cpi = user?.cpi || "—";
-  const inmobiliaria = user?.inmobiliaria || "—";
-  const asesorNombre =
-    user?.nombre && user?.apellido ? `${user.nombre} ${user.apellido}` : "—";
-
-  // Logo del usuario (desde la app)
-  const userLogo = logoBase64 || null;
-
-  // Color primario
-  const hexToRgb = (hex: string) => {
-    const m = hex.replace("#", "");
-    const int = parseInt(
-      m.length === 3 ? m.split("").map((c) => c + c).join("") : m,
-      16
+    // Columna derecha
+    doc.text(`Matriculado: ${matriculado}`, colRightX, y);
+    doc.text(`CPI: ${cpi}`, colRightX, y + 15);
+    // Fecha (derecha debajo de CPI)
+    doc.text(
+      `Fecha: ${new Date(formData.date).toLocaleDateString("es-AR")}`,
+      colRightX,
+      y + 30
     );
-    return { r: (int >> 16) & 255, g: (int >> 8) & 255, b: int & 255 };
-  };
-  const pc = hexToRgb(primaryColor);
 
-  // === Título centrado ===
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(16);
-  doc.setTextColor(pc.r, pc.g, pc.b);
-  doc.text("VAI - Valuador de Activos Inmobiliarios", pageW / 2, y, {
-    align: "center",
-  });
-  doc.setTextColor(0, 0, 0);
-  y += 30;
+    // Logo centrado (si existe)
+    if (themeLogo) {
+      try {
+        const img = await fetch(themeLogo);
+        const blob = await img.blob();
+        const reader = new FileReader();
+        const base64Promise = new Promise<string>((resolve) => {
+          reader.onload = () => resolve(reader.result as string);
+        });
+        reader.readAsDataURL(blob);
+        const base64Img = await base64Promise;
 
- // === Encabezado con logo ===
-  const colLeftX = margin;
-  const colRightX = pageW - margin - 200;
+        const logoW = 70;
+        const logoH = 70;
+        const centerX = pageW / 2 - logoW / 2;
+        doc.addImage(base64Img, "PNG", centerX, y - 10, logoW, logoH, undefined, "FAST");
+      } catch (err) {
+        console.warn("⚠️ No se pudo cargar el logo del tema en el PDF", err);
+      }
+    }
 
-  doc.setFontSize(11);
-  doc.setFont("helvetica", "normal");
+    y += 60;
 
-  // Columna izquierda
-  doc.text(`Inmobiliaria: ${inmobiliaria}`, colLeftX, y);
-  doc.text(`Asesor: ${asesorNombre}`, colLeftX, y + 15);
-  doc.text(
-    `Fecha: ${new Date(formData.date).toLocaleDateString("es-AR")}`,
-    colLeftX,
-    y + 30
-  );
+    // === Línea separadora ===
+    doc.setDrawColor(pc.r, pc.g, pc.b);
+    doc.setLineWidth(0.8);
+    doc.line(margin, y, pageW - margin, y);
+    y += 20;
 
-  // Columna derecha
-  doc.text(`Matriculado: ${matriculado}`, colRightX, y);
-  doc.text(`CPI: ${cpi}`, colRightX, y + 15);
+    // === Datos de la propiedad ===
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(13);
+    doc.setTextColor(pc.r, pc.g, pc.b);
+    doc.text("Datos de la Propiedad", pageW / 2, y, { align: "center" });
+    doc.setTextColor(0, 0, 0);
+    y += 20;
 
-  // Logo centrado (si existe)
-  if (userLogo) {
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    const lh = 15;
+
+    const datosIzq = [
+      `Cliente: ${formData.clientName || "-"}`,
+      `Teléfono: ${formData.phone || "-"}`,
+      `Email: ${formData.email || "-"}`,
+      `Dirección: ${formData.address || "-"}`,
+      `Barrio: ${formData.neighborhood || "-"}`,
+      `Localidad: ${formData.locality || "-"}`,
+      `Tipología: ${formData.propertyType}`,
+      `m² Terreno: ${numero(Number(formData.landArea) || 0)}`,
+      `m² Cubiertos: ${numero(Number(formData.builtArea) || 0)}`,
+      `Planos: ${formData.hasPlans ? "Sí" : "No"}`,
+      `Título: ${formData.titleType}`,
+    ];
+
+    let yDatos = y;
+    datosIzq.forEach((line) => {
+      doc.text(line, margin, yDatos);
+      yDatos += lh;
+    });
+
+    if (formData.mainPhotoBase64) {
+      try {
+        doc.addImage(
+          formData.mainPhotoBase64,
+          "JPEG",
+          pageW - margin - 180,
+          y,
+          180,
+          135,
+          undefined,
+          "FAST"
+        );
+      } catch {}
+    }
+    y = Math.max(yDatos, y + 135) + 20;
+
+    // Parte inferior: dos columnas
+    const datosIzq2 = [
+      `Antigüedad: ${numero(Number(formData.age) || 0)} años`,
+      `Estado: ${formData.condition}`,
+      `Ubicación: ${formData.locationQuality}`,
+      `Orientación: ${formData.orientation}`,
+      `Posee renta: ${formData.isRented ? "Sí" : "No"}`,
+    ];
+
+    const servicios = [
+      `Luz: ${formData.services.luz ? "Sí" : "No"}`,
+      `Agua: ${formData.services.agua ? "Sí" : "No"}`,
+      `Gas: ${formData.services.gas ? "Sí" : "No"}`,
+      `Cloacas: ${formData.services.cloacas ? "Sí" : "No"}`,
+      `Pavimento: ${formData.services.pavimento ? "Sí" : "No"}`,
+    ];
+
+    let yCol = y;
+    datosIzq2.forEach((line) => {
+      doc.text(line, margin, yCol);
+      yCol += lh;
+    });
+
+    let yCol2 = y;
+    servicios.forEach((line) => {
+      doc.text(line, pageW - margin - 200, yCol2);
+      yCol2 += lh;
+    });
+
+    y = Math.max(yCol, yCol2) + 30;
+
+    // === Comparables ===
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(12);
+    doc.setTextColor(pc.r, pc.g, pc.b);
+    doc.text("Propiedades Comparadas en la Zona", pageW / 2, y, {
+      align: "center",
+    });
+    doc.setTextColor(0, 0, 0);
+    y += 16;
+
+    const cols = 4;
+    const gap = 10;
+    const cardW = (pageW - margin * 2 - gap * (cols - 1)) / cols;
+    const cardH = 250;
+    let cx = margin;
+    let cy = y;
+
+    const drawComparableCard = (
+      c: ComparableProperty,
+      x: number,
+      yCard: number,
+      index: number
+    ) => {
+      doc.setDrawColor(200, 200, 200);
+      doc.setLineWidth(0.8);
+      doc.rect(x, yCard, cardW, cardH);
+
+      const innerPad = 8;
+      let cursorY = yCard + innerPad;
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(11);
+      doc.text(`Propiedad Nº ${index + 1}`, x + innerPad, cursorY);
+      cursorY += 18;
+
+      if (c.photoBase64) {
+        try {
+          doc.addImage(
+            c.photoBase64,
+            "JPEG",
+            x + innerPad,
+            cursorY,
+            cardW - innerPad * 2,
+            80,
+            undefined,
+            "FAST"
+          );
+          cursorY += 95;
+        } catch {}
+      }
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(10);
+
+      let dirLines = doc.splitTextToSize(`Dirección: ${c.address || "-"}`, cardW - innerPad * 2);
+      doc.text(dirLines, x + innerPad, cursorY);
+      cursorY += (dirLines as string[]).length * 12;
+
+      let barrioLines = doc.splitTextToSize(`Barrio: ${c.neighborhood || "-"}`, cardW - innerPad * 2);
+      doc.text(barrioLines, x + innerPad, cursorY);
+      cursorY += (barrioLines as string[]).length * 12;
+
+      const builtAreaNum = Number(c.builtArea) || 0;
+      const priceNum = Number(c.price) || 0;
+      const coefNum = Number(c.coefficient) || 1;
+
+      const ppm2Base = builtAreaNum > 0 ? priceNum / builtAreaNum : 0;
+      const ppm2Adj = ppm2Base * coefNum;
+
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(10);
+
+      let precioLines = doc.splitTextToSize(`Precio: ${peso(Number(c.price) || 0)}`, cardW - innerPad * 2);
+      doc.text(precioLines, x + innerPad, cursorY);
+      cursorY += (precioLines as string[]).length * 12;
+
+      doc.text(`m² Cubiertos: ${numero(Number(c.builtArea) || 0)}`, x + innerPad, cursorY);
+      cursorY += 14;
+
+      doc.text(`Precio/m²: ${peso(Number(ppm2Adj) || 0)}`, x + innerPad, cursorY);
+      cursorY += 14;
+
+      if (c.listingUrl) {
+        doc.setTextColor(33, 150, 243);
+        doc.textWithLink("Ver Propiedad", x + innerPad, cursorY, { url: c.listingUrl });
+        doc.setTextColor(0, 0, 0);
+        cursorY += 14;
+      }
+
+      const desc = c.description || "";
+      const textLines = doc.splitTextToSize(desc, cardW - innerPad * 2);
+      const maxLines = 5;
+      const clipped = (textLines as string[]).slice(0, maxLines);
+      doc.text(clipped as any, x + innerPad, cursorY);
+    };
+
+    formData.comparables.forEach((c, i) => {
+      if (i > 0 && i % cols === 0) {
+        cy += cardH + gap;
+        cx = margin;
+      }
+      drawComparableCard(c, cx, cy, i);
+      cx += cardW + gap;
+    });
+
+    y = cy + cardH + 16;
+    if (y > pageH - 200) {
+      doc.addPage();
+      y = margin;
+    }
+
+    doc.setDrawColor(pc.r, pc.g, pc.b);
+    doc.line(margin, y, pageW - margin, y);
+    y += 14;
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(12);
+    doc.setTextColor(pc.r, pc.g, pc.b);
+    doc.text("Precio sugerido de venta", margin, y);
+    doc.setTextColor(0, 0, 0);
+    y += 16;
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(18);
+    doc.text(peso(suggestedPrice), pageW / 2, y, { align: "center" });
+    y += 30;
+
+    doc.setDrawColor(pc.r, pc.g, pc.b);
+    doc.line(margin, y, pageW - margin, y);
+    y += 14;
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(12);
+    doc.setTextColor(pc.r, pc.g, pc.b);
+    doc.text("Conclusión", margin, y);
+    doc.setTextColor(0, 0, 0);
+    y += 16;
+
+    const block = (title: string, text: string) => {
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(11);
+      doc.text(title, margin, y);
+      y += 12;
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(10);
+      const lines = doc.splitTextToSize(text || "-", pageW - margin * 2);
+      doc.text(lines as any, margin, y);
+      y += (Array.isArray(lines) ? (lines as string[]).length : 1) * 14 + 8;
+      if (y > pageH - 80) {
+        doc.addPage();
+        y = margin;
+      }
+    };
+
+    block("Observaciones", formData.observations);
+    block("Fortalezas", formData.strengths);
+    block("Debilidades", formData.weaknesses);
+    block("A considerar", formData.considerations);
+
+    // === Imagen final opcional ===
     try {
-      const img = await fetch(userLogo);
+      const graficoUrl = "/grafico1-pdf.png";
+      const img = await fetch(graficoUrl);
       const blob = await img.blob();
       const reader = new FileReader();
       const base64Promise = new Promise<string>((resolve) => {
@@ -423,407 +666,65 @@ const handleDownloadPDF = async () => {
       reader.readAsDataURL(blob);
       const base64Img = await base64Promise;
 
-      const logoW = 70;
-      const logoH = 70;
-      const centerX = pageW / 2 - logoW / 2;
-      doc.addImage(base64Img, "PNG", centerX, y - 10, logoW, logoH, undefined, "FAST");
+      const tempImg = new Image();
+      tempImg.src = base64Img;
+      await new Promise((res) => (tempImg.onload = res));
+      const ratio = tempImg.height / tempImg.width;
+
+      const imgW = pageW * 0.7;
+      const imgH = imgW * ratio;
+      const imgX = (pageW - imgW) / 2;
+
+      y += 40;
+      if (y + imgH > pageH - 60) {
+        doc.addPage();
+        y = margin;
+      }
+
+      doc.addImage(base64Img, "PNG", imgX, y, imgW, imgH, undefined, "FAST");
+      y += imgH + 20;
     } catch (err) {
-      console.warn("⚠️ No se pudo cargar el logo del usuario en el PDF", err);
-    }
-  }
-
-  y += 60;
-
-  // === Línea separadora ===
-  doc.setDrawColor(pc.r, pc.g, pc.b);
-  doc.setLineWidth(0.8);
-  doc.line(margin, y, pageW - margin, y);
-  y += 20;
-
-  // === Datos de la propiedad ===
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(13);
-  doc.setTextColor(pc.r, pc.g, pc.b);
-  doc.text("Datos de la Propiedad", pageW / 2, y, { align: "center" });
-  doc.setTextColor(0, 0, 0);
-  y += 20;
-
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(10);
-  const lh = 15;
-
-  const datosIzq = [
-  `Cliente: ${formData.clientName || "-"}`,
-  `Teléfono: ${formData.phone || "-"}`,
-  `Email: ${formData.email || "-"}`,
-  `Dirección: ${formData.address || "-"}`,
-  `Barrio: ${formData.neighborhood || "-"}`,
-  `Localidad: ${formData.locality || "-"}`,
-  `Tipología: ${formData.propertyType}`,
-  `m² Terreno: ${numero(Number(formData.landArea) || 0)}`,
-  `m² Cubiertos: ${numero(Number(formData.builtArea) || 0)}`,
-  `Planos: ${formData.hasPlans ? "Sí" : "No"}`,
-  `Título: ${formData.titleType}`,
-];
-
-
-  let yDatos = y;
-  datosIzq.forEach((line) => {
-    doc.text(line, colLeftX, yDatos);
-    yDatos += lh;
-  });
-
-  if (formData.mainPhotoBase64) {
-    try {
-      doc.addImage(
-        formData.mainPhotoBase64,
-        "JPEG",
-        colRightX,
-        y,
-        180,
-        135,
-        undefined,
-        "FAST"
-      );
-    } catch {}
-  }
-  y = Math.max(yDatos, y + 135) + 20;
-
-  // Parte inferior: dos columnas
-  const datosIzq2 = [
-    `Antigüedad: ${numero(Number(formData.age) || 0)} años`,
-    `Estado: ${formData.condition}`,
-    `Ubicación: ${formData.locationQuality}`,
-    `Orientación: ${formData.orientation}`,
-    `Posee renta: ${formData.isRented ? "Sí" : "No"}`,
-  ];
-
-  const servicios = [
-    `Luz: ${formData.services.luz ? "Sí" : "No"}`,
-    `Agua: ${formData.services.agua ? "Sí" : "No"}`,
-    `Gas: ${formData.services.gas ? "Sí" : "No"}`,
-    `Cloacas: ${formData.services.cloacas ? "Sí" : "No"}`,
-    `Pavimento: ${formData.services.pavimento ? "Sí" : "No"}`,
-  ];
-
-  let yCol = y;
-  datosIzq2.forEach((line) => {
-    doc.text(line, colLeftX, yCol);
-    yCol += lh;
-  });
-
-  let yCol2 = y;
-  servicios.forEach((line) => {
-    doc.text(line, colRightX, yCol2);
-    yCol2 += lh;
-  });
-
-  y = Math.max(yCol, yCol2) + 30;
-
-  // === Comparables ===
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(12);
-  doc.setTextColor(pc.r, pc.g, pc.b);
-  doc.text("Propiedades Comparadas en la Zona", pageW / 2, y, {
-    align: "center",
-  });
-  doc.setTextColor(0, 0, 0);
-  y += 16;
-
-  const cols = 4;
-  const gap = 10;
-  const cardW = (pageW - margin * 2 - gap * (cols - 1)) / cols;
-  const cardH = 250;
-  let cx = margin;
-  let cy = y;
-
-  const drawComparableCard = (
-    c: ComparableProperty,
-    x: number,
-    yCard: number,
-    index: number
-  ) => {
-    doc.setDrawColor(200, 200, 200);
-    doc.setLineWidth(0.8);
-    doc.rect(x, yCard, cardW, cardH);
-
-    const innerPad = 8;
-    let cursorY = yCard + innerPad;
-
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(11);
-    doc.text(`Propiedad Nº ${index + 1}`, x + innerPad, cursorY);
-    cursorY += 18;
-
-    if (c.photoBase64) {
-      try {
-        doc.addImage(
-          c.photoBase64,
-          "JPEG",
-          x + innerPad,
-          cursorY,
-          cardW - innerPad * 2,
-          80,
-          undefined,
-          "FAST"
-        );
-        cursorY += 95;
-      } catch {}
+      console.warn("⚠️ No se pudo agregar la imagen final al PDF", err);
     }
 
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(10);
+    // === Footer ===
+    const footerText = `${matriculado}  |  CPI: ${cpi}`;
+    doc.setFont("helvetica", "italic");
+    doc.setFontSize(9);
+    doc.text(footerText, pageW / 2, pageH - 30, { align: "center" });
 
-    let dirLines = doc.splitTextToSize(`Dirección: ${c.address || "-"}`, cardW - innerPad * 2);
-    doc.text(dirLines, x + innerPad, cursorY);
-    cursorY += dirLines.length * 12;
-
-    let barrioLines = doc.splitTextToSize(`Barrio: ${c.neighborhood || "-"}`, cardW - innerPad * 2);
-    doc.text(barrioLines, x + innerPad, cursorY);
-    cursorY += barrioLines.length * 12;
-
-const builtAreaNum = Number(c.builtArea) || 0;
-const priceNum = Number(c.price) || 0;
-const coefNum = Number(c.coefficient) || 1;
-
-const ppm2Base = builtAreaNum > 0 ? priceNum / builtAreaNum : 0;
-const ppm2Adj = ppm2Base * coefNum;
-
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(10);
-
-    let precioLines = doc.splitTextToSize(`Precio: ${peso(Number(c.price) || 0)}`, cardW - innerPad * 2);
-
-    doc.text(precioLines, x + innerPad, cursorY);
-    cursorY += precioLines.length * 12;
-
-    doc.text(`m² Cubiertos: ${numero(Number(c.builtArea) || 0)}`, x + innerPad, cursorY);
-cursorY += 14;
-
-doc.text(`Precio/m²: ${peso(Number(ppm2Adj) || 0)}`, x + innerPad, cursorY);
-cursorY += 14;
-
-
-    if (c.listingUrl) {
-      doc.setTextColor(33, 150, 243);
-      doc.textWithLink("Ver Propiedad", x + innerPad, cursorY, { url: c.listingUrl });
-      doc.setTextColor(0, 0, 0);
-      cursorY += 14;
-    }
-
-    const desc = c.description || "";
-    const textLines = doc.splitTextToSize(desc, cardW - innerPad * 2);
-    const maxLines = 5;
-    const clipped = (textLines as string[]).slice(0, maxLines);
-    doc.text(clipped as any, x + innerPad, cursorY);
+    doc.save("VMI.pdf");
   };
 
-  formData.comparables.forEach((c, i) => {
-    if (i > 0 && i % cols === 0) {
-      cy += cardH + gap;
-      cx = margin;
-    }
-    drawComparableCard(c, cx, cy, i);
-    cx += cardW + gap;
-  });
-
-  y = cy + cardH + 16;
-  if (y > pageH - 200) {
-    doc.addPage();
-    y = margin;
-  }
-
-  doc.setDrawColor(pc.r, pc.g, pc.b);
-  doc.line(margin, y, pageW - margin, y);
-  y += 14;
-
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(12);
-  doc.setTextColor(pc.r, pc.g, pc.b);
-  doc.text("Precio sugerido de venta", margin, y);
-  doc.setTextColor(0, 0, 0);
-  y += 16;
-
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(18);
-  doc.text(peso(suggestedPrice), pageW / 2, y, { align: "center" });
-  y += 30;
-
-  doc.setDrawColor(pc.r, pc.g, pc.b);
-  doc.line(margin, y, pageW - margin, y);
-  y += 14;
-
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(12);
-  doc.setTextColor(pc.r, pc.g, pc.b);
-  doc.text("Conclusión", margin, y);
-  doc.setTextColor(0, 0, 0);
-  y += 16;
-
-  const block = (title: string, text: string) => {
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(11);
-    doc.text(title, margin, y);
-    y += 12;
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(10);
-    const lines = doc.splitTextToSize(text || "-", pageW - margin * 2);
-    doc.text(lines as any, margin, y);
-    y += (Array.isArray(lines) ? lines.length : 1) * 14 + 8;
-    if (y > pageH - 80) {
-      doc.addPage();
-      y = margin;
-    }
-  };
-
-  block("Observaciones", formData.observations);
-  block("Fortalezas", formData.strengths);
-  block("Debilidades", formData.weaknesses);
-  block("A considerar", formData.considerations);
-    
-// === Imagen final (fija, sin deformar) ===
-  try {
-    const graficoUrl = "/grafico1-pdf.png";
-    const img = await fetch(graficoUrl);
-    const blob = await img.blob();
-    const reader = new FileReader();
-    const base64Promise = new Promise<string>((resolve) => {
-      reader.onload = () => resolve(reader.result as string);
-    });
-    reader.readAsDataURL(blob);
-    const base64Img = await base64Promise;
-
-    const tempImg = new Image();
-    tempImg.src = base64Img;
-    await new Promise((res) => (tempImg.onload = res));
-    const ratio = tempImg.height / tempImg.width;
-
-    const imgW = pageW * 0.7;
-    const imgH = imgW * ratio;
-    const imgX = (pageW - imgW) / 2;
-
-    y += 40;
-    if (y + imgH > pageH - 60) {
-      doc.addPage();
-      y = margin;
-    }
-
-    doc.addImage(base64Img, "PNG", imgX, y, imgW, imgH, undefined, "FAST");
-    y += imgH + 20;
-  } catch (err) {
-    console.warn("⚠️ No se pudo agregar la imagen final al PDF", err);
-  }
-     // === Footer ===
-      
-  const footerText = `${matriculado}  |  CPI: ${cpi}`;
-  doc.setFont("helvetica", "italic");
-  doc.setFontSize(9);
-  doc.text(footerText, pageW / 2, pageH - 30, { align: "center" });
-
-  doc.save("VMI.pdf");
-};
-
-  /** ========= Render ========= */
+  /** ========= Opciones ========= */
   const propertyTypeOptions = useMemo(() => enumToOptions(PropertyType), []);
   const titleOptions = useMemo(() => enumToOptions(TitleType), []);
   const conditionOptions = useMemo(() => enumToOptions(PropertyCondition), []);
   const locationOptions = useMemo(() => enumToOptions(LocationQuality), []);
   const orientationOptions = useMemo(() => enumToOptions(Orientation), []);
 
+  /** ========= Render ========= */
   return (
     <div className="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8 space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mb-6">
-        {/* Logo + Nombre inmobiliaria */}
-        <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
-          <div className="w-28 sm:w-32 bg-white rounded-lg border border-gray-200 flex flex-col items-center justify-center overflow-hidden p-1">
-  {logoBase64 ? (
-    <div className="flex flex-col items-center justify-center w-full">
-      <div className="w-full flex justify-center">
-        <img
-          src={logoBase64}
-          alt="Logo"
-          className="object-contain max-h-16 sm:max-h-20 w-auto"
-        />
-      </div>
-
-      {/* ✅ input oculto para reemplazar el logo directamente */}
-      {/* logo file input removed from ACMForms header */} {
-          const f = e.target.files?.[0];
-          if (!f) return;
-          const reader = new FileReader();
-          reader.onloadend = () => {
-            const b64 = reader.result as string;
-            setLogoBase64(b64);
-            localStorage.setItem("logoBase64", b64);
-          };
-          reader.readAsDataURL(f);
-          if (logoInputRef.current) logoInputRef.current.value = "";
-        }}
-      />
-
-      {/* 🔘 Botón visible debajo del logo */}
-      <button
-        type="button"
-        onClick={() => logoInputRef.current?.click()}
-        className="mt-1 inline-flex items-center rounded-md border border-gray-300 bg-white px-2 py-1 text-[10px] sm:text-xs font-medium text-gray-700 hover:bg-gray-50"
-      >
-        Cambiar logo
-      </button>
-    </div>
-  ) : (
-    <label className="flex flex-col items-center justify-center text-xs text-gray-500 px-2 py-2 text-center">
-      Logo
-      {/* logo file input removed from ACMForms header */} {
-          const f = e.target.files?.[0];
-          if (!f) return;
-          const reader = new FileReader();
-          reader.onloadend = () => {
-            const b64 = reader.result as string;
-            setLogoBase64(b64);
-            localStorage.setItem("logoBase64", b64);
-          };
-          reader.readAsDataURL(f);
-          if (logoInputRef.current) logoInputRef.current.value = "";
-        }}
-      />
-      <button
-        type="button"
-        onClick={() => logoInputRef.current?.click()}
-        className="mt-1 inline-flex items-center rounded-md border border-gray-300 bg-white px-2 py-1 text-[10px] sm:text-xs font-medium text-gray-700 hover:bg-gray-50"
-      >
-        Subir
-      </button>
-    </label>
-  )}
-</div>
-
-
-          {/* Nombre de la inmobiliaria */}
-          <div className="text-center sm:text-left">
-            <p className="text-sm sm:text-base font-bold text-gray-800">
-              {user?.inmobiliaria || "Inmobiliaria sin nombre"}
-            </p>
-          </div>
+      {/* === Header del formulario (VAI | Empresa | Fecha) === */}
+      <div className="flex items-center justify-between gap-4 mb-2 border-b pb-3">
+        <div className="font-semibold tracking-wide">VAI</div>
+        <div className="text-2xl text-center grow">
+          {themeCompanyName || user?.inmobiliaria || 'Empresa'}
         </div>
-
-        {/* Color primario */}
-        <div className="flex items-center gap-2">
-          <label className="text-sm text-gray-600">Color</label>
-          {/* color picker removed (ThemeContext governs) */} setPrimaryColor(e.target.value)}
-            className="h-8 w-10 cursor-pointer rounded border border-gray-200 bg-white p-0"
-            aria-label="Color primario"
-          />
+        <div className="text-sm whitespace-nowrap">
+          {new Date(formData.date || new Date().toISOString()).toLocaleDateString('es-AR')}
         </div>
       </div>
 
       {/* Card principal */}
       <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
         <div className="border-b border-gray-200 p-4 sm:p-6">
-          <h2 className="text-base sm:text-lg font-semibold" style={{ color: primaryColor }}>
+          <h2 className="text-base sm:text-lg font-semibold" style={{ color: effectivePrimaryColor }}>
             Datos del Cliente / Propiedad
           </h2>
         </div>
+
         {/* Grid principal */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 p-4 sm:p-6">
           {/* Columna izquierda */}
@@ -838,7 +739,6 @@ cursorY += 14;
                 value={formData.clientName}
                 onChange={handleFieldChange}
                 className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
-                style={{ outlineColor: primaryColor }}
                 placeholder="Nombre del cliente"
               />
             </div>
@@ -934,46 +834,46 @@ cursorY += 14;
             </div>
 
             {/* m² Terreno */}
-<div className="space-y-1">
-  <label className="block text-sm font-medium text-gray-700">
-    m² Terreno
-  </label>
-  <input
-    name="landArea"
-    type="number"
-    inputMode="decimal"
-    value={formData.landArea ?? ""}
-    onChange={(e) => {
-      const value = e.target.value === "" ? null : parseFloat(e.target.value);
-      handleFieldChange({
-        target: { name: "landArea", value },
-      } as any);
-    }}
-    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
-    placeholder="Ej: 250"
-  />
-</div>
+            <div className="space-y-1">
+              <label className="block text-sm font-medium text-gray-700">
+                m² Terreno
+              </label>
+              <input
+                name="landArea"
+                type="number"
+                inputMode="decimal"
+                value={formData.landArea ?? ""}
+                onChange={(e) => {
+                  const value = e.target.value === "" ? null : parseFloat(e.target.value);
+                  handleFieldChange({
+                    target: { name: "landArea", value },
+                  } as any);
+                }}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
+                placeholder="Ej: 250"
+              />
+            </div>
 
-{/* m² Cubiertos */}
-<div className="space-y-1">
-  <label className="block text-sm font-medium text-gray-700">
-    m² Cubiertos
-  </label>
-  <input
-    name="builtArea"
-    type="number"
-    inputMode="decimal"
-    value={formData.builtArea ?? ""}
-    onChange={(e) => {
-      const value = e.target.value === "" ? null : parseFloat(e.target.value);
-      handleFieldChange({
-        target: { name: "builtArea", value },
-      } as any);
-    }}
-    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
-    placeholder="Ej: 120"
-  />
-</div>
+            {/* m² Cubiertos */}
+            <div className="space-y-1">
+              <label className="block text-sm font-medium text-gray-700">
+                m² Cubiertos
+              </label>
+              <input
+                name="builtArea"
+                type="number"
+                inputMode="decimal"
+                value={formData.builtArea ?? ""}
+                onChange={(e) => {
+                  const value = e.target.value === "" ? null : parseFloat(e.target.value);
+                  handleFieldChange({
+                    target: { name: "builtArea", value },
+                  } as any);
+                }}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
+                placeholder="Ej: 120"
+              />
+            </div>
 
             {/* Planos */}
             <div className="space-y-1">
@@ -1013,26 +913,26 @@ cursorY += 14;
               </select>
             </div>
 
-           {/* Antigüedad */}
-<div className="space-y-1">
-  <label className="block text-sm font-medium text-gray-700">
-    Antigüedad (años)
-  </label>
-  <input
-    name="age"
-    type="number"
-    inputMode="numeric"
-    value={formData.age ?? ""}
-    onChange={(e) => {
-      const value = e.target.value === "" ? null : parseInt(e.target.value, 10);
-      handleFieldChange({
-        target: { name: "age", value },
-      } as any);
-    }}
-    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
-    placeholder="Ej: 10"
-  />
-</div>
+            {/* Antigüedad */}
+            <div className="space-y-1">
+              <label className="block text-sm font-medium text-gray-700">
+                Antigüedad (años)
+              </label>
+              <input
+                name="age"
+                type="number"
+                inputMode="numeric"
+                value={formData.age ?? ""}
+                onChange={(e) => {
+                  const value = e.target.value === "" ? null : parseInt(e.target.value, 10);
+                  handleFieldChange({
+                    target: { name: "age", value },
+                  } as any);
+                }}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
+                placeholder="Ej: 10"
+              />
+            </div>
 
             {/* Estado */}
             <div className="space-y-1">
@@ -1134,6 +1034,7 @@ cursorY += 14;
               </select>
             </div>
           </div>
+
           {/* Columna derecha: foto principal */}
           <div className="lg:col-span-1">
             <h3 className="mb-2 text-sm font-semibold text-gray-800 text-center sm:text-left">
@@ -1147,7 +1048,7 @@ cursorY += 14;
                   alt="Foto principal"
                   className="h-48 sm:h-64 w-full object-cover"
                 />
-                <div className="p-2 text-center sm:text-right">
+                <div className="p-2 flex items-center justify-between">
                   <button
                     type="button"
                     onClick={() =>
@@ -1159,6 +1060,13 @@ cursorY += 14;
                     }
                     className="inline-flex items-center rounded-md border border-gray-300 bg-white px-2 py-1 text-xs sm:text-sm text-gray-700 hover:bg-gray-50"
                   >
+                    Quitar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => mainPhotoInputRef.current?.click()}
+                    className="inline-flex items-center rounded-md border border-gray-300 bg-white px-2 py-1 text-xs sm:text-sm text-gray-700 hover:bg-gray-50"
+                  >
                     Cambiar foto
                   </button>
                 </div>
@@ -1168,9 +1076,24 @@ cursorY += 14;
                 <p className="mb-2 text-xs text-gray-500">
                   Subir imagen (JPG/PNG)
                 </p>
-                {/* logo file input removed from ACMForms header */}
+                <button
+                  type="button"
+                  onClick={() => mainPhotoInputRef.current?.click()}
+                  className="inline-flex items-center rounded-md border border-gray-300 bg-white px-2 py-1 text-xs sm:text-sm text-gray-700 hover:bg-gray-50"
+                >
+                  Subir foto
+                </button>
               </div>
             )}
+
+            {/* input oculto */}
+            <input
+              ref={mainPhotoInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleMainPhotoSelect}
+            />
           </div>
         </div>
       </div>
@@ -1180,7 +1103,7 @@ cursorY += 14;
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
           <h3
             className="text-base sm:text-lg font-semibold text-center sm:text-left"
-            style={{ color: primaryColor }}
+            style={{ color: effectivePrimaryColor }}
           >
             Precio sugerido de venta
           </h3>
@@ -1199,19 +1122,18 @@ cursorY += 14;
         <div className="border-b border-gray-200 p-4 sm:p-6">
           <h2
             className="text-base sm:text-lg font-semibold text-center sm:text-left"
-            style={{ color: primaryColor }}
+            style={{ color: effectivePrimaryColor }}
           >
             Propiedades comparadas en la zona
           </h2>
         </div>
 
-       <div className="p-4 sm:p-6 space-y-6">
-  {formData.comparables.map((c, i) => {
-    const built = Number(c.builtArea) || 0;
-    const price = Number(c.price) || 0;
-    const ppm2Base = built > 0 ? price / built : 0;
-    const ppm2Adj = ppm2Base * (Number(c.coefficient) || 1);
-
+        <div className="p-4 sm:p-6 space-y-6">
+          {formData.comparables.map((c, i) => {
+            const built = Number(c.builtArea) || 0;
+            const price = Number(c.price) || 0;
+            const ppm2Base = built > 0 ? price / built : 0;
+            const ppm2Adj = ppm2Base * (Number(c.coefficient) || 1);
 
             return (
               <div
@@ -1249,7 +1171,7 @@ cursorY += 14;
                           alt={`Foto comparable ${i + 1}`}
                           className="h-40 sm:h-48 w-full object-cover"
                         />
-                        <div className="p-2 text-center sm:text-right">
+                        <div className="p-2 flex items-center justify-between">
                           <button
                             type="button"
                             onClick={() =>
@@ -1261,17 +1183,43 @@ cursorY += 14;
                             }
                             className="inline-flex items-center rounded-md border border-gray-300 bg-white px-2 py-1 text-xs sm:text-sm text-gray-700 hover:bg-gray-50"
                           >
+                            Quitar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (!compPhotoInputsRef.current[i]) return;
+                              compPhotoInputsRef.current[i]!.click();
+                            }}
+                            className="inline-flex items-center rounded-md border border-gray-300 bg-white px-2 py-1 text-xs sm:text-sm text-gray-700 hover:bg-gray-50"
+                          >
                             Cambiar foto
                           </button>
                         </div>
                       </div>
                     ) : (
                       <div className="rounded-lg border border-dashed border-gray-300 p-3 text-center">
-                        {/* logo file input removed from ACMForms header */} handleComparablePhotoSelect(i, e)}
-                          className="block w-full text-xs sm:text-sm"
-                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (!compPhotoInputsRef.current[i]) return;
+                            compPhotoInputsRef.current[i]!.click();
+                          }}
+                          className="inline-flex items-center rounded-md border border-gray-300 bg-white px-2 py-1 text-xs sm:text-sm text-gray-700 hover:bg-gray-50"
+                        >
+                          Subir foto
+                        </button>
                       </div>
                     )}
+
+                    {/* input oculto por-comparable */}
+                    <input
+                      ref={(el) => (compPhotoInputsRef.current[i] = el)}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => handleComparablePhotoSelect(i, e)}
+                    />
                   </div>
 
                   {/* Datos */}
@@ -1306,67 +1254,66 @@ cursorY += 14;
                       />
                     </div>
 
-               {/* m² Cubiertos */}
-<div className="space-y-1">
-  <label className="block text-sm font-medium text-gray-700">
-    m² Cubiertos
-  </label>
-  <input
-    type="number"
-    inputMode="decimal"
-    value={c.builtArea ?? ""}
-    onChange={(e) => {
-      const raw = e.target.value;
-      const value = raw === "" ? 0 : parseFloat(raw);
-      updateComparable(i, "builtArea", value);
-    }}
-    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
-    placeholder="Ej: 120"
-  />
-</div>
+                    {/* m² Cubiertos */}
+                    <div className="space-y-1">
+                      <label className="block text-sm font-medium text-gray-700">
+                        m² Cubiertos
+                      </label>
+                      <input
+                        type="number"
+                        inputMode="decimal"
+                        value={c.builtArea ?? ""}
+                        onChange={(e) => {
+                          const raw = e.target.value;
+                          const value = raw === "" ? 0 : parseFloat(raw);
+                          updateComparable(i, "builtArea", value);
+                        }}
+                        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
+                        placeholder="Ej: 120"
+                      />
+                    </div>
 
-{/* Precio */}
-<div className="space-y-1">
-  <label className="block text-sm font-medium text-gray-700">
-    Precio ($)
-  </label>
-  <input
-    type="text"
-    inputMode="numeric"
-    value={
-      c.price !== undefined && c.price !== null
-        ? new Intl.NumberFormat("es-AR").format(Number(c.price))
-        : ""
-    }
-    onChange={(e) => {
-      const raw = e.target.value.replace(/\./g, "");
-      const numericValue = raw === "" ? 0 : parseInt(raw, 10);
-      updateComparable(i, "price", numericValue);
-    }}
-    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-right focus:outline-none focus:ring-2 focus:ring-offset-1"
-    placeholder="Ej: 1.200.000"
-  />
-</div>
+                    {/* Precio */}
+                    <div className="space-y-1">
+                      <label className="block text-sm font-medium text-gray-700">
+                        Precio ($)
+                      </label>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        value={
+                          c.price !== undefined && c.price !== null
+                            ? new Intl.NumberFormat("es-AR").format(Number(c.price))
+                            : ""
+                        }
+                        onChange={(e) => {
+                          const raw = e.target.value.replace(/\./g, "");
+                          const numericValue = raw === "" ? 0 : parseInt(raw, 10);
+                          updateComparable(i, "price", numericValue);
+                        }}
+                        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-right focus:outline-none focus:ring-2 focus:ring-offset-1"
+                        placeholder="Ej: 1.200.000"
+                      />
+                    </div>
 
-{/* Días publicada */}
-<div className="space-y-1">
-  <label className="block text-sm font-medium text-gray-700">
-    Días publicada
-  </label>
-  <input
-    type="number"
-    inputMode="numeric"
-    value={c.daysPublished ?? ""}
-    onChange={(e) => {
-      const raw = e.target.value;
-      const value = raw === "" ? 0 : parseInt(raw, 10);
-      updateComparable(i, "daysPublished", value);
-    }}
-    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
-    placeholder="Ej: 45"
-  />
-</div>
-
+                    {/* Días publicada */}
+                    <div className="space-y-1">
+                      <label className="block text-sm font-medium text-gray-700">
+                        Días publicada
+                      </label>
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        value={c.daysPublished ?? ""}
+                        onChange={(e) => {
+                          const raw = e.target.value;
+                          const value = raw === "" ? 0 : parseInt(raw, 10);
+                          updateComparable(i, "daysPublished", value);
+                        }}
+                        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
+                        placeholder="Ej: 45"
+                      />
+                    </div>
 
                     {/* Link */}
                     <div className="space-y-1 sm:col-span-2">
@@ -1383,38 +1330,38 @@ cursorY += 14;
                       />
                     </div>
 
-                  {/* Coeficiente */}
-<div className="space-y-1">
-  <label className="block text-sm font-medium text-gray-700">
-    Coeficiente
-  </label>
-  <select
-    value={String(c.coefficient ?? 1.0)} // 🔹 fuerza que siempre sea string para el select
-    onChange={(e) => {
-      const value = parseFloat(e.target.value);
-      updateComparable(i, "coefficient", isNaN(value) ? 1.0 : value); // 🔹 seguridad adicional
-    }}
-    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
-  >
-    {Array.from({ length: 15 }, (_, idx) => (1.5 - idx * 0.1).toFixed(1)).map(
-      (val) => (
-        <option key={val} value={val}>
-          {val}
-        </option>
-      )
-    )}
-  </select>
-</div>
+                    {/* Coeficiente */}
+                    <div className="space-y-1">
+                      <label className="block text-sm font-medium text-gray-700">
+                        Coeficiente
+                      </label>
+                      <select
+                        value={String(c.coefficient ?? 1.0)}
+                        onChange={(e) => {
+                          const value = parseFloat(e.target.value);
+                          updateComparable(i, "coefficient", isNaN(value) ? 1.0 : value);
+                        }}
+                        className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
+                      >
+                        {Array.from({ length: 15 }, (_, idx) => (1.5 - idx * 0.1).toFixed(1)).map(
+                          (val) => (
+                            <option key={val} value={val}>
+                              {val}
+                            </option>
+                          )
+                        )}
+                      </select>
+                    </div>
 
-            {/* Precio/m² */}
-<div className="space-y-1">
-  <label className="block text-sm font-medium text-gray-700">
-    Precio por m² (ajustado)
-  </label>
-  <div className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm">
-    {peso(ppm2Adj)}
-  </div>
-</div>
+                    {/* Precio/m² */}
+                    <div className="space-y-1">
+                      <label className="block text-sm font-medium text-gray-700">
+                        Precio por m² (ajustado)
+                      </label>
+                      <div className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm">
+                        {peso(ppm2Adj)}
+                      </div>
+                    </div>
 
                     {/* Descripción */}
                     <div className="space-y-1 sm:col-span-2 md:col-span-3">
@@ -1455,7 +1402,7 @@ cursorY += 14;
         <div className="border-b border-gray-200 p-4 sm:p-6">
           <h2
             className="text-base sm:text-lg font-semibold text-center sm:text-left"
-            style={{ color: primaryColor }}
+            style={{ color: effectivePrimaryColor }}
           >
             Conclusión
           </h2>
@@ -1520,29 +1467,40 @@ cursorY += 14;
         </div>
       </div>
 
-     {/* Acciones */}
-<div className="mt-6 flex flex-col sm:flex-row flex-wrap items-center justify-center sm:justify-end gap-3">
-  <button
-    type="button"
-    onClick={handleDownloadPDF}
-    className="inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-semibold text-white w-full sm:w-auto text-center"
-    style={{ backgroundColor: primaryColor }}
-  >
-    Descargar PDF
-  </button>
+      {/* Acciones */}
+      <div className="mt-6 flex flex-col sm:flex-row flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3 w-full sm:w-auto">
+          <button
+            type="button"
+            onClick={saveInforme}
+            disabled={isSubmitting}
+            className="inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-semibold text-white w-full sm:w-auto text-center disabled:opacity-60"
+            style={{ backgroundColor: effectivePrimaryColor }}
+          >
+            {isSubmitting ? "Guardando..." : "Guardar Informe"}
+          </button>
 
-  {/* 🔒 Botón temporalmente oculto — volver a activar en producción */}
-  {false && (
-    <button
-      type="button"
-      onClick={handleSaveToDB}
-      className="inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-semibold text-white w-full sm:w-auto text-center"
-      style={{ backgroundColor: primaryColor }}
-    >
-      Guardar en Base
-    </button>
-  )}
-</div>
-</div>
-);
+          <button
+            type="button"
+            onClick={loadInforme}
+            className="inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-semibold text-white w-full sm:w-auto text-center"
+            style={{ backgroundColor: effectivePrimaryColor }}
+          >
+            Cargar Informe
+          </button>
+        </div>
+
+        <div>
+          <button
+            type="button"
+            onClick={handleDownloadPDF}
+            className="inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-semibold text-white w-full sm:w-auto text-center"
+            style={{ backgroundColor: effectivePrimaryColor }}
+          >
+            Descargar PDF
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }

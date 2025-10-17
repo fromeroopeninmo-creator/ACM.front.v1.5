@@ -4,101 +4,92 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { supabaseServer } from "#lib/supabaseServer";
 
+type Scope = "empresa" | "asesor";
+type Role = "empresa" | "asesor" | "soporte" | "super_admin" | "super_admin_root";
+
 export async function GET(req: Request) {
   try {
     const server = supabaseServer();
+    const {
+      data: { user },
+    } = await server.auth.getUser();
+    if (!user) return NextResponse.json({ error: "No autenticado." }, { status: 401 });
+
     const { searchParams } = new URL(req.url);
-    const scopeParam = searchParams.get("scope") as "empresa" | "asesor" | null;
+    const scopeParam = (searchParams.get("scope") as Scope) || null;
 
-    // 1) Usuario actual
-    const { data: userRes, error: userErr } = await server.auth.getUser();
-    if (userErr) throw userErr;
-    const user = userRes?.user;
-    if (!user) {
-      return NextResponse.json({ error: "No autenticado." }, { status: 401 });
-    }
+    // rol
+    const role = ((user.user_metadata as any)?.role || "empresa") as Role;
 
-    const role =
-      (user.user_metadata?.role as string) ||
-      (user.app_metadata?.role as string) ||
-      "empresa";
-
-    // 2) Resolver empresa_id
+    // resolver empresa_id cuando aplique
     let empresaId: string | null = null;
 
     if (role === "empresa") {
-      // Intento por user_id
-      const { data: empByUserId, error: e1 } = await server
+      const { data: emp, error: empErr } = await server
         .from("empresas")
         .select("id")
         .eq("user_id", user.id)
         .maybeSingle();
-      if (e1) throw e1;
-
-      if (empByUserId?.id) {
-        empresaId = empByUserId.id;
-      } else {
-        // Intento por id_usuario (columna alternativa que tenés en tu tabla)
-        const { data: empByAlt, error: e2 } = await server
-          .from("empresas")
-          .select("id")
-          .eq("id_usuario", user.id)
-          .maybeSingle();
-        if (e2) throw e2;
-        empresaId = empByAlt?.id ?? null;
+      if (empErr || !emp) {
+        return NextResponse.json({ error: "No se pudo resolver la empresa." }, { status: 400 });
       }
+      empresaId = emp.id;
     } else if (role === "asesor") {
-      const { data: asRow, error: asErr } = await server
+      const { data: as, error: asErr } = await server
         .from("asesores")
         .select("empresa_id")
         .eq("id", user.id)
         .maybeSingle();
-      if (asErr) throw asErr;
-      empresaId = asRow?.empresa_id ?? null;
+      if (asErr || !as?.empresa_id) {
+        return NextResponse.json(
+          { error: "El asesor no tiene empresa asociada." },
+          { status: 400 }
+        );
+      }
+      empresaId = as.empresa_id;
+    } else {
+      return NextResponse.json({ error: "Rol no soportado." }, { status: 403 });
     }
 
-    if (!empresaId) {
-      return NextResponse.json(
-        {
-          error:
-            "No se pudo resolver la empresa del usuario. Verificá empresas.user_id / empresas.id_usuario o la fila de asesores.",
-        },
-        { status: 400 }
-      );
-    }
-
-    // 3) Scope final
-    const scope =
-      scopeParam ??
-      (role === "empresa" ? "empresa" : role === "asesor" ? "asesor" : "empresa");
-
-    // 4) Query (sin 'etiquetas' porque no existe en tu tabla)
-    let query = server
+    // construir query
+    let q = server
       .from("informes")
       .select(
-        "id, empresa_id, autor_id, titulo, tipo, estado, payload, created_at, updated_at"
-      );
+        `
+        id,
+        titulo,
+        tipo,
+        estado,
+        created_at,
+        updated_at,
+        imagen_principal_url,
+        comp1_url,
+        comp2_url,
+        comp3_url,
+        comp4_url,
+        etiquetas,
+        autor_id,
+        asesor_id,
+        empresa_id
+      `
+      )
+      .order("created_at", { ascending: false });
 
-    if (scope === "empresa") {
-      query = query.eq("empresa_id", empresaId);
+    if (scopeParam === "asesor" || role === "asesor") {
+      // solo mis informes
+      q = q.eq("autor_id", user.id);
     } else {
-      query = query.eq("autor_id", user.id);
+      // por defecto empresa: todos los informes de la empresa
+      q = q.eq("empresa_id", empresaId!);
     }
 
-    // 5) Ordenar de forma segura
-    let { data, error } = await query.order("created_at", { ascending: false });
-    if (error?.message?.includes("column") && error.message.includes("created_at")) {
-      // Fallback a updated_at si hiciera falta
-      ({ data, error } = await query.order("updated_at", { ascending: false }));
+    const { data, error } = await q.limit(100);
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
     }
-    if (error) throw error;
 
-    return NextResponse.json({ ok: true, scope, data });
-  } catch (err: any) {
-    console.error("❌ /api/informes/list error:", err);
-    return NextResponse.json(
-      { error: err?.message || "Error listando informes." },
-      { status: 400 }
-    );
+    return NextResponse.json({ ok: true, items: data || [] });
+  } catch (e: any) {
+    return NextResponse.json({ error: e?.message || "Error interno." }, { status: 500 });
   }
 }

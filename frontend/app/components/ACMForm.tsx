@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useTheme } from "@/app/context/ThemeContext";
 import {
   ACMFormData,
   ComparableProperty,

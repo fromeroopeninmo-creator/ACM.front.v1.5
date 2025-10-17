@@ -1,119 +1,106 @@
-export const runtime = "edge";
+export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { supabaseServer } from "#lib/supabaseServer";
 
-type CreateBody = {
-  titulo?: string;
-  data: any;            // JSON del informe (obligatorio)
-  fotos?: string[];     // URLs públicas (opcional)
-};
+type Role = "empresa" | "asesor" | "soporte" | "super_admin" | "super_admin_root";
 
 export async function POST(req: Request) {
   try {
     const server = supabaseServer();
-    const { data: userRes } = await server.auth.getUser();
-    const user = userRes?.user;
+    const {
+      data: { user },
+    } = await server.auth.getUser();
+
     if (!user) {
       return NextResponse.json({ error: "No autenticado." }, { status: 401 });
     }
 
-    const body = (await req.json()) as CreateBody | null;
-    if (!body || body.data == null) {
-      return NextResponse.json(
-        { error: "Falta 'data' (JSON del informe)." },
-        { status: 400 }
-      );
+    const body = await req.json().catch(() => null);
+    if (!body || !body.datos) {
+      return NextResponse.json({ error: "Falta 'datos' (JSON del informe)." }, { status: 400 });
     }
 
-    const titulo = (body.titulo ?? "").toString().trim() || "Informe";
-    const fotos = Array.isArray(body.fotos) ? body.fotos.slice(0, 5) : [];
+    const { titulo, tipo, datos, etiquetas } = body as {
+      titulo?: string;
+      tipo?: string;
+      datos: any;
+      etiquetas?: any[];
+    };
 
-    // Resolver empresa_id según el rol:
-    // - empresa: buscar empresas.id donde user_id = auth.uid()
-    // - asesor:  buscar asesores.empresa_id donde asesores.id = auth.uid()
-    // (admins/soporte: por ahora bloqueamos; si luego quieres habilitarlo, lo ajustamos)
+    // rol desde user_metadata (tu app lo viene usando así)
+    const role = ((user.user_metadata as any)?.role || "empresa") as Role;
+
+    // Resolver empresa_id según rol:
     let empresaId: string | null = null;
-    const role =
-      (user.user_metadata as any)?.role ||
-      (user as any)?.role ||
-      "empresa";
+    let asesorId: string | null = null;
 
     if (role === "empresa") {
+      // La empresa es el usuario dueño de empresas.user_id
       const { data: emp, error: empErr } = await server
         .from("empresas")
         .select("id")
         .eq("user_id", user.id)
         .maybeSingle();
 
-      if (empErr) {
+      if (empErr || !emp) {
         return NextResponse.json(
-          { error: empErr.message || "Error obteniendo empresa." },
-          { status: 400 }
-        );
-      }
-      if (!emp?.id) {
-        return NextResponse.json(
-          { error: "No se encontró empresa asociada al usuario." },
+          { error: "No se pudo resolver la empresa del usuario." },
           { status: 400 }
         );
       }
       empresaId = emp.id;
+      asesorId = null;
     } else if (role === "asesor") {
+      // El asesor está en la tabla asesores con empresa_id
       const { data: as, error: asErr } = await server
         .from("asesores")
         .select("empresa_id")
         .eq("id", user.id)
         .maybeSingle();
 
-      if (asErr) {
-        return NextResponse.json(
-          { error: asErr.message || "Error obteniendo empresa del asesor." },
-          { status: 400 }
-        );
-      }
-      if (!as?.empresa_id) {
+      if (asErr || !as?.empresa_id) {
         return NextResponse.json(
           { error: "El asesor no tiene empresa asociada." },
           { status: 400 }
         );
       }
       empresaId = as.empresa_id;
+      asesorId = user.id;
     } else {
       return NextResponse.json(
-        { error: "Solo empresas y asesores pueden crear informes por ahora." },
+        { error: "Rol no soportado para crear informes." },
         { status: 403 }
       );
     }
 
-    // Insert limpio: solo columnas existentes en la tabla
-    const { data: inserted, error: insErr } = await server
+    // Insert en public.informes con tus columnas reales
+    const insertPayload = {
+      empresa_id: empresaId,
+      asesor_id: asesorId,
+      autor_id: user.id,
+      tipo: tipo || "VAI",
+      titulo: titulo || "Informe VAI",
+      datos_json: datos,                 // ← JSON completo del VAI
+      etiquetas: Array.isArray(etiquetas) ? etiquetas : [], // ← jsonb []
+      estado: "borrador",                // o "finalizado" si lo deseas
+      // el resto con defaults de la tabla
+    };
+
+    const { data: row, error: insErr } = await server
       .from("informes")
-      .insert([
-        {
-          empresa_id: empresaId,
-          autor_id: user.id,
-          titulo,
-          data: body.data,
-          fotos, // text[] en la tabla
-        },
-      ])
-      .select("id")
-      .maybeSingle();
+      .insert(insertPayload)
+      .select("id, titulo, created_at")
+      .single();
 
     if (insErr) {
-      return NextResponse.json(
-        { error: insErr.message || "Error creando informe." },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: insErr.message }, { status: 400 });
     }
 
-    return NextResponse.json({ id: inserted?.id || null });
+    return NextResponse.json({ ok: true, informe: row }, { status: 201 });
   } catch (e: any) {
-    return NextResponse.json(
-      { error: e?.message || "Error interno." },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: e?.message || "Error interno." }, { status: 500 });
   }
 }

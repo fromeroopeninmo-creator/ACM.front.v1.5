@@ -96,7 +96,9 @@ export default function ACMForm() {
   const [logoBase64, setLogoBase64] = useState<string | undefined>(undefined);
 
   const [formData, setFormData] = useState<ACMFormData>(() => makeInitialData());
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSubmitting, setIsSubmitting] = 
+  const effectivePrimaryColor = (theme?.primaryColor as string) ?? (primaryColor as string) ?? "#0ea5e9";
+useState(false);
   const logoInputRef = useRef<HTMLInputElement | null>(null);
   const mainPhotoInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -269,7 +271,52 @@ const adjustedPricePerM2List = useMemo(
         const price = parseFloat(c.price as string) || 0;
         const coef = parseFloat(c.coefficient as string) || 1;
         const base = c.pricePerM2 || (built > 0 ? price / built : 0);
-        return (Number(base) || 0) * (Number(coef) || 1);
+        
+
+// === Guardar Informe: crea un registro en /api/informes/create ===
+const saveInforme = async () => {
+  try {
+    const payload = { datos: formData, titulo: (formData && (formData as any).titulo) || "Informe VAI" };
+    const res = await fetch("/api/informes/create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error("Error al guardar el informe");
+    const data = await res.json();
+    if (data?.informe?.id) {
+      if (typeof setInformeId === 'function') setInformeId(data.informe.id);
+      alert("Informe guardado. ID: " + data.informe.id);
+    } else {
+      alert("Informe guardado.");
+    }
+  } catch (err:any) {
+    console.error("Guardar Informe", err);
+    alert(err?.message || "No se pudo guardar el informe");
+  }
+};
+
+
+
+// === Cargar Informe: pide ID y trae datos con /api/informes/get?id=... ===
+const loadInforme = async () => {
+  try {
+    const id = typeof window !== 'undefined' ? window.prompt("Ingrese el ID del informe a cargar:") : null;
+    if (!id) return;
+    const res = await fetch(`/api/informes/get?id=${encodeURIComponent(id)}`);
+    if (!res.ok) throw new Error("No se pudo obtener el informe");
+    const data = await res.json();
+    if (!data?.informe?.datos_json) throw new Error("El informe no contiene datos_json");
+    if (typeof setFormData === 'function') setFormData(data.informe.datos_json);
+    if (typeof setInformeId === 'function') setInformeId(data.informe.id);
+    alert("Informe cargado.");
+  } catch (err:any) {
+    console.error("Cargar Informe", err);
+    alert(err?.message || "No se pudo cargar el informe");
+  }
+};
+
+return (Number(base) || 0) * (Number(coef) || 1);
       }),
   [formData.comparables]
 );
@@ -689,6 +736,31 @@ cursorY += 14;
   return (
     <div className="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8 space-y-6">
       {/* Header */}
+
+{/* === ACMForms Header (reworked) === */}
+<div className="w-full flex items-center justify-between gap-4 border-b pb-3 mb-4">
+  {/* Left: VAI */}
+  <div className="font-semibold tracking-wide">VAI</div>
+  {/* Center: Empresa (bigger) */}
+  <div className="text-2xl text-center grow">
+    {user?.inmobiliaria || empresa?.nombre_comercial || 'Empresa'}
+  </div>
+  {/* Right: Fecha */}
+  <div className="text-sm whitespace-nowrap">
+    {(() => {
+      try {
+        const d = formData?.date ? new Date(formData.date) : new Date();
+        return d.toLocaleDateString('es-AR');
+      } catch {
+        return new Date().toLocaleDateString('es-AR');
+      }
+    })()}
+  </div>
+</div>
+{/* === /ACMForms Header (reworked) === */}
+
+{/* original header content below is deprecated and kept commented to preserve structure */}
+
       <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mb-6">
         {/* Logo + Nombre inmobiliaria */}
         <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
@@ -704,12 +776,7 @@ cursorY += 14;
       </div>
 
       {/* ✅ input oculto para reemplazar el logo directamente */}
-      <input
-        ref={logoInputRef}
-        type="file"
-        accept="image/*"
-        className="hidden"
-        onChange={async (e) => {
+      {/* logo file input removed from ACMForms header */} {
           const f = e.target.files?.[0];
           if (!f) return;
           const reader = new FileReader();
@@ -735,12 +802,7 @@ cursorY += 14;
   ) : (
     <label className="flex flex-col items-center justify-center text-xs text-gray-500 px-2 py-2 text-center">
       Logo
-      <input
-        ref={logoInputRef}
-        type="file"
-        accept="image/*"
-        className="hidden"
-        onChange={async (e) => {
+      {/* logo file input removed from ACMForms header */} {
           const f = e.target.files?.[0];
           if (!f) return;
           const reader = new FileReader();
@@ -776,10 +838,7 @@ cursorY += 14;
         {/* Color primario */}
         <div className="flex items-center gap-2">
           <label className="text-sm text-gray-600">Color</label>
-          <input
-            type="color"
-            value={primaryColor}
-            onChange={(e) => setPrimaryColor(e.target.value)}
+          {/* color picker removed: now controlled by ThemeContext (empresa) */} setPrimaryColor(e.target.value)}
             className="h-8 w-10 cursor-pointer rounded border border-gray-200 bg-white p-0"
             aria-label="Color primario"
           />
@@ -789,7 +848,7 @@ cursorY += 14;
       {/* Card principal */}
       <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
         <div className="border-b border-gray-200 p-4 sm:p-6">
-          <h2 className="text-base sm:text-lg font-semibold" style={{ color: primaryColor }}>
+          <h2 className="text-base sm:text-lg font-semibold" style={{ color: effectivePrimaryColor }}>
             Datos del Cliente / Propiedad
           </h2>
         </div>
@@ -1137,13 +1196,7 @@ cursorY += 14;
                 <p className="mb-2 text-xs text-gray-500">
                   Subir imagen (JPG/PNG)
                 </p>
-                <input
-                  ref={mainPhotoInputRef}
-                  type="file"
-                  accept="image/*"
-                  onChange={handleMainPhotoSelect}
-                  className="block w-full text-sm"
-                />
+                {/* logo file input removed from ACMForms header */}
               </div>
             )}
           </div>
@@ -1155,7 +1208,7 @@ cursorY += 14;
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
           <h3
             className="text-base sm:text-lg font-semibold text-center sm:text-left"
-            style={{ color: primaryColor }}
+            style={{ color: effectivePrimaryColor }}
           >
             Precio sugerido de venta
           </h3>
@@ -1174,7 +1227,7 @@ cursorY += 14;
         <div className="border-b border-gray-200 p-4 sm:p-6">
           <h2
             className="text-base sm:text-lg font-semibold text-center sm:text-left"
-            style={{ color: primaryColor }}
+            style={{ color: effectivePrimaryColor }}
           >
             Propiedades comparadas en la zona
           </h2>
@@ -1242,10 +1295,7 @@ cursorY += 14;
                       </div>
                     ) : (
                       <div className="rounded-lg border border-dashed border-gray-300 p-3 text-center">
-                        <input
-                          type="file"
-                          accept="image/*"
-                          onChange={(e) => handleComparablePhotoSelect(i, e)}
+                        {/* logo file input removed from ACMForms header */} handleComparablePhotoSelect(i, e)}
                           className="block w-full text-xs sm:text-sm"
                         />
                       </div>
@@ -1433,7 +1483,7 @@ cursorY += 14;
         <div className="border-b border-gray-200 p-4 sm:p-6">
           <h2
             className="text-base sm:text-lg font-semibold text-center sm:text-left"
-            style={{ color: primaryColor }}
+            style={{ color: effectivePrimaryColor }}
           >
             Conclusión
           </h2>
@@ -1524,3 +1574,23 @@ cursorY += 14;
 </div>
 );
 }
+
+
+{/* === ACMForms Footer (actions) === */}
+<div className="w-full flex items-center justify-between gap-3 mt-6 pt-4 border-t">
+  <div className="flex items-center gap-3">
+    <button type="button" onClick={saveInforme} className="px-3 py-2 rounded-md border hover:opacity-90">
+      Guardar Informe
+    </button>
+    <button type="button" onClick={loadInforme} className="px-3 py-2 rounded-md border hover:opacity-90">
+      Cargar Informe
+    </button>
+  </div>
+  <div className="flex items-center gap-3">
+    <button type="button" onClick={handleDownloadPDF} className="px-3 py-2 rounded-md border hover:opacity-90">
+      Descargar PDF
+    </button>
+  </div>
+</div>
+{/* === /ACMForms Footer (actions) === */}
+

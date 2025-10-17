@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
-import { useTheme } from "@/app/context/ThemeContext";
+import { useTheme } from "@/context/ThemeContext";
 import {
   ACMFormData,
   ComparableProperty,
@@ -12,9 +12,9 @@ import {
   PropertyType,
   Services,
   TitleType,
-} from "@/app/types/acm.types";
+} from "@/types/acm.types";
 // import { createACMAnalysis } from '../lib/api'; // ← no se usa hoy, lo dejo comentado para evitar warnings
-import { useAuth } from "@/app/context/AuthContext";
+import { useAuth } from "@/context/AuthContext";
 
 /** =========================
  *  Helpers / Utils

@@ -1,106 +1,141 @@
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
+// app/api/informes/create/route.ts
+import { NextResponse } from 'next/server';
+import { cookies } from 'next/headers';
+import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
+import { createClient } from '@supabase/supabase-js';
 
-import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
-import { supabaseServer } from "#lib/supabaseServer";
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
-type Role = "empresa" | "asesor" | "soporte" | "super_admin" | "super_admin_root";
+type CreateBody = {
+  datos: any;
+  titulo?: string;
+};
 
 export async function POST(req: Request) {
   try {
-    const server = supabaseServer();
-    const {
-      data: { user },
-    } = await server.auth.getUser();
-
-    if (!user) {
-      return NextResponse.json({ error: "No autenticado." }, { status: 401 });
-    }
-
-    const body = await req.json().catch(() => null);
-    if (!body || !body.datos) {
-      return NextResponse.json({ error: "Falta 'datos' (JSON del informe)." }, { status: 400 });
-    }
-
-    const { titulo, tipo, datos, etiquetas } = body as {
-      titulo?: string;
-      tipo?: string;
-      datos: any;
-      etiquetas?: any[];
-    };
-
-    // rol desde user_metadata (tu app lo viene usando así)
-    const role = ((user.user_metadata as any)?.role || "empresa") as Role;
-
-    // Resolver empresa_id según rol:
-    let empresaId: string | null = null;
-    let asesorId: string | null = null;
-
-    if (role === "empresa") {
-      // La empresa es el usuario dueño de empresas.user_id
-      const { data: emp, error: empErr } = await server
-        .from("empresas")
-        .select("id")
-        .eq("user_id", user.id)
-        .maybeSingle();
-
-      if (empErr || !emp) {
-        return NextResponse.json(
-          { error: "No se pudo resolver la empresa del usuario." },
-          { status: 400 }
-        );
-      }
-      empresaId = emp.id;
-      asesorId = null;
-    } else if (role === "asesor") {
-      // El asesor está en la tabla asesores con empresa_id
-      const { data: as, error: asErr } = await server
-        .from("asesores")
-        .select("empresa_id")
-        .eq("id", user.id)
-        .maybeSingle();
-
-      if (asErr || !as?.empresa_id) {
-        return NextResponse.json(
-          { error: "El asesor no tiene empresa asociada." },
-          { status: 400 }
-        );
-      }
-      empresaId = as.empresa_id;
-      asesorId = user.id;
-    } else {
+    const body = (await req.json()) as CreateBody;
+    if (!body?.datos) {
       return NextResponse.json(
-        { error: "Rol no soportado para crear informes." },
-        { status: 403 }
+        { error: 'Falta el campo "datos" con el JSON del informe.' },
+        { status: 400 }
       );
     }
 
-    // Insert en public.informes con tus columnas reales
+    // 1) Cliente de sesión (anon) para conocer el usuario
+    const cookieStore = cookies();
+    const supabaseSession = createRouteHandlerClient({ cookies: () => cookieStore });
+    const {
+      data: { user },
+      error: userErr,
+    } = await supabaseSession.auth.getUser();
+
+    if (userErr || !user) {
+      return NextResponse.json(
+        { error: 'No hay sesión válida.' },
+        { status: 401 }
+      );
+    }
+
+    // 2) Resolver empresa_id y si es asesor
+    //    Intento 1: ¿es empresa? (empresas.user_id = auth.uid())
+    const { data: empresaMatch, error: empErr } = await supabaseSession
+      .from('empresas')
+      .select('id')
+      .eq('user_id', user.id)
+      .maybeSingle();
+
+    if (empErr && empErr.code !== 'PGRST116') {
+      // PGRST116 = no rows
+      console.warn('empresas lookup error:', empErr.message);
+    }
+
+    let empresa_id: string | null = null;
+    let asesor_id: string | null = null;
+
+    if (empresaMatch?.id) {
+      empresa_id = empresaMatch.id;
+    } else {
+      // Intento 2: ¿es perfil (asesor)? (profiles.id = auth.uid())
+      const { data: perfil, error: profErr } = await supabaseSession
+        .from('profiles')
+        .select('id, role, empresa_id')
+        .eq('id', user.id)
+        .maybeSingle();
+
+      if (profErr && profErr.code !== 'PGRST116') {
+        console.warn('profiles lookup error:', profErr.message);
+      }
+
+      if (perfil?.empresa_id) {
+        empresa_id = perfil.empresa_id;
+      }
+      if (perfil?.role === 'asesor') {
+        asesor_id = user.id;
+      }
+    }
+
+    if (!empresa_id) {
+      return NextResponse.json(
+        {
+          error:
+            'No se pudo determinar la empresa del usuario (empresa_id). Verificá que el usuario esté vinculado a una empresa.',
+        },
+        { status: 400 }
+      );
+    }
+
+    // 3) Cliente admin (Service Role) — esto BYPASSEA RLS
+    const admin = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL as string,
+      process.env.SUPABASE_SERVICE_ROLE_KEY as string,
+      {
+        auth: { persistSession: false },
+      }
+    );
+
     const insertPayload = {
-      empresa_id: empresaId,
-      asesor_id: asesorId,
+      empresa_id,
+      asesor_id, // null si es empresa
       autor_id: user.id,
-      tipo: tipo || "VAI",
-      titulo: titulo || "Informe VAI",
-      datos_json: datos,                 // ← JSON completo del VAI
-      etiquetas: Array.isArray(etiquetas) ? etiquetas : [], // ← jsonb []
-      estado: "borrador",                // o "finalizado" si lo deseas
-      // el resto con defaults de la tabla
+      datos_json: body.datos,
+      titulo: body.titulo ?? 'Informe VAI',
+      tipo: 'VAI',
+      estado: 'borrador',
+      etiquetas: [],
+      payload: {},
     };
 
-    const { data: row, error: insErr } = await server
-      .from("informes")
+    const { data: inserted, error: insErr } = await admin
+      .from('informes')
       .insert(insertPayload)
-      .select("id, titulo, created_at")
+      .select('id, created_at')
       .single();
 
     if (insErr) {
-      return NextResponse.json({ error: insErr.message }, { status: 400 });
+      console.error('insert informes error:', insErr);
+      return NextResponse.json(
+        {
+          error:
+            'No se pudo guardar el informe en la base de datos.',
+          details: insErr.message,
+        },
+        { status: 500 }
+      );
     }
 
-    return NextResponse.json({ ok: true, informe: row }, { status: 201 });
+    return NextResponse.json(
+      {
+        ok: true,
+        informe: inserted,
+      },
+      { status: 200 }
+    );
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message || "Error interno." }, { status: 500 });
+    console.error('create informe exception:', e);
+    return NextResponse.json(
+      { error: 'Error inesperado al crear el informe.', details: e?.message },
+      { status: 500 }
+    );
   }
 }

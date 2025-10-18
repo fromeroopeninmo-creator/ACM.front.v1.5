@@ -100,24 +100,27 @@ const makeInitialData = (): ACMFormData => ({
   weaknesses: '',
 });
 
-/** =========================
- *  Componente principal
- *  ========================= */
 export default function ACMForm() {
   const { user } = useAuth();
   const [formData, setFormData] = useState<ACMFormData>(() => makeInitialData());
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Theme (evita error TS: logoUrlBusted no está en ThemeContextType)
-const theme = useTheme();
-const themePrimaryColor = (theme as any)?.primaryColor as string | undefined;
-const themeCompanyName = (theme as any)?.companyName as string | undefined;
-// Usa logoUrlBusted si existe; si no, fallback a logoUrl; si no, undefined
-const themeLogoUrl = (theme as any)?.logoUrlBusted ?? (theme as any)?.logoUrl ?? undefined;
-const effectivePrimaryColor = themePrimaryColor || "#0ea5e9";
+  // --- Mensajes inline y manejo de carga/ID ---
+  type InlineMsg = { type: "success" | "error"; text: string } | null;
+  const [saveMsg, setSaveMsg] = useState<InlineMsg>(null);
+  const [loadMsg, setLoadMsg] = useState<InlineMsg>(null);
+  const [informeId, setInformeId] = useState<string | null>(null);
+  const [loadOpen, setLoadOpen] = useState(false);
+  const [loadIdInput, setLoadIdInput] = useState("");
 
+  // Theme...
+  const theme = useTheme();
+  const themePrimaryColor = (theme as any)?.primaryColor as string | undefined;
+  const themeCompanyName = (theme as any)?.companyName as string | undefined;
+  const themeLogoUrl = (theme as any)?.logoUrlBusted ?? (theme as any)?.logoUrl ?? undefined;
+  const effectivePrimaryColor = themePrimaryColor || "#0ea5e9";
 
-  // Refs para inputs de imagen
+  // Refs...
   const mainPhotoInputRef = useRef<HTMLInputElement | null>(null);
   const compPhotoInputsRef = useRef<Array<HTMLInputElement | null>>([]);
 

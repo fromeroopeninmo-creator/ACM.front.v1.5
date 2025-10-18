@@ -27,18 +27,25 @@ function buildColumnFromSlot(slot: string): keyof {
 export async function POST(req: Request) {
   try {
     const server = supabaseServer();
+
+    // 1) Usuario autenticado (JWT desde cookies)
     const {
       data: { user },
+      error: userErr,
     } = await server.auth.getUser();
 
+    if (userErr) {
+      return NextResponse.json({ error: `Auth error: ${userErr.message}` }, { status: 401 });
+    }
     if (!user) {
       return NextResponse.json({ error: "No autenticado." }, { status: 401 });
     }
 
+    // 2) Datos del form-data
     const form = await req.formData();
     const file = form.get("file") as File | null;
-    const informeId = form.get("informeId") as string | null;
-    const slot = form.get("slot") as string | null;
+    const informeId = (form.get("informeId") as string | null)?.trim();
+    const slot = (form.get("slot") as string | null)?.trim();
 
     if (!file || !informeId || !slot) {
       return NextResponse.json(
@@ -47,41 +54,73 @@ export async function POST(req: Request) {
       );
     }
 
+    // 3) Rol del usuario
     const role = ((user.user_metadata as any)?.role || "empresa") as Role;
 
-    // Resolver empresa_id (para chequear ownership y armar carpeta)
+    // 4) Resolver empresa_id según rol
     let empresaId: string | null = null;
+
     if (role === "empresa") {
       const { data: emp, error: empErr } = await server
         .from("empresas")
         .select("id")
         .eq("user_id", user.id)
         .maybeSingle();
-      if (empErr || !emp) {
+
+      if (empErr) {
         return NextResponse.json(
-          { error: "No se pudo resolver la empresa del usuario." },
+          { error: `No se pudo resolver la empresa del usuario (empresa): ${empErr.message}` },
+          { status: 400 }
+        );
+      }
+      if (!emp?.id) {
+        return NextResponse.json(
+          { error: "No se encontró empresa asociada al usuario (empresa)." },
           { status: 400 }
         );
       }
       empresaId = emp.id;
     } else if (role === "asesor") {
-      const { data: as, error: asErr } = await server
-        .from("asesores")
+      // En tu esquema, la relación está en profiles (no en asesores.id = auth id)
+      const { data: prof, error: profErr } = await server
+        .from("profiles")
         .select("empresa_id")
         .eq("id", user.id)
         .maybeSingle();
-      if (asErr || !as?.empresa_id) {
+
+      if (profErr) {
         return NextResponse.json(
-          { error: "El asesor no tiene empresa asociada." },
+          { error: `No se pudo resolver la empresa del usuario (asesor): ${profErr.message}` },
           { status: 400 }
         );
       }
-      empresaId = as.empresa_id;
+      if (!prof?.empresa_id) {
+        return NextResponse.json(
+          { error: "El asesor no tiene empresa asociada (profiles.empresa_id nulo)." },
+          { status: 400 }
+        );
+      }
+      empresaId = prof.empresa_id;
+    } else if (role === "soporte" || role === "super_admin" || role === "super_admin_root") {
+      // Para soporte/admin permitimos subir si el informe existe (y usamos su empresa_id)
+      const { data: infAdmin, error: infAdminErr } = await server
+        .from("informes")
+        .select("empresa_id")
+        .eq("id", informeId)
+        .maybeSingle();
+
+      if (infAdminErr || !infAdmin?.empresa_id) {
+        return NextResponse.json(
+          { error: infAdminErr?.message || "Informe inexistente o sin empresa asociada." },
+          { status: 404 }
+        );
+      }
+      empresaId = infAdmin.empresa_id;
     } else {
-      return NextResponse.json({ error: "Rol no soportado." }, { status: 403 });
+      return NextResponse.json({ error: "Rol no soportado para upload." }, { status: 403 });
     }
 
-    // Verificar que el informe pertenece a esa empresa o al autor
+    // 5) Verificar ownership del informe para empresa/asesor
     const { data: inf, error: infErr } = await server
       .from("informes")
       .select("id, empresa_id, autor_id")
@@ -91,11 +130,19 @@ export async function POST(req: Request) {
     if (infErr || !inf) {
       return NextResponse.json({ error: "Informe inexistente." }, { status: 404 });
     }
-    if (inf.empresa_id !== empresaId && inf.autor_id !== user.id) {
-      return NextResponse.json({ error: "No autorizado sobre este informe." }, { status: 403 });
-    }
 
-    // Procesar con sharp (máx 800px lado mayor) -> JPEG
+    if (
+      role === "empresa" ||
+      role === "asesor"
+    ) {
+      // Debe pertenecer a la misma empresa o ser autor
+      if (inf.empresa_id !== empresaId && inf.autor_id !== user.id) {
+        return NextResponse.json({ error: "No autorizado sobre este informe." }, { status: 403 });
+      }
+    }
+    // Para soporte/super_admin ya pasamos con el bloque anterior
+
+    // 6) Procesar imagen con sharp (máx 800px lado mayor), salida JPEG
     const arrayBuf = await file.arrayBuffer();
     const input = Buffer.from(arrayBuf);
     const processed = await sharp(input)
@@ -104,7 +151,7 @@ export async function POST(req: Request) {
       .jpeg({ quality: 75 })
       .toBuffer();
 
-    // Path de storage: /empresaId/informeId/slot.jpg
+    // 7) Path en storage: /empresaId/informeId/slot.jpg
     const storagePath = `${empresaId}/${informeId}/${slot}.jpg`;
 
     const { error: upErr } = await server.storage
@@ -116,14 +163,28 @@ export async function POST(req: Request) {
       });
 
     if (upErr) {
-      return NextResponse.json({ error: upErr.message }, { status: 400 });
+      return NextResponse.json({ error: `Error al subir a storage: ${upErr.message}` }, { status: 400 });
     }
 
-    // Public URL
+    // 8) URL pública (si el bucket es público) o firmada si no lo es
+    let publicUrl: string | null = null;
     const { data: pub } = server.storage.from(BUCKET).getPublicUrl(storagePath);
-    const publicUrl = pub.publicUrl;
+    publicUrl = pub?.publicUrl || null;
 
-    // Actualizar columna correspondiente
+    if (!publicUrl) {
+      const { data: signed, error: signErr } = await server.storage
+        .from(BUCKET)
+        .createSignedUrl(storagePath, 60 * 60 * 24 * 7); // 7 días
+      if (signErr || !signed?.signedUrl) {
+        return NextResponse.json(
+          { error: signErr?.message || "No se pudo obtener URL pública / firmada." },
+          { status: 400 }
+        );
+      }
+      publicUrl = signed.signedUrl;
+    }
+
+    // 9) Actualizar columna correspondiente en informes
     const column = buildColumnFromSlot(slot);
     const { error: updErr } = await server
       .from("informes")
@@ -131,10 +192,10 @@ export async function POST(req: Request) {
       .eq("id", informeId);
 
     if (updErr) {
-      return NextResponse.json({ error: updErr.message }, { status: 400 });
+      return NextResponse.json({ error: `Error al actualizar informe: ${updErr.message}` }, { status: 400 });
     }
 
-    // Devolver url "cache-busted" para UI inmediata
+    // 10) Devolver url "cache-busted" para UI inmediata
     const busted = `${publicUrl}?v=${Date.now()}`;
 
     return NextResponse.json({ ok: true, url: busted });

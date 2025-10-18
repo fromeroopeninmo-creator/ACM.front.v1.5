@@ -12,10 +12,8 @@ const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE);
 
 type Base64Image = string | undefined | null;
-
-function isBase64Image(s: string | undefined | null) {
-  return !!s && /^data:image\/(png|jpe?g);base64,/.test(s);
-}
+const isBase64Image = (s: string | undefined | null) =>
+  !!s && /^data:image\/(png|jpe?g);base64,/.test(s);
 
 async function uploadBase64Image(opts: {
   empresaId: string;
@@ -23,10 +21,9 @@ async function uploadBase64Image(opts: {
   base64: string;
   fileName: string;
   bucket?: string;
-  maxWidth?: number; // 800 por defecto
+  maxWidth?: number;
 }) {
   const { empresaId, informeId, base64, fileName, bucket = "informes", maxWidth = 800 } = opts;
-
   const match = base64.match(/^data:(image\/[a-zA-Z+]+);base64,(.*)$/);
   if (!match) throw new Error("Formato base64 inválido");
   const data = Buffer.from(match[2], "base64");
@@ -50,25 +47,20 @@ async function uploadBase64Image(opts: {
 
 export async function POST(req: Request) {
   try {
+    // ✅ usuario autenticado (vía supabaseServer)
     const server = supabaseServer();
     const { data: auth } = await server.auth.getUser();
     const userId = auth?.user?.id ?? null;
-
-    if (!userId) {
-      return NextResponse.json({ error: "No autenticado." }, { status: 401 });
-    }
+    if (!userId) return NextResponse.json({ error: "No autenticado." }, { status: 401 });
 
     const body = await req.json();
     const { datos, titulo = "Informe VAI" } = body || {};
-    if (!datos) {
-      return NextResponse.json({ error: "Faltan 'datos'." }, { status: 400 });
-    }
+    if (!datos) return NextResponse.json({ error: "Faltan 'datos'." }, { status: 400 });
 
-    // Resolver empresa_id / asesor_id
+    // ✅ resolver empresa_id / asesor_id
     let empresaId: string | null = null;
     let asesorId: string | null = null;
 
-    // ¿Empresa?
     const { data: emp } = await supabaseAdmin
       .from("empresas")
       .select("id, user_id")
@@ -78,7 +70,6 @@ export async function POST(req: Request) {
     if (emp?.id) {
       empresaId = emp.id;
     } else {
-      // ¿Perfil?
       const { data: prof } = await supabaseAdmin
         .from("profiles")
         .select("id, role, empresa_id")
@@ -94,7 +85,6 @@ export async function POST(req: Request) {
     }
 
     if (!empresaId) {
-      // último recurso
       const { data: emp2 } = await supabaseAdmin
         .from("empresas")
         .select("id")
@@ -107,7 +97,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "No se pudo determinar la empresa del usuario." }, { status: 400 });
     }
 
-    // Generar ID de informe
+    // ✅ generar id
     let informeId: string;
     try {
       const { data: idGen } = await supabaseAdmin.rpc("uuid_generate_v4");
@@ -117,7 +107,7 @@ export async function POST(req: Request) {
       informeId = crypto.randomUUID();
     }
 
-    // Subir imágenes (si hay base64)
+    // ✅ imágenes → Storage
     let imagen_principal_url: string | null = null;
     const compUrls: (string | null)[] = [null, null, null, null];
 
@@ -135,18 +125,17 @@ export async function POST(req: Request) {
       for (let i = 0; i < Math.min(datos.comparables.length, 4); i++) {
         const b64 = datos.comparables[i]?.photoBase64 as Base64Image;
         if (isBase64Image(b64)) {
-          const url = await uploadBase64Image({
+          compUrls[i] = await uploadBase64Image({
             empresaId,
             informeId,
             base64: b64!,
             fileName: `comp${i + 1}.jpg`,
           });
-          compUrls[i] = url;
         }
       }
     }
 
-    // Limpiar base64 del JSON a guardar
+    // ✅ limpiar base64 del JSON
     const datosLimpios = {
       ...datos,
       mainPhotoBase64: undefined,
@@ -160,7 +149,7 @@ export async function POST(req: Request) {
         : [],
     };
 
-    // Insert
+    // ✅ insert
     const { data: inserted, error: insErr } = await supabaseAdmin
       .from("informes")
       .insert({
@@ -171,7 +160,7 @@ export async function POST(req: Request) {
         tipo: "VAI",
         titulo,
         datos_json: datosLimpios,
-        imagen_principal_url: imagen_principal_url,
+        imagen_principal_url,
         comp1_url: compUrls[0],
         comp2_url: compUrls[1],
         comp3_url: compUrls[2],

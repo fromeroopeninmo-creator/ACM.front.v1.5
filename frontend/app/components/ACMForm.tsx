@@ -19,6 +19,18 @@ import { useAuth } from "@/context/AuthContext";
 /** =========================
  *  Helpers / Utils
  *  ========================= */
+
+function dataUrlToFile(dataUrl: string, filename: string) {
+  const arr = dataUrl.split(",");
+  const mimeMatch = arr[0].match(/:(.*?);/);
+  const mime = mimeMatch ? mimeMatch[1] : "image/jpeg";
+  const bstr = typeof window !== "undefined" ? atob(arr[1]) : Buffer.from(arr[1], "base64").toString("binary");
+  let n = bstr.length;
+  const u8arr = new Uint8Array(n);
+  while (n--) u8arr[n] = bstr.charCodeAt(n);
+  return new File([u8arr], filename, { type: mime });
+}
+
 const peso = (n: number) =>
   isNaN(n) ? '-' : n.toLocaleString('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 });
 
@@ -255,61 +267,100 @@ const effectivePrimaryColor = themePrimaryColor || "#0ea5e9";
   };
 
   /** ========= Guardar / Cargar Informe (API) ========= */
-
-// Estados auxiliares (mensajes y modal de carga)
-const [informeId, setInformeId] = useState<string | null>(null);
-const [saveMsg, setSaveMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
-const [loadMsg, setLoadMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
-
-const [loadOpen, setLoadOpen] = useState(false);
-const [loadIdInput, setLoadIdInput] = useState("");
-
-// === Guardar ===
 const saveInforme = async () => {
   try {
-    setSaveMsg(null);
     setIsSubmitting(true);
+    setSaveMsg(null);
 
-    const payload = {
-      datos: formData,
-      titulo: (formData as any)?.titulo || "Informe VAI",
-    };
+    // 1) Clonar y limpiar base64 para no guardar blobs enormes en datos_json
+    const datosLimpios = structuredClone(formData) as ACMFormData;
+    const mainB64 = datosLimpios.mainPhotoBase64; // guardo copia temporal
+    datosLimpios.mainPhotoBase64 = undefined;
 
+    const compsB64 = formData.comparables.map(c => c.photoBase64 || undefined);
+    datosLimpios.comparables = datosLimpios.comparables.map(c => ({ ...c, photoBase64: undefined }));
+
+    // 2) Crear informe (solo datos)
+    const payload = { datos: datosLimpios, titulo: (formData as any)?.titulo || "Informe VAI" };
     const res = await fetch("/api/informes/create", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
-
-    let data: any = null;
-    try {
-      data = await res.json();
-    } catch {
-      // si no hay body o no es JSON, continuamos
-    }
-
     if (!res.ok) {
-      throw new Error(data?.error || "No se pudo guardar el informe");
+      const errTxt = await res.text().catch(() => "");
+      throw new Error(`Error al guardar el informe. ${errTxt}`);
+    }
+    const data = await res.json();
+    const id = data?.informe?.id as string | undefined;
+    if (!id) throw new Error("No se recibió ID de informe.");
+
+    setInformeId(id);
+
+    // 3) Subir imágenes (si había base64) al bucket y actualizar columnas URL
+    // Principal
+    if (mainB64) {
+      const file = dataUrlToFile(mainB64, "principal.jpg");
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("informeId", id);
+      fd.append("slot", "principal");
+      const up = await fetch("/api/informes/upload", { method: "POST", body: fd });
+      const upData = await up.json();
+      if (up.ok && upData?.url) {
+        // Refresco formData en memoria
+        setFormData(prev => ({ ...prev, mainPhotoUrl: upData.url, mainPhotoBase64: undefined }));
+      } else {
+        console.warn("Upload principal falló:", upData?.error || up.statusText);
+      }
     }
 
-    // Acepta ambas formas: { id } o { informe: { id } }
-    const newId = data?.id || data?.informe?.id || null;
-    if (newId) setInformeId(newId);
+    // Comparables 1..4
+    for (let i = 0; i < Math.min(formData.comparables.length, 4); i++) {
+      const b64 = compsB64[i];
+      if (!b64) continue;
+      const slot = `comp${i + 1}` as "comp1" | "comp2" | "comp3" | "comp4";
+      const file = dataUrlToFile(b64, `${slot}.jpg`);
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("informeId", id);
+      fd.append("slot", slot);
+      const up = await fetch("/api/informes/upload", { method: "POST", body: fd });
+      const upData = await up.json();
+      if (up.ok && upData?.url) {
+        setFormData(prev => {
+          const arr = prev.comparables.slice();
+          arr[i] = { ...arr[i], photoUrl: upData.url, photoBase64: undefined };
+          return { ...prev, comparables: arr };
+        });
+      } else {
+        console.warn(`Upload ${slot} falló:`, upData?.error || up.statusText);
+      }
+    }
 
-    setSaveMsg({
-      type: "success",
-      text: `Informe guardado con éxito${newId ? ` (ID: ${newId})` : ""}.`,
+    // 4) Persistir en datos_json las URLs ya subidas (update)
+    const datosConUrls = structuredClone(formData) as ACMFormData;
+    datosConUrls.mainPhotoBase64 = undefined;
+    datosConUrls.comparables = datosConUrls.comparables.map(c => ({ ...c, photoBase64: undefined }));
+    const upd = await fetch("/api/informes/update", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, datos: datosConUrls }),
     });
+    if (!upd.ok) {
+      const t = await upd.text().catch(() => "");
+      console.warn("Update datos_json con URLs falló:", t);
+    }
+
+    setSaveMsg({ type: "success", text: `Informe guardado con éxito. ID: ${id}` });
   } catch (err: any) {
     console.error("Guardar Informe", err);
-    setSaveMsg({
-      type: "error",
-      text: `Error al guardar el informe: ${err?.message || "desconocido"}`,
-    });
+    setSaveMsg({ type: "error", text: err?.message || "No se pudo guardar el informe" });
   } finally {
     setIsSubmitting(false);
   }
 };
+
 
 // === Abrir modal de carga (reemplaza el prompt) ===
 const loadInforme = () => {
@@ -334,22 +385,40 @@ const handleConfirmLoad = async () => {
       throw new Error(data?.error || "No se pudo obtener el informe");
     }
 
-    // Espera un shape tipo: { id, datos_json, imagen_principal_url, comp1_url, ... }
-    if (!data?.datos_json && !data?.informe?.datos_json) {
+    // La API devuelve { ok: true, informe: {...} }
+    const inf = data?.informe ?? data;
+    const payload = inf?.datos_json;
+    if (!payload) {
       throw new Error("El informe no contiene datos_json");
     }
 
-    const payload = data?.datos_json || data?.informe?.datos_json || {};
-    const imagenPrincipal = data?.imagen_principal_url || data?.informe?.imagen_principal_url || "";
+    // URLs guardadas en storage (si existen)
+    const principalUrl: string = inf?.imagen_principal_url || "";
+    const compUrls: string[] = [
+      inf?.comp1_url || "",
+      inf?.comp2_url || "",
+      inf?.comp3_url || "",
+      inf?.comp4_url || "",
+    ];
+
+    // Ajustar comparables: si hay URLs en BD, colocarlas en photoBase64 (se usa como src)
+    const comparablesCargados = Array.isArray(payload?.comparables)
+      ? payload.comparables.map((c: any, idx: number) => ({
+          ...c,
+          photoBase64: compUrls[idx] || c?.photoBase64 || "",
+        }))
+      : formData.comparables;
 
     setFormData((prev) => ({
       ...prev,
       ...payload,
-      mainPhotoUrl: imagenPrincipal || prev.mainPhotoUrl || "",
-      comparables: Array.isArray(payload?.comparables) ? payload.comparables : prev.comparables,
+      mainPhotoUrl: principalUrl || prev.mainPhotoUrl || "",
+      // usamos photoBase64 como src (acepta base64 o URL indistintamente)
+      mainPhotoBase64: principalUrl || prev.mainPhotoBase64 || "",
+      comparables: comparablesCargados,
     }));
 
-    const loadedId = data?.id || data?.informe?.id || loadIdInput;
+    const loadedId = inf?.id || loadIdInput;
     setInformeId(loadedId);
 
     setLoadMsg({ type: "success", text: `Informe cargado correctamente (ID: ${loadedId}).` });
@@ -1076,63 +1145,77 @@ return (
           </div>
 
           {/* Columna derecha: foto principal */}
-          <div className="lg:col-span-1">
-            <h3 className="mb-2 text-sm font-semibold text-gray-800 text-center sm:text-left">Foto de la propiedad</h3>
+<div className="lg:col-span-1">
+  <h3 className="mb-2 text-sm font-semibold text-gray-800 text-center sm:text-left">
+    Foto de la propiedad
+  </h3>
 
-            {formData.mainPhotoBase64 ? (
-              <div className="overflow-hidden rounded-lg border border-gray-200">
-                <img
-                  src={formData.mainPhotoBase64}
-                  alt="Foto principal"
-                  className="h-48 sm:h-64 w-full object-cover"
-                />
-                <div className="p-2 flex items-center justify-between">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setFormData((p) => ({
-                        ...p,
-                        mainPhotoBase64: undefined,
-                        mainPhotoUrl: "",
-                      }))
-                    }
-                    className="inline-flex items-center rounded-md border border-gray-300 bg-white px-2 py-1 text-xs sm:text-sm text-gray-700 hover:bg-gray-50"
-                  >
-                    Quitar
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => mainPhotoInputRef.current?.click()}
-                    className="inline-flex items-center rounded-md border border-gray-300 bg-white px-2 py-1 text-xs sm:text-sm text-gray-700 hover:bg-gray-50"
-                  >
-                    Cambiar foto
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="rounded-lg border border-dashed border-gray-300 p-4 text-center">
-                <p className="mb-2 text-xs text-gray-500">Subir imagen (JPG/PNG)</p>
-                <button
-                  type="button"
-                  onClick={() => mainPhotoInputRef.current?.click()}
-                  className="inline-flex items-center rounded-md border border-gray-300 bg-white px-2 py-1 text-xs sm:text-sm text-gray-700 hover:bg-gray-50"
-                >
-                  Subir foto
-                </button>
-              </div>
-            )}
-
-            {/* input oculto */}
-            <input
-              ref={mainPhotoInputRef}
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={handleMainPhotoSelect}
-            />
+  {(() => {
+    const mainSrc = formData.mainPhotoBase64 || formData.mainPhotoUrl || "";
+    if (mainSrc) {
+      return (
+        <div className="overflow-hidden rounded-lg border border-gray-200">
+          <img
+            src={mainSrc}
+            alt="Foto principal"
+            className="h-48 sm:h-64 w-full object-cover"
+          />
+          <div className="p-2 flex items-center justify-between">
+            <button
+              type="button"
+              onClick={() =>
+                setFormData((p) => ({
+                  ...p,
+                  mainPhotoBase64: undefined,
+                  mainPhotoUrl: "",
+                }))
+              }
+              className="inline-flex items-center rounded-md border border-gray-300 bg-white px-2 py-1 text-xs sm:text-sm text-gray-700 hover:bg-gray-50"
+            >
+              Quitar
+            </button>
+            <button
+              type="button"
+              onClick={() => mainPhotoInputRef.current?.click()}
+              className="inline-flex items-center rounded-md border border-gray-300 bg-white px-2 py-1 text-xs sm:text-sm text-gray-700 hover:bg-gray-50"
+            >
+              Cambiar foto
+            </button>
           </div>
         </div>
+      );
+    }
+
+    return (
+      <div className="rounded-lg border border-dashed border-gray-300 p-4 text-center">
+        <p className="mb-2 text-xs text-gray-500">Subir imagen (JPG/PNG)</p>
+        <button
+          type="button"
+          onClick={() => mainPhotoInputRef.current?.click()}
+          className="inline-flex items-center rounded-md border border-gray-300 bg-white px-2 py-1 text-xs sm:text-sm text-gray-700 hover:bg-gray-50"
+        >
+          Subir foto
+        </button>
+        {!informeId && (
+          <p className="mt-2 text-[11px] text-gray-500">
+            Consejo: primero guardá el informe para subir la foto al Storage.
+          </p>
+        )}
       </div>
+    );
+  })()}
+
+  {/* input oculto */}
+  <input
+    ref={mainPhotoInputRef}
+    type="file"
+    accept="image/*"
+    className="hidden"
+    onChange={handleMainPhotoSelect}
+    />
+  </div>
+  </div>
+</div>
 
       {/* Precio sugerido */}
       <div className="mt-6 rounded-xl border border-amber-200 bg-amber-50 p-4 sm:p-6">
@@ -1147,78 +1230,82 @@ return (
         </p>
       </div>
 
-      {/* Propiedades comparadas en la zona */}
-      <div className="mt-6 rounded-xl border border-gray-200 bg-white shadow-sm">
-        <div className="border-b border-gray-200 p-4 sm:p-6">
-          <h2 className="text-base sm:text-lg font-semibold text-center sm:text-left" style={{ color: effectivePrimaryColor }}>
-            Propiedades comparadas en la zona
-          </h2>
-        </div>
+     {/* Propiedades comparadas en la zona */}
+<div className="mt-6 rounded-xl border border-gray-200 bg-white shadow-sm">
+  <div className="border-b border-gray-200 p-4 sm:p-6">
+    <h2
+      className="text-base sm:text-lg font-semibold text-center sm:text-left"
+      style={{ color: effectivePrimaryColor }}
+    >
+      Propiedades comparadas en la zona
+    </h2>
+  </div>
 
-        <div className="p-4 sm:p-6 space-y-6">
-          {formData.comparables.map((c, i) => {
-            const built = Number(c.builtArea) || 0;
-            const price = Number(c.price) || 0;
-            const ppm2Base = built > 0 ? price / built : 0;
-            const ppm2Adj = ppm2Base * (Number(c.coefficient) || 1);
+  <div className="p-4 sm:p-6 space-y-6">
+    {formData.comparables.map((c, i) => {
+      const built = Number(c.builtArea) || 0;
+      const price = Number(c.price) || 0;
+      const ppm2Base = built > 0 ? price / built : 0;
+      const ppm2Adj = ppm2Base * (Number(c.coefficient) || 1);
 
-            return (
-              <div key={i} className="rounded-lg border border-gray-200 p-4 sm:p-5 bg-white">
-                {/* Header */}
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                  <h3 className="text-sm sm:text-base font-semibold text-gray-800">Propiedad N°{i + 1}</h3>
-                  <div className="flex items-center justify-end gap-2">
-                    <button
-                      type="button"
-                      onClick={() => removeComparable(i)}
-                      className="inline-flex items-center justify-center rounded-md border border-gray-300 bg-white px-2 py-1 text-xs sm:text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-                      disabled={formData.comparables.length <= 1}
-                    >
-                      Eliminar
-                    </button>
-                  </div>
-                </div>
+      return (
+        <div
+          key={i}
+          className="rounded-lg border border-gray-200 p-4 sm:p-5 bg-white"
+        >
+          {/* Header */}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+            <h3 className="text-sm sm:text-base font-semibold text-gray-800">
+              Propiedad N°{i + 1}
+            </h3>
+            <div className="flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => removeComparable(i)}
+                className="inline-flex items-center justify-center rounded-md border border-gray-300 bg-white px-2 py-1 text-xs sm:text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                disabled={formData.comparables.length <= 1}
+              >
+                Eliminar
+              </button>
+            </div>
+          </div>
 
-                {/* Cuerpo */}
-                <div className="mt-4 grid grid-cols-1 lg:grid-cols-7 gap-4">
-                  {/* Foto */}
-                  <div className="lg:col-span-2">
-                    <h4 className="mb-1 text-xs sm:text-sm font-medium text-gray-600">Foto</h4>
-                    {c.photoBase64 ? (
-                      <div className="overflow-hidden rounded-lg border border-gray-200">
-                        <img
-                          src={c.photoBase64}
-                          alt={`Foto comparable ${i + 1}`}
-                          className="h-40 sm:h-48 w-full object-cover"
-                        />
-                        <div className="p-2 flex items-center justify-between">
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setFormData((prev) => {
-                                const arr = prev.comparables.slice();
-                                arr[i] = { ...arr[i], photoBase64: undefined };
-                                return { ...prev, comparables: arr };
-                              })
-                            }
-                            className="inline-flex items-center rounded-md border border-gray-300 bg-white px-2 py-1 text-xs sm:text-sm text-gray-700 hover:bg-gray-50"
-                          >
-                            Quitar
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (!compPhotoInputsRef.current[i]) return;
-                              compPhotoInputsRef.current[i]!.click();
-                            }}
-                            className="inline-flex items-center rounded-md border border-gray-300 bg-white px-2 py-1 text-xs sm:text-sm text-gray-700 hover:bg-gray-50"
-                          >
-                            Cambiar foto
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="rounded-lg border border-dashed border-gray-300 p-3 text-center">
+          {/* Cuerpo */}
+          <div className="mt-4 grid grid-cols-1 lg:grid-cols-7 gap-4">
+            {/* Foto (MODIFICADO) */}
+            <div className="lg:col-span-2">
+              <h4 className="mb-1 text-xs sm:text-sm font-medium text-gray-600">
+                Foto
+              </h4>
+
+              {(() => {
+                const mainSrc = c.photoBase64 || (c as any).photoUrl || "";
+                if (mainSrc) {
+                  return (
+                    <div className="overflow-hidden rounded-lg border border-gray-200">
+                      <img
+                        src={mainSrc}
+                        alt={`Foto comparable ${i + 1}`}
+                        className="h-40 sm:h-48 w-full object-cover"
+                      />
+                      <div className="p-2 flex items-center justify-between">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setFormData((prev) => {
+                              const arr = prev.comparables.slice();
+                              arr[i] = {
+                                ...arr[i],
+                                photoBase64: undefined,
+                                photoUrl: "" as any,
+                              };
+                              return { ...prev, comparables: arr };
+                            })
+                          }
+                          className="inline-flex items-center rounded-md border border-gray-300 bg-white px-2 py-1 text-xs sm:text-sm text-gray-700 hover:bg-gray-50"
+                        >
+                          Quitar
+                        </button>
                         <button
                           type="button"
                           onClick={() => {
@@ -1227,20 +1314,43 @@ return (
                           }}
                           className="inline-flex items-center rounded-md border border-gray-300 bg-white px-2 py-1 text-xs sm:text-sm text-gray-700 hover:bg-gray-50"
                         >
-                          Subir foto
+                          Cambiar foto
                         </button>
                       </div>
-                    )}
+                    </div>
+                  );
+                }
 
-                    {/* input oculto por-comparable */}
-                    <input
-                      ref={(el) => (compPhotoInputsRef.current[i] = el)}
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={(e) => handleComparablePhotoSelect(i, e)}
-                    />
+                return (
+                  <div className="rounded-lg border border-dashed border-gray-300 p-3 text-center">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!compPhotoInputsRef.current[i]) return;
+                        compPhotoInputsRef.current[i]!.click();
+                      }}
+                      className="inline-flex items-center rounded-md border border-gray-300 bg-white px-2 py-1 text-xs sm:text-sm text-gray-700 hover:bg-gray-50"
+                    >
+                      Subir foto
+                    </button>
+                    {!informeId && (
+                      <p className="mt-2 text-[11px] text-gray-500">
+                        Consejo: guardá el informe para subir esta foto al Storage.
+                      </p>
+                    )}
                   </div>
+                );
+              })()}
+
+              {/* input oculto por-comparable */}
+              <input
+                ref={(el) => (compPhotoInputsRef.current[i] = el)}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => handleComparablePhotoSelect(i, e)}
+              />
+            </div>
 
                   {/* Datos */}
                   <div className="lg:col-span-5 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">

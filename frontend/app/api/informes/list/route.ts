@@ -4,137 +4,103 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 import { supabaseServer } from "#lib/supabaseServer";
+import { createClient } from "@supabase/supabase-js";
 
-type Role = "empresa" | "asesor" | "soporte" | "super_admin" | "super_admin_root";
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE);
+
+type Scope = "empresa" | "asesor";
 
 export async function GET(req: Request) {
   try {
     const server = supabaseServer();
-
-    // --- Auth ---
     const { data: auth } = await server.auth.getUser();
-    const user = auth?.user;
-    if (!user) {
+    const userId = auth?.user?.id ?? null;
+    if (!userId) {
       return NextResponse.json({ ok: false, error: "No autenticado" }, { status: 401 });
     }
 
-    // --- Params opcionales: paginado/búsqueda/estado ---
     const { searchParams } = new URL(req.url);
-    const page = Math.max(1, Number(searchParams.get("page") || "1"));
-    const pageSize = Math.max(1, Math.min(100, Number(searchParams.get("pageSize") || "20")));
-    const q = (searchParams.get("q") || "").trim();
-    const estado = (searchParams.get("estado") || "").trim(); // ej: 'borrador' | 'publicado' | '' (todos)
+    const scope = (searchParams.get("scope") as Scope) || null;
 
-    // --- Rol + empresa_id (misma lógica que en create/get) ---
-    let role: Role = ((user.user_metadata as any)?.role as Role) || "empresa";
+    // Resolver role + empresa_id/asesor
+    let role: "empresa" | "asesor" | "soporte" | "super_admin" | "super_admin_root" = "empresa";
     let empresaId: string | null = null;
 
-    if (role === "empresa") {
-      const { data: emp } = await server
-        .from("empresas")
-        .select("id")
-        .eq("user_id", user.id)
-        .maybeSingle();
+    // ¿Empresa?
+    const { data: emp } = await supabaseAdmin
+      .from("empresas")
+      .select("id, user_id")
+      .eq("user_id", userId)
+      .maybeSingle();
 
-      empresaId = emp?.id ?? null;
-
-      // fallback por si no aparece en empresas
-      if (!empresaId) {
-        const { data: perfil } = await server
-          .from("profiles")
-          .select("empresa_id, role")
-          .eq("id", user.id)
-          .maybeSingle();
-        if (perfil?.role) role = perfil.role as Role;
-        if (perfil?.empresa_id) empresaId = perfil.empresa_id;
-      }
-    } else if (role === "asesor") {
-      const { data: as } = await server
-        .from("asesores")
-        .select("empresa_id")
-        .eq("id", user.id)
-        .maybeSingle();
-      empresaId = as?.empresa_id ?? null;
+    if (emp?.id) {
+      role = "empresa";
+      empresaId = emp.id;
     } else {
-      // soporte / super_admin / super_admin_root
-      const { data: perfil } = await server
+      // ¿Perfil?
+      const { data: prof } = await supabaseAdmin
         .from("profiles")
-        .select("empresa_id")
-        .eq("id", user.id)
+        .select("id, role, empresa_id")
+        .eq("id", userId)
         .maybeSingle();
-      empresaId = perfil?.empresa_id ?? null; // puede ser null, y verán todo
+
+      if (prof?.role) role = prof.role as typeof role;
+      if (prof?.empresa_id) empresaId = prof.empresa_id;
     }
 
-    // --- Base query ---
-    // Traemos columnas útiles para el dashboard
-    let query = server
+    // Construir query según scope/role
+    let query = supabaseAdmin
       .from("informes")
-      .select(
-        "id, titulo, tipo, estado, empresa_id, autor_id, created_at, updated_at, imagen_principal_url",
-        { count: "exact" }
-      )
+      .select("*", { count: "exact" })
       .order("created_at", { ascending: false });
 
-    // --- Filtros por rol ---
-    if (role === "empresa") {
-      // empresa: sólo los de su empresa
+    if (scope === "empresa") {
       if (!empresaId) {
-        return NextResponse.json(
-          { ok: true, items: [], total: 0, page, pageSize },
-          { status: 200 }
-        );
+        return NextResponse.json({ ok: true, items: [], informes: [], total: 0 }, { status: 200 });
       }
       query = query.eq("empresa_id", empresaId);
-    } else if (role === "asesor") {
-      // asesor: propios
-      query = query.eq("autor_id", user.id);
+    } else if (scope === "asesor") {
+      query = query.eq("autor_id", userId);
     } else {
-      // admins/soporte: sin filtro; si querés limitar por empresa cuando exista, descomentá:
-      // if (empresaId) query = query.eq("empresa_id", empresaId);
+      // default: si sos empresa, por empresa; si sos asesor, por autor_id
+      if (role === "empresa" && empresaId) {
+        query = query.eq("empresa_id", empresaId);
+      } else {
+        query = query.eq("autor_id", userId);
+      }
     }
 
-    // --- Filtro por estado (opcional) ---
-    if (estado && estado !== "todos") {
-      query = query.eq("estado", estado);
-    }
-
-    // --- Búsqueda (opcional) ---
-    if (q) {
-      // Supabase: OR con ILIKE
-      query = query.or(`titulo.ilike.%${q}%,tipo.ilike.%${q}%`);
-    }
-
-    // --- Paginado ---
-    const from = (page - 1) * pageSize;
-    const to = from + pageSize - 1;
-    query = query.range(from, to);
-
-    const { data, error, count } = await query;
-
+    const { data, count, error } = await query;
     if (error) {
-      return NextResponse.json(
-        { ok: false, error: error.message || "Error al listar informes" },
-        { status: 400 }
-      );
+      return NextResponse.json({ ok: false, error: error.message }, { status: 400 });
     }
 
-    // payload compatible con front-ends que esperan distintas claves
+    // Normalizar forma de salida para tu dashboard
+    const informes = data ?? [];
+    const items = informes.map((inf: any) => ({
+      id: inf.id,
+      titulo: inf.titulo,
+      tipo: inf.tipo,
+      empresa_id: inf.empresa_id,
+      autor_id: inf.autor_id,
+      estado: inf.estado,
+      created_at: inf.created_at ?? inf.fecha_creacion ?? null,
+      updated_at: inf.updated_at ?? null,
+      imagen_principal_url: inf.imagen_principal_url ?? null,
+    }));
+
     return NextResponse.json(
       {
         ok: true,
-        items: data || [],
-        informes: data || [],
-        data: data || [],
-        total: count ?? 0,
-        page,
-        pageSize,
+        items,           // <- para UIs que esperan "items"
+        informes,        // <- para UIs que esperan "informes"
+        total: count ?? items.length,
       },
       { status: 200 }
     );
-  } catch (err: any) {
-    return NextResponse.json(
-      { ok: false, error: err?.message || "Error inesperado" },
-      { status: 500 }
-    );
+  } catch (e: any) {
+    return NextResponse.json({ ok: false, error: e?.message || "Error inesperado" }, { status: 500 });
   }
 }

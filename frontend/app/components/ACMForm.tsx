@@ -255,45 +255,111 @@ const effectivePrimaryColor = themePrimaryColor || "#0ea5e9";
   };
 
   /** ========= Guardar / Cargar Informe (API) ========= */
-  const saveInforme = async () => {
-    try {
-      setIsSubmitting(true);
-      const payload = { datos: formData, titulo: (formData as any)?.titulo || "Informe VAI" };
-      const res = await fetch("/api/informes/create", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      if (!res.ok) throw new Error("Error al guardar el informe");
-      const data = await res.json();
-      if (data?.informe?.id) {
-        alert("Informe guardado. ID: " + data.informe.id);
-      } else {
-        alert("Informe guardado.");
-      }
-    } catch (err:any) {
-      console.error("Guardar Informe", err);
-      alert(err?.message || "No se pudo guardar el informe");
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
 
-  const loadInforme = async () => {
+// Estados auxiliares (mensajes y modal de carga)
+const [informeId, setInformeId] = useState<string | null>(null);
+const [saveMsg, setSaveMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
+const [loadMsg, setLoadMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+const [loadOpen, setLoadOpen] = useState(false);
+const [loadIdInput, setLoadIdInput] = useState("");
+
+// === Guardar ===
+const saveInforme = async () => {
+  try {
+    setSaveMsg(null);
+    setIsSubmitting(true);
+
+    const payload = {
+      datos: formData,
+      titulo: (formData as any)?.titulo || "Informe VAI",
+    };
+
+    const res = await fetch("/api/informes/create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    let data: any = null;
     try {
-      const id = typeof window !== 'undefined' ? window.prompt("Ingrese el ID del informe a cargar:") : null;
-      if (!id) return;
-      const res = await fetch(`/api/informes/get?id=${encodeURIComponent(id)}`);
-      if (!res.ok) throw new Error("No se pudo obtener el informe");
-      const data = await res.json();
-      if (!data?.informe?.datos_json) throw new Error("El informe no contiene datos_json");
-      setFormData(data.informe.datos_json);
-      alert("Informe cargado.");
-    } catch (err:any) {
-      console.error("Cargar Informe", err);
-      alert(err?.message || "No se pudo cargar el informe");
+      data = await res.json();
+    } catch {
+      // si no hay body o no es JSON, continuamos
     }
-  };
+
+    if (!res.ok) {
+      throw new Error(data?.error || "No se pudo guardar el informe");
+    }
+
+    // Acepta ambas formas: { id } o { informe: { id } }
+    const newId = data?.id || data?.informe?.id || null;
+    if (newId) setInformeId(newId);
+
+    setSaveMsg({
+      type: "success",
+      text: `Informe guardado con éxito${newId ? ` (ID: ${newId})` : ""}.`,
+    });
+  } catch (err: any) {
+    console.error("Guardar Informe", err);
+    setSaveMsg({
+      type: "error",
+      text: `Error al guardar el informe: ${err?.message || "desconocido"}`,
+    });
+  } finally {
+    setIsSubmitting(false);
+  }
+};
+
+// === Abrir modal de carga (reemplaza el prompt) ===
+const loadInforme = () => {
+  setLoadMsg(null);
+  setLoadIdInput("");
+  setLoadOpen(true);
+};
+
+// === Confirmar carga desde el modal ===
+const handleConfirmLoad = async () => {
+  if (!loadIdInput) {
+    setLoadMsg({ type: "error", text: "Por favor, ingresá un ID válido." });
+    return;
+  }
+  try {
+    setLoadMsg(null);
+
+    const res = await fetch(`/api/informes/get?id=${encodeURIComponent(loadIdInput)}`);
+    const data = await res.json();
+
+    if (!res.ok) {
+      throw new Error(data?.error || "No se pudo obtener el informe");
+    }
+
+    // Espera un shape tipo: { id, datos_json, imagen_principal_url, comp1_url, ... }
+    if (!data?.datos_json && !data?.informe?.datos_json) {
+      throw new Error("El informe no contiene datos_json");
+    }
+
+    const payload = data?.datos_json || data?.informe?.datos_json || {};
+    const imagenPrincipal = data?.imagen_principal_url || data?.informe?.imagen_principal_url || "";
+
+    setFormData((prev) => ({
+      ...prev,
+      ...payload,
+      mainPhotoUrl: imagenPrincipal || prev.mainPhotoUrl || "",
+      comparables: Array.isArray(payload?.comparables) ? payload.comparables : prev.comparables,
+    }));
+
+    const loadedId = data?.id || data?.informe?.id || loadIdInput;
+    setInformeId(loadedId);
+
+    setLoadMsg({ type: "success", text: `Informe cargado correctamente (ID: ${loadedId}).` });
+    setLoadOpen(false);
+  } catch (err: any) {
+    console.error("Cargar Informe", err);
+    setLoadMsg({ type: "error", text: `Error al cargar: ${err?.message || "desconocido"}` });
+  }
+};
+
 
   /** ========= Cálculos ========= */
   const adjustedPricePerM2List = useMemo(
@@ -701,24 +767,25 @@ const effectivePrimaryColor = themePrimaryColor || "#0ea5e9";
     doc.save("VMI.pdf");
   };
 
-  /** ========= Opciones ========= */
-  const propertyTypeOptions = useMemo(() => enumToOptions(PropertyType), []);
-  const titleOptions = useMemo(() => enumToOptions(TitleType), []);
-  const conditionOptions = useMemo(() => enumToOptions(PropertyCondition), []);
-  const locationOptions = useMemo(() => enumToOptions(LocationQuality), []);
-  const orientationOptions = useMemo(() => enumToOptions(Orientation), []);
+/** ========= Opciones ========= */
+const propertyTypeOptions = useMemo(() => enumToOptions(PropertyType), []);
+const titleOptions = useMemo(() => enumToOptions(TitleType), []);
+const conditionOptions = useMemo(() => enumToOptions(PropertyCondition), []);
+const locationOptions = useMemo(() => enumToOptions(LocationQuality), []);
+const orientationOptions = useMemo(() => enumToOptions(Orientation), []);
 
-  /** ========= Render ========= */
-  return (
+/** ========= Render ========= */
+return (
+  <>
     <div className="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8 space-y-6">
       {/* === Header del formulario (VAI | Empresa | Fecha) === */}
       <div className="flex items-center justify-between gap-4 mb-2 border-b pb-3">
         <div className="font-semibold tracking-wide">VAI</div>
         <div className="text-2xl text-center grow">
-          {themeCompanyName || user?.inmobiliaria || 'Empresa'}
+          {themeCompanyName || user?.inmobiliaria || "Empresa"}
         </div>
         <div className="text-sm whitespace-nowrap">
-          {new Date(formData.date || new Date().toISOString()).toLocaleDateString('es-AR')}
+          {new Date(formData.date || new Date().toISOString()).toLocaleDateString("es-AR")}
         </div>
       </div>
 
@@ -736,9 +803,7 @@ const effectivePrimaryColor = themePrimaryColor || "#0ea5e9";
           <div className="lg:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-5">
             {/* Cliente */}
             <div className="space-y-1">
-              <label className="block text-sm font-medium text-gray-700">
-                Cliente
-              </label>
+              <label className="block text-sm font-medium text-gray-700">Cliente</label>
               <input
                 name="clientName"
                 value={formData.clientName}
@@ -750,9 +815,7 @@ const effectivePrimaryColor = themePrimaryColor || "#0ea5e9";
 
             {/* Teléfono */}
             <div className="space-y-1">
-              <label className="block text-sm font-medium text-gray-700">
-                Teléfono
-              </label>
+              <label className="block text-sm font-medium text-gray-700">Teléfono</label>
               <input
                 name="phone"
                 value={formData.phone}
@@ -764,9 +827,7 @@ const effectivePrimaryColor = themePrimaryColor || "#0ea5e9";
 
             {/* Email */}
             <div className="space-y-1">
-              <label className="block text-sm font-medium text-gray-700">
-                Email
-              </label>
+              <label className="block text-sm font-medium text-gray-700">Email</label>
               <input
                 name="email"
                 value={formData.email}
@@ -779,9 +840,7 @@ const effectivePrimaryColor = themePrimaryColor || "#0ea5e9";
 
             {/* Dirección */}
             <div className="space-y-1 md:col-span-2">
-              <label className="block text-sm font-medium text-gray-700">
-                Dirección
-              </label>
+              <label className="block text-sm font-medium text-gray-700">Dirección</label>
               <input
                 name="address"
                 value={formData.address}
@@ -793,9 +852,7 @@ const effectivePrimaryColor = themePrimaryColor || "#0ea5e9";
 
             {/* Barrio */}
             <div className="space-y-1">
-              <label className="block text-sm font-medium text-gray-700">
-                Barrio
-              </label>
+              <label className="block text-sm font-medium text-gray-700">Barrio</label>
               <input
                 name="neighborhood"
                 value={formData.neighborhood}
@@ -807,9 +864,7 @@ const effectivePrimaryColor = themePrimaryColor || "#0ea5e9";
 
             {/* Localidad */}
             <div className="space-y-1">
-              <label className="block text-sm font-medium text-gray-700">
-                Localidad
-              </label>
+              <label className="block text-sm font-medium text-gray-700">Localidad</label>
               <input
                 name="locality"
                 value={formData.locality}
@@ -821,9 +876,7 @@ const effectivePrimaryColor = themePrimaryColor || "#0ea5e9";
 
             {/* Tipología */}
             <div className="space-y-1">
-              <label className="block text-sm font-medium text-gray-700">
-                Tipología
-              </label>
+              <label className="block text-sm font-medium text-gray-700">Tipología</label>
               <select
                 name="propertyType"
                 value={formData.propertyType}
@@ -840,9 +893,7 @@ const effectivePrimaryColor = themePrimaryColor || "#0ea5e9";
 
             {/* m² Terreno */}
             <div className="space-y-1">
-              <label className="block text-sm font-medium text-gray-700">
-                m² Terreno
-              </label>
+              <label className="block text-sm font-medium text-gray-700">m² Terreno</label>
               <input
                 name="landArea"
                 type="number"
@@ -861,9 +912,7 @@ const effectivePrimaryColor = themePrimaryColor || "#0ea5e9";
 
             {/* m² Cubiertos */}
             <div className="space-y-1">
-              <label className="block text-sm font-medium text-gray-700">
-                m² Cubiertos
-              </label>
+              <label className="block text-sm font-medium text-gray-700">m² Cubiertos</label>
               <input
                 name="builtArea"
                 type="number"
@@ -882,9 +931,7 @@ const effectivePrimaryColor = themePrimaryColor || "#0ea5e9";
 
             {/* Planos */}
             <div className="space-y-1">
-              <label className="block text-sm font-medium text-gray-700">
-                Planos
-              </label>
+              <label className="block text-sm font-medium text-gray-700">Planos</label>
               <select
                 name="hasPlans"
                 value={String(formData.hasPlans)}
@@ -901,9 +948,7 @@ const effectivePrimaryColor = themePrimaryColor || "#0ea5e9";
 
             {/* Título */}
             <div className="space-y-1">
-              <label className="block text-sm font-medium text-gray-700">
-                Título
-              </label>
+              <label className="block text-sm font-medium text-gray-700">Título</label>
               <select
                 name="titleType"
                 value={formData.titleType}
@@ -920,9 +965,7 @@ const effectivePrimaryColor = themePrimaryColor || "#0ea5e9";
 
             {/* Antigüedad */}
             <div className="space-y-1">
-              <label className="block text-sm font-medium text-gray-700">
-                Antigüedad (años)
-              </label>
+              <label className="block text-sm font-medium text-gray-700">Antigüedad (años)</label>
               <input
                 name="age"
                 type="number"
@@ -941,9 +984,7 @@ const effectivePrimaryColor = themePrimaryColor || "#0ea5e9";
 
             {/* Estado */}
             <div className="space-y-1">
-              <label className="block text-sm font-medium text-gray-700">
-                Estado de conservación
-              </label>
+              <label className="block text-sm font-medium text-gray-700">Estado de conservación</label>
               <select
                 name="condition"
                 value={formData.condition}
@@ -960,9 +1001,7 @@ const effectivePrimaryColor = themePrimaryColor || "#0ea5e9";
 
             {/* Ubicación */}
             <div className="space-y-1">
-              <label className="block text-sm font-medium text-gray-700">
-                Ubicación
-              </label>
+              <label className="block text-sm font-medium text-gray-700">Ubicación</label>
               <select
                 name="locationQuality"
                 value={formData.locationQuality}
@@ -979,9 +1018,7 @@ const effectivePrimaryColor = themePrimaryColor || "#0ea5e9";
 
             {/* Orientación */}
             <div className="space-y-1">
-              <label className="block text-sm font-medium text-gray-700">
-                Orientación
-              </label>
+              <label className="block text-sm font-medium text-gray-700">Orientación</label>
               <select
                 name="orientation"
                 value={formData.orientation}
@@ -1022,9 +1059,7 @@ const effectivePrimaryColor = themePrimaryColor || "#0ea5e9";
 
             {/* Renta */}
             <div className="space-y-1 md:col-span-2">
-              <label className="block text-sm font-medium text-gray-700">
-                Posee renta actualmente
-              </label>
+              <label className="block text-sm font-medium text-gray-700">Posee renta actualmente</label>
               <select
                 name="isRented"
                 value={String(formData.isRented)}
@@ -1042,9 +1077,7 @@ const effectivePrimaryColor = themePrimaryColor || "#0ea5e9";
 
           {/* Columna derecha: foto principal */}
           <div className="lg:col-span-1">
-            <h3 className="mb-2 text-sm font-semibold text-gray-800 text-center sm:text-left">
-              Foto de la propiedad
-            </h3>
+            <h3 className="mb-2 text-sm font-semibold text-gray-800 text-center sm:text-left">Foto de la propiedad</h3>
 
             {formData.mainPhotoBase64 ? (
               <div className="overflow-hidden rounded-lg border border-gray-200">
@@ -1078,9 +1111,7 @@ const effectivePrimaryColor = themePrimaryColor || "#0ea5e9";
               </div>
             ) : (
               <div className="rounded-lg border border-dashed border-gray-300 p-4 text-center">
-                <p className="mb-2 text-xs text-gray-500">
-                  Subir imagen (JPG/PNG)
-                </p>
+                <p className="mb-2 text-xs text-gray-500">Subir imagen (JPG/PNG)</p>
                 <button
                   type="button"
                   onClick={() => mainPhotoInputRef.current?.click()}
@@ -1106,29 +1137,20 @@ const effectivePrimaryColor = themePrimaryColor || "#0ea5e9";
       {/* Precio sugerido */}
       <div className="mt-6 rounded-xl border border-amber-200 bg-amber-50 p-4 sm:p-6">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-          <h3
-            className="text-base sm:text-lg font-semibold text-center sm:text-left"
-            style={{ color: effectivePrimaryColor }}
-          >
+          <h3 className="text-base sm:text-lg font-semibold text-center sm:text-left" style={{ color: effectivePrimaryColor }}>
             Precio sugerido de venta
           </h3>
-          <span className="text-xl sm:text-2xl font-bold text-center sm:text-right">
-            {peso(suggestedPrice)}
-          </span>
+          <span className="text-xl sm:text-2xl font-bold text-center sm:text-right">{peso(suggestedPrice)}</span>
         </div>
         <p className="mt-2 text-xs sm:text-sm text-amber-700 text-center sm:text-left">
-          Calculado como promedio del precio/m² ajustado de comparables × m²
-          cubiertos de la propiedad principal.
+          Calculado como promedio del precio/m² ajustado de comparables × m² cubiertos de la propiedad principal.
         </p>
       </div>
 
       {/* Propiedades comparadas en la zona */}
       <div className="mt-6 rounded-xl border border-gray-200 bg-white shadow-sm">
         <div className="border-b border-gray-200 p-4 sm:p-6">
-          <h2
-            className="text-base sm:text-lg font-semibold text-center sm:text-left"
-            style={{ color: effectivePrimaryColor }}
-          >
+          <h2 className="text-base sm:text-lg font-semibold text-center sm:text-left" style={{ color: effectivePrimaryColor }}>
             Propiedades comparadas en la zona
           </h2>
         </div>
@@ -1141,15 +1163,10 @@ const effectivePrimaryColor = themePrimaryColor || "#0ea5e9";
             const ppm2Adj = ppm2Base * (Number(c.coefficient) || 1);
 
             return (
-              <div
-                key={i}
-                className="rounded-lg border border-gray-200 p-4 sm:p-5 bg-white"
-              >
+              <div key={i} className="rounded-lg border border-gray-200 p-4 sm:p-5 bg-white">
                 {/* Header */}
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                  <h3 className="text-sm sm:text-base font-semibold text-gray-800">
-                    Propiedad N°{i + 1}
-                  </h3>
+                  <h3 className="text-sm sm:text-base font-semibold text-gray-800">Propiedad N°{i + 1}</h3>
                   <div className="flex items-center justify-end gap-2">
                     <button
                       type="button"
@@ -1166,9 +1183,7 @@ const effectivePrimaryColor = themePrimaryColor || "#0ea5e9";
                 <div className="mt-4 grid grid-cols-1 lg:grid-cols-7 gap-4">
                   {/* Foto */}
                   <div className="lg:col-span-2">
-                    <h4 className="mb-1 text-xs sm:text-sm font-medium text-gray-600">
-                      Foto
-                    </h4>
+                    <h4 className="mb-1 text-xs sm:text-sm font-medium text-gray-600">Foto</h4>
                     {c.photoBase64 ? (
                       <div className="overflow-hidden rounded-lg border border-gray-200">
                         <img
@@ -1231,14 +1246,10 @@ const effectivePrimaryColor = themePrimaryColor || "#0ea5e9";
                   <div className="lg:col-span-5 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
                     {/* Dirección */}
                     <div className="space-y-1 sm:col-span-2">
-                      <label className="block text-sm font-medium text-gray-700">
-                        Dirección
-                      </label>
+                      <label className="block text-sm font-medium text-gray-700">Dirección</label>
                       <input
                         value={c.address}
-                        onChange={(e) =>
-                          updateComparable(i, "address", e.target.value)
-                        }
+                        onChange={(e) => updateComparable(i, "address", e.target.value)}
                         className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
                         placeholder="Calle y número"
                       />
@@ -1246,14 +1257,10 @@ const effectivePrimaryColor = themePrimaryColor || "#0ea5e9";
 
                     {/* Barrio */}
                     <div className="space-y-1">
-                      <label className="block text-sm font-medium text-gray-700">
-                        Barrio
-                      </label>
+                      <label className="block text-sm font-medium text-gray-700">Barrio</label>
                       <input
                         value={c.neighborhood}
-                        onChange={(e) =>
-                          updateComparable(i, "neighborhood", e.target.value)
-                        }
+                        onChange={(e) => updateComparable(i, "neighborhood", e.target.value)}
                         className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
                         placeholder="Barrio"
                       />
@@ -1261,9 +1268,7 @@ const effectivePrimaryColor = themePrimaryColor || "#0ea5e9";
 
                     {/* m² Cubiertos */}
                     <div className="space-y-1">
-                      <label className="block text-sm font-medium text-gray-700">
-                        m² Cubiertos
-                      </label>
+                      <label className="block text-sm font-medium text-gray-700">m² Cubiertos</label>
                       <input
                         type="number"
                         inputMode="decimal"
@@ -1280,9 +1285,7 @@ const effectivePrimaryColor = themePrimaryColor || "#0ea5e9";
 
                     {/* Precio */}
                     <div className="space-y-1">
-                      <label className="block text-sm font-medium text-gray-700">
-                        Precio ($)
-                      </label>
+                      <label className="block text-sm font-medium text-gray-700">Precio ($)</label>
                       <input
                         type="text"
                         inputMode="numeric"
@@ -1303,9 +1306,7 @@ const effectivePrimaryColor = themePrimaryColor || "#0ea5e9";
 
                     {/* Días publicada */}
                     <div className="space-y-1">
-                      <label className="block text-sm font-medium text-gray-700">
-                        Días publicada
-                      </label>
+                      <label className="block text-sm font-medium text-gray-700">Días publicada</label>
                       <input
                         type="number"
                         inputMode="numeric"
@@ -1322,14 +1323,10 @@ const effectivePrimaryColor = themePrimaryColor || "#0ea5e9";
 
                     {/* Link */}
                     <div className="space-y-1 sm:col-span-2">
-                      <label className="block text-sm font-medium text-gray-700">
-                        Link de publicación
-                      </label>
+                      <label className="block text-sm font-medium text-gray-700">Link de publicación</label>
                       <input
                         value={c.listingUrl || ""}
-                        onChange={(e) =>
-                          updateComparable(i, "listingUrl", e.target.value)
-                        }
+                        onChange={(e) => updateComparable(i, "listingUrl", e.target.value)}
                         className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
                         placeholder="https://..."
                       />
@@ -1337,9 +1334,7 @@ const effectivePrimaryColor = themePrimaryColor || "#0ea5e9";
 
                     {/* Coeficiente */}
                     <div className="space-y-1">
-                      <label className="block text-sm font-medium text-gray-700">
-                        Coeficiente
-                      </label>
+                      <label className="block text-sm font-medium text-gray-700">Coeficiente</label>
                       <select
                         value={String(c.coefficient ?? 1.0)}
                         onChange={(e) => {
@@ -1348,21 +1343,17 @@ const effectivePrimaryColor = themePrimaryColor || "#0ea5e9";
                         }}
                         className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
                       >
-                        {Array.from({ length: 15 }, (_, idx) => (1.5 - idx * 0.1).toFixed(1)).map(
-                          (val) => (
-                            <option key={val} value={val}>
-                              {val}
-                            </option>
-                          )
-                        )}
+                        {Array.from({ length: 15 }, (_, idx) => (1.5 - idx * 0.1).toFixed(1)).map((val) => (
+                          <option key={val} value={val}>
+                            {val}
+                          </option>
+                        ))}
                       </select>
                     </div>
 
                     {/* Precio/m² */}
                     <div className="space-y-1">
-                      <label className="block text-sm font-medium text-gray-700">
-                        Precio por m² (ajustado)
-                      </label>
+                      <label className="block text-sm font-medium text-gray-700">Precio por m² (ajustado)</label>
                       <div className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm">
                         {peso(ppm2Adj)}
                       </div>
@@ -1370,14 +1361,10 @@ const effectivePrimaryColor = themePrimaryColor || "#0ea5e9";
 
                     {/* Descripción */}
                     <div className="space-y-1 sm:col-span-2 md:col-span-3">
-                      <label className="block text-sm font-medium text-gray-700">
-                        Descripción
-                      </label>
+                      <label className="block text-sm font-medium text-gray-700">Descripción</label>
                       <textarea
                         value={c.description}
-                        onChange={(e) =>
-                          updateComparable(i, "description", e.target.value)
-                        }
+                        onChange={(e) => updateComparable(i, "description", e.target.value)}
                         rows={3}
                         className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
                         placeholder="Descripción breve de la propiedad comparable"
@@ -1405,19 +1392,14 @@ const effectivePrimaryColor = themePrimaryColor || "#0ea5e9";
       {/* Conclusión */}
       <div className="mt-6 rounded-xl border border-gray-200 bg-white shadow-sm">
         <div className="border-b border-gray-200 p-4 sm:p-6">
-          <h2
-            className="text-base sm:text-lg font-semibold text-center sm:text-left"
-            style={{ color: effectivePrimaryColor }}
-          >
+          <h2 className="text-base sm:text-lg font-semibold text-center sm:text-left" style={{ color: effectivePrimaryColor }}>
             Conclusión
           </h2>
         </div>
 
         <div className="grid grid-cols-1 gap-4 sm:gap-5 p-4 sm:p-6">
           <div className="space-y-1">
-            <label className="block text-sm font-medium text-gray-700">
-              Observaciones
-            </label>
+            <label className="block text-sm font-medium text-gray-700">Observaciones</label>
             <textarea
               name="observations"
               value={formData.observations}
@@ -1429,9 +1411,7 @@ const effectivePrimaryColor = themePrimaryColor || "#0ea5e9";
           </div>
 
           <div className="space-y-1">
-            <label className="block text-sm font-medium text-gray-700">
-              Fortalezas
-            </label>
+            <label className="block text-sm font-medium text-gray-700">Fortalezas</label>
             <textarea
               name="strengths"
               value={formData.strengths}
@@ -1443,9 +1423,7 @@ const effectivePrimaryColor = themePrimaryColor || "#0ea5e9";
           </div>
 
           <div className="space-y-1">
-            <label className="block text-sm font-medium text-gray-700">
-              Debilidades
-            </label>
+            <label className="block text-sm font-medium text-gray-700">Debilidades</label>
             <textarea
               name="weaknesses"
               value={formData.weaknesses}
@@ -1457,9 +1435,7 @@ const effectivePrimaryColor = themePrimaryColor || "#0ea5e9";
           </div>
 
           <div className="space-y-1">
-            <label className="block text-sm font-medium text-gray-700">
-              A considerar
-            </label>
+            <label className="block text-sm font-medium text-gray-700">A considerar</label>
             <textarea
               name="considerations"
               value={formData.considerations}
@@ -1473,39 +1449,87 @@ const effectivePrimaryColor = themePrimaryColor || "#0ea5e9";
       </div>
 
       {/* Acciones */}
-      <div className="mt-6 flex flex-col sm:flex-row flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3 w-full sm:w-auto">
-          <button
-            type="button"
-            onClick={saveInforme}
-            disabled={isSubmitting}
-            className="inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-semibold text-white w-full sm:w-auto text-center disabled:opacity-60"
-            style={{ backgroundColor: effectivePrimaryColor }}
-          >
-            {isSubmitting ? "Guardando..." : "Guardar Informe"}
-          </button>
+      <div className="mt-6">
+        <div className="flex flex-col sm:flex-row flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3 w-full sm:w-auto">
+            <button
+              type="button"
+              onClick={saveInforme}
+              disabled={isSubmitting}
+              className="inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-semibold text-white w-full sm:w-auto text-center disabled:opacity-60"
+              style={{ backgroundColor: effectivePrimaryColor }}
+            >
+              {isSubmitting ? "Guardando..." : "Guardar Informe"}
+            </button>
 
-          <button
-            type="button"
-            onClick={loadInforme}
-            className="inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-semibold text-white w-full sm:w-auto text-center"
-            style={{ backgroundColor: effectivePrimaryColor }}
-          >
-            Cargar Informe
-          </button>
+            <button
+              type="button"
+              onClick={loadInforme}
+              className="inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-semibold w-full sm:w-auto text-center border"
+            >
+              Cargar Informe
+            </button>
+          </div>
+
+          <div>
+            <button
+              type="button"
+              onClick={handleDownloadPDF}
+              className="inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-semibold text-white w-full sm:w-auto text-center"
+              style={{ backgroundColor: effectivePrimaryColor }}
+            >
+              Descargar PDF
+            </button>
+          </div>
         </div>
 
-        <div>
-          <button
-            type="button"
-            onClick={handleDownloadPDF}
-            className="inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-semibold text-white w-full sm:w-auto text-center"
-            style={{ backgroundColor: effectivePrimaryColor }}
-          >
-            Descargar PDF
-          </button>
+        {/* Mensajes inline debajo de la botonera */}
+        <div className="mt-3 space-y-1">
+          {saveMsg && (
+            <p className={saveMsg.type === "success" ? "text-green-600" : "text-red-600"}>{saveMsg.text}</p>
+          )}
+          {loadMsg && (
+            <p className={loadMsg.type === "success" ? "text-green-600" : "text-red-600"}>{loadMsg.text}</p>
+          )}
+          {informeId && <p className="text-xs text-gray-500">ID actual del informe: {informeId}</p>}
         </div>
       </div>
     </div>
-  );
-}
+
+    {/* === Modal de Carga de Informe === */}
+    {loadOpen && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+        <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-5">
+          <h3 className="text-lg font-semibold text-gray-800 mb-1">Valuador de Activos Inmobiliarios</h3>
+          <p className="text-sm text-gray-600 mb-4">Ingrese el ID del informe que desea cargar</p>
+
+          <input
+            type="text"
+            value={loadIdInput}
+            onChange={(e) => setLoadIdInput(e.target.value)}
+            className="w-full border rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-sky-500"
+            placeholder="Ej: 4b3a6d1e-...."
+          />
+
+          <div className="mt-5 flex items-center justify-end gap-3">
+            <button
+              type="button"
+              onClick={() => setLoadOpen(false)}
+              className="px-4 py-2 rounded-lg border text-gray-700 hover:bg-gray-50"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={handleConfirmLoad}
+              className="px-4 py-2 rounded-lg text-white"
+              style={{ backgroundColor: effectivePrimaryColor }}
+            >
+              Cargar
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+  </>
+);

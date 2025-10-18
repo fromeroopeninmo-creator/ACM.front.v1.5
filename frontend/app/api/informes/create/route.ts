@@ -7,7 +7,6 @@ import sharp from "sharp";
 import { createClient } from "@supabase/supabase-js";
 import { supabaseServer } from "#lib/supabaseServer";
 
-// ⚙️ Admin client (bypassa RLS para insertar y subir a Storage)
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE);
@@ -24,24 +23,14 @@ async function uploadBase64Image(opts: {
   base64: string;
   fileName: string;
   bucket?: string;
-  maxWidth?: number; // default 800
+  maxWidth?: number; // 800 por defecto
 }) {
-  const {
-    empresaId,
-    informeId,
-    base64,
-    fileName,
-    bucket = "informes",
-    maxWidth = 800,
-  } = opts;
+  const { empresaId, informeId, base64, fileName, bucket = "informes", maxWidth = 800 } = opts;
 
-  // extraer MIME y buffer
   const match = base64.match(/^data:(image\/[a-zA-Z+]+);base64,(.*)$/);
   if (!match) throw new Error("Formato base64 inválido");
-  // const mime = match[1]; // si quisieras conservarlo
   const data = Buffer.from(match[2], "base64");
 
-  // redimensionar a jpeg (calidad ~82)
   const resized = await sharp(data)
     .rotate()
     .resize({ width: maxWidth, withoutEnlargement: true })
@@ -49,50 +38,37 @@ async function uploadBase64Image(opts: {
     .toBuffer();
 
   const path = `${empresaId}/${informeId}/${fileName}`;
-
   const { error } = await supabaseAdmin.storage.from(bucket).upload(path, resized, {
     contentType: "image/jpeg",
     upsert: true,
   });
   if (error) throw error;
 
-  // obtener URL pública
   const { data: pub } = supabaseAdmin.storage.from(bucket).getPublicUrl(path);
   return pub.publicUrl;
 }
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
-    const { datos, titulo = "Informe VAI" } = body || {};
-
-    if (!datos) {
-      return NextResponse.json({ error: "Faltan 'datos'." }, { status: 400 });
-    }
-
-    // 1) Identidad del usuario
-    //    Primero intentamos por cookie (supabaseServer), si no, por Authorization: Bearer <JWT>
     const server = supabaseServer();
-    const { data: authByCookie } = await server.auth.getUser();
-    let userId: string | null = authByCookie?.user?.id ?? null;
+    const { data: auth } = await server.auth.getUser();
+    const userId = auth?.user?.id ?? null;
 
-    if (!userId) {
-      const authHeader = req.headers.get("authorization") || "";
-      const jwt = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : null;
-      if (jwt) {
-        const { data: authByToken } = await supabaseAdmin.auth.getUser(jwt);
-        userId = authByToken?.user?.id ?? null;
-      }
-    }
     if (!userId) {
       return NextResponse.json({ error: "No autenticado." }, { status: 401 });
     }
 
-    // 2) Resolver empresa_id / asesor_id
+    const body = await req.json();
+    const { datos, titulo = "Informe VAI" } = body || {};
+    if (!datos) {
+      return NextResponse.json({ error: "Faltan 'datos'." }, { status: 400 });
+    }
+
+    // Resolver empresa_id / asesor_id
     let empresaId: string | null = null;
     let asesorId: string | null = null;
 
-    // ¿Es empresa?
+    // ¿Empresa?
     const { data: emp } = await supabaseAdmin
       .from("empresas")
       .select("id, user_id")
@@ -102,7 +78,7 @@ export async function POST(req: Request) {
     if (emp?.id) {
       empresaId = emp.id;
     } else {
-      // ¿Tiene perfil?
+      // ¿Perfil?
       const { data: prof } = await supabaseAdmin
         .from("profiles")
         .select("id, role, empresa_id")
@@ -117,8 +93,8 @@ export async function POST(req: Request) {
       }
     }
 
-    // último intento: empresas.user_id == userId
     if (!empresaId) {
+      // último recurso
       const { data: emp2 } = await supabaseAdmin
         .from("empresas")
         .select("id")
@@ -128,24 +104,20 @@ export async function POST(req: Request) {
     }
 
     if (!empresaId) {
-      return NextResponse.json(
-        { error: "No se pudo determinar la empresa del usuario." },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "No se pudo determinar la empresa del usuario." }, { status: 400 });
     }
 
-    // 3) Pre-crear ID del informe (para paths de Storage)
-    // Si tenés una RPC uuid_generate_v4, la usamos; si no, randomUUID local.
+    // Generar ID de informe
     let informeId: string;
     try {
       const { data: idGen } = await supabaseAdmin.rpc("uuid_generate_v4");
       informeId = idGen ?? crypto.randomUUID();
     } catch {
-      // @ts-ignore node 18+ tiene crypto global
+      // @ts-ignore
       informeId = crypto.randomUUID();
     }
 
-    // 4) Subir imágenes (si vienen en base64)
+    // Subir imágenes (si hay base64)
     let imagen_principal_url: string | null = null;
     const compUrls: (string | null)[] = [null, null, null, null];
 
@@ -174,7 +146,7 @@ export async function POST(req: Request) {
       }
     }
 
-    // 5) Limpiar base64 del JSON a guardar y enlazar URLs de storage
+    // Limpiar base64 del JSON a guardar
     const datosLimpios = {
       ...datos,
       mainPhotoBase64: undefined,
@@ -188,7 +160,7 @@ export async function POST(req: Request) {
         : [],
     };
 
-    // 6) Insertar en "informes"
+    // Insert
     const { data: inserted, error: insErr } = await supabaseAdmin
       .from("informes")
       .insert({
@@ -216,9 +188,6 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ ok: true, informe: inserted }, { status: 200 });
   } catch (e: any) {
-    return NextResponse.json(
-      { error: e?.message || "Error inesperado" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: e?.message || "Error inesperado" }, { status: 500 });
   }
 }

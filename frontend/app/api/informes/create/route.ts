@@ -24,8 +24,10 @@ async function uploadBase64Image(opts: {
   maxWidth?: number;
 }) {
   const { empresaId, informeId, base64, fileName, bucket = "informes", maxWidth = 800 } = opts;
+
   const match = base64.match(/^data:(image\/[a-zA-Z+]+);base64,(.*)$/);
   if (!match) throw new Error("Formato base64 inválido");
+
   const data = Buffer.from(match[2], "base64");
 
   const resized = await sharp(data)
@@ -47,17 +49,22 @@ async function uploadBase64Image(opts: {
 
 export async function POST(req: Request) {
   try {
-    // ✅ usuario autenticado (vía supabaseServer)
+    // 1) Usuario autenticado por cookie (SSR)
     const server = supabaseServer();
     const { data: auth } = await server.auth.getUser();
     const userId = auth?.user?.id ?? null;
-    if (!userId) return NextResponse.json({ error: "No autenticado." }, { status: 401 });
+    if (!userId) {
+      return NextResponse.json({ error: "No autenticado." }, { status: 401 });
+    }
 
-    const body = await req.json();
+    // 2) Body
+    const body = await req.json().catch(() => null as any);
     const { datos, titulo = "Informe VAI" } = body || {};
-    if (!datos) return NextResponse.json({ error: "Faltan 'datos'." }, { status: 400 });
+    if (!datos) {
+      return NextResponse.json({ error: "Faltan 'datos'." }, { status: 400 });
+    }
 
-    // ✅ resolver empresa_id / asesor_id
+    // 3) Resolver empresa_id / asesor_id
     let empresaId: string | null = null;
     let asesorId: string | null = null;
 
@@ -94,10 +101,13 @@ export async function POST(req: Request) {
     }
 
     if (!empresaId) {
-      return NextResponse.json({ error: "No se pudo determinar la empresa del usuario." }, { status: 400 });
+      return NextResponse.json(
+        { error: "No se pudo determinar la empresa del usuario." },
+        { status: 400 }
+      );
     }
 
-    // ✅ generar id
+    // 4) Generar id de informe
     let informeId: string;
     try {
       const { data: idGen } = await supabaseAdmin.rpc("uuid_generate_v4");
@@ -107,7 +117,7 @@ export async function POST(req: Request) {
       informeId = crypto.randomUUID();
     }
 
-    // ✅ imágenes → Storage
+    // 5) Subir imágenes (si vienen en base64)
     let imagen_principal_url: string | null = null;
     const compUrls: (string | null)[] = [null, null, null, null];
 
@@ -125,17 +135,18 @@ export async function POST(req: Request) {
       for (let i = 0; i < Math.min(datos.comparables.length, 4); i++) {
         const b64 = datos.comparables[i]?.photoBase64 as Base64Image;
         if (isBase64Image(b64)) {
-          compUrls[i] = await uploadBase64Image({
+          const url = await uploadBase64Image({
             empresaId,
             informeId,
             base64: b64!,
             fileName: `comp${i + 1}.jpg`,
           });
+          compUrls[i] = url;
         }
       }
     }
 
-    // ✅ limpiar base64 del JSON
+    // 6) Limpiar base64 del JSON a guardar
     const datosLimpios = {
       ...datos,
       mainPhotoBase64: undefined,
@@ -149,7 +160,7 @@ export async function POST(req: Request) {
         : [],
     };
 
-    // ✅ insert
+    // 7) Insertar informe
     const { data: inserted, error: insErr } = await supabaseAdmin
       .from("informes")
       .insert({
@@ -177,6 +188,9 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ ok: true, informe: inserted }, { status: 200 });
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message || "Error inesperado" }, { status: 500 });
+    return NextResponse.json(
+      { error: e?.message || "Error inesperado" },
+      { status: 500 }
+    );
   }
 }

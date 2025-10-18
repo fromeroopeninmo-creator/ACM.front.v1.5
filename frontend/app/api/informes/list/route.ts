@@ -26,11 +26,11 @@ export async function GET(req: Request) {
     const page = Math.max(1, parseInt(searchParams.get("page") || "1", 10));
     const limit = Math.min(100, Math.max(1, parseInt(searchParams.get("limit") || "20", 10)));
     const filterEmpresaId = searchParams.get("empresa_id") || null;
+    // scope queda aceptado pero no es obligatorio para compatibilidad con UI
+    const _scope = searchParams.get("scope");
 
-    // ---- Resolver rol y empresa_id igual que en create/get ----
-    let role: Role =
-      ((user.user_metadata as any)?.role as Role) || "empresa";
-
+    // ---- Resolver rol y empresa_id (igual que en create/get) ----
+    let role: Role = ((user.user_metadata as any)?.role as Role) || "empresa";
     let empresaId: string | null = null;
 
     if (role === "empresa") {
@@ -64,10 +64,11 @@ export async function GET(req: Request) {
       empresaId = filterEmpresaId; // opcional
     }
 
-    // ---- Base query (selección compacta para dashboard) ----
+    // ---- Base query (selección usada por dashboard) ----
     let query = server
       .from("informes")
       .select(
+        // incluimos campos típicos del listado
         "id, titulo, tipo, estado, created_at, updated_at, empresa_id, autor_id, imagen_principal_url",
         { count: "exact" }
       )
@@ -75,22 +76,15 @@ export async function GET(req: Request) {
 
     // ---- Filtros por rol con OR para no perder informes ----
     if (role === "empresa") {
-      // Ver lo de SU empresa + los que el propio user haya creado (por si algún informe no tiene empresa_id asignado bien)
       if (!empresaId) {
-        // si por alguna razón no pudimos resolver empresa, al menos devolvemos los del autor
         query = query.eq("autor_id", user.id);
       } else {
-        // empresa_id = empresaId OR autor_id = user.id
         query = query.or(`empresa_id.eq.${empresaId},autor_id.eq.${user.id}`);
       }
     } else if (role === "asesor") {
-      // Asesor: solo sus propios
       query = query.eq("autor_id", user.id);
     } else {
-      // soporte / admins: todo, con filtro opcional por empresa_id
-      if (filterEmpresaId) {
-        query = query.eq("empresa_id", filterEmpresaId);
-      }
+      if (filterEmpresaId) query = query.eq("empresa_id", filterEmpresaId);
     }
 
     // ---- Paginación ----
@@ -106,6 +100,9 @@ export async function GET(req: Request) {
       );
     }
 
+    // ⚠️ Compatibilidad de contrato con UI:
+    // - Devolvemos tanto "items" como "informes" (muchas UIs esperan "informes")
+    // - Mantenemos ok/total/page/limit
     return NextResponse.json(
       {
         ok: true,
@@ -113,6 +110,7 @@ export async function GET(req: Request) {
         limit,
         total: count ?? 0,
         items: data ?? [],
+        informes: data ?? [], // <- compatibilidad
       },
       { status: 200 }
     );

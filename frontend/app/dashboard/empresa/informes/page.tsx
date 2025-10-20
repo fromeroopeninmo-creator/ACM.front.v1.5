@@ -289,14 +289,11 @@ export default function EmpresaInformesPage() {
                       <td className="p-3">{fechaTxt}</td>
                       <td className="p-3 text-right">
                         <button
-                          onClick={() =>
-                            router.push(`/vai/acmforms?informeId=${encodeURIComponent(inf.id)}`)
-                          }
-                          className="px-3 py-1 text-sm rounded bg-gray-900 text-white hover:bg-black"
-                          title="Abrir en el Valuador para ver/editar"
-                        >
-                          Ver/Editar Informe
-                        </button>
+                    onClick={() => router.push(`/vai/acmforms?id=${inf.id}`)}
+                    className="px-3 py-1 text-sm rounded bg-gray-100 text-gray-800 hover:bg-gray-200"
+                      >
+                      Ver/Editar
+                      </button>
                       </td>
                     </tr>
                   );

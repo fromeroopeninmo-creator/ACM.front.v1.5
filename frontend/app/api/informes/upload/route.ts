@@ -3,12 +3,12 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 import { supabaseServer } from "#lib/supabaseServer";
-import sharp from "sharp";
 
 type Role = "empresa" | "asesor" | "soporte" | "super_admin" | "super_admin_root";
 
 const BUCKET = "informes";
 
+// Mantiene tu mapeo 1:1 de columnas según slot
 function buildColumnFromSlot(slot: string): keyof {
   imagen_principal_url: string;
   comp1_url: string;
@@ -23,6 +23,25 @@ function buildColumnFromSlot(slot: string): keyof {
   if (slot === "comp4") return "comp4_url";
   throw new Error("slot inválido. Usa: principal | comp1 | comp2 | comp3 | comp4");
 }
+
+// Extensión segura basada en MIME (sin re-encodear)
+function extFromMime(mime: string | null): string {
+  if (!mime) return "bin";
+  if (mime === "image/jpeg" || mime === "image/jpg") return "jpg";
+  if (mime === "image/png") return "png";
+  if (mime === "image/webp") return "webp";
+  if (mime === "image/heic") return "heic";
+  if (mime === "image/heif") return "heif";
+  return "img";
+}
+
+// Validación mínima de imagen
+function isAllowedImage(mime: string | null) {
+  return !!mime && mime.startsWith("image/");
+}
+
+// Tamaño máximo (post-resize cliente). Ajustá si querés.
+const MAX_BYTES = 8 * 1024 * 1024; // 8MB
 
 export async function POST(req: Request) {
   try {
@@ -52,6 +71,15 @@ export async function POST(req: Request) {
         { error: "Faltan parámetros: file, informeId, slot." },
         { status: 400 }
       );
+    }
+
+    // Validaciones básicas de archivo
+    const mime = file.type || null;
+    if (!isAllowedImage(mime)) {
+      return NextResponse.json({ error: "Archivo no es imagen válida." }, { status: 400 });
+    }
+    if (typeof file.size === "number" && file.size > MAX_BYTES) {
+      return NextResponse.json({ error: "La imagen excede el tamaño máximo permitido." }, { status: 413 });
     }
 
     // 3) Rol del usuario
@@ -131,10 +159,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Informe inexistente." }, { status: 404 });
     }
 
-    if (
-      role === "empresa" ||
-      role === "asesor"
-    ) {
+    if (role === "empresa" || role === "asesor") {
       // Debe pertenecer a la misma empresa o ser autor
       if (inf.empresa_id !== empresaId && inf.autor_id !== user.id) {
         return NextResponse.json({ error: "No autorizado sobre este informe." }, { status: 403 });
@@ -142,22 +167,17 @@ export async function POST(req: Request) {
     }
     // Para soporte/super_admin ya pasamos con el bloque anterior
 
-    // 6) Procesar imagen con sharp (máx 800px lado mayor), salida JPEG
+    // 6) Subir archivo directo a Storage (SIN sharp)
     const arrayBuf = await file.arrayBuffer();
-    const input = Buffer.from(arrayBuf);
-    const processed = await sharp(input)
-      .rotate()
-      .resize({ width: 800, withoutEnlargement: true })
-      .jpeg({ quality: 75 })
-      .toBuffer();
+    const buffer = Buffer.from(arrayBuf);
 
-    // 7) Path en storage: /empresaId/informeId/slot.jpg
-    const storagePath = `${empresaId}/${informeId}/${slot}.jpg`;
+    const ext = extFromMime(mime);
+    const storagePath = `${empresaId}/${informeId}/${slot}.${ext}`;
 
     const { error: upErr } = await server.storage
       .from(BUCKET)
-      .upload(storagePath, processed, {
-        contentType: "image/jpeg",
+      .upload(storagePath, buffer, {
+        contentType: mime || "application/octet-stream",
         upsert: true,
         cacheControl: "0",
       });
@@ -166,7 +186,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: `Error al subir a storage: ${upErr.message}` }, { status: 400 });
     }
 
-    // 8) URL pública (si el bucket es público) o firmada si no lo es
+    // 7) URL pública (si el bucket es público) o firmada si no lo es
     let publicUrl: string | null = null;
     const { data: pub } = server.storage.from(BUCKET).getPublicUrl(storagePath);
     publicUrl = pub?.publicUrl || null;
@@ -184,7 +204,7 @@ export async function POST(req: Request) {
       publicUrl = signed.signedUrl;
     }
 
-    // 9) Actualizar columna correspondiente en informes
+    // 8) Actualizar columna correspondiente en informes
     const column = buildColumnFromSlot(slot);
     const { error: updErr } = await server
       .from("informes")
@@ -195,9 +215,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: `Error al actualizar informe: ${updErr.message}` }, { status: 400 });
     }
 
-    // 10) Devolver url "cache-busted" para UI inmediata
+    // 9) Devolver url "cache-busted" para UI inmediata
     const busted = `${publicUrl}?v=${Date.now()}`;
-
     return NextResponse.json({ ok: true, url: busted });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || "Error interno." }, { status: 500 });

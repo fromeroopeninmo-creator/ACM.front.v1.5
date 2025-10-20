@@ -5,36 +5,29 @@ import { createMiddlewareClient } from "@supabase/auth-helpers-nextjs";
 
 export async function middleware(req: NextRequest) {
   const res = NextResponse.next();
+
   const supabase = createMiddlewareClient({ req, res });
 
-  // Refrescar sesión si existe
+  // Refresca sesión si existe
   const {
     data: { session },
   } = await supabase.auth.getSession();
 
-  const { pathname, search } = req.nextUrl;
-
-  // Rutas públicas
-  const isPublic =
-    pathname === "/" ||
-    pathname.startsWith("/login") ||
-    pathname.startsWith("/register") ||
-    pathname === "/robots.txt" ||
-    pathname === "/sitemap.xml";
+  const { pathname } = req.nextUrl;
 
   // Si no hay sesión y la ruta no es pública → redirigir a /login
-  if (!session && !isPublic) {
+  if (
+    !session &&
+    !pathname.startsWith("/login") &&
+    !pathname.startsWith("/register")
+  ) {
     const loginUrl = new URL("/login", req.url);
-    loginUrl.searchParams.set("next", pathname + search);
     return NextResponse.redirect(loginUrl);
   }
 
   return res;
 }
 
-// EXCLUIR /api y assets del middleware
 export const config = {
-  matcher: [
-    "/((?!api|_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml).*)",
-  ],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
 };

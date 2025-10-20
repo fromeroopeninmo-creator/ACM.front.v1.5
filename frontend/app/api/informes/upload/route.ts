@@ -8,6 +8,19 @@ type Role = "empresa" | "asesor" | "soporte" | "super_admin" | "super_admin_root
 
 const BUCKET = "informes";
 
+/** =========================
+ *  GET de ping (diagnóstico)
+ *  =========================
+ *  Visitá /api/informes/upload en el navegador: debe responder 200 con { ok: true }.
+ *  Luego, si querés, podés quitar este GET.
+ */
+export async function GET() {
+  return new Response(JSON.stringify({ ok: true, route: "upload" }), {
+    status: 200,
+    headers: { "content-type": "application/json" },
+  });
+}
+
 // Mantiene tu mapeo 1:1 de columnas según slot
 function buildColumnFromSlot(slot: string): keyof {
   imagen_principal_url: string;

@@ -299,6 +299,9 @@ export default function ACMForm() {
       reader.readAsDataURL(file);
     });
 
+  // Nuevo: helper para distinguir data URLs reales (evita tratar URLs como base64)
+  const isDataUrl = (s?: string) => !!s && s.startsWith("data:image/");
+
   const handleMainPhotoSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
     if (!f) return;
@@ -333,8 +336,12 @@ export default function ACMForm() {
       const compsB64 = formData.comparables.map(c => c.photoBase64 || undefined);
       datosLimpios.comparables = datosLimpios.comparables.map(c => ({ ...c, photoBase64: undefined }));
 
-      // 2) Crear informe (solo datos)
-      const payload = { datos: datosLimpios, titulo: (formData as any)?.titulo || "Informe VAI" };
+      // 2) Crear/Actualizar informe (solo datos)
+      const payload = { 
+        id: informeId || undefined, // <<--- si existe, actualiza; si no, crea
+        datos: datosLimpios, 
+        titulo: (formData as any)?.titulo || "Informe VAI" 
+      };
       const res = await fetch("/api/informes/create", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -352,8 +359,8 @@ export default function ACMForm() {
 
       // 3) Subir imágenes (si había base64) al bucket y actualizar columnas URL
       // Principal
-      if (mainB64) {
-        const file = dataUrlToFile(mainB64, "principal.jpg");
+      if (isDataUrl(mainB64)) {
+        const file = dataUrlToFile(mainB64!, "principal.jpg");
         const fd = new FormData();
         fd.append("file", file);
         fd.append("informeId", id);
@@ -371,9 +378,9 @@ export default function ACMForm() {
       // Comparables 1..4
       for (let i = 0; i < Math.min(formData.comparables.length, 4); i++) {
         const b64 = compsB64[i];
-        if (!b64) continue;
+        if (!isDataUrl(b64)) continue;
         const slot = `comp${i + 1}` as "comp1" | "comp2" | "comp3" | "comp4";
-        const file = dataUrlToFile(b64, `${slot}.jpg`);
+        const file = dataUrlToFile(b64!, `${slot}.jpg`);
         const fd = new FormData();
         fd.append("file", file);
         fd.append("informeId", id);
@@ -453,11 +460,12 @@ export default function ACMForm() {
         inf?.comp4_url || "",
       ];
 
-      // Ajustar comparables: si hay URLs en BD, colocarlas en photoBase64 (se usa como src)
+      // Ajustar comparables: colocar las URLs en photoUrl (no en base64)
       const comparablesCargados = Array.isArray(payload?.comparables)
         ? payload.comparables.map((c: any, idx: number) => ({
             ...c,
-            photoBase64: compUrls[idx] || c?.photoBase64 || "",
+            photoUrl: compUrls[idx] || c?.photoUrl || "",
+            photoBase64: "", // no usar URL como base64
           }))
         : formData.comparables;
 
@@ -465,8 +473,7 @@ export default function ACMForm() {
         ...prev,
         ...payload,
         mainPhotoUrl: principalUrl || prev.mainPhotoUrl || "",
-        // usamos photoBase64 como src (acepta base64 o URL indistintamente)
-        mainPhotoBase64: principalUrl || prev.mainPhotoBase64 || "",
+        mainPhotoBase64: "", // no guardar URL en base64
         comparables: comparablesCargados,
       }));
 

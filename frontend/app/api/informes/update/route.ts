@@ -1,94 +1,71 @@
-// app/api/informes/update/route.ts
-import { NextResponse } from "next/server";
-import sharp from "sharp";
-import { createClient } from "@supabase/supabase-js";
-
 export const runtime = "nodejs";
+
+import { NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE);
 
-function isBase64Image(s?: string) {
-  return !!s && /^data:image\/(png|jpe?g);base64,/.test(s);
-}
-
-async function uploadBase64Image(empresaId: string, informeId: string, base64: string, fileName: string) {
-  const match = base64.match(/^data:(image\/[a-zA-Z+]+);base64,(.*)$/);
-  if (!match) throw new Error("Formato base64 inválido");
-  const data = Buffer.from(match[2], "base64");
-  const resized = await sharp(data).resize({ width: 800, withoutEnlargement: true }).jpeg({ quality: 82 }).toBuffer();
-  const path = `${empresaId}/${informeId}/${fileName}`;
-  const { error } = await supabaseAdmin.storage.from("informes").upload(path, resized, {
-    contentType: "image/jpeg",
-    upsert: true,
-  });
-  if (error) throw error;
-  const { data: pub } = supabaseAdmin.storage.from("informes").getPublicUrl(path);
-  return pub.publicUrl;
+// Limpia posibles restos de base64 que vengan del cliente (por compatibilidad)
+function sanitizeDatos(datos: any) {
+  const clone = JSON.parse(JSON.stringify(datos || {}));
+  if (clone?.mainPhotoBase64) clone.mainPhotoBase64 = undefined;
+  if (Array.isArray(clone?.comparables)) {
+    clone.comparables = clone.comparables.map((c: any) => ({
+      ...c,
+      photoBase64: undefined,
+    }));
+  }
+  return clone;
 }
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
+    const body = await req.json().catch(() => null as any);
     const { id, datos, titulo } = body || {};
     if (!id) return NextResponse.json({ error: "Falta 'id'." }, { status: 400 });
 
-    // obtener informe actual para empresa_id
+    // obtener informe actual para empresa_id (y existencia)
     const { data: existing, error: getErr } = await supabaseAdmin
       .from("informes")
-      .select("id, empresa_id, asesor_id, autor_id")
+      .select("id, empresa_id, asesor_id, autor_id, imagen_principal_url, comp1_url, comp2_url, comp3_url, comp4_url")
       .eq("id", id)
       .maybeSingle();
 
-    if (getErr || !existing) {
+    if (getErr) {
+      return NextResponse.json({ error: getErr.message }, { status: 400 });
+    }
+    if (!existing) {
       return NextResponse.json({ error: "Informe no encontrado." }, { status: 404 });
     }
 
-    const empresaId = existing.empresa_id as string;
-    const informeId = id as string;
+    // Ya no procesamos base64 ni usamos sharp. Solo actualizamos datos + URLs si vienen provistas.
+    const datosLimpios = sanitizeDatos(datos);
 
-    let imagen_principal_url: string | null = null;
-    const compUrls: (string | null)[] = [null, null, null, null];
+    // Preparar el payload de update (no sobreescribir URLs si no llegan)
+    const patch: Record<string, any> = {
+      titulo: titulo ?? "Informe VAI",
+      datos_json: datosLimpios,
+      updated_at: new Date().toISOString(),
+    };
 
-    if (isBase64Image(datos?.mainPhotoBase64)) {
-      imagen_principal_url = await uploadBase64Image(empresaId, informeId, datos.mainPhotoBase64, "principal.jpg");
+    // Si el cliente envía URLs (por haber subido por /upload), las reflejamos en columnas:
+    if (typeof datos?.mainPhotoUrl === "string" && datos.mainPhotoUrl) {
+      patch.imagen_principal_url = datos.mainPhotoUrl;
     }
 
     if (Array.isArray(datos?.comparables)) {
-      for (let i = 0; i < Math.min(datos.comparables.length, 4); i++) {
-        const b64 = datos.comparables[i]?.photoBase64;
-        if (isBase64Image(b64)) {
-          compUrls[i] = await uploadBase64Image(empresaId, informeId, b64, `comp${i + 1}.jpg`);
-        }
-      }
+      const urls = datos.comparables.map((c: any) => c?.photoUrl).filter(Boolean);
+      if (typeof urls[0] === "string") patch.comp1_url = urls[0];
+      if (typeof urls[1] === "string") patch.comp2_url = urls[1];
+      if (typeof urls[2] === "string") patch.comp3_url = urls[2];
+      if (typeof urls[3] === "string") patch.comp4_url = urls[3];
     }
-
-    const datosLimpios = {
-      ...datos,
-      mainPhotoBase64: undefined,
-      mainPhotoUrl: imagen_principal_url || datos?.mainPhotoUrl || "",
-      comparables: Array.isArray(datos?.comparables)
-        ? datos.comparables.map((c: any, idx: number) => ({
-            ...c,
-            photoBase64: undefined,
-            photoUrl: compUrls[idx] || c.photoUrl || "",
-          }))
-        : [],
-    };
 
     const { data: updated, error: upErr } = await supabaseAdmin
       .from("informes")
-      .update({
-        titulo: titulo ?? "Informe VAI",
-        datos_json: datosLimpios,
-        imagen_principal_url: imagen_principal_url ?? undefined,
-        comp1_url: compUrls[0] ?? undefined,
-        comp2_url: compUrls[1] ?? undefined,
-        comp3_url: compUrls[2] ?? undefined,
-        comp4_url: compUrls[3] ?? undefined,
-        updated_at: new Date().toISOString(),
-      })
+      .update(patch)
       .eq("id", id)
       .select()
       .maybeSingle();

@@ -131,7 +131,7 @@ export default function ACMForm() {
     }
   }, [formData.date]);
 
-  /** ========= Autoload por query (?id= o ?informeId=) ========= */
+ /** ========= Autoload por query (?id= o ?informeId=) ========= */
   useEffect(() => {
     const autoLoad = async () => {
       if (typeof window === "undefined") return;
@@ -156,11 +156,12 @@ export default function ACMForm() {
           inf?.comp4_url || "",
         ];
 
+        // Cargar URLs en photoUrl y dejar photoBase64 vacío (no guardar URL como base64)
         const comparablesCargados = Array.isArray(payload?.comparables)
           ? payload.comparables.map((c: any, idx: number) => ({
               ...c,
-              // usamos photoBase64 como src (acepta base64 o URL indistintamente)
-              photoBase64: compUrls[idx] || c?.photoBase64 || "",
+              photoUrl: compUrls[idx] || c?.photoUrl || "",
+              photoBase64: "",
             }))
           : formData.comparables;
 
@@ -168,7 +169,7 @@ export default function ACMForm() {
           ...prev,
           ...payload,
           mainPhotoUrl: principalUrl || prev.mainPhotoUrl || "",
-          mainPhotoBase64: principalUrl || prev.mainPhotoBase64 || "",
+          mainPhotoBase64: "", // no usar URL en base64
           comparables: comparablesCargados,
         }));
         setInformeId(inf?.id || id);
@@ -291,6 +292,35 @@ export default function ACMForm() {
   };
 
   /** ========= Uploads ========= */
+  // Redimensionar en cliente para limitar tamaño (800px, ~q=0.82)
+  async function resizeImageFile(
+    file: File,
+    maxSize = 800,
+    mime: string = "image/jpeg",
+    quality = 0.82
+  ): Promise<File> {
+    try {
+      const bitmap = await createImageBitmap(file);
+      const { width, height } = bitmap;
+      const scale = Math.min(1, maxSize / Math.max(width, height));
+      const targetW = Math.round(width * scale);
+      const targetH = Math.round(height * scale);
+      const canvas = document.createElement("canvas");
+      canvas.width = targetW;
+      canvas.height = targetH;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return file;
+      ctx.drawImage(bitmap, 0, 0, targetW, targetH);
+      const blob: Blob = await new Promise((res) =>
+        canvas.toBlob((b) => res(b || file), mime, quality)
+      );
+      return new File([blob], file.name.replace(/\.(heic|heif|png|webp|jpg|jpeg)$/i, ".jpg"), { type: mime });
+    } catch {
+      // Si falla el resize (navegadores viejos), volvemos al file original.
+      return file;
+    }
+  }
+
   const readFileAsBase64 = (file: File): Promise<string> =>
     new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -299,13 +329,14 @@ export default function ACMForm() {
       reader.readAsDataURL(file);
     });
 
-  // Nuevo: helper para distinguir data URLs reales (evita tratar URLs como base64)
+  // Helper para distinguir data URLs reales (evita tratar URLs como base64)
   const isDataUrl = (s?: string) => !!s && s.startsWith("data:image/");
 
   const handleMainPhotoSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
     if (!f) return;
-    const b64 = await readFileAsBase64(f);
+    const resized = await resizeImageFile(f, 800, "image/jpeg", 0.82);
+    const b64 = await readFileAsBase64(resized);
     setFormData((prev) => ({ ...prev, mainPhotoBase64: b64, mainPhotoUrl: '' }));
     if (mainPhotoInputRef.current) mainPhotoInputRef.current.value = '';
   };
@@ -313,7 +344,8 @@ export default function ACMForm() {
   const handleComparablePhotoSelect = async (index: number, e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
     if (!f) return;
-    const b64 = await readFileAsBase64(f);
+    const resized = await resizeImageFile(f, 800, "image/jpeg", 0.82);
+    const b64 = await readFileAsBase64(resized);
     setFormData((prev) => {
       const arr = prev.comparables.slice();
       arr[index] = { ...arr[index], photoBase64: b64 };

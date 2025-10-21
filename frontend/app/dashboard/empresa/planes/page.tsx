@@ -18,6 +18,8 @@ interface Plan {
   max_asesores: number;
   precio?: number | string | null;
   duracion_dias?: number | null;
+  // NUEVO: precio por asesor extra (sólo lo usa Personalizado)
+  precio_extra_por_asesor?: number | string | null;
 }
 
 export default function EmpresaPlanesPage() {
@@ -29,7 +31,10 @@ export default function EmpresaPlanesPage() {
   const [loading, setLoading] = useState(true);
   const [mensaje, setMensaje] = useState<string | null>(null);
 
-  // 🔎 Primero resolvemos el ID de la empresa a partir del usuario autenticado
+  // Estado de UI para “Personalizado”
+  const [personalCount, setPersonalCount] = useState<number>(21); // 21..50
+
+  // 🔎 Resolver empresa.id a partir del usuario autenticado
   useEffect(() => {
     const fetchEmpresa = async () => {
       if (!user?.id) return;
@@ -49,7 +54,7 @@ export default function EmpresaPlanesPage() {
     fetchEmpresa();
   }, [user]);
 
-  // 📡 Con el empresaId, traemos plan actual y planes disponibles
+  // 📡 Con empresaId, traemos plan actual + planes disponibles (incluye precios)
   useEffect(() => {
     const fetchPlanes = async () => {
       if (!empresaId) {
@@ -59,7 +64,7 @@ export default function EmpresaPlanesPage() {
       setLoading(true);
 
       try {
-        // Plan actual (desde empresas_planes)
+        // Plan actual
         const { data: empresaPlan, error: errorEmpresaPlan } = await supabase
           .from("empresas_planes")
           .select(`
@@ -78,7 +83,6 @@ export default function EmpresaPlanesPage() {
         } else if (empresaPlan) {
           const planDataRaw = empresaPlan.planes;
           const planData = Array.isArray(planDataRaw) ? planDataRaw[0] : planDataRaw;
-
           setPlanActual({
             plan_nombre: planData?.nombre || "Sin plan",
             fecha_inicio: empresaPlan.fecha_inicio,
@@ -90,10 +94,10 @@ export default function EmpresaPlanesPage() {
           setPlanActual(null);
         }
 
-        // Planes disponibles (ocultamos Trial / Desarrollo si querés)
+        // Planes (ocultamos Trial; podés ocultar “Desarrollo” si querés)
         const { data: planes, error: errorPlanes } = await supabase
           .from("planes")
-          .select("id, nombre, max_asesores, precio, duracion_dias")
+          .select("id, nombre, max_asesores, precio, duracion_dias, precio_extra_por_asesor")
           .neq("nombre", "Trial")
           .order("max_asesores", { ascending: true });
 
@@ -121,9 +125,7 @@ export default function EmpresaPlanesPage() {
       const res = await fetch("/api/solicitud-upgrade", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        // tu API actual espera empresaId = user.id o empresas.id según la implementaste.
-        // Si la hiciste con user.id, podés seguir igual, pero es más correcto pasar empresas.id:
-        body: JSON.stringify({ empresaId: empresaId, planId }),
+        body: JSON.stringify({ empresaId, planId }),
       });
 
       const data = await res.json();
@@ -135,17 +137,15 @@ export default function EmpresaPlanesPage() {
       }
 
       setMensaje(`✅ ${data.message}`);
-      // recargamos para que refresque el plan actual
       setTimeout(() => window.location.reload(), 1200);
     } catch (err) {
       console.error("Error de red:", err);
       setMensaje("❌ No se pudo conectar al servidor.");
     }
-
     setTimeout(() => setMensaje(null), 4000);
   };
 
-  // 💵 formateador de precio si existe en DB
+  // 💵 formateador de precio
   const fmtPrice = (p?: number | string | null) => {
     if (p == null) return "—";
     const val = typeof p === "string" ? parseFloat(p) : p;
@@ -157,6 +157,27 @@ export default function EmpresaPlanesPage() {
       maximumFractionDigits: 0,
     }).format(val);
   };
+
+  const num = (x?: number | string | null) =>
+    typeof x === "string" ? parseFloat(x) : (x ?? 0);
+
+  // precio base del Premium
+  const premiumPrecio = useMemo(() => {
+    const p = planesDisponibles.find((pl) => pl.nombre === "Premium");
+    return num(p?.precio);
+  }, [planesDisponibles]);
+
+  // precio extra por asesor (definido en “Personalizado”)
+  const extraUnitPrice = useMemo(() => {
+    const p = planesDisponibles.find((pl) => pl.nombre === "Personalizado");
+    return num(p?.precio_extra_por_asesor);
+  }, [planesDisponibles]);
+
+  // total calculado para Personalizado: premium + (asesores extra x unitario)
+  const personalizadoTotal = useMemo(() => {
+    const extra = Math.max(0, personalCount - 20); // desde 21..50 -> extra = n-20
+    return premiumPrecio + extra * extraUnitPrice;
+  }, [personalCount, premiumPrecio, extraUnitPrice]);
 
   const planActualNombre = useMemo(() => {
     if (!planActual?.plan_nombre) return "Sin plan";
@@ -230,7 +251,9 @@ export default function EmpresaPlanesPage() {
         <h2 className="text-lg font-semibold mb-3">Planes disponibles</h2>
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
           {planesDisponibles.map((plan) => {
-            const isActive = plan.plan_nombre === planActual?.plan_nombre || plan.nombre === planActual?.plan_nombre;
+            const isActive = plan.nombre === planActual?.plan_nombre;
+            const isPersonalizado = plan.nombre === "Personalizado";
+
             return (
               <div
                 key={plan.id}
@@ -246,24 +269,81 @@ export default function EmpresaPlanesPage() {
                     </span>
                   </div>
 
-                  <div className="mt-2">
-                    <div className="text-2xl font-bold">{fmtPrice(plan.precio)}</div>
-                    <div className="text-sm text-gray-600">
-                      Hasta {plan.max_asesores} asesores
-                    </div>
-                  </div>
+                  {!isPersonalizado ? (
+                    <>
+                      <div className="mt-2">
+                        <div className="text-2xl font-bold">{fmtPrice(plan.precio)}</div>
+                        <div className="text-sm text-gray-600">
+                          Hasta {plan.max_asesores} asesores
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      {/* Card especial Personalizado */}
+                      <div className="mt-2 space-y-2">
+                        <div className="text-sm text-gray-600">
+                          Base: <span className="font-medium">Plan Premium</span> ({fmtPrice(premiumPrecio)})
+                        </div>
+
+                        <div className="text-sm text-gray-600">
+                          Extra por asesor (21–50):{" "}
+                          <span className="font-medium">{fmtPrice(extraUnitPrice)}</span>
+                        </div>
+
+                        <div className="mt-3">
+                          <label className="block text-sm text-gray-600 mb-1">
+                            Cantidad de asesores
+                          </label>
+                          <div className="flex items-center gap-3">
+                            <input
+                              type="range"
+                              min={21}
+                              max={50}
+                              value={personalCount}
+                              onChange={(e) => setPersonalCount(parseInt(e.target.value || "21", 10))}
+                              className="w-full"
+                            />
+                            <input
+                              type="number"
+                              min={21}
+                              max={50}
+                              value={personalCount}
+                              onChange={(e) => {
+                                const v = Math.max(21, Math.min(50, parseInt(e.target.value || "21", 10)));
+                                setPersonalCount(v);
+                              }}
+                              className="w-20 border rounded-lg px-2 py-1"
+                            />
+                          </div>
+                          <div className="text-xs text-gray-500 mt-1">
+                            De 21 a 50 asesores (incluidos).
+                          </div>
+                        </div>
+
+                        <div className="mt-3 bg-gray-50 rounded-lg p-3 border border-gray-200">
+                          <div className="text-sm">
+                            Desglose: {fmtPrice(premiumPrecio)} + {(Math.max(0, personalCount - 20))} × {fmtPrice(extraUnitPrice)}
+                          </div>
+                          <div className="text-xl font-bold mt-1">
+                            Total: {fmtPrice(personalizadoTotal)}
+                          </div>
+                        </div>
+                      </div>
+                    </>
+                  )}
                 </div>
 
                 <button
                   onClick={() => handleUpgrade(plan.id)}
-                  disabled={plan.nombre === planActual?.plan_nombre}
+                  disabled={isActive}
                   className={`mt-auto w-full py-2.5 rounded-lg text-sm font-medium transition ${
-                    plan.nombre === planActual?.plan_nombre
+                    isActive
                       ? "bg-gray-300 text-gray-600 cursor-not-allowed"
                       : "bg-blue-600 hover:bg-blue-700 text-white"
                   }`}
                 >
-                  {plan.nombre === planActual?.plan_nombre ? "Plan actual" : "Seleccionar plan"}
+                  {isActive ? "Plan actual" : "Seleccionar plan"}
                 </button>
               </div>
             );

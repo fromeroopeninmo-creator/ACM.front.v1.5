@@ -49,12 +49,14 @@ export default function EmpresaInformesPage() {
   const dDesde = useDeferredValue(fDesde);
   const dHasta = useDeferredValue(fHasta);
 
+  // eliminación
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
   // ---------------- fetch ----------------
   const fetchInformes = async () => {
     setLoading(true);
     setErr(null);
     try {
-      // pedimos una página “ligera” y limitada; el endpoint puede ignorar “limit” sin romper
       const res = await fetch("/api/informes/list?scope=empresa&limit=100", {
         cache: "no-store",
       });
@@ -64,7 +66,6 @@ export default function EmpresaInformesPage() {
       }
       const j = await res.json();
       const arr: Informe[] = Array.isArray(j?.informes) ? j.informes : [];
-
       setItems(arr);
     } catch (e: any) {
       setErr(e.message || "Error desconocido");
@@ -83,8 +84,6 @@ export default function EmpresaInformesPage() {
     if (inf.autor_nombre && inf.autor_nombre.trim()) return inf.autor_nombre;
     if (inf.asesor_email && inf.asesor_email.trim()) return inf.asesor_email;
     return "Empresa";
-    // Si querés distinguir explícitamente: si existe asesor_email => “Asesor: <mail>”,
-    // si no => “Empresa”. Lo dejé simple para que quede limpio.
   };
 
   const getCliente = (inf: Informe) => {
@@ -98,7 +97,6 @@ export default function EmpresaInformesPage() {
   };
 
   const getFechaISO = (inf: Informe) => {
-    // nos valemos principalmente de created_at
     if (!inf.created_at) return null;
     return new Date(inf.created_at);
   };
@@ -111,9 +109,8 @@ export default function EmpresaInformesPage() {
       if (name) s.add(name);
     });
     return ["__ALL__", ...Array.from(s).sort((a, b) => a.localeCompare(b))];
-    // "__ALL__" = todos
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items.length]); // calculamos barato por la longitud
+  }, [items.length]);
 
   const tiposOpts = useMemo(() => {
     const s = new Set<string>();
@@ -129,7 +126,6 @@ export default function EmpresaInformesPage() {
   const filtered = useMemo(() => {
     const desde = dDesde ? new Date(`${dDesde}T00:00:00`) : null;
     const hasta = dHasta ? new Date(`${dHasta}T23:59:59`) : null;
-
     const qnorm = dq.trim().toLowerCase();
 
     return items.filter((inf) => {
@@ -161,7 +157,7 @@ export default function EmpresaInformesPage() {
     });
   }, [items, dAsesor, dTipo, dDesde, dHasta, dq]);
 
-  // orden por fecha desc para que siempre veas lo último arriba
+  // orden por fecha desc
   const sorted = useMemo(() => {
     return [...filtered].sort((a, b) => {
       const da = getFechaISO(a)?.getTime() ?? 0;
@@ -169,6 +165,29 @@ export default function EmpresaInformesPage() {
       return db - da;
     });
   }, [filtered]);
+
+  // ---------------- acciones ----------------
+  const onDelete = async (id: string) => {
+    if (!id) return;
+    const ok = confirm("¿Eliminar este informe? Esta acción no se puede deshacer.");
+    if (!ok) return;
+
+    try {
+      setDeletingId(id);
+      const res = await fetch(`/api/informes/delete?id=${encodeURIComponent(id)}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j?.error || "No se pudo eliminar");
+      }
+      await fetchInformes();
+    } catch (e: any) {
+      alert(e?.message || "Error eliminando");
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   // ---------------- UI ----------------
   return (
@@ -288,20 +307,29 @@ export default function EmpresaInformesPage() {
                       <td className="p-3">{tipologia}</td>
                       <td className="p-3">{fechaTxt}</td>
                       <td className="p-3 text-right">
-                        <button
-                    onClick={() => router.push(`/vai/acmforms?id=${inf.id}`)}
-                    className="px-3 py-1 text-sm rounded bg-gray-100 text-gray-800 hover:bg-gray-200"
-                      >
-                      Ver/Editar
-                      </button>
+                        <div className="flex items-center gap-2 justify-end">
+                          <button
+                            onClick={() => router.push(`/vai/acmforms?id=${inf.id}`))}
+                            className="px-3 py-1 text-sm rounded bg-gray-100 text-gray-800 hover:bg-gray-200"
+                          >
+                            Ver/Editar
+                          </button>
+
+                          <button
+                            onClick={() => onDelete(inf.id)}
+                            disabled={deletingId === inf.id}
+                            className="px-3 py-1 text-sm rounded bg-red-50 text-red-700 hover:bg-red-100 border border-red-200 disabled:opacity-60"
+                            title="Eliminar"
+                          >
+                            {deletingId === inf.id ? "Eliminando..." : "Eliminar"}
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
                 })}
               </tbody>
             </table>
-
-            {/* Paginita simple si más adelante querés cortar la lista en el front */}
             {/* <div className="text-xs text-gray-500 mt-2">Mostrando {sorted.length} informes</div> */}
           </div>
         )}

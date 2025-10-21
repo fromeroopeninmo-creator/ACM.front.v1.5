@@ -132,358 +132,22 @@ export default function ACMForm() {
   }, [formData.date]);
 
  /** ========= Autoload por query (?id= o ?informeId=) ========= */
-  useEffect(() => {
-    const autoLoad = async () => {
-      if (typeof window === "undefined") return;
-      const qs = new URLSearchParams(window.location.search);
-      const id = qs.get("id") || qs.get("informeId");
-      if (!id) return;
+useEffect(() => {
+  const autoLoad = async () => {
+    if (typeof window === "undefined") return;
+    const qs = new URLSearchParams(window.location.search);
+    const id = qs.get("id") || qs.get("informeId");
+    if (!id) return;
 
-      try {
-        const res = await fetch(`/api/informes/get?id=${encodeURIComponent(id)}`);
-        const data = await res.json();
-        if (!res.ok) throw new Error(data?.error || "No se pudo obtener el informe");
-
-        const inf = data?.informe ?? data; // compat
-        const payload = inf?.datos_json;
-        if (!payload) throw new Error("El informe no contiene datos_json");
-
-        const principalUrl: string = inf?.imagen_principal_url || "";
-        const compUrls: string[] = [
-          inf?.comp1_url || "",
-          inf?.comp2_url || "",
-          inf?.comp3_url || "",
-          inf?.comp4_url || "",
-        ];
-
-        // Cargar URLs en photoUrl y dejar photoBase64 vacío (no guardar URL como base64)
-        const comparablesCargados = Array.isArray(payload?.comparables)
-          ? payload.comparables.map((c: any, idx: number) => ({
-              ...c,
-              photoUrl: compUrls[idx] || c?.photoUrl || "",
-              photoBase64: "",
-            }))
-          : formData.comparables;
-
-        setFormData((prev) => ({
-          ...prev,
-          ...payload,
-          mainPhotoUrl: principalUrl || prev.mainPhotoUrl || "",
-          mainPhotoBase64: "", // no usar URL en base64
-          comparables: comparablesCargados,
-        }));
-        setInformeId(inf?.id || id);
-      } catch (e) {
-        console.error("Autoload informe:", e);
-      }
-    };
-
-    autoLoad();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  /** ========= Handlers ========= */
-  const handleFieldChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
-  ) => {
-    const { name, value } = e.target;
-    const booleanFields = new Set([
-      'hasPlans',
-      'isRented',
-      'services.luz',
-      'services.agua',
-      'services.gas',
-      'services.cloacas',
-      'services.pavimento',
-    ]);
-    const numberFields = new Set(['landArea', 'builtArea', 'age']);
-
-    if (name.startsWith('services.')) {
-      const key = name.split('.')[1] as keyof Services;
-      setFormData((prev) => ({
-        ...prev,
-        services: { ...prev.services, [key]: value === 'true' },
-      }));
-      return;
-    }
-
-    if (booleanFields.has(name)) {
-      setFormData((prev) => ({ ...prev, [name]: value === 'true' }));
-      return;
-    }
-
-    if (numberFields.has(name)) {
-      const n = Number(value);
-      setFormData((prev) => ({ ...prev, [name]: isNaN(n) ? 0 : n }));
-      return;
-    }
-
-    if (name === 'propertyType')
-      setFormData((p) => ({ ...p, propertyType: value as PropertyType }));
-    else if (name === 'titleType')
-      setFormData((p) => ({ ...p, titleType: value as TitleType }));
-    else if (name === 'condition')
-      setFormData((p) => ({ ...p, condition: value as PropertyCondition }));
-    else if (name === 'locationQuality')
-      setFormData((p) => ({ ...p, locationQuality: value as LocationQuality }));
-    else if (name === 'orientation')
-      setFormData((p) => ({ ...p, orientation: value as Orientation }));
-    else setFormData((prev) => ({ ...prev, [name]: value }));
-  };
-
-  /** ========= Comparables ========= */
-  const updateComparable = <K extends keyof ComparableProperty>(
-    index: number,
-    field: K,
-    rawValue: string | number | null
-  ) => {
-    setFormData((prev) => {
-      const copy = { ...prev };
-      const arr = [...copy.comparables];
-
-      const numericFields: Array<keyof ComparableProperty> = [
-        "builtArea",
-        "price",
-        "daysPublished",
-        "pricePerM2",
-        "coefficient",
-      ];
-
-      let value: number | string | null = rawValue;
-
-      if (numericFields.includes(field)) {
-        const n =
-          rawValue === null || rawValue === ""
-            ? 0
-            : typeof rawValue === "string"
-            ? parseFloat(rawValue)
-            : Number(rawValue);
-        value = isNaN(n) ? 0 : n;
-      }
-
-      arr[index] = { ...arr[index], [field]: value };
-
-      const b = Number(arr[index].builtArea) || 0;
-      const p = Number(arr[index].price) || 0;
-      arr[index].pricePerM2 = b > 0 ? p / b : 0;
-
-      copy.comparables = arr;
-      return copy;
-    });
-  };
-
-  const addComparable = () => {
-    setFormData((prev) => {
-      if (prev.comparables.length >= 4) return prev;
-      return {
-        ...prev,
-        comparables: [...prev.comparables, { ...emptyComparable }],
-      };
-    });
-  };
-
-  const removeComparable = (index: number) => {
-    setFormData((prev) => {
-      if (prev.comparables.length <= 1) return prev;
-      const arr = prev.comparables.slice();
-      arr.splice(index, 1);
-      return { ...prev, comparables: arr };
-    });
-  };
-
-  /** ========= Uploads ========= */
-  // Redimensionar en cliente para limitar tamaño (800px, ~q=0.82)
-  async function resizeImageFile(
-    file: File,
-    maxSize = 800,
-    mime: string = "image/jpeg",
-    quality = 0.82
-  ): Promise<File> {
     try {
-      const bitmap = await createImageBitmap(file);
-      const { width, height } = bitmap;
-      const scale = Math.min(1, maxSize / Math.max(width, height));
-      const targetW = Math.round(width * scale);
-      const targetH = Math.round(height * scale);
-      const canvas = document.createElement("canvas");
-      canvas.width = targetW;
-      canvas.height = targetH;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) return file;
-      ctx.drawImage(bitmap, 0, 0, targetW, targetH);
-      const blob: Blob = await new Promise((res) =>
-        canvas.toBlob((b) => res(b || file), mime, quality)
-      );
-      return new File([blob], file.name.replace(/\.(heic|heif|png|webp|jpg|jpeg)$/i, ".jpg"), { type: mime });
-    } catch {
-      // Si falla el resize (navegadores viejos), volvemos al file original.
-      return file;
-    }
-  }
-
-  const readFileAsBase64 = (file: File): Promise<string> =>
-    new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(String(reader.result));
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
-
-  // Helper para distinguir data URLs reales (evita tratar URLs como base64)
-  const isDataUrl = (s?: string) => !!s && s.startsWith("data:image/");
-
-  const handleMainPhotoSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0];
-    if (!f) return;
-    const resized = await resizeImageFile(f, 800, "image/jpeg", 0.82);
-    const b64 = await readFileAsBase64(resized);
-    setFormData((prev) => ({ ...prev, mainPhotoBase64: b64, mainPhotoUrl: '' }));
-    if (mainPhotoInputRef.current) mainPhotoInputRef.current.value = '';
-  };
-
-  const handleComparablePhotoSelect = async (index: number, e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0];
-    if (!f) return;
-    const resized = await resizeImageFile(f, 800, "image/jpeg", 0.82);
-    const b64 = await readFileAsBase64(resized);
-    setFormData((prev) => {
-      const arr = prev.comparables.slice();
-      arr[index] = { ...arr[index], photoBase64: b64 };
-      return { ...prev, comparables: arr };
-    });
-    e.target.value = '';
-  };
-
-  /** ========= Guardar / Cargar Informe (API) ========= */
-  const saveInforme = async () => {
-    try {
-      setIsSubmitting(true);
-      setSaveMsg(null);
-
-      // 1) Clonar y limpiar base64 para no guardar blobs enormes en datos_json
-      const datosLimpios = structuredClone(formData) as ACMFormData;
-      const mainB64 = datosLimpios.mainPhotoBase64; // guardo copia temporal
-      datosLimpios.mainPhotoBase64 = undefined;
-
-      const compsB64 = formData.comparables.map(c => c.photoBase64 || undefined);
-      datosLimpios.comparables = datosLimpios.comparables.map(c => ({ ...c, photoBase64: undefined }));
-
-      // 2) Crear/Actualizar informe (solo datos)
-      const payload = { 
-        id: informeId || undefined, // <<--- si existe, actualiza; si no, crea
-        datos: datosLimpios, 
-        titulo: (formData as any)?.titulo || "Informe VAI" 
-      };
-      const res = await fetch("/api/informes/create", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      if (!res.ok) {
-        const errTxt = await res.text().catch(() => "");
-        throw new Error(`Error al guardar el informe. ${errTxt}`);
-      }
+      const res = await fetch(`/api/informes/get?id=${encodeURIComponent(id)}`);
       const data = await res.json();
-      const id = data?.informe?.id as string | undefined;
-      if (!id) throw new Error("No se recibió ID de informe.");
+      if (!res.ok) throw new Error(data?.error || "No se pudo obtener el informe");
 
-      setInformeId(id);
-
-      // 3) Subir imágenes (si había base64) al bucket y actualizar columnas URL
-      // Principal
-      if (isDataUrl(mainB64)) {
-        const file = dataUrlToFile(mainB64!, "principal.jpg");
-        const fd = new FormData();
-        fd.append("file", file);
-        fd.append("informeId", id);
-        fd.append("slot", "principal");
-        const up = await fetch("/api/informes/upload", { method: "POST", body: fd });
-        const upData = await up.json();
-        if (up.ok && upData?.url) {
-          // Refresco formData en memoria
-          setFormData(prev => ({ ...prev, mainPhotoUrl: upData.url, mainPhotoBase64: undefined }));
-        } else {
-          console.warn("Upload principal falló:", upData?.error || up.statusText);
-        }
-      }
-
-      // Comparables 1..4
-      for (let i = 0; i < Math.min(formData.comparables.length, 4); i++) {
-        const b64 = compsB64[i];
-        if (!isDataUrl(b64)) continue;
-        const slot = `comp${i + 1}` as "comp1" | "comp2" | "comp3" | "comp4";
-        const file = dataUrlToFile(b64!, `${slot}.jpg`);
-        const fd = new FormData();
-        fd.append("file", file);
-        fd.append("informeId", id);
-        fd.append("slot", slot);
-        const up = await fetch("/api/informes/upload", { method: "POST", body: fd });
-        const upData = await up.json();
-        if (up.ok && upData?.url) {
-          setFormData(prev => {
-            const arr = prev.comparables.slice();
-            arr[i] = { ...arr[i], photoUrl: upData.url, photoBase64: undefined };
-            return { ...prev, comparables: arr };
-          });
-        } else {
-          console.warn(`Upload ${slot} falló:`, upData?.error || up.statusText);
-        }
-      }
-
-      // 4) Persistir en datos_json las URLs ya subidas (update)
-      const datosConUrls = structuredClone(formData) as ACMFormData;
-      datosConUrls.mainPhotoBase64 = undefined;
-      datosConUrls.comparables = datosConUrls.comparables.map(c => ({ ...c, photoBase64: undefined }));
-      const upd = await fetch("/api/informes/update", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id, datos: datosConUrls }),
-      });
-      if (!upd.ok) {
-        const t = await upd.text().catch(() => "");
-        console.warn("Update datos_json con URLs falló:", t);
-      }
-
-      setSaveMsg({ type: "success", text: `Informe guardado con éxito. ID: ${id}` });
-    } catch (err: any) {
-      console.error("Guardar Informe", err);
-      setSaveMsg({ type: "error", text: err?.message || "No se pudo guardar el informe" });
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  // === Abrir modal de carga (reemplaza el prompt) ===
-  const loadInforme = () => {
-    setLoadMsg(null);
-    setLoadIdInput("");
-    setLoadOpen(true);
-  };
-
-  // === Confirmar carga desde el modal ===
-  const handleConfirmLoad = async () => {
-    if (!loadIdInput) {
-      setLoadMsg({ type: "error", text: "Por favor, ingresá un ID válido." });
-      return;
-    }
-    try {
-      setLoadMsg(null);
-
-      const res = await fetch(`/api/informes/get?id=${encodeURIComponent(loadIdInput)}`);
-      const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data?.error || "No se pudo obtener el informe");
-      }
-
-      // La API devuelve { ok: true, informe: {...} }
-      const inf = data?.informe ?? data;
+      const inf = data?.informe ?? data; // compat
       const payload = inf?.datos_json;
-      if (!payload) {
-        throw new Error("El informe no contiene datos_json");
-      }
+      if (!payload) throw new Error("El informe no contiene datos_json");
 
-      // URLs guardadas en storage (si existen)
       const principalUrl: string = inf?.imagen_principal_url || "";
       const compUrls: string[] = [
         inf?.comp1_url || "",
@@ -492,12 +156,12 @@ export default function ACMForm() {
         inf?.comp4_url || "",
       ];
 
-      // Ajustar comparables: colocar las URLs en photoUrl (no en base64)
+      // Cargar URLs en photoUrl y dejar photoBase64 vacío (no guardar URL como base64)
       const comparablesCargados = Array.isArray(payload?.comparables)
         ? payload.comparables.map((c: any, idx: number) => ({
             ...c,
             photoUrl: compUrls[idx] || c?.photoUrl || "",
-            photoBase64: "", // no usar URL como base64
+            photoBase64: "",
           }))
         : formData.comparables;
 
@@ -505,20 +169,422 @@ export default function ACMForm() {
         ...prev,
         ...payload,
         mainPhotoUrl: principalUrl || prev.mainPhotoUrl || "",
-        mainPhotoBase64: "", // no guardar URL en base64
+        mainPhotoBase64: "", // no usar URL en base64
         comparables: comparablesCargados,
       }));
-
-      const loadedId = inf?.id || loadIdInput;
-      setInformeId(loadedId);
-
-      setLoadMsg({ type: "success", text: `Informe cargado correctamente (ID: ${loadedId}).` });
-      setLoadOpen(false);
-    } catch (err: any) {
-      console.error("Cargar Informe", err);
-      setLoadMsg({ type: "error", text: `Error al cargar: ${err?.message || "desconocido"}` });
+      setInformeId(inf?.id || id);
+    } catch (e) {
+      console.error("Autoload informe:", e);
     }
   };
+
+  autoLoad();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, []);
+
+/** ========= Handlers ========= */
+const handleFieldChange = (
+  e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
+) => {
+  const { name, value } = e.target;
+  const booleanFields = new Set([
+    'hasPlans',
+    'isRented',
+    'services.luz',
+    'services.agua',
+    'services.gas',
+    'services.cloacas',
+    'services.pavimento',
+  ]);
+  const numberFields = new Set(['landArea', 'builtArea', 'age']);
+
+  if (name.startsWith('services.')) {
+    const key = name.split('.')[1] as keyof Services;
+    setFormData((prev) => ({
+      ...prev,
+      services: { ...prev.services, [key]: value === 'true' },
+    }));
+    return;
+  }
+
+  if (booleanFields.has(name)) {
+    setFormData((prev) => ({ ...prev, [name]: value === 'true' }));
+    return;
+  }
+
+  if (numberFields.has(name)) {
+    const n = Number(value);
+    setFormData((prev) => ({ ...prev, [name]: isNaN(n) ? 0 : n }));
+    return;
+  }
+
+  if (name === 'propertyType')
+    setFormData((p) => ({ ...p, propertyType: value as PropertyType }));
+  else if (name === 'titleType')
+    setFormData((p) => ({ ...p, titleType: value as TitleType }));
+  else if (name === 'condition')
+    setFormData((p) => ({ ...p, condition: value as PropertyCondition }));
+  else if (name === 'locationQuality')
+    setFormData((p) => ({ ...p, locationQuality: value as LocationQuality }));
+  else if (name === 'orientation')
+    setFormData((p) => ({ ...p, orientation: value as Orientation }));
+  else setFormData((prev) => ({ ...prev, [name]: value }));
+};
+
+/** ========= Comparables ========= */
+const updateComparable = <K extends keyof ComparableProperty>(
+  index: number,
+  field: K,
+  rawValue: string | number | null
+) => {
+  setFormData((prev) => {
+    const copy = { ...prev };
+    const arr = [...copy.comparables];
+
+    const numericFields: Array<keyof ComparableProperty> = [
+      "builtArea",
+      "price",
+      "daysPublished",
+      "pricePerM2",
+      "coefficient",
+    ];
+
+    let value: number | string | null = rawValue;
+
+    if (numericFields.includes(field)) {
+      const n =
+        rawValue === null || rawValue === ""
+          ? 0
+          : typeof rawValue === "string"
+          ? parseFloat(rawValue)
+          : Number(rawValue);
+      value = isNaN(n) ? 0 : n;
+    }
+
+    arr[index] = { ...arr[index], [field]: value };
+
+    const b = Number(arr[index].builtArea) || 0;
+    const p = Number(arr[index].price) || 0;
+    arr[index].pricePerM2 = b > 0 ? p / b : 0;
+
+    copy.comparables = arr;
+    return copy;
+  });
+};
+
+const addComparable = () => {
+  setFormData((prev) => {
+    if (prev.comparables.length >= 4) return prev;
+    return {
+      ...prev,
+      comparables: [...prev.comparables, { ...emptyComparable }],
+    };
+  });
+};
+
+const removeComparable = (index: number) => {
+  setFormData((prev) => {
+    if (prev.comparables.length <= 1) return prev;
+    const arr = prev.comparables.slice();
+    arr.splice(index, 1);
+    return { ...prev, comparables: arr };
+  });
+};
+
+/** ========= Uploads ========= */
+// Comprimir a JPEG ≤ 40KB y máx 560px (suficiente para miniaturas del PDF)
+async function compressFileToDataUrl(
+  file: File,
+  opts?: {
+    maxWidth?: number;
+    maxHeight?: number;
+    maxBytes?: number;
+    initialQuality?: number; // 0..1
+    minQuality?: number;     // 0..1
+    step?: number;           // decremento por iteración
+  }
+): Promise<string> {
+  const {
+    maxWidth = 560,
+    maxHeight = 560,
+    maxBytes = 40 * 1024,   // 40 KB
+    initialQuality = 0.7,
+    minQuality = 0.3,
+    step = 0.07,
+  } = opts || {};
+
+  // Cargar imagen
+  const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const i = new Image();
+    i.onload = () => resolve(i);
+    i.onerror = reject;
+    i.src = URL.createObjectURL(file);
+  });
+
+  // Calcular dimensiones destino manteniendo relación de aspecto
+  let { width, height } = img;
+  const ratio = Math.min(maxWidth / width, maxHeight / height, 1);
+  width = Math.max(1, Math.floor(width * ratio));
+  height = Math.max(1, Math.floor(height * ratio));
+
+  // Canvas
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) {
+    // fallback: devolver el dataURL original (no ideal, pero evita romper flujo)
+    return await new Promise<string>((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(String(r.result));
+      r.onerror = reject;
+      r.readAsDataURL(file);
+    });
+  }
+  ctx.drawImage(img, 0, 0, width, height);
+
+  // Iterar calidades hasta quedar ≤ maxBytes
+  let q = initialQuality;
+  let blob: Blob | null = null;
+  while (q >= minQuality) {
+    blob = await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob((b) => resolve(b), "image/jpeg", q)
+    );
+    if (blob && blob.size <= maxBytes) break;
+    q -= step;
+  }
+  if (!blob) {
+    blob = await new Promise<Blob>((resolve) =>
+      canvas.toBlob((b) => resolve(b || new Blob()), "image/jpeg", minQuality)
+    );
+  }
+
+  // A dataURL
+  const dataUrl = await new Promise<string>((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onload = () => resolve(String(fr.result));
+    fr.onerror = reject;
+    fr.readAsDataURL(blob!);
+  });
+
+  // Liberar URL de objeto
+  URL.revokeObjectURL(img.src);
+
+  return dataUrl;
+}
+
+const readFileAsBase64 = (file: File): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+
+// Helper para distinguir data URLs reales (evita tratar URLs como base64)
+const isDataUrl = (s?: string) => !!s && s.startsWith("data:image/");
+
+const handleMainPhotoSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const f = e.target.files?.[0];
+  if (!f) return;
+  // Comprimir a ≤ 40KB
+  const b64 = await compressFileToDataUrl(f, {
+    maxWidth: 560,
+    maxHeight: 560,
+    maxBytes: 40 * 1024,
+    initialQuality: 0.7,
+    minQuality: 0.3,
+    step: 0.07,
+  });
+  setFormData((prev) => ({ ...prev, mainPhotoBase64: b64, mainPhotoUrl: '' }));
+  if (mainPhotoInputRef.current) mainPhotoInputRef.current.value = '';
+};
+
+const handleComparablePhotoSelect = async (index: number, e: React.ChangeEvent<HTMLInputElement>) => {
+  const f = e.target.files?.[0];
+  if (!f) return;
+  // Comprimir a ≤ 40KB
+  const b64 = await compressFileToDataUrl(f, {
+    maxWidth: 560,
+    maxHeight: 560,
+    maxBytes: 40 * 1024,
+    initialQuality: 0.7,
+    minQuality: 0.3,
+    step: 0.07,
+  });
+  setFormData((prev) => {
+    const arr = prev.comparables.slice();
+    arr[index] = { ...arr[index], photoBase64: b64 };
+    return { ...prev, comparables: arr };
+  });
+  e.target.value = '';
+};
+
+/** ========= Guardar / Cargar Informe (API) ========= */
+const saveInforme = async () => {
+  try {
+    setIsSubmitting(true);
+    setSaveMsg(null);
+
+    // 1) Clonar y limpiar base64 para no guardar blobs enormes en datos_json
+    const datosLimpios = structuredClone(formData) as ACMFormData;
+    const mainB64 = datosLimpios.mainPhotoBase64; // guardo copia temporal (YA COMPRIMIDO)
+    datosLimpios.mainPhotoBase64 = undefined;
+
+    const compsB64 = formData.comparables.map(c => c.photoBase64 || undefined);
+    datosLimpios.comparables = datosLimpios.comparables.map(c => ({ ...c, photoBase64: undefined }));
+
+    // 2) Crear/Actualizar informe (solo datos)
+    const payload = { 
+      id: informeId || undefined, // <<--- si existe, actualiza; si no, crea
+      datos: datosLimpios, 
+      titulo: (formData as any)?.titulo || "Informe VAI" 
+    };
+    const res = await fetch("/api/informes/create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const errTxt = await res.text().catch(() => "");
+      throw new Error(`Error al guardar el informe. ${errTxt}`);
+    }
+    const data = await res.json();
+    const id = data?.informe?.id as string | undefined;
+    if (!id) throw new Error("No se recibió ID de informe.");
+
+    setInformeId(id);
+
+    // 3) Subir imágenes (si había base64) al bucket y actualizar columnas URL
+    // Principal (usa base64 YA COMPRIMIDO)
+    if (isDataUrl(mainB64)) {
+      const file = dataUrlToFile(mainB64!, "principal.jpg");
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("informeId", id);
+      fd.append("slot", "principal");
+      const up = await fetch("/api/informes/upload", { method: "POST", body: fd });
+      const upData = await up.json();
+      if (up.ok && upData?.url) {
+        // Refresco formData en memoria
+        setFormData(prev => ({ ...prev, mainPhotoUrl: upData.url, mainPhotoBase64: undefined }));
+      } else {
+        console.warn("Upload principal falló:", upData?.error || up.statusText);
+      }
+    }
+
+    // Comparables 1..4 (base64 YA COMPRIMIDOS)
+    for (let i = 0; i < Math.min(formData.comparables.length, 4); i++) {
+      const b64 = compsB64[i];
+      if (!isDataUrl(b64)) continue;
+      const slot = `comp${i + 1}` as "comp1" | "comp2" | "comp3" | "comp4";
+      const file = dataUrlToFile(b64!, `${slot}.jpg`);
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("informeId", id);
+      fd.append("slot", slot);
+      const up = await fetch("/api/informes/upload", { method: "POST", body: fd });
+      const upData = await up.json();
+      if (up.ok && upData?.url) {
+        setFormData(prev => {
+          const arr = prev.comparables.slice();
+          arr[i] = { ...arr[i], photoUrl: upData.url, photoBase64: undefined };
+          return { ...prev, comparables: arr };
+        });
+      } else {
+        console.warn(`Upload ${slot} falló:`, upData?.error || up.statusText);
+      }
+    }
+
+    // 4) Persistir en datos_json las URLs ya subidas (update)
+    const datosConUrls = structuredClone(formData) as ACMFormData;
+    datosConUrls.mainPhotoBase64 = undefined;
+    datosConUrls.comparables = datosConUrls.comparables.map(c => ({ ...c, photoBase64: undefined }));
+    const upd = await fetch("/api/informes/update", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, datos: datosConUrls }),
+    });
+    if (!upd.ok) {
+      const t = await upd.text().catch(() => "");
+      console.warn("Update datos_json con URLs falló:", t);
+    }
+
+    setSaveMsg({ type: "success", text: `Informe guardado con éxito. ID: ${id}` });
+  } catch (err: any) {
+    console.error("Guardar Informe", err);
+    setSaveMsg({ type: "error", text: err?.message || "No se pudo guardar el informe" });
+  } finally {
+    setIsSubmitting(false);
+  }
+};
+
+// === Abrir modal de carga (reemplaza el prompt) ===
+const loadInforme = () => {
+  setLoadMsg(null);
+  setLoadIdInput("");
+  setLoadOpen(true);
+};
+
+// === Confirmar carga desde el modal ===
+const handleConfirmLoad = async () => {
+  if (!loadIdInput) {
+    setLoadMsg({ type: "error", text: "Por favor, ingresá un ID válido." });
+    return;
+  }
+  try {
+    setLoadMsg(null);
+
+    const res = await fetch(`/api/informes/get?id=${encodeURIComponent(loadIdInput)}`);
+    const data = await res.json();
+
+    if (!res.ok) {
+      throw new Error(data?.error || "No se pudo obtener el informe");
+    }
+
+    // La API devuelve { ok: true, informe: {...} }
+    const inf = data?.informe ?? data;
+    const payload = inf?.datos_json;
+    if (!payload) {
+      throw new Error("El informe no contiene datos_json");
+    }
+
+    // URLs guardadas en storage (si existen)
+    const principalUrl: string = inf?.imagen_principal_url || "";
+    const compUrls: string[] = [
+      inf?.comp1_url || "",
+      inf?.comp2_url || "",
+      inf?.comp3_url || "",
+      inf?.comp4_url || "",
+    ];
+
+    // Ajustar comparables: colocar las URLs en photoUrl (no en base64)
+    const comparablesCargados = Array.isArray(payload?.comparables)
+      ? payload.comparables.map((c: any, idx: number) => ({
+          ...c,
+          photoUrl: compUrls[idx] || c?.photoUrl || "",
+          photoBase64: "", // no usar URL como base64
+        }))
+      : formData.comparables;
+
+    setFormData((prev) => ({
+      ...prev,
+      ...payload,
+      mainPhotoUrl: principalUrl || prev.mainPhotoUrl || "",
+      mainPhotoBase64: "", // no guardar URL en base64
+      comparables: comparablesCargados,
+    }));
+
+    const loadedId = inf?.id || loadIdInput;
+    setInformeId(loadedId);
+
+    setLoadMsg({ type: "success", text: `Informe cargado correctamente (ID: ${loadedId}).` });
+    setLoadOpen(false);
+  } catch (err: any) {
+    console.error("Cargar Informe", err);
+    setLoadMsg({ type: "error", text: `Error al cargar: ${err?.message || "desconocido"}` });
+  }
+};
 
   /** ========= Cálculos ========= */
   const adjustedPricePerM2List = useMemo(

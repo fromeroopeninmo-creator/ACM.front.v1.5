@@ -1,15 +1,28 @@
+// frontend/app/api/informes/update/route.ts
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+// Opcional: evitá IAD1 si hay incidentes
+export const preferredRegion = ["gru1", "sfo1"];
 
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { supabaseServer } from "#lib/supabaseServer";
+
+type Role = "empresa" | "asesor" | "soporte" | "super_admin" | "super_admin_root";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE);
+const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE, {
+  auth: { persistSession: false, autoRefreshToken: false },
+});
 
-// Limpia posibles restos de base64 que vengan del cliente (por compatibilidad)
+// Helpers
+function isDataUrlImage(s?: string) {
+  return !!s && /^data:image\/(png|jpe?g|webp|heic|heif);base64,/.test(s);
+}
 function sanitizeDatos(datos: any) {
   const clone = JSON.parse(JSON.stringify(datos || {}));
+  // Nunca guardes base64 en la BD
   if (clone?.mainPhotoBase64) clone.mainPhotoBase64 = undefined;
   if (Array.isArray(clone?.comparables)) {
     clone.comparables = clone.comparables.map((c: any) => ({
@@ -22,56 +35,93 @@ function sanitizeDatos(datos: any) {
 
 export async function POST(req: Request) {
   try {
+    // 0) Auth del usuario (desde cookies) para autorizar
+    const server = supabaseServer();
+    const {
+      data: { user },
+      error: userErr,
+    } = await server.auth.getUser();
+
+    if (userErr) {
+      return NextResponse.json({ error: `Auth error: ${userErr.message}` }, { status: 401 });
+    }
+    if (!user) {
+      return NextResponse.json({ error: "No autenticado." }, { status: 401 });
+    }
+
+    // 1) Body
     const body = await req.json().catch(() => null as any);
     const { id, datos, titulo } = body || {};
     if (!id) return NextResponse.json({ error: "Falta 'id'." }, { status: 400 });
 
-    // obtener informe actual para empresa_id (y existencia)
+    // 2) Traer informe (ADMIN, sin RLS) y validar ownership
     const { data: existing, error: getErr } = await supabaseAdmin
       .from("informes")
-      .select("id, empresa_id, asesor_id, autor_id, imagen_principal_url, comp1_url, comp2_url, comp3_url, comp4_url")
+      .select("id, empresa_id, autor_id")
       .eq("id", id)
       .maybeSingle();
 
-    if (getErr) {
-      return NextResponse.json({ error: getErr.message }, { status: 400 });
-    }
-    if (!existing) {
-      return NextResponse.json({ error: "Informe no encontrado." }, { status: 404 });
+    if (getErr) return NextResponse.json({ error: getErr.message }, { status: 400 });
+    if (!existing) return NextResponse.json({ error: "Informe no encontrado." }, { status: 404 });
+
+    // 3) Resolver rol y empresa del usuario (SERVER, respeta RLS)
+    let role: Role =
+      ((user.user_metadata as any)?.role as Role) ||
+      "empresa";
+
+    if (!["empresa", "asesor", "soporte", "super_admin", "super_admin_root"].includes(role)) {
+      role = "empresa";
     }
 
-    // Ya no procesamos base64 ni usamos sharp. Solo actualizamos datos + URLs si vienen provistas.
+    let empresaId: string | null = null;
+    if (role === "empresa") {
+      const { data: emp } = await server
+        .from("empresas")
+        .select("id")
+        .eq("user_id", user.id)
+        .maybeSingle();
+      empresaId = emp?.id ?? null;
+    } else if (role === "asesor") {
+      const { data: prof } = await server
+        .from("profiles")
+        .select("empresa_id")
+        .eq("id", user.id)
+        .maybeSingle();
+      empresaId = prof?.empresa_id ?? null;
+    }
+
+    // 4) Autorización
+    if (role === "empresa") {
+      if (!empresaId || existing.empresa_id !== empresaId) {
+        return NextResponse.json({ error: "Acceso denegado." }, { status: 403 });
+      }
+    } else if (role === "asesor") {
+      if (existing.autor_id !== user.id) {
+        return NextResponse.json({ error: "Acceso denegado." }, { status: 403 });
+      }
+    }
+    // soporte / super_admin / super_admin_root → OK
+
+    // 5) Limpiar datos_json (nada de base64) y respetar URLs si vienen
     const datosLimpios = sanitizeDatos(datos);
 
-    // Preparar el payload de update (no sobreescribir URLs si no llegan)
-    const patch: Record<string, any> = {
-      titulo: titulo ?? "Informe VAI",
-      datos_json: datosLimpios,
-      updated_at: new Date().toISOString(),
-    };
+    // Nota: NO tocamos columnas de imágenes aquí.
+    // /api/informes/upload ya actualiza imagen_principal_url y comp1..4_url.
+    // Acá solo persistimos el JSON (incluyendo las mainPhotoUrl / photoUrl que ya tenés).
 
-    // Si el cliente envía URLs (por haber subido por /upload), las reflejamos en columnas:
-    if (typeof datos?.mainPhotoUrl === "string" && datos.mainPhotoUrl) {
-      patch.imagen_principal_url = datos.mainPhotoUrl;
-    }
-
-    if (Array.isArray(datos?.comparables)) {
-      const urls = datos.comparables.map((c: any) => c?.photoUrl).filter(Boolean);
-      if (typeof urls[0] === "string") patch.comp1_url = urls[0];
-      if (typeof urls[1] === "string") patch.comp2_url = urls[1];
-      if (typeof urls[2] === "string") patch.comp3_url = urls[2];
-      if (typeof urls[3] === "string") patch.comp4_url = urls[3];
-    }
-
-    const { data: updated, error: upErr } = await supabaseAdmin
+    const { data: updated, error: updErr } = await supabaseAdmin
       .from("informes")
-      .update(patch)
+      .update({
+        titulo: titulo ?? "Informe VAI",
+        datos_json: datosLimpios,
+        updated_at: new Date().toISOString(),
+      })
       .eq("id", id)
       .select()
       .maybeSingle();
 
-    if (upErr) {
-      return NextResponse.json({ error: upErr.message }, { status: 400 });
+    if (updErr) {
+      return NextResponse.json({ error: updErr.message }, { status: 400 });
     }
 
     return NextResponse.json({ ok: true, informe: updated }, { status: 200 });

@@ -9,9 +9,7 @@ const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const supabase = createClient(SUPABASE_URL, SERVICE_ROLE);
 
-/** ───────────────── helpers ───────────────── **/
-
-// Acepta empresas.id o empresas.user_id y devuelve empresas.id real
+/** Acepta empresas.id o empresas.user_id y devuelve empresas.id real */
 async function resolverEmpresaId(empresaIdOUserId: string): Promise<string | null> {
   // 1) probar como empresas.id
   const { data: empPorId } = await supabase
@@ -35,8 +33,6 @@ function addDaysISO(dateISO: string, days: number) {
   d.setUTCDate(d.getUTCDate() + days);
   return d.toISOString().slice(0, 10); // YYYY-MM-DD
 }
-
-/** ───────────────── endpoint ───────────────── **/
 
 export async function POST(request: Request) {
   try {
@@ -88,8 +84,7 @@ export async function POST(request: Request) {
       override = ov;
     }
 
-    // Si el plan actual es el mismo y (no es personalizado) => no hacemos nada.
-    // Si es personalizado, solo “no hacemos nada” si el override también coincide.
+    // Plan actual (para decidir si ya está y si coincide el override)
     const { data: planActual } = await supabase
       .from("empresas_planes")
       .select("plan_id, activo, max_asesores_override")
@@ -97,10 +92,10 @@ export async function POST(request: Request) {
       .eq("activo", true)
       .maybeSingle();
 
-    if (planActual?.plan_id === plan.id) {
+    if (planActual && planActual.plan_id === plan.id) {
       const mismoOverride =
         nombrePlan !== "personalizado" ||
-        Number(planActual.max_asesores_override ?? null) === override;
+        Number((planActual as any).max_asesores_override ?? null) === override;
 
       if (mismoOverride) {
         return NextResponse.json({
@@ -111,7 +106,7 @@ export async function POST(request: Request) {
               : `✅ Ya estás en el plan "${plan.nombre}".`,
         });
       }
-      // Si el plan es el mismo pero cambió el override (personalizado), seguimos para actualizar.
+      // si es el mismo plan pero cambió el override (personalizado), seguimos para actualizar
     }
 
     // Fechas

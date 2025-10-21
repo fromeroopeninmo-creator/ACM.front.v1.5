@@ -144,7 +144,7 @@ export default function EmpresaInformesPage() {
         if (desde && dt < desde) return false;
         if (hasta && dt > hasta) return false;
       }
-      // búsqueda rápida en campos clave
+      // búsqueda rápida
       if (qnorm) {
         const hay =
           (getCreadoPor(inf) || "").toLowerCase().includes(qnorm) ||
@@ -309,7 +309,7 @@ export default function EmpresaInformesPage() {
                       <td className="p-3 text-right">
                         <div className="flex items-center gap-2 justify-end">
                           <button
-                            onClick={() => router.push(`/vai/acmforms?id=${inf.id}`))}
+                            onClick={() => router.push(`/vai/acmforms?id=${inf.id}`)}
                             className="px-3 py-1 text-sm rounded bg-gray-100 text-gray-800 hover:bg-gray-200"
                           >
                             Ver/Editar

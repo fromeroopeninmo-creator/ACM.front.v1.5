@@ -1,7 +1,7 @@
 // frontend/app/api/informes/upload/route.ts
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-// Opcional: evitar IAD1 si vuelve a fallar la región
+// Opcional: evitar la región IAD1 si vuelve a fallar
 export const preferredRegion = ["gru1","sfo1"];
 
 import { NextResponse } from "next/server";
@@ -12,14 +12,14 @@ type Role = "empresa" | "asesor" | "soporte" | "super_admin" | "super_admin_root
 
 const BUCKET = "informes";
 
-// === Admin client (SERVICE_ROLE) para subir a Storage/actualizar DB sin RLS) ===
+// === Admin client (bypassa RLS para Storage y DB) ===
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE, {
   auth: { persistSession: false, autoRefreshToken: false },
 });
 
-/** Ping de diagnóstico (podés quitarlo luego) */
+/** Ping rápido (podés quitarlo luego) */
 export async function GET() {
   return new Response(JSON.stringify({ ok: true, route: "upload" }), {
     status: 200,
@@ -27,7 +27,7 @@ export async function GET() {
   });
 }
 
-// Mantiene tu mapeo 1:1 de columnas según slot
+// Mapeo 1:1 de columnas según slot
 function buildColumnFromSlot(slot: string): keyof {
   imagen_principal_url: string;
   comp1_url: string;
@@ -57,36 +57,28 @@ function isAllowedImage(mime: string | null) {
   return !!mime && mime.startsWith("image/");
 }
 
-// Tamaño máximo (post-resize cliente). Ajustá si querés.
-const MAX_BYTES = 12 * 1024 * 1024; // 12MB por las dudas
+const MAX_BYTES = 12 * 1024 * 1024; // 12MB
 
 export async function POST(req: Request) {
   try {
-    // === 1) Usuario autenticado (JWT desde cookies) con el SERVER client (respeta RLS) ===
+    // 1) Usuario autenticado (cookies) — solo para saber quién es y su rol
     const server = supabaseServer();
     const {
       data: { user },
       error: userErr,
     } = await server.auth.getUser();
 
-    if (userErr) {
-      return NextResponse.json({ error: `Auth error: ${userErr.message}` }, { status: 401 });
-    }
-    if (!user) {
-      return NextResponse.json({ error: "No autenticado." }, { status: 401 });
-    }
+    if (userErr) return NextResponse.json({ error: `Auth error: ${userErr.message}` }, { status: 401 });
+    if (!user) return NextResponse.json({ error: "No autenticado." }, { status: 401 });
 
-    // === 2) Datos del form-data ===
+    // 2) Form-data
     const form = await req.formData();
     const file = form.get("file") as File | null;
     const informeId = (form.get("informeId") as string | null)?.trim();
     const slot = (form.get("slot") as string | null)?.trim();
 
     if (!file || !informeId || !slot) {
-      return NextResponse.json(
-        { error: "Faltan parámetros: file, informeId, slot." },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Faltan parámetros: file, informeId, slot." }, { status: 400 });
     }
 
     const mime = file.type || null;
@@ -97,12 +89,11 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "La imagen excede el tamaño máximo permitido." }, { status: 413 });
     }
 
-    // === 3) Rol del usuario (para autorización lógica) ===
+    // 3) Rol del usuario (para autorización lógica posterior)
     const role = ((user.user_metadata as any)?.role || "empresa") as Role;
 
-    // === 4) Resolver empresa_id (con SERVER client) ===
+    // 4) Obtener empresa del usuario (con SERVER client)
     let empresaId: string | null = null;
-
     if (role === "empresa") {
       const { data: emp, error: empErr } = await server
         .from("empresas")
@@ -121,42 +112,38 @@ export async function POST(req: Request) {
       if (profErr) return NextResponse.json({ error: profErr.message }, { status: 400 });
       if (!prof?.empresa_id) return NextResponse.json({ error: "Asesor sin empresa asociada." }, { status: 400 });
       empresaId = prof.empresa_id;
-    } else if (role === "soporte" || role === "super_admin" || role === "super_admin_root") {
-      const { data: infAdmin, error: infAdminErr } = await server
-        .from("informes")
-        .select("empresa_id")
-        .eq("id", informeId)
-        .maybeSingle();
-      if (infAdminErr || !infAdmin?.empresa_id) {
-        return NextResponse.json(
-          { error: infAdminErr?.message || "Informe inexistente o sin empresa asociada." },
-          { status: 404 }
-        );
-      }
-      empresaId = infAdmin.empresa_id;
-    } else {
-      return NextResponse.json({ error: "Rol no soportado para upload." }, { status: 403 });
     }
 
-    // === 5) Verificar ownership del informe (con SERVER client) ===
-    const { data: inf, error: infErr } = await server
+    // 5) Traer informe con ADMIN (bypass RLS) y AUTORIZAR en código
+    const { data: inf, error: infErr } = await supabaseAdmin
       .from("informes")
       .select("id, empresa_id, autor_id")
       .eq("id", informeId)
       .maybeSingle();
-    if (infErr || !inf) return NextResponse.json({ error: "Informe inexistente." }, { status: 404 });
 
-    if (role === "empresa" || role === "asesor") {
-      if (inf.empresa_id !== empresaId && inf.autor_id !== user.id) {
+    if (infErr) return NextResponse.json({ error: infErr.message }, { status: 400 });
+    if (!inf) return NextResponse.json({ error: "Informe inexistente." }, { status: 404 });
+
+    // Reglas:
+    // - empresa: debe coincidir empresa_id
+    // - asesor: debe ser autor_id
+    // - soporte/super_admin/root: OK
+    if (role === "empresa") {
+      if (!empresaId || inf.empresa_id !== empresaId) {
+        return NextResponse.json({ error: "No autorizado sobre este informe." }, { status: 403 });
+      }
+    } else if (role === "asesor") {
+      if (inf.autor_id !== user.id) {
         return NextResponse.json({ error: "No autorizado sobre este informe." }, { status: 403 });
       }
     }
+    // soporte/super_admin/super_admin_root → OK
 
-    // === 6) Subir archivo con ADMIN client (bypassa RLS de Storage) ===
+    // 6) Subir archivo con ADMIN (sin RLS)
     const arrayBuf = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuf);
     const ext = extFromMime(mime);
-    const storagePath = `${empresaId}/${informeId}/${slot}.${ext}`;
+    const storagePath = `${inf.empresa_id}/${informeId}/${slot}.${ext}`;
 
     const { error: upErr } = await supabaseAdmin.storage
       .from(BUCKET)
@@ -165,11 +152,12 @@ export async function POST(req: Request) {
         upsert: true,
         cacheControl: "0",
       });
+
     if (upErr) {
       return NextResponse.json({ error: `Error al subir a storage: ${upErr.message}` }, { status: 400 });
     }
 
-    // === 7) URL pública o firmada (ADMIN client) ===
+    // 7) URL pública / firmada
     let publicUrl: string | null = null;
     const { data: pub } = supabaseAdmin.storage.from(BUCKET).getPublicUrl(storagePath);
     publicUrl = pub?.publicUrl || null;
@@ -186,17 +174,18 @@ export async function POST(req: Request) {
       publicUrl = signed.signedUrl;
     }
 
-    // === 8) Actualizar columna correspondiente en informes (ADMIN, sin RLS) ===
+    // 8) Actualizar columna correspondiente en informes (ADMIN)
     const column = buildColumnFromSlot(slot);
     const { error: updErr } = await supabaseAdmin
       .from("informes")
       .update({ [column]: publicUrl })
       .eq("id", informeId);
+
     if (updErr) {
       return NextResponse.json({ error: `Error al actualizar informe: ${updErr.message}` }, { status: 400 });
     }
 
-    // === 9) Respuesta con cache busting ===
+    // 9) Responder con cache busting
     const busted = `${publicUrl}?v=${Date.now()}`;
     return NextResponse.json({ ok: true, url: busted });
   } catch (e: any) {

@@ -313,12 +313,11 @@ export default function EmpresaPlanesPage() {
 
                       {/* Bullets visuales (incluye “Hasta X asesores”) */}
                       <ul className="mt-3 text-sm text-gray-700 space-y-1">
-                          <li><strong>• Hasta {plan.max_asesores} asesores</strong></li>
-                          <li>• Sin límites de informes</li>
-                          <li>• Guarda / Carga / Edita tus informes</li>
-                          <li>• Informe descargable en PDF</li>
-                        </ul>
-
+                        <li><strong>• Hasta {plan.max_asesores} asesores</strong></li>
+                        <li>• Sin límites de informes</li>
+                        <li>• Guarda / Carga / Edita tus informes</li>
+                        <li>• Informe descargable en PDF</li>
+                      </ul>
                     </>
                   ) : (
                     <>
@@ -366,13 +365,12 @@ export default function EmpresaPlanesPage() {
                         </div>
 
                         {/* Bullets */}
-                        <<ul className="mt-3 text-sm text-gray-700 space-y-1">
-                        <li><strong>• Hasta {personalCount} asesores</strong></li>
-                        <li>• Sin límites de informes</li>
-                        <li>• Guarda / Carga / Edita tus informes</li>
-                        <li>• Informe descargable en PDF</li>
-                      </ul>
-
+                        <ul className="mt-3 text-sm text-gray-700 space-y-1">
+                          <li><strong>• Hasta {personalCount} asesores</strong></li>
+                          <li>• Sin límites de informes</li>
+                          <li>• Guarda / Carga / Edita tus informes</li>
+                          <li>• Informe descargable en PDF</li>
+                        </ul>
                       </div>
                     </>
                   )}

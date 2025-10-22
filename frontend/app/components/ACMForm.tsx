@@ -251,7 +251,31 @@ const updateComparable = <K extends keyof ComparableProperty>(
 
     let value: number | string | null = rawValue;
 
-    if (numericFields.includes(field)) {
+    // límites para el coeficiente
+    const COEF_MIN = 0.5;
+    const COEF_MAX = 1.5;
+
+    if (field === "coefficient") {
+      // parseo seguro
+      let n =
+        rawValue === null || rawValue === ""
+          ? NaN
+          : typeof rawValue === "string"
+          ? parseFloat(rawValue)
+          : Number(rawValue);
+
+      // si no es número, default 1.0
+      if (!isFinite(n)) n = 1.0;
+
+      // redondeo a 2 decimales
+      n = Math.round(n * 100) / 100;
+
+      // clamp entre 0.5 y 1.5 (tolerando pequeños errores de coma flotante)
+      if (n < COEF_MIN - 1e-9) n = COEF_MIN;
+      if (n > COEF_MAX + 1e-9) n = COEF_MAX;
+
+      value = n;
+    } else if (numericFields.includes(field)) {
       const n =
         rawValue === null || rawValue === ""
           ? 0
@@ -261,8 +285,10 @@ const updateComparable = <K extends keyof ComparableProperty>(
       value = isNaN(n) ? 0 : n;
     }
 
-    arr[index] = { ...arr[index], [field]: value };
+    // aplicar el cambio
+    arr[index] = { ...arr[index], [field]: value as any };
 
+    // recalcular pricePerM2 en base a builtArea/price (independiente del coeficiente)
     const b = Number(arr[index].builtArea) || 0;
     const p = Number(arr[index].price) || 0;
     arr[index].pricePerM2 = b > 0 ? p / b : 0;
@@ -290,6 +316,7 @@ const removeComparable = (index: number) => {
     return { ...prev, comparables: arr };
   });
 };
+
 
 /** ========= Uploads ========= */
 // Comprimir a JPEG ≤ 40KB y máx 560px (suficiente para miniaturas del PDF)
@@ -428,17 +455,20 @@ const saveInforme = async () => {
 
     // 1) Clonar y limpiar base64 para no guardar blobs enormes en datos_json
     const datosLimpios = structuredClone(formData) as ACMFormData;
-    const mainB64 = datosLimpios.mainPhotoBase64; // guardo copia temporal (YA COMPRIMIDO)
+    const mainB64 = datosLimpios.mainPhotoBase64; // (YA COMPRIMIDO)
     datosLimpios.mainPhotoBase64 = undefined;
 
-    const compsB64 = formData.comparables.map(c => c.photoBase64 || undefined);
-    datosLimpios.comparables = datosLimpios.comparables.map(c => ({ ...c, photoBase64: undefined }));
+    const compsB64 = formData.comparables.map((c) => c.photoBase64 || undefined);
+    datosLimpios.comparables = datosLimpios.comparables.map((c) => ({
+      ...c,
+      photoBase64: undefined,
+    }));
 
     // 2) Crear/Actualizar informe (solo datos)
-    const payload = { 
+    const payload = {
       id: informeId || undefined, // <<--- si existe, actualiza; si no, crea
-      datos: datosLimpios, 
-      titulo: (formData as any)?.titulo || "Informe VAI" 
+      datos: datosLimpios,
+      titulo: (formData as any)?.titulo || "Informe VAI",
     };
     const res = await fetch("/api/informes/create", {
       method: "POST",
@@ -455,7 +485,12 @@ const saveInforme = async () => {
 
     setInformeId(id);
 
-    // 3) Subir imágenes (si había base64) al bucket y actualizar columnas URL
+    // 3) Subir imágenes (si había base64) y recolectar URLs NUEVAS en variables locales
+    const newUrls = {
+      principal: "",
+      comps: ["", "", "", ""] as string[],
+    };
+
     // Principal (usa base64 YA COMPRIMIDO)
     if (isDataUrl(mainB64)) {
       const file = dataUrlToFile(mainB64!, "principal.jpg");
@@ -466,8 +501,7 @@ const saveInforme = async () => {
       const up = await fetch("/api/informes/upload", { method: "POST", body: fd });
       const upData = await up.json();
       if (up.ok && upData?.url) {
-        // Refresco formData en memoria
-        setFormData(prev => ({ ...prev, mainPhotoUrl: upData.url, mainPhotoBase64: undefined }));
+        newUrls.principal = String(upData.url);
       } else {
         console.warn("Upload principal falló:", upData?.error || up.statusText);
       }
@@ -486,20 +520,30 @@ const saveInforme = async () => {
       const up = await fetch("/api/informes/upload", { method: "POST", body: fd });
       const upData = await up.json();
       if (up.ok && upData?.url) {
-        setFormData(prev => {
-          const arr = prev.comparables.slice();
-          arr[i] = { ...arr[i], photoUrl: upData.url, photoBase64: undefined };
-          return { ...prev, comparables: arr };
-        });
+        newUrls.comps[i] = String(upData.url);
       } else {
         console.warn(`Upload ${slot} falló:`, upData?.error || up.statusText);
       }
     }
 
-    // 4) Persistir en datos_json las URLs ya subidas (update)
-    const datosConUrls = structuredClone(formData) as ACMFormData;
-    datosConUrls.mainPhotoBase64 = undefined;
-    datosConUrls.comparables = datosConUrls.comparables.map(c => ({ ...c, photoBase64: undefined }));
+    // 4) Persistir en datos_json las URLs ya subidas (sin depender de setState)
+    const datosConUrls: ACMFormData = (() => {
+      const copy = structuredClone(datosLimpios) as ACMFormData;
+      // principal
+      copy.mainPhotoUrl =
+        newUrls.principal || formData.mainPhotoUrl || copy.mainPhotoUrl || "";
+      copy.mainPhotoBase64 = undefined;
+
+      // comparables
+      copy.comparables = copy.comparables.map((c, idx) => ({
+        ...c,
+        photoUrl: newUrls.comps[idx] || formData.comparables[idx]?.photoUrl || c.photoUrl || "",
+        photoBase64: undefined as any,
+      }));
+
+      return copy;
+    })();
+
     const upd = await fetch("/api/informes/update", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -510,6 +554,19 @@ const saveInforme = async () => {
       console.warn("Update datos_json con URLs falló:", t);
     }
 
+    // Opcional: refrescar el estado visual con las URLs finales
+    setFormData((prev) => {
+      const withUrls = structuredClone(prev);
+      if (datosConUrls.mainPhotoUrl) withUrls.mainPhotoUrl = datosConUrls.mainPhotoUrl;
+      withUrls.mainPhotoBase64 = "";
+      withUrls.comparables = withUrls.comparables.map((c, i) => ({
+        ...c,
+        photoUrl: datosConUrls.comparables[i]?.photoUrl || c.photoUrl || "",
+        photoBase64: "",
+      }));
+      return withUrls;
+    });
+
     setSaveMsg({ type: "success", text: `Informe guardado con éxito. ID: ${id}` });
   } catch (err: any) {
     console.error("Guardar Informe", err);
@@ -518,6 +575,7 @@ const saveInforme = async () => {
     setIsSubmitting(false);
   }
 };
+
 
 // === Abrir modal de carga (reemplaza el prompt) ===
 const loadInforme = () => {
@@ -587,368 +645,364 @@ const handleConfirmLoad = async () => {
 };
 
   /** ========= Cálculos ========= */
-  const adjustedPricePerM2List = useMemo(
-    () =>
-      formData.comparables
-        .filter((c) => {
-          const built = parseFloat(c.builtArea as string) || 0;
-          const price = parseFloat(c.price as string) || 0;
-          return built > 0 && price > 0;
-        })
-        .map((c) => {
-          const built = parseFloat(c.builtArea as string) || 0;
-          const price = parseFloat(c.price as string) || 0;
-          const coef = parseFloat(c.coefficient as string) || 1;
-          const base = (c.pricePerM2 as number) || (built > 0 ? price / built : 0);
-          return (Number(base) || 0) * (Number(coef) || 1);
-        }),
-    [formData.comparables]
-  );
+const adjustedPricePerM2List = useMemo(
+  () =>
+    formData.comparables
+      .filter((c) => {
+        const built = Number(c.builtArea) || 0;
+        const price = Number(c.price) || 0;
+        return built > 0 && price > 0;
+      })
+      .map((c) => {
+        const built = Number(c.builtArea) || 0;
+        const price = Number(c.price) || 0;
+        const coef = typeof c.coefficient === "number" ? c.coefficient : parseFloat(String(c.coefficient)) || 1;
+        const base = (Number(c.pricePerM2) || (built > 0 ? price / built : 0));
+        return (Number(base) || 0) * (Number(coef) || 1);
+      }),
+  [formData.comparables]
+);
 
-  const averageAdjustedPricePerM2 = useMemo(() => {
-    if (adjustedPricePerM2List.length === 0) return 0;
-    return adjustedPricePerM2List.reduce((a, b) => a + b, 0) / adjustedPricePerM2List.length;
-  }, [adjustedPricePerM2List]);
+const averageAdjustedPricePerM2 = useMemo(() => {
+  if (adjustedPricePerM2List.length === 0) return 0;
+  return adjustedPricePerM2List.reduce((a, b) => a + b, 0) / adjustedPricePerM2List.length;
+}, [adjustedPricePerM2List]);
 
-  const suggestedPrice = useMemo(() => {
-    const built = parseFloat(formData.builtArea as string) || 0;
-    return Math.round(averageAdjustedPricePerM2 * built);
-  }, [averageAdjustedPricePerM2, formData.builtArea]);
+const suggestedPrice = useMemo(() => {
+  const built = Number(formData.builtArea) || 0;
+  return Math.round(averageAdjustedPricePerM2 * built);
+}, [averageAdjustedPricePerM2, formData.builtArea]);
 
-  /** ========= PDF ========= */
-  const handleDownloadPDF = async () => {
-    const { jsPDF } = await import("jspdf");
-
-    const doc = new jsPDF("p", "pt", "a4");
-    const pageW = doc.internal.pageSize.getWidth();
-    const pageH = doc.internal.pageSize.getHeight();
-    const margin = 40;
-    let y = margin;
-
-    // Datos (desde AuthContext / Theme)
-    const matriculado = user?.matriculado_nombre || "—";
-    const cpi = user?.cpi || "—";
-    const inmobiliaria = themeCompanyName || user?.inmobiliaria || "—";
-    const asesorNombre =
-      user?.nombre && user?.apellido ? `${user.nombre} ${user.apellido}` : "—";
-
-    // Logo desde Theme si existe
-    const themeLogo = themeLogoUrl || null;
-
-    // Color primario
-    const hexToRgb = (hex: string) => {
-      const m = hex.replace("#", "");
-      const int = parseInt(
-        m.length === 3 ? m.split("").map((c) => c + c).join("") : m,
-        16
-      );
-      return { r: (int >> 16) & 255, g: (int >> 8) & 255, b: int & 255 };
-    };
-    const pc = hexToRgb(effectivePrimaryColor);
-
-    // === Título centrado ===
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(16);
-    doc.setTextColor(pc.r, pc.g, pc.b);
-    doc.text("VAI - Valuador de Activos Inmobiliarios", pageW / 2, y, {
-      align: "center",
+/** ========= Helpers PDF ========= */
+const fetchToDataURL = async (url?: string | null): Promise<string | null> => {
+  try {
+    if (!url) return null;
+    const r = await fetch(url);
+    if (!r.ok) return null;
+    const b = await r.blob();
+    return await new Promise<string>((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.readAsDataURL(b);
     });
-    doc.setTextColor(0, 0, 0);
-    y += 30;
+  } catch {
+    return null;
+  }
+};
 
-    // === Encabezado ===
-    const colLeftX = margin;
-    const colRightX = pageW - margin - 200;
+/** ========= PDF ========= */
+const handleDownloadPDF = async () => {
+  const { jsPDF } = await import("jspdf");
 
-    doc.setFontSize(11);
-    doc.setFont("helvetica", "normal");
+  const doc = new jsPDF("p", "pt", "a4");
+  const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
+  const margin = 40;
+  let y = margin;
 
-    // Columna izquierda
-    doc.text(`Inmobiliaria: ${inmobiliaria}`, colLeftX, y);
-    // “Asesor” solo si corresponde (si el rol es asesor)
-    const isAsesor = (user?.role || "").toLowerCase() === "asesor";
-    if (isAsesor) {
-      doc.text(`Asesor: ${asesorNombre}`, colLeftX, y + 15);
-    } else {
-      doc.text(`Asesor: —`, colLeftX, y + 15);
-    }
+  // Datos (desde AuthContext / Theme)
+  const matriculado = user?.matriculado_nombre || "—";
+  const cpi = user?.cpi || "—";
+  const inmobiliaria = themeCompanyName || user?.inmobiliaria || "—";
+  const asesorNombre =
+    user?.nombre && user?.apellido ? `${user.nombre} ${user.apellido}` : "—";
 
-    // Columna derecha
-    doc.text(`Matriculado: ${matriculado}`, colRightX, y);
-    doc.text(`CPI: ${cpi}`, colRightX, y + 15);
-    // Fecha (derecha debajo de CPI)
-    doc.text(
-      `Fecha: ${new Date(formData.date).toLocaleDateString("es-AR")}`,
-      colRightX,
-      y + 30
-    );
+  // Logo desde Theme si existe
+  const themeLogo = themeLogoUrl || null;
 
-    // Logo centrado (si existe)
-    if (themeLogo) {
-      try {
-        const img = await fetch(themeLogo);
-        const blob = await img.blob();
-        const reader = new FileReader();
-        const base64Promise = new Promise<string>((resolve) => {
-          reader.onload = () => resolve(reader.result as string);
-        });
-        reader.readAsDataURL(blob);
-        const base64Img = await base64Promise;
+  // Color primario
+  const hexToRgb = (hex: string) => {
+    const m = hex.replace("#", "");
+    const int = parseInt(m.length === 3 ? m.split("").map((c) => c + c).join("") : m, 16);
+    return { r: (int >> 16) & 255, g: (int >> 8) & 255, b: int & 255 };
+  };
+  const pc = hexToRgb(effectivePrimaryColor);
 
+  // === Título centrado ===
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(16);
+  doc.setTextColor(pc.r, pc.g, pc.b);
+  doc.text("VAI - Valuador de Activos Inmobiliarios", pageW / 2, y, { align: "center" });
+  doc.setTextColor(0, 0, 0);
+  y += 30;
+
+  // === Encabezado ===
+  const colLeftX = margin;
+  const colRightX = pageW - margin - 200;
+
+  doc.setFontSize(11);
+  doc.setFont("helvetica", "normal");
+
+  // Columna izquierda
+  doc.text(`Inmobiliaria: ${inmobiliaria}`, colLeftX, y);
+  const isAsesor = (user?.role || "").toLowerCase() === "asesor";
+  doc.text(`Asesor: ${isAsesor ? asesorNombre : "—"}`, colLeftX, y + 15);
+
+  // Columna derecha
+  doc.text(`Matriculado: ${matriculado}`, colRightX, y);
+  doc.text(`CPI: ${cpi}`, colRightX, y + 15);
+  doc.text(`Fecha: ${new Date(formData.date).toLocaleDateString("es-AR")}`, colRightX, y + 30);
+
+  // Logo centrado (si existe)
+  if (themeLogo) {
+    try {
+      const base64Img = await fetchToDataURL(themeLogo);
+      if (base64Img) {
         const logoW = 70;
         const logoH = 70;
         const centerX = pageW / 2 - logoW / 2;
         doc.addImage(base64Img, "PNG", centerX, y - 10, logoW, logoH, undefined, "FAST");
-      } catch (err) {
-        console.warn("⚠️ No se pudo cargar el logo del tema en el PDF", err);
       }
+    } catch (err) {
+      console.warn("⚠️ No se pudo cargar el logo del tema en el PDF", err);
+    }
+  }
+
+  y += 60;
+
+  // === Línea separadora ===
+  doc.setDrawColor(pc.r, pc.g, pc.b);
+  doc.setLineWidth(0.8);
+  doc.line(margin, y, pageW - margin, y);
+  y += 20;
+
+  // === Datos de la propiedad ===
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(13);
+  doc.setTextColor(pc.r, pc.g, pc.b);
+  doc.text("Datos de la Propiedad", pageW / 2, y, { align: "center" });
+  doc.setTextColor(0, 0, 0);
+  y += 20;
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+  const lh = 15;
+
+  const datosIzq = [
+    `Cliente: ${formData.clientName || "-"}`,
+    `Teléfono: ${formData.phone || "-"}`,
+    `Email: ${formData.email || "-"}`,
+    `Dirección: ${formData.address || "-"}`,
+    `Barrio: ${formData.neighborhood || "-"}`,
+    `Localidad: ${formData.locality || "-"}`,
+    `Tipología: ${formData.propertyType}`,
+    `m² Terreno: ${numero(Number(formData.landArea) || 0)}`,
+    `m² Cubiertos: ${numero(Number(formData.builtArea) || 0)}`,
+    `Planos: ${formData.hasPlans ? "Sí" : "No"}`,
+    `Título: ${formData.titleType}`,
+  ];
+
+  let yDatos = y;
+  datosIzq.forEach((line) => {
+    doc.text(line, margin, yDatos);
+    yDatos += lh;
+  });
+
+  // Foto principal: usa base64 si hay; si no, intenta por URL
+  let principalDataURL: string | null = null;
+  if (formData.mainPhotoBase64) {
+    principalDataURL = formData.mainPhotoBase64;
+  } else if (formData.mainPhotoUrl) {
+    principalDataURL = await fetchToDataURL(formData.mainPhotoUrl);
+  }
+
+  if (principalDataURL) {
+    try {
+      doc.addImage(principalDataURL, "JPEG", pageW - margin - 180, y, 180, 135, undefined, "FAST");
+    } catch {}
+  }
+  y = Math.max(yDatos, y + 135) + 20;
+
+  // Parte inferior: dos columnas
+  const datosIzq2 = [
+    `Antigüedad: ${numero(Number(formData.age) || 0)} años`,
+    `Estado: ${formData.condition}`,
+    `Ubicación: ${formData.locationQuality}`,
+    `Orientación: ${formData.orientation}`,
+    `Posee renta: ${formData.isRented ? "Sí" : "No"}`,
+  ];
+
+  const servicios = [
+    `Luz: ${formData.services.luz ? "Sí" : "No"}`,
+    `Agua: ${formData.services.agua ? "Sí" : "No"}`,
+    `Gas: ${formData.services.gas ? "Sí" : "No"}`,
+    `Cloacas: ${formData.services.cloacas ? "Sí" : "No"}`,
+    `Pavimento: ${formData.services.pavimento ? "Sí" : "No"}`,
+  ];
+
+  let yCol = y;
+  datosIzq2.forEach((line) => {
+    doc.text(line, margin, yCol);
+    yCol += lh;
+  });
+
+  let yCol2 = y;
+  servicios.forEach((line) => {
+    doc.text(line, pageW - margin - 200, yCol2);
+    yCol2 += lh;
+  });
+
+  y = Math.max(yCol, yCol2) + 30;
+
+  // === Comparables ===
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(12);
+  doc.setTextColor(pc.r, pc.g, pc.b);
+  doc.text("Propiedades Comparadas en la Zona", pageW / 2, y, { align: "center" });
+  doc.setTextColor(0, 0, 0);
+  y += 16;
+
+  const cols = 4;
+  const gap = 10;
+  const cardW = (pageW - margin * 2 - gap * (cols - 1)) / cols;
+  const cardH = 250;
+  let cx = margin;
+  let cy = y;
+
+  const drawComparableCard = async (
+    c: ComparableProperty,
+    x: number,
+    yCard: number,
+    index: number
+  ) => {
+    doc.setDrawColor(200, 200, 200);
+    doc.setLineWidth(0.8);
+    doc.rect(x, yCard, cardW, cardH);
+
+    const innerPad = 8;
+    let cursorY = yCard + innerPad;
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.text(`Propiedad Nº ${index + 1}`, x + innerPad, cursorY);
+    cursorY += 18;
+
+    // Imagen comparable: base64 o cargar desde URL
+    let cmpDataURL: string | null = null;
+    if (c.photoBase64) {
+      cmpDataURL = c.photoBase64;
+    } else if (c.photoUrl) {
+      cmpDataURL = await fetchToDataURL(c.photoUrl);
     }
 
-    y += 60;
+    if (cmpDataURL) {
+      try {
+        doc.addImage(cmpDataURL, "JPEG", x + innerPad, cursorY, cardW - innerPad * 2, 80, undefined, "FAST");
+        cursorY += 95;
+      } catch {}
+    }
 
-    // === Línea separadora ===
-    doc.setDrawColor(pc.r, pc.g, pc.b);
-    doc.setLineWidth(0.8);
-    doc.line(margin, y, pageW - margin, y);
-    y += 20;
-
-    // === Datos de la propiedad ===
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(13);
-    doc.setTextColor(pc.r, pc.g, pc.b);
-    doc.text("Datos de la Propiedad", pageW / 2, y, { align: "center" });
-    doc.setTextColor(0, 0, 0);
-    y += 20;
+    doc.setFontSize(10);
+
+    let dirLines = doc.splitTextToSize(`Dirección: ${c.address || "-"}`, cardW - innerPad * 2);
+    doc.text(dirLines, x + innerPad, cursorY);
+    cursorY += (dirLines as string[]).length * 12;
+
+    let barrioLines = doc.splitTextToSize(`Barrio: ${c.neighborhood || "-"}`, cardW - innerPad * 2);
+    doc.text(barrioLines, x + innerPad, cursorY);
+    cursorY += (barrioLines as string[]).length * 12;
+
+    const builtAreaNum = Number(c.builtArea) || 0;
+    const priceNum = Number(c.price) || 0;
+    const coefNum =
+      typeof c.coefficient === "number" ? c.coefficient : parseFloat(String(c.coefficient)) || 1;
+
+    const ppm2Base = builtAreaNum > 0 ? priceNum / builtAreaNum : 0;
+    const ppm2Adj = ppm2Base * coefNum;
 
     doc.setFont("helvetica", "normal");
     doc.setFontSize(10);
-    const lh = 15;
 
-    const datosIzq = [
-      `Cliente: ${formData.clientName || "-"}`,
-      `Teléfono: ${formData.phone || "-"}`,
-      `Email: ${formData.email || "-"}`,
-      `Dirección: ${formData.address || "-"}`,
-      `Barrio: ${formData.neighborhood || "-"}`,
-      `Localidad: ${formData.locality || "-"}`,
-      `Tipología: ${formData.propertyType}`,
-      `m² Terreno: ${numero(Number(formData.landArea) || 0)}`,
-      `m² Cubiertos: ${numero(Number(formData.builtArea) || 0)}`,
-      `Planos: ${formData.hasPlans ? "Sí" : "No"}`,
-      `Título: ${formData.titleType}`,
-    ];
+    let precioLines = doc.splitTextToSize(`Precio: ${peso(priceNum)}`, cardW - innerPad * 2);
+    doc.text(precioLines, x + innerPad, cursorY);
+    cursorY += (precioLines as string[]).length * 12;
 
-    let yDatos = y;
-    datosIzq.forEach((line) => {
-      doc.text(line, margin, yDatos);
-      yDatos += lh;
-    });
+    doc.text(`m² Cubiertos: ${numero(builtAreaNum)}`, x + innerPad, cursorY);
+    cursorY += 14;
 
-    if (formData.mainPhotoBase64) {
-      try {
-        doc.addImage(
-          formData.mainPhotoBase64,
-          "JPEG",
-          pageW - margin - 180,
-          y,
-          180,
-          135,
-          undefined,
-          "FAST"
-        );
-      } catch {}
+    doc.text(`Precio/m²: ${peso(ppm2Adj)}`, x + innerPad, cursorY);
+    cursorY += 14;
+
+    if (c.listingUrl) {
+      doc.setTextColor(33, 150, 243);
+      doc.textWithLink("Ver Propiedad", x + innerPad, cursorY, { url: c.listingUrl });
+      doc.setTextColor(0, 0, 0);
+      cursorY += 14;
     }
-    y = Math.max(yDatos, y + 135) + 20;
 
-    // Parte inferior: dos columnas
-    const datosIzq2 = [
-      `Antigüedad: ${numero(Number(formData.age) || 0)} años`,
-      `Estado: ${formData.condition}`,
-      `Ubicación: ${formData.locationQuality}`,
-      `Orientación: ${formData.orientation}`,
-      `Posee renta: ${formData.isRented ? "Sí" : "No"}`,
-    ];
+    const desc = c.description || "";
+    const textLines = doc.splitTextToSize(desc, cardW - innerPad * 2);
+    const maxLines = 5;
+    const clipped = (textLines as string[]).slice(0, maxLines);
+    doc.text(clipped as any, x + innerPad, cursorY);
+  };
 
-    const servicios = [
-      `Luz: ${formData.services.luz ? "Sí" : "No"}`,
-      `Agua: ${formData.services.agua ? "Sí" : "No"}`,
-      `Gas: ${formData.services.gas ? "Sí" : "No"}`,
-      `Cloacas: ${formData.services.cloacas ? "Sí" : "No"}`,
-      `Pavimento: ${formData.services.pavimento ? "Sí" : "No"}`,
-    ];
+  // OJO: como drawComparableCard es async por el fetch de imágenes,
+  // las iteraciones deben respetar await para no mezclar el cursor
+  for (let i = 0; i < formData.comparables.length; i++) {
+    if (i > 0 && i % cols === 0) {
+      cy += cardH + gap;
+      cx = margin;
+    }
+    // eslint-disable-next-line no-await-in-loop
+    await drawComparableCard(formData.comparables[i], cx, cy, i);
+    cx += cardW + gap;
+  }
 
-    let yCol = y;
-    datosIzq2.forEach((line) => {
-      doc.text(line, margin, yCol);
-      yCol += lh;
-    });
+  y = cy + cardH + 16;
+  if (y > pageH - 200) {
+    doc.addPage();
+    y = margin;
+  }
 
-    let yCol2 = y;
-    servicios.forEach((line) => {
-      doc.text(line, pageW - margin - 200, yCol2);
-      yCol2 += lh;
-    });
+  doc.setDrawColor(pc.r, pc.g, pc.b);
+  doc.line(margin, y, pageW - margin, y);
+  y += 14;
 
-    y = Math.max(yCol, yCol2) + 30;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(12);
+  doc.setTextColor(pc.r, pc.g, pc.b);
+  doc.text("Precio sugerido de venta", margin, y);
+  doc.setTextColor(0, 0, 0);
+  y += 16;
 
-    // === Comparables ===
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(18);
+  doc.text(peso(suggestedPrice), pageW / 2, y, { align: "center" });
+  y += 30;
+
+  doc.setDrawColor(pc.r, pc.g, pc.b);
+  doc.line(margin, y, pageW - margin, y);
+  y += 14;
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(12);
+  doc.setTextColor(pc.r, pc.g, pc.b);
+  doc.text("Conclusión", margin, y);
+  doc.setTextColor(0, 0, 0);
+  y += 16;
+
+  const block = (title: string, text: string) => {
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(12);
-    doc.setTextColor(pc.r, pc.g, pc.b);
-    doc.text("Propiedades Comparadas en la Zona", pageW / 2, y, {
-      align: "center",
-    });
-    doc.setTextColor(0, 0, 0);
-    y += 16;
-
-    const cols = 4;
-    const gap = 10;
-    const cardW = (pageW - margin * 2 - gap * (cols - 1)) / cols;
-    const cardH = 250;
-    let cx = margin;
-    let cy = y;
-
-    const drawComparableCard = (
-      c: ComparableProperty,
-      x: number,
-      yCard: number,
-      index: number
-    ) => {
-      doc.setDrawColor(200, 200, 200);
-      doc.setLineWidth(0.8);
-      doc.rect(x, yCard, cardW, cardH);
-
-      const innerPad = 8;
-      let cursorY = yCard + innerPad;
-
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(11);
-      doc.text(`Propiedad Nº ${index + 1}`, x + innerPad, cursorY);
-      cursorY += 18;
-
-      if (c.photoBase64) {
-        try {
-          doc.addImage(
-            c.photoBase64,
-            "JPEG",
-            x + innerPad,
-            cursorY,
-            cardW - innerPad * 2,
-            80,
-            undefined,
-            "FAST"
-          );
-          cursorY += 95;
-        } catch {}
-      }
-
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(10);
-
-      let dirLines = doc.splitTextToSize(`Dirección: ${c.address || "-"}`, cardW - innerPad * 2);
-      doc.text(dirLines, x + innerPad, cursorY);
-      cursorY += (dirLines as string[]).length * 12;
-
-      let barrioLines = doc.splitTextToSize(`Barrio: ${c.neighborhood || "-"}`, cardW - innerPad * 2);
-      doc.text(barrioLines, x + innerPad, cursorY);
-      cursorY += (barrioLines as string[]).length * 12;
-
-      const builtAreaNum = Number(c.builtArea) || 0;
-      const priceNum = Number(c.price) || 0;
-      const coefNum = Number(c.coefficient) || 1;
-
-      const ppm2Base = builtAreaNum > 0 ? priceNum / builtAreaNum : 0;
-      const ppm2Adj = ppm2Base * coefNum;
-
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(10);
-
-      let precioLines = doc.splitTextToSize(`Precio: ${peso(Number(c.price) || 0)}`, cardW - innerPad * 2);
-      doc.text(precioLines, x + innerPad, cursorY);
-      cursorY += (precioLines as string[]).length * 12;
-
-      doc.text(`m² Cubiertos: ${numero(Number(c.builtArea) || 0)}`, x + innerPad, cursorY);
-      cursorY += 14;
-
-      doc.text(`Precio/m²: ${peso(Number(ppm2Adj) || 0)}`, x + innerPad, cursorY);
-      cursorY += 14;
-
-      if (c.listingUrl) {
-        doc.setTextColor(33, 150, 243);
-        doc.textWithLink("Ver Propiedad", x + innerPad, cursorY, { url: c.listingUrl });
-        doc.setTextColor(0, 0, 0);
-        cursorY += 14;
-      }
-
-      const desc = c.description || "";
-      const textLines = doc.splitTextToSize(desc, cardW - innerPad * 2);
-      const maxLines = 5;
-      const clipped = (textLines as string[]).slice(0, maxLines);
-      doc.text(clipped as any, x + innerPad, cursorY);
-    };
-
-    formData.comparables.forEach((c, i) => {
-      if (i > 0 && i % cols === 0) {
-        cy += cardH + gap;
-        cx = margin;
-      }
-      drawComparableCard(c, cx, cy, i);
-      cx += cardW + gap;
-    });
-
-    y = cy + cardH + 16;
-    if (y > pageH - 200) {
+    doc.setFontSize(11);
+    doc.text(title, margin, y);
+    y += 12;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    const lines = doc.splitTextToSize(text || "-", pageW - margin * 2);
+    doc.text(lines as any, margin, y);
+    y += (Array.isArray(lines) ? (lines as string[]).length : 1) * 14 + 8;
+    if (y > pageH - 80) {
       doc.addPage();
       y = margin;
     }
+  };
 
-    doc.setDrawColor(pc.r, pc.g, pc.b);
-    doc.line(margin, y, pageW - margin, y);
-    y += 14;
-
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(12);
-    doc.setTextColor(pc.r, pc.g, pc.b);
-    doc.text("Precio sugerido de venta", margin, y);
-    doc.setTextColor(0, 0, 0);
-    y += 16;
-
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(18);
-    doc.text(peso(suggestedPrice), pageW / 2, y, { align: "center" });
-    y += 30;
-
-    doc.setDrawColor(pc.r, pc.g, pc.b);
-    doc.line(margin, y, pageW - margin, y);
-    y += 14;
-
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(12);
-    doc.setTextColor(pc.r, pc.g, pc.b);
-    doc.text("Conclusión", margin, y);
-    doc.setTextColor(0, 0, 0);
-    y += 16;
-
-    const block = (title: string, text: string) => {
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(11);
-      doc.text(title, margin, y);
-      y += 12;
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(10);
-      const lines = doc.splitTextToSize(text || "-", pageW - margin * 2);
-      doc.text(lines as any, margin, y);
-      y += (Array.isArray(lines) ? (lines as string[]).length : 1) * 14 + 8;
-      if (y > pageH - 80) {
-        doc.addPage();
-        y = margin;
-      }
-    };
-
-    block("Observaciones", formData.observations);
-    block("Fortalezas", formData.strengths);
-    block("Debilidades", formData.weaknesses);
-    block("A considerar", formData.considerations);
+  block("Observaciones", formData.observations);
+  block("Fortalezas", formData.strengths);
+  block("Debilidades", formData.weaknesses);
+  block("A considerar", formData.considerations);
 
     // === Imagen final opcional ===
     try {

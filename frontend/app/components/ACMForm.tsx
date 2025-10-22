@@ -251,8 +251,8 @@ const updateComparable = <K extends keyof ComparableProperty>(
 
     let value: number | string | null = rawValue;
 
-    // límites para el coeficiente
-    const COEF_MIN = 0.5;
+    // límites para el coeficiente (con 1 decimal)
+    const COEF_MIN = 0.1;
     const COEF_MAX = 1.5;
 
     if (field === "coefficient") {
@@ -267,14 +267,15 @@ const updateComparable = <K extends keyof ComparableProperty>(
       // si no es número, default 1.0
       if (!isFinite(n)) n = 1.0;
 
-      // redondeo a 2 decimales
-      n = Math.round(n * 100) / 100;
+      // redondeo EXACTO a 1 decimal
+      n = Math.round(n * 10) / 10;
 
-      // clamp entre 0.5 y 1.5 (tolerando pequeños errores de coma flotante)
+      // clamp entre 0.1 y 1.5 (tolerando float)
       if (n < COEF_MIN - 1e-9) n = COEF_MIN;
       if (n > COEF_MAX + 1e-9) n = COEF_MAX;
 
-      value = n;
+      // guardamos como STRING con 1 decimal => "1.0", "0.7", etc.
+      value = n.toFixed(1);
     } else if (numericFields.includes(field)) {
       const n =
         rawValue === null || rawValue === ""
@@ -297,6 +298,7 @@ const updateComparable = <K extends keyof ComparableProperty>(
     return copy;
   });
 };
+
 
 const addComparable = () => {
   setFormData((prev) => {
@@ -700,12 +702,34 @@ const handleDownloadPDF = async () => {
   const margin = 40;
   let y = margin;
 
-  // Datos (desde AuthContext / Theme)
-  const matriculado = user?.matriculado_nombre || "—";
-  const cpi = user?.cpi || "—";
-  const inmobiliaria = themeCompanyName || user?.inmobiliaria || "—";
+  // Datos base (desde AuthContext / Theme)
+  let matriculado = user?.matriculado_nombre || "—";
+  let cpi = user?.cpi || "—";
+  let inmobiliaria = themeCompanyName || user?.inmobiliaria || "—";
   const asesorNombre =
     user?.nombre && user?.apellido ? `${user.nombre} ${user.apellido}` : "—";
+
+  // Si el rol es asesor y faltan datos, intentamos traerlos de la vista v_asesor_empresa
+  const isAsesor = (user?.role || "").toLowerCase() === "asesor";
+  if (isAsesor && (inmobiliaria === "—" || matriculado === "—" || cpi === "—")) {
+    try {
+      // import dinámico del cliente para no tocar imports a nivel de archivo
+      const { supabase } = await import("#lib/supabaseClient");
+      const { data: v, error } = await supabase
+        .from("v_asesor_empresa")
+        .select("empresa_nombre, empresa_matriculado, empresa_cpi")
+        .eq("asesor_id", user?.id)
+        .maybeSingle();
+
+      if (!error && v) {
+        if (inmobiliaria === "—" && v.empresa_nombre) inmobiliaria = v.empresa_nombre;
+        if (matriculado === "—" && v.empresa_matriculado) matriculado = v.empresa_matriculado;
+        if (cpi === "—" && v.empresa_cpi) cpi = v.empresa_cpi;
+      }
+    } catch (e) {
+      console.warn("No se pudieron resolver datos de empresa para asesor:", e);
+    }
+  }
 
   // Logo desde Theme si existe
   const themeLogo = themeLogoUrl || null;
@@ -735,7 +759,6 @@ const handleDownloadPDF = async () => {
 
   // Columna izquierda
   doc.text(`Inmobiliaria: ${inmobiliaria}`, colLeftX, y);
-  const isAsesor = (user?.role || "").toLowerCase() === "asesor";
   doc.text(`Asesor: ${isAsesor ? asesorNombre : "—"}`, colLeftX, y + 15);
 
   // Columna derecha
@@ -938,8 +961,7 @@ const handleDownloadPDF = async () => {
     doc.text(clipped as any, x + innerPad, cursorY);
   };
 
-  // OJO: como drawComparableCard es async por el fetch de imágenes,
-  // las iteraciones deben respetar await para no mezclar el cursor
+  // Respetamos await por el fetch de imágenes
   for (let i = 0; i < formData.comparables.length; i++) {
     if (i > 0 && i % cols === 0) {
       cy += cardH + gap;
@@ -1004,47 +1026,47 @@ const handleDownloadPDF = async () => {
   block("Debilidades", formData.weaknesses);
   block("A considerar", formData.considerations);
 
-    // === Imagen final opcional ===
-    try {
-      const graficoUrl = "/grafico1-pdf.png";
-      const img = await fetch(graficoUrl);
-      const blob = await img.blob();
-      const reader = new FileReader();
-      const base64Promise = new Promise<string>((resolve) => {
-        reader.onload = () => resolve(reader.result as string);
-      });
-      reader.readAsDataURL(blob);
-      const base64Img = await base64Promise;
+  // === Imagen final opcional ===
+  try {
+    const graficoUrl = "/grafico1-pdf.png";
+    const img = await fetch(graficoUrl);
+    const blob = await img.blob();
+    const reader = new FileReader();
+    const base64Promise = new Promise<string>((resolve) => {
+      reader.onload = () => resolve(reader.result as string);
+    });
+    reader.readAsDataURL(blob);
+    const base64Img = await base64Promise;
 
-      const tempImg = new Image();
-      tempImg.src = base64Img;
-      await new Promise((res) => (tempImg.onload = res));
-      const ratio = tempImg.height / tempImg.width;
+    const tempImg = new Image();
+    tempImg.src = base64Img;
+    await new Promise((res) => (tempImg.onload = res));
+    const ratio = tempImg.height / tempImg.width;
 
-      const imgW = pageW * 0.7;
-      const imgH = imgW * ratio;
-      const imgX = (pageW - imgW) / 2;
+    const imgW = pageW * 0.7;
+    const imgH = imgW * ratio;
+    const imgX = (pageW - imgW) / 2;
 
-      y += 40;
-      if (y + imgH > pageH - 60) {
-        doc.addPage();
-        y = margin;
-      }
-
-      doc.addImage(base64Img, "PNG", imgX, y, imgW, imgH, undefined, "FAST");
-      y += imgH + 20;
-    } catch (err) {
-      console.warn("⚠️ No se pudo agregar la imagen final al PDF", err);
+    y += 40;
+    if (y + imgH > pageH - 60) {
+      doc.addPage();
+      y = margin;
     }
 
-    // === Footer ===
-    const footerText = `${matriculado}  |  CPI: ${cpi}`;
-    doc.setFont("helvetica", "italic");
-    doc.setFontSize(9);
-    doc.text(footerText, pageW / 2, pageH - 30, { align: "center" });
+    doc.addImage(base64Img, "PNG", imgX, y, imgW, imgH, undefined, "FAST");
+    y += imgH + 20;
+  } catch (err) {
+    console.warn("⚠️ No se pudo agregar la imagen final al PDF", err);
+  }
 
-    doc.save("VMI.pdf");
-  };
+  // === Footer (usa los valores resueltos arriba) ===
+  const footerText = `${matriculado}  |  CPI: ${cpi}`;
+  doc.setFont("helvetica", "italic");
+  doc.setFontSize(9);
+  doc.text(footerText, pageW / 2, pageH - 30, { align: "center" });
+
+  doc.save("VMI.pdf");
+};
 
 /** ========= Opciones ========= */
 const propertyTypeOptions = useMemo(() => enumToOptions(PropertyType), []);
@@ -1052,6 +1074,7 @@ const titleOptions = useMemo(() => enumToOptions(TitleType), []);
 const conditionOptions = useMemo(() => enumToOptions(PropertyCondition), []);
 const locationOptions = useMemo(() => enumToOptions(LocationQuality), []);
 const orientationOptions = useMemo(() => enumToOptions(Orientation), []);
+
 
 /** ========= Render ========= */
 return (

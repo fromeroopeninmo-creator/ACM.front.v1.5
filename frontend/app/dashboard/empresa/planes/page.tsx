@@ -33,6 +33,9 @@ export default function EmpresaPlanesPage() {
   // Estado UI para “Personalizado”
   const [personalCount, setPersonalCount] = useState<number>(21); // 21..50
 
+  // IVA
+  const IVA_PCT = 0.21;
+
   // 🔎 Resolver empresas.id
   useEffect(() => {
     const fetchEmpresa = async () => {
@@ -99,11 +102,12 @@ export default function EmpresaPlanesPage() {
           setPlanActual(null);
         }
 
-        // Planes (quitamos Trial; mantené Desarrollo si lo usás)
+        // Planes (ocultamos Trial y Desarrollo)
         const { data: planes, error: errorPlanes } = await supabase
           .from("planes")
           .select("id, nombre, max_asesores, precio, duracion_dias, precio_extra_por_asesor")
           .neq("nombre", "Trial")
+          .neq("nombre", "Desarrollo")
           .order("max_asesores", { ascending: true });
 
         if (errorPlanes) {
@@ -169,6 +173,13 @@ export default function EmpresaPlanesPage() {
   const num = (x?: number | string | null) =>
     typeof x === "string" ? parseFloat(x) : (x ?? 0);
 
+  const withIVA = (net?: number | string | null) => {
+    if (net == null) return null;
+    const n = typeof net === "string" ? parseFloat(net) : net;
+    if (!isFinite(n)) return null;
+    return Math.round(n * (1 + IVA_PCT));
+  };
+
   // Premium base y extra unitario (para Personalizado)
   const premiumPrecio = useMemo(() => {
     const p = planesDisponibles.find((pl) => pl.nombre === "Premium");
@@ -180,15 +191,20 @@ export default function EmpresaPlanesPage() {
     return num(p?.precio_extra_por_asesor);
   }, [planesDisponibles]);
 
-  const personalizadoTotal = useMemo(() => {
+  const personalizadoNeto = useMemo(() => {
     const extra = Math.max(0, personalCount - 20);
     return premiumPrecio + extra * extraUnitPrice;
   }, [personalCount, premiumPrecio, extraUnitPrice]);
+
+  const personalizadoTotalConIVA = useMemo(() => withIVA(personalizadoNeto), [personalizadoNeto]);
 
   const planActualNombre = useMemo(
     () => (planActual?.plan_nombre ? planActual.plan_nombre : "Sin plan"),
     [planActual]
   );
+
+  // Renombre visual “Pro” → “Profesional”
+  const displayPlanName = (n: string) => (n === "Pro" ? "Profesional" : n);
 
   if (loading) {
     return (
@@ -263,6 +279,10 @@ export default function EmpresaPlanesPage() {
             const isActive = plan.nombre === planActual?.plan_nombre;
             const isPersonalizado = plan.nombre === "Personalizado";
 
+            // Neto y total con IVA para planes no personalizados
+            const neto = num(plan.precio);
+            const totalConIVA = withIVA(neto);
+
             return (
               <div
                 key={plan.id}
@@ -270,8 +290,8 @@ export default function EmpresaPlanesPage() {
               >
                 <div className="mb-4">
                   <div className="flex items-baseline justify-between">
-                    <h3 className="text-lg font-semibold text-blue-700">
-                      {plan.nombre}
+                    <h3 className="text-xl font-semibold text-blue-700">
+                      {displayPlanName(plan.nombre)}
                     </h3>
                     <span className="text-sm text-gray-500">
                       {plan.duracion_dias ? `${plan.duracion_dias} días` : ""}
@@ -280,32 +300,29 @@ export default function EmpresaPlanesPage() {
 
                   {!isPersonalizado ? (
                     <>
+                      {/* Precio grande: neto + IVA (literal) */}
                       <div className="mt-2">
-                        <div className="text-2xl font-bold">{fmtPrice(plan.precio)}</div>
-                        <div className="text-sm text-gray-600">
-                          Hasta {plan.max_asesores} asesores
+                        <div className="text-2xl font-bold">
+                          {fmtPrice(neto)} <span className="text-base font-semibold">+ IVA</span>
+                        </div>
+                        {/* Debajo: total final */}
+                        <div className="text-xs text-gray-600">
+                          Total: {totalConIVA != null ? fmtPrice(totalConIVA) : "—"}
                         </div>
                       </div>
 
-                      {/* Bullets visuales */}
+                      {/* Bullets visuales (incluye “Hasta X asesores”) */}
                       <ul className="mt-3 text-sm text-gray-700 space-y-1">
                         <li>• Sin límites de informes</li>
                         <li>• Guarda / Carga / Edita tus informes</li>
                         <li>• Informe descargable en PDF</li>
+                        <li>• Hasta {plan.max_asesores} asesores</li>
                       </ul>
                     </>
                   ) : (
                     <>
                       {/* Card especial Personalizado */}
                       <div className="mt-2 space-y-2">
-                        <div className="text-sm text-gray-600">
-                          Base: <span className="font-medium">Plan Premium</span> ({fmtPrice(premiumPrecio)})
-                        </div>
-                        <div className="text-sm text-gray-600">
-                          Extra por asesor (21–50):{" "}
-                          <span className="font-medium">{fmtPrice(extraUnitPrice)}</span>
-                        </div>
-
                         <div className="mt-3">
                           <label className="block text-sm text-gray-600 mb-1">
                             Cantidad de asesores
@@ -336,23 +353,23 @@ export default function EmpresaPlanesPage() {
                           </div>
                         </div>
 
-                        <div className="mt-3 bg-gray-50 rounded-lg p-3 border border-gray-200">
-                          <div className="text-sm">
-                            Desglose: {fmtPrice(premiumPrecio)} + {(Math.max(0, personalCount - 20))} × {fmtPrice(extraUnitPrice)}
+                        {/* Precio personalizado: grande “Total: $neto + IVA”, abajo total final */}
+                        <div className="mt-3">
+                          <div className="text-2xl font-bold">
+                            Total: {fmtPrice(personalizadoNeto)}{" "}
+                            <span className="text-base font-semibold">+ IVA</span>
                           </div>
-                          <div className="text-xl font-bold mt-1">
-                            Total: {fmtPrice(personalizadoTotal)}
-                          </div>
-                          <div className="text-sm text-gray-600">
-                            Cupo seleccionado: <strong>{personalCount}</strong> asesores
+                          <div className="text-xs text-gray-600">
+                            Total: {fmtPrice(personalizadoTotalConIVA ?? 0)}
                           </div>
                         </div>
 
-                        {/* Bullets visuales */}
+                        {/* Bullets */}
                         <ul className="mt-3 text-sm text-gray-700 space-y-1">
                           <li>• Sin límites de informes</li>
                           <li>• Guarda / Carga / Edita tus informes</li>
                           <li>• Informe descargable en PDF</li>
+                          <li>• Hasta {personalCount} asesores</li>
                         </ul>
                       </div>
                     </>

@@ -46,7 +46,8 @@ async function findEmpresaIdByEmail(email: string): Promise<string | null> {
     .select("empresa_id")
     .eq("email", email)
     .maybeSingle();
-  if (azor?.empresa_id) return asesor.empresa_id as string; // typo fix below
+  if (asesor?.empresa_id) return asesor.empresa_id as string;
+
   return null;
 }
 
@@ -88,7 +89,6 @@ export async function POST(req: Request) {
 
     const actionLink =
       // v2 suele traerlo en properties.action_link
-      // fallback por si cambia la forma
       // @ts-ignore
       linkData?.properties?.action_link ??
       // @ts-ignore
@@ -98,24 +98,8 @@ export async function POST(req: Request) {
     // 5) Intentar vincular empresa del destinatario (si existe)
     let empresaId: string | null = null;
     try {
-      // NOTE: bug fix — fetch advisors correctly
-      const { data: prof } = await supabaseAdmin
-        .from("profiles")
-        .select("empresa_id")
-        .eq("email", email)
-        .maybeSingle();
-      empresaId = prof?.empresa_id ?? null;
-
-      if (!empresaId) {
-        const { data: asesor } = await supabaseAdmin
-          .from("asesores")
-          .select("empresa_id")
-          .eq("email", email)
-          .maybeSingle();
-        empresaId = asesor?.empresa_id ?? null;
-      }
+      empresaId = await findEmpresaIdByEmail(email);
     } catch {
-      // si falla, lo dejamos en null
       empresaId = null;
     }
 
@@ -128,9 +112,7 @@ export async function POST(req: Request) {
       // timestamp y updated_at tienen default now()
     });
 
-    // 7) Respuesta:
-    // - si no hay SMTP, devolvemos el link para copiarlo/pegarlo manualmente
-    // - si luego activás SMTP, podés ocultar el link y solo responder ok:true
+    // 7) Respuesta
     return NextResponse.json(
       {
         ok: true,

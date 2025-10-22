@@ -709,22 +709,47 @@ const handleDownloadPDF = async () => {
   const asesorNombre =
     user?.nombre && user?.apellido ? `${user.nombre} ${user.apellido}` : "—";
 
-  // Si el rol es asesor y faltan datos, intentamos traerlos de la vista v_asesor_empresa
+  // Si el rol es asesor y faltan datos, intentamos resolverlos desde la BD
   const isAsesor = (user?.role || "").toLowerCase() === "asesor";
   if (isAsesor && (inmobiliaria === "—" || matriculado === "—" || cpi === "—")) {
     try {
-      // import dinámico del cliente para no tocar imports a nivel de archivo
       const { supabase } = await import("#lib/supabaseClient");
-      const { data: v, error } = await supabase
+
+      // 1) Intento por vista v_asesor_empresa (mapeo directo asesor->empresa)
+      const { data: v, error: vErr } = await supabase
         .from("v_asesor_empresa")
         .select("empresa_nombre, empresa_matriculado, empresa_cpi")
         .eq("asesor_id", user?.id)
         .maybeSingle();
 
-      if (!error && v) {
+      if (!vErr && v) {
         if (inmobiliaria === "—" && v.empresa_nombre) inmobiliaria = v.empresa_nombre;
         if (matriculado === "—" && v.empresa_matriculado) matriculado = v.empresa_matriculado;
         if (cpi === "—" && v.empresa_cpi) cpi = v.empresa_cpi;
+      }
+
+      // 2) Fallback: asesores -> empresa_id -> empresas (por si el id no matchea con la vista)
+      if (inmobiliaria === "—" || matriculado === "—" || cpi === "—") {
+        const { data: a } = await supabase
+          .from("asesores")
+          .select("empresa_id, email, id")
+          .or(`id.eq.${user?.id},email.eq.${user?.email ?? ""}`)
+          .maybeSingle();
+
+        const empresaId = a?.empresa_id;
+        if (empresaId) {
+          const { data: e } = await supabase
+            .from("empresas")
+            .select("nombre_comercial, matriculado, cpi")
+            .eq("id", empresaId)
+            .maybeSingle();
+
+          if (e) {
+            if (inmobiliaria === "—" && e.nombre_comercial) inmobiliaria = e.nombre_comercial;
+            if (matriculado === "—" && e.matriculado) matriculado = e.matriculado;
+            if (cpi === "—" && e.cpi) cpi = e.cpi;
+          }
+        }
       }
     } catch (e) {
       console.warn("No se pudieron resolver datos de empresa para asesor:", e);
@@ -821,13 +846,10 @@ const handleDownloadPDF = async () => {
     yDatos += lh;
   });
 
-  // Foto principal: usa base64 si hay; si no, intenta por URL
+  // Foto principal: base64 o URL
   let principalDataURL: string | null = null;
-  if (formData.mainPhotoBase64) {
-    principalDataURL = formData.mainPhotoBase64;
-  } else if (formData.mainPhotoUrl) {
-    principalDataURL = await fetchToDataURL(formData.mainPhotoUrl);
-  }
+  if (formData.mainPhotoBase64) principalDataURL = formData.mainPhotoBase64;
+  else if (formData.mainPhotoUrl) principalDataURL = await fetchToDataURL(formData.mainPhotoUrl);
 
   if (principalDataURL) {
     try {
@@ -900,13 +922,10 @@ const handleDownloadPDF = async () => {
     doc.text(`Propiedad Nº ${index + 1}`, x + innerPad, cursorY);
     cursorY += 18;
 
-    // Imagen comparable: base64 o cargar desde URL
+    // Imagen comparable: base64 o URL
     let cmpDataURL: string | null = null;
-    if (c.photoBase64) {
-      cmpDataURL = c.photoBase64;
-    } else if (c.photoUrl) {
-      cmpDataURL = await fetchToDataURL(c.photoUrl);
-    }
+    if (c.photoBase64) cmpDataURL = c.photoBase64;
+    else if (c.photoUrl) cmpDataURL = await fetchToDataURL(c.photoUrl);
 
     if (cmpDataURL) {
       try {
@@ -1065,8 +1084,9 @@ const handleDownloadPDF = async () => {
   doc.setFontSize(9);
   doc.text(footerText, pageW / 2, pageH - 30, { align: "center" });
 
-  doc.save("VMI.pdf");
+  doc.save("VAI.pdf");
 };
+
 
 /** ========= Opciones ========= */
 const propertyTypeOptions = useMemo(() => enumToOptions(PropertyType), []);

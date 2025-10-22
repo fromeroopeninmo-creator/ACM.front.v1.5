@@ -16,9 +16,8 @@ const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE);
 type Role = "empresa" | "asesor" | "soporte" | "super_admin" | "super_admin_root";
 
 function sanitizeDatos(datos: any) {
-  // Por las dudas, limpiamos posibles base64 gigantes que vengan del cliente
+  // Limpieza por las dudas (evitar guardar base64 enormes en datos_json)
   const clone = JSON.parse(JSON.stringify(datos || {}));
-
   if (clone?.mainPhotoBase64) clone.mainPhotoBase64 = undefined;
   if (Array.isArray(clone?.comparables)) {
     clone.comparables = clone.comparables.map((c: any) => ({
@@ -30,7 +29,7 @@ function sanitizeDatos(datos: any) {
 }
 
 async function resolveEmpresaYAsesor(userId: string) {
-  // 1) ¿Es usuario-empresa dueño directo de una empresa?
+  // 1) usuario-empresa dueño directo
   const { data: emp } = await supabaseAdmin
     .from("empresas")
     .select("id, user_id")
@@ -41,7 +40,7 @@ async function resolveEmpresaYAsesor(userId: string) {
     return { empresaId: emp.id as string, asesorId: null as string | null, role: "empresa" as Role };
   }
 
-  // 2) Si no, miramos el profile (puede ser asesor con empresa asociada)
+  // 2) profile (asesor con empresa asociada)
   const { data: prof } = await supabaseAdmin
     .from("profiles")
     .select("id, role, empresa_id")
@@ -87,26 +86,18 @@ export async function POST(req: Request) {
     // 4) Sanitizar datos_json
     const datosLimpios = sanitizeDatos(datos);
 
-    // 5) Si viene id => UPDATE (sobrescribe)
+    // 5) UPDATE si viene id
     if (id) {
-      // a) Traer informe para validar ownership/permiso
       const { data: existente, error: getErr } = await supabaseAdmin
         .from("informes")
-        .select("id, empresa_id, autor_id, imagen_principal_url, comp1_url, comp2_url, comp3_url, comp4_url, estado, tipo, titulo, created_at, updated_at")
+        .select("id, empresa_id, autor_id")
         .eq("id", id)
         .maybeSingle();
 
-      if (getErr) {
-        return NextResponse.json({ error: getErr.message }, { status: 400 });
-      }
-      if (!existente) {
-        return NextResponse.json({ error: "Informe no encontrado." }, { status: 404 });
-      }
+      if (getErr) return NextResponse.json({ error: getErr.message }, { status: 400 });
+      if (!existente) return NextResponse.json({ error: "Informe no encontrado." }, { status: 404 });
 
-      // b) Autorización: 
-      // - empresa: debe coincidir empresa_id
-      // - asesor: debe ser autor_id
-      // - soporte/super_admin: libre
+      // Permisos
       if (role === "empresa" && existente.empresa_id !== empresaId) {
         return NextResponse.json({ error: "Acceso denegado." }, { status: 403 });
       }
@@ -114,27 +105,21 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: "Acceso denegado." }, { status: 403 });
       }
 
-      // c) UPDATE (solo datos y título; las URLs se mantienen tal cual, se actualizan por /upload)
       const { data: updated, error: updErr } = await supabaseAdmin
         .from("informes")
         .update({
           titulo,
           datos_json: datosLimpios,
-          // updated_at: se setea por trigger en DB si lo tenés; si no, podés setear new Date().toISOString()
         })
         .eq("id", id)
         .select()
         .maybeSingle();
 
-      if (updErr) {
-        return NextResponse.json({ error: updErr.message }, { status: 400 });
-      }
-
+      if (updErr) return NextResponse.json({ error: updErr.message }, { status: 400 });
       return NextResponse.json({ ok: true, informe: updated }, { status: 200 });
     }
 
-    // 6) Si NO viene id => INSERT (nuevo informe)
-    // Generar id (si tenés RPC ok; si falla, crypto)
+    // 6) INSERT si no viene id
     let informeId: string;
     try {
       const { data: idGen } = await supabaseAdmin.rpc("uuid_generate_v4");
@@ -150,12 +135,11 @@ export async function POST(req: Request) {
       .insert({
         id: informeId,
         empresa_id: empresaId ?? null,
-        asesor_id: asesorId ?? null,
-        autor_id: userId,
+        asesor_id: asesorId ?? null, // <<<<<< IMPORTANTE para luego mostrar "Creado por"
+        autor_id: userId,            // quién creó (empresa user o asesor user)
         tipo: "VAI",
         titulo,
         datos_json: datosLimpios,
-        // URLs de imágenes quedan null/undefined. Se setean luego vía /upload.
         estado: "borrador",
         etiquetas: [],
       })
@@ -168,8 +152,6 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ ok: true, informe: inserted }, { status: 200 });
   } catch (e: any) {
-    // Importante: cualquier error aquí hacía que Next devolviera 500 y el navegador lo mostrara como "405".
-    // Sin sharp no debería pasar, pero dejamos este catch por seguridad.
     return NextResponse.json(
       { error: e?.message || "Error inesperado" },
       { status: 500 }

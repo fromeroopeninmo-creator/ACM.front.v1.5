@@ -3,7 +3,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { supabaseServer } from "#lib/supabaseServer";
 import { listEmpresas, type Paged, type EmpresaListItem } from "#lib/soporteApi";
-import EmpresaTable from "@/app/dashboard/soporte/EmpresaTable";
+import EmpresaTable from "@/dashboard/soporte/EmpresaTable";
 
 export const dynamic = "force-dynamic";
 

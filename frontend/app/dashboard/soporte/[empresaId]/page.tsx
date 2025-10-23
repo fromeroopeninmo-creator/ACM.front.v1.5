@@ -5,6 +5,12 @@ import { supabaseServer } from "#lib/supabaseServer";
 import { getEmpresaDetalle, type EmpresaDetalle } from "#lib/soporteApi";
 import AccionesSoporte from "@/dashboard/soporte/AccionesSoporte";
 
+// Anticipados (comentados) — cuando quieras usar componentes separados sin tocar este archivo:
+// import EmpresaResumen from "@/dashboard/soporte/EmpresaResumen";
+// import AsesoresTable from "@/dashboard/soporte/AsesoresTable";
+// import InformesTable from "@/dashboard/soporte/InformesTable";
+// import HistorialAcciones from "@/dashboard/soporte/HistorialAcciones";
+
 export const dynamic = "force-dynamic";
 
 type PageProps = {
@@ -130,7 +136,10 @@ export default async function SoporteEmpresaDetallePage({ params }: PageProps) {
         <section className="rounded-2xl border p-4">Cargando…</section>
       ) : (
         <>
-          {/* Resumen principal */}
+          {/* Resumen principal (inline). 
+              Si querés usar el componente, simplemente reemplazá TODO este <section> por:
+              <EmpresaResumen empresa={detalle.empresa} metrics={detalle.metrics} />
+          */}
           <section className="rounded-2xl border p-4 bg-white dark:bg-neutral-900">
             <div className="flex items-start gap-4">
               {/* Logo */}
@@ -269,6 +278,10 @@ export default async function SoporteEmpresaDetallePage({ params }: PageProps) {
           <section className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <div className="rounded-2xl border p-4 bg-white dark:bg-neutral-900">
               <h3 className="font-medium mb-2">Asesores</h3>
+
+              {/* Si querés usar componente dedicado, reemplazá la tabla por:
+                  <AsesoresTable asesores={detalle.asesores} />
+              */}
               <div className="overflow-auto">
                 <table className="min-w-full text-sm">
                   <thead className="bg-gray-50 dark:bg-neutral-900">
@@ -317,6 +330,10 @@ export default async function SoporteEmpresaDetallePage({ params }: PageProps) {
 
             <div className="rounded-2xl border p-4 bg-white dark:bg-neutral-900">
               <h3 className="font-medium mb-2">Informes recientes</h3>
+
+              {/* Si querés usar componente dedicado, reemplazá la tabla por:
+                  <InformesTable informes={detalle.informes} />
+              */}
               <div className="overflow-auto">
                 <table className="min-w-full text-sm">
                   <thead className="bg-gray-50 dark:bg-neutral-900">
@@ -360,6 +377,10 @@ export default async function SoporteEmpresaDetallePage({ params }: PageProps) {
 
             <div className="rounded-2xl border p-4 bg-white dark:bg-neutral-900 lg:col-span-2">
               <h3 className="font-medium mb-2">Historial de acciones (Soporte)</h3>
+
+              {/* Si querés usar componente dedicado, reemplazá la tabla por:
+                  <HistorialAcciones acciones={detalle.acciones_soporte} />
+              */}
               <div className="overflow-auto">
                 <table className="min-w-full text-sm">
                   <thead className="bg-gray-50 dark:bg-neutral-900">

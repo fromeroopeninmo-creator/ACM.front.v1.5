@@ -179,7 +179,7 @@ export async function getEmpresaDetalle(
   // 🔁 Mapeo del contrato actual del backend → contrato esperado por la UI
   // Backend actual devuelve:
   // {
-  //   empresa: { id, nombre, cuit, logoUrl, color },
+  //   empresa: { id, nombre, cuit, logoUrl, color, condicion_fiscal, telefono, direccion, localidad, provincia },
   //   plan: { nombre, maxAsesores, override, activo, fechaInicio, fechaFin },
   //   kpis: { asesoresTotales, informesTotales },
   //   ultimasAccionesSoporte: [{ id, soporteId, empresaId, descripcion, timestamp }]
@@ -212,11 +212,12 @@ export async function getEmpresaDetalle(
       id: raw?.empresa?.id,
       razon_social: raw?.empresa?.nombre ?? null,
       cuit: raw?.empresa?.cuit ?? null,
-      condicion_fiscal: null,
-      telefono: null,
-      direccion: null,
-      localidad: null,
-      provincia: null,
+      // ✅ Ajuste: completar campos que ahora expone el endpoint
+      condicion_fiscal: raw?.empresa?.condicion_fiscal ?? null,
+      telefono: raw?.empresa?.telefono ?? null,
+      direccion: raw?.empresa?.direccion ?? null,
+      localidad: raw?.empresa?.localidad ?? null,
+      provincia: raw?.empresa?.provincia ?? null,
       logo_url: raw?.empresa?.logoUrl ?? null,
       color: raw?.empresa?.color ?? null,
       plan: empresaPlan,
@@ -227,8 +228,8 @@ export async function getEmpresaDetalle(
       informes_30d: raw?.kpis?.informesTotales ?? 0,
       ultima_actividad_at: null,
     },
-    asesores: [], // aún no expuesto por el endpoint; la UI tolera vacío
-    informes: [], // aún no expuesto por el endpoint; la UI tolera vacío
+    asesores: [], // aún no expuesto por el endpoint; la UI lo tolera vacío
+    informes: [], // aún no expuesto por el endpoint; la UI lo tolera vacío
     acciones_soporte:
       (raw?.ultimasAccionesSoporte || []).map((a: any) => ({
         soporte: a.soporteId ? String(a.soporteId) : null,

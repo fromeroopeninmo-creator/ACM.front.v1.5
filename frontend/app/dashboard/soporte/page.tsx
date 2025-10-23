@@ -25,7 +25,7 @@ export default async function SoportePage() {
     redirect("/login");
   }
 
-  // ⛑️ Ajuste mínimo: traigo nombre y apellido para mostrar "Soporte: …"
+  // ⛑️ Traigo también nombre/apellido para el header derecho
   const { data: profile } = await supa
     .from("profiles")
     .select("id, role, nombre, apellido")
@@ -46,12 +46,22 @@ export default async function SoportePage() {
     }
   }
 
-  // 2) Primer fetch SSR de la lista (página 1)
+  // 2) Primer fetch SSR de la lista (página 1) con manejo de errores
   const cookieHeader = buildCookieHeader();
-  const initialData: Paged<EmpresaListItem> = await listEmpresas(
-    { page: 1, pageSize: 10, estado: "todos" },
-    { headers: { cookie: cookieHeader } }
-  );
+
+  let initialData: Paged<EmpresaListItem> | null = null;
+  let loadError: string | null = null;
+
+  try {
+    initialData = await listEmpresas(
+      { page: 1, pageSize: 10, estado: "todos" },
+      { headers: { cookie: cookieHeader } }
+    );
+  } catch (e: any) {
+    loadError =
+      e?.message ||
+      "No se pudo cargar la lista de empresas. Revisá el endpoint /api/soporte/empresas.";
+  }
 
   // 3) Render
   return (
@@ -71,9 +81,24 @@ export default async function SoportePage() {
         </div>
       </header>
 
-      <section className="bg-white dark:bg-neutral-900 rounded-2xl shadow p-4 md:p-5">
-        <EmpresaTable initialData={initialData} />
-      </section>
+      {loadError ? (
+        <section className="rounded-2xl border border-red-200 bg-red-50 p-4 text-red-700">
+          <p className="font-medium">Error al cargar empresas</p>
+          <p className="text-sm mt-1">{loadError}</p>
+          <p className="text-xs mt-2 text-red-600/80">
+            Tips: verificá que <code>/api/soporte/empresas</code> exista y responda 200 para el rol <code>soporte</code>.
+          </p>
+        </section>
+      ) : (
+        <section className="bg-white dark:bg-neutral-900 rounded-2xl shadow p-4 md:p-5">
+          {/* initialData es no-nulo acá si no hubo error */}
+          {initialData ? (
+            <EmpresaTable initialData={initialData} />
+          ) : (
+            <div className="text-sm text-gray-500">Cargando…</div>
+          )}
+        </section>
+      )}
     </main>
   );
 }

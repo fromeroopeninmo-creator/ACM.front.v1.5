@@ -1,44 +1,37 @@
 // frontend/lib/soporteApi.ts
+// Cliente para endpoints de soporte (SERVER + CLIENT safe)
+// Usa URL absoluta para evitar "Failed to parse URL" en SSR/RSC
+
+type FetchOpts = {
+  headers?: Record<string, string>;
+  cache?: RequestCache;
+  next?: NextFetchRequestConfig;
+};
+
 export type Paged<T> = {
-  items: T[];
   page: number;
   pageSize: number;
   total: number;
-};
-
-export type ListEmpresasParams = {
-  page?: number;
-  pageSize?: number;
-  search?: string;       // razón social o CUIT
-  estado?: "activo" | "suspendido" | "todos";
-  provincia?: string;
+  items: T[];
 };
 
 export type EmpresaListItem = {
   id: string;
   razon_social: string;
-  cuit: string;
+  cuit?: string | null;
+  ciudad?: string | null;
   provincia?: string | null;
-  planNombre?: string | null;
-  maxAsesoresBase?: number | null;
-  maxAsesoresOverride?: number | null;
-  asesoresCount?: number | null;
-  informesCount?: number | null;
-  estadoPlan?: "activo" | "suspendido";
-  fechaFin?: string | null; // ISO date
-  ultimaActividadAt?: string | null; // ISO date
-};
-
-export type ActionResult = {
-  ok: boolean;
-  message?: string;
+  plan_nombre?: string | null;
+  asesores_activos?: number | null;
+  informes_30d?: number | null;
+  created_at?: string | null;
 };
 
 export type EmpresaDetalle = {
   empresa: {
     id: string;
     razon_social: string;
-    cuit: string;
+    cuit?: string | null;
     condicion_fiscal?: string | null;
     telefono?: string | null;
     direccion?: string | null;
@@ -86,91 +79,117 @@ export type EmpresaDetalle = {
   }>;
 };
 
-/** Utilities */
-function buildQuery(params?: Record<string, any>) {
-  const q = new URLSearchParams();
-  if (!params) return "";
+// ---------- helpers ----------
+function getBaseUrl() {
+  // Prioridad: NEXT_PUBLIC_SITE_URL (configurala en Vercel)
+  const envUrl =
+    process.env.NEXT_PUBLIC_SITE_URL ||
+    process.env.NEXT_PUBLIC_VERCEL_URL || // por si la tienes
+    process.env.VERCEL_URL;
+
+  if (envUrl) {
+    return envUrl.startsWith("http") ? envUrl : `https://${envUrl}`;
+  }
+
+  // Fallback local dev
+  return "http://localhost:3000";
+}
+
+function withQuery(url: string, params?: Record<string, any>) {
+  if (!params) return url;
+  const usp = new URLSearchParams();
   Object.entries(params).forEach(([k, v]) => {
-    if (v === undefined || v === null || v === "" || v === "todos") return;
-    q.set(k, String(v));
+    if (v === undefined || v === null) return;
+    usp.set(k, String(v));
   });
-  const s = q.toString();
-  return s ? `?${s}` : "";
+  const qs = usp.toString();
+  return qs ? `${url}?${qs}` : url;
 }
 
-async function handleJson<T>(res: Response): Promise<T> {
-  if (!res.ok) {
-    const msg = await safeError(res);
-    throw new Error(msg || `HTTP ${res.status}`);
-  }
-  return res.json() as Promise<T>;
-}
-
-async function safeError(res: Response) {
-  try {
-    const data = await res.json();
-    return data?.error || data?.message || res.statusText;
-  } catch {
-    return res.statusText;
-  }
-}
-
-/**
- * listEmpresas
- * - Cliente o SSR. En SSR podés pasar headers (e.g., Cookie).
- */
+// ---------- API calls ----------
 export async function listEmpresas(
-  params?: ListEmpresasParams,
-  init?: RequestInit
+  params: { page: number; pageSize: number; estado?: "todos" | "activos" | "inactivos"; q?: string },
+  opts: FetchOpts = {}
 ): Promise<Paged<EmpresaListItem>> {
-  const qs = buildQuery(params);
-  const res = await fetch(`/api/soporte/empresas${qs}`, {
+  const base = getBaseUrl();
+  const url = withQuery(`${base}/api/soporte/empresas`, params);
+  const res = await fetch(url, {
     method: "GET",
-    cache: "no-store",
-    ...init,
+    headers: {
+      ...(opts.headers || {}),
+    },
+    cache: opts.cache ?? "no-store",
+    next: opts.next,
   });
-  return handleJson<Paged<EmpresaListItem>>(res);
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`listEmpresas ${res.status} ${res.statusText} ${body}`.trim());
+  }
+  return res.json();
 }
 
-/** getEmpresaDetalle */
 export async function getEmpresaDetalle(
   empresaId: string,
-  init?: RequestInit
+  opts: FetchOpts = {}
 ): Promise<EmpresaDetalle> {
-  const res = await fetch(`/api/soporte/empresas/${empresaId}`, {
+  const base = getBaseUrl();
+  const url = `${base}/api/soporte/empresas/${encodeURIComponent(empresaId)}`;
+  const res = await fetch(url, {
     method: "GET",
-    cache: "no-store",
-    ...init,
+    headers: {
+      ...(opts.headers || {}),
+    },
+    cache: opts.cache ?? "no-store",
+    next: opts.next,
   });
-  return handleJson<EmpresaDetalle>(res);
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`getEmpresaDetalle ${res.status} ${res.statusText} ${body}`.trim());
+  }
+  return res.json();
 }
 
-/** postResetPassword */
 export async function postResetPassword(
-  payload: { email: string },
-  init?: RequestInit
-): Promise<ActionResult> {
-  const res = await fetch(`/api/soporte/reset-password`, {
+  email: string,
+  opts: FetchOpts = {}
+): Promise<{ ok: true }> {
+  const base = getBaseUrl();
+  const url = `${base}/api/soporte/reset-password`;
+  const res = await fetch(url, {
     method: "POST",
-    headers: { "Content-Type": "application/json", ...(init?.headers || {}) },
-    body: JSON.stringify(payload),
+    headers: {
+      "content-type": "application/json",
+      ...(opts.headers || {}),
+    },
+    body: JSON.stringify({ email }),
     cache: "no-store",
-    ...init,
   });
-  return handleJson<ActionResult>(res);
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`postResetPassword ${res.status} ${res.statusText} ${body}`.trim());
+  }
+  return res.json();
 }
 
-/** postTogglePlan */
 export async function postTogglePlan(
-  payload: { empresaId: string; activar: boolean },
-  init?: RequestInit
-): Promise<ActionResult> {
-  const res = await fetch(`/api/soporte/plan-visual-toggle`, {
+  empresaId: string,
+  action: "activar" | "suspender",
+  opts: FetchOpts = {}
+): Promise<{ ok: true }> {
+  const base = getBaseUrl();
+  const url = `${base}/api/soporte/plan-visual-toggle`;
+  const res = await fetch(url, {
     method: "POST",
-    headers: { "Content-Type": "application/json", ...(init?.headers || {}) },
-    body: JSON.stringify(payload),
+    headers: {
+      "content-type": "application/json",
+      ...(opts.headers || {}),
+    },
+    body: JSON.stringify({ empresaId, action }),
     cache: "no-store",
-    ...init,
   });
-  return handleJson<ActionResult>(res);
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`postTogglePlan ${res.status} ${res.statusText} ${body}`.trim());
+  }
+  return res.json();
 }

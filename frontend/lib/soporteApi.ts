@@ -177,13 +177,6 @@ export async function getEmpresaDetalle(
   }
 
   // 🔁 Mapeo del contrato actual del backend → contrato esperado por la UI
-  // Backend actual devuelve:
-  // {
-  //   empresa: { id, nombre, cuit, logoUrl, color, condicion_fiscal, telefono, direccion, localidad, provincia },
-  //   plan: { nombre, maxAsesores, override, activo, fechaInicio, fechaFin },
-  //   kpis: { asesoresTotales, informesTotales },
-  //   ultimasAccionesSoporte: [{ id, soporteId, empresaId, descripcion, timestamp }]
-  // }
   const raw = await res.json();
 
   const empresaPlan =
@@ -212,7 +205,6 @@ export async function getEmpresaDetalle(
       id: raw?.empresa?.id,
       razon_social: raw?.empresa?.nombre ?? null,
       cuit: raw?.empresa?.cuit ?? null,
-      // ✅ Ajuste: completar campos que ahora expone el endpoint
       condicion_fiscal: raw?.empresa?.condicion_fiscal ?? null,
       telefono: raw?.empresa?.telefono ?? null,
       direccion: raw?.empresa?.direccion ?? null,
@@ -228,8 +220,21 @@ export async function getEmpresaDetalle(
       informes_30d: raw?.kpis?.informesTotales ?? 0,
       ultima_actividad_at: null,
     },
-    asesores: [], // aún no expuesto por el endpoint; la UI lo tolera vacío
-    informes: [], // aún no expuesto por el endpoint; la UI lo tolera vacío
+    // ✅ Ahora mapeamos lo que ya devuelve el backend
+    asesores: (raw?.asesores || []).map((a: any) => ({
+      id: a.id,
+      nombre: a.nombre,
+      apellido: a.apellido ?? null,
+      email: a.email,
+      activo: a.activo,
+      fecha_creacion: a.fecha_creacion ?? null,
+    })),
+    informes: (raw?.informes || []).map((i: any) => ({
+      id: i.id,
+      titulo: i.titulo ?? null,
+      estado: i.estado,
+      fecha_creacion: i.fecha_creacion,
+    })),
     acciones_soporte:
       (raw?.ultimasAccionesSoporte || []).map((a: any) => ({
         soporte: a.soporteId ? String(a.soporteId) : null,

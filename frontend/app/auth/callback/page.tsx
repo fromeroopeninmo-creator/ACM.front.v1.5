@@ -77,8 +77,8 @@ export default function AuthCallbackPage() {
 
         setStatus("done");
         setMsg("¡Listo! Redirigiendo a tu panel…");
-        // 3) Redirigir al panel de empresa
-        router.replace("/dashboard/empresa");
+        // 3) Redirigir al panel SEGÚN ROL (deja que /dashboard derive)
+        router.replace("/dashboard");
       } catch (e: any) {
         setStatus("error");
         setMsg(e?.message || "Error inicializando tu cuenta.");

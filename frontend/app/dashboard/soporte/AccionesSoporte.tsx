@@ -15,109 +15,104 @@ export default function AccionesSoporte({
   correoResetDefault = "",
   estadoPlanActual,
 }: Props) {
-  const [email, setEmail] = useState<string>(correoResetDefault);
+  const [email, setEmail] = useState(correoResetDefault);
   const [loadingReset, setLoadingReset] = useState(false);
-  const [loadingToggle, setLoadingToggle] = useState<false | "activar" | "suspender">(false);
+  const [loadingToggle, setLoadingToggle] = useState<"activar" | "suspender" | null>(null);
+  const [estado, setEstado] = useState<"activo" | "suspendido" | undefined>(estadoPlanActual);
 
-  async function onResetPassword() {
-    if (!email) {
-      alert("Ingresá un email válido para enviar el reset.");
+  async function onResetPassword(e: React.FormEvent) {
+    e.preventDefault();
+    if (!email || !email.includes("@")) {
+      alert("Ingresá un email válido.");
       return;
     }
-    if (!confirm(`¿Enviar email de recuperación a ${email}?`)) return;
-
     try {
       setLoadingReset(true);
-      const res = await postResetPassword({ email });
+      // ✅ Fix: pasar string, no objeto
+      const res = await postResetPassword(email);
       if (res.ok) {
         alert("Se envió el email de recuperación (si el usuario existe).");
       } else {
-        alert(res.message || "No se pudo enviar el reset de contraseña.");
+        alert("No se pudo enviar el email de recuperación.");
       }
-    } catch (e: any) {
-      alert(e?.message || "Error en reset de contraseña.");
+    } catch (err: any) {
+      alert(err?.message || "Error al enviar el email de recuperación.");
     } finally {
       setLoadingReset(false);
     }
   }
 
-  async function onTogglePlan(activar: boolean) {
-    const verbo = activar ? "activar" : "suspender";
-    if (!confirm(`¿Confirmás ${verbo} el plan de esta empresa?`)) return;
-
+  async function onToggle(action: "activar" | "suspender") {
     try {
-      setLoadingToggle(activar ? "activar" : "suspender");
-      const res = await postTogglePlan({ empresaId, activar });
+      setLoadingToggle(action);
+      const res = await postTogglePlan(empresaId, action);
       if (res.ok) {
-        alert(`Plan ${activar ? "activado" : "suspendido"} correctamente.`);
-        // tip: el padre puede hacer mutate() para revalidar su SWR si lo integra
+        setEstado(action === "activar" ? "activo" : "suspendido");
+        alert(`Plan ${action === "activar" ? "activado" : "suspendido"} correctamente.`);
       } else {
-        alert(res.message || `No se pudo ${verbo} el plan.`);
+        alert("No se pudo aplicar la acción sobre el plan.");
       }
-    } catch (e: any) {
-      alert(e?.message || `Error al ${verbo} el plan.`);
+    } catch (err: any) {
+      alert(err?.message || "Error al aplicar la acción sobre el plan.");
     } finally {
-      setLoadingToggle(false);
+      setLoadingToggle(null);
     }
   }
 
-  const isActivo = estadoPlanActual === "activo";
-  const isSuspendido = estadoPlanActual === "suspendido";
-
   return (
-    <div className="rounded-2xl border p-4 bg-white dark:bg-neutral-900 space-y-3">
-      <h3 className="font-medium">Acciones de Soporte</h3>
-
-      {/* Reset de contraseña */}
-      <div className="space-y-2">
-        <label className="text-sm text-gray-600 dark:text-gray-300">
-          Envío de enlace de recuperación
-        </label>
-        <div className="flex gap-2">
+    <div className="space-y-4">
+      {/* Reset de password */}
+      <form onSubmit={onResetPassword} className="flex flex-col md:flex-row gap-2 md:items-end">
+        <div className="flex-1">
+          <label className="block text-sm text-gray-600 mb-1">Enviar reset de contraseña</label>
           <input
             type="email"
             value={email}
-            placeholder="usuario@empresa.com"
             onChange={(e) => setEmail(e.target.value)}
-            className="flex-1 rounded-xl border px-3 py-2 text-sm bg-white dark:bg-neutral-950"
+            placeholder="correo@ejemplo.com"
+            className="w-full rounded-xl border px-3 py-2 text-sm bg-white dark:bg-neutral-950"
           />
-          <button
-            onClick={onResetPassword}
-            disabled={loadingReset}
-            className="rounded-xl border px-3 py-2 text-sm hover:bg-gray-50 disabled:opacity-50"
-          >
-            {loadingReset ? "Enviando…" : "Enviar reset"}
-          </button>
         </div>
-        <p className="text-xs text-gray-500">
-          Registra en auditoría. Si el email no existe, no revela información sensible.
-        </p>
-      </div>
+        <button
+          type="submit"
+          disabled={loadingReset}
+          className="rounded-xl border px-4 py-2 text-sm bg-blue-600 text-white disabled:opacity-50"
+        >
+          {loadingReset ? "Enviando..." : "Enviar reset"}
+        </button>
+      </form>
 
-      {/* Activar / Suspender plan */}
-      <div className="space-y-2">
-        <label className="text-sm text-gray-600 dark:text-gray-300">
-          Estado del plan
-        </label>
-        <div className="flex flex-wrap gap-2">
+      {/* Toggle plan: activar / suspender */}
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-sm text-gray-600">Estado del plan:</span>
+        <span
+          className={
+            estado === "activo"
+              ? "inline-flex items-center rounded-full px-2 py-0.5 text-xs bg-green-100 text-green-700"
+              : estado === "suspendido"
+              ? "inline-flex items-center rounded-full px-2 py-0.5 text-xs bg-amber-100 text-amber-700"
+              : "inline-flex items-center rounded-full px-2 py-0.5 text-xs bg-gray-100 text-gray-700"
+          }
+        >
+          {estado || "—"}
+        </span>
+
+        <div className="ml-auto flex gap-2">
           <button
-            onClick={() => onTogglePlan(true)}
-            disabled={loadingToggle !== false || isActivo}
-            className="rounded-xl border px-3 py-2 text-sm hover:bg-gray-50 disabled:opacity-50"
+            onClick={() => onToggle("activar")}
+            disabled={loadingToggle !== null}
+            className="rounded-xl border px-3 py-1.5 text-sm bg-green-600 text-white disabled:opacity-50"
           >
-            {loadingToggle === "activar" ? "Activando…" : "Activar"}
+            {loadingToggle === "activar" ? "Activando..." : "Activar"}
           </button>
           <button
-            onClick={() => onTogglePlan(false)}
-            disabled={loadingToggle !== false || isSuspendido}
-            className="rounded-xl border px-3 py-2 text-sm hover:bg-gray-50 disabled:opacity-50"
+            onClick={() => onToggle("suspender")}
+            disabled={loadingToggle !== null}
+            className="rounded-xl border px-3 py-1.5 text-sm bg-amber-600 text-white disabled:opacity-50"
           >
-            {loadingToggle === "suspender" ? "Suspendiendo…" : "Suspender"}
+            {loadingToggle === "suspender" ? "Suspendiendo..." : "Suspender"}
           </button>
         </div>
-        <p className="text-xs text-gray-500">
-          Usa <code>/api/soporte/plan-visual-toggle</code>. El padre puede refrescar métricas luego.
-        </p>
       </div>
     </div>
   );

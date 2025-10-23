@@ -20,7 +20,6 @@ function toNum(x: any): number {
 }
 
 async function resolveUserRole(userId: string): Promise<Role | null> {
-  // 1) Por user_id (preferente)
   const { data: p1 } = await supabaseAdmin
     .from("profiles")
     .select("role")
@@ -28,7 +27,6 @@ async function resolveUserRole(userId: string): Promise<Role | null> {
     .maybeSingle();
   if (p1?.role) return p1.role as Role;
 
-  // 2) Fallback por id
   const { data: p2 } = await supabaseAdmin
     .from("profiles")
     .select("role")
@@ -56,21 +54,22 @@ export async function GET() {
     }
 
     // 2) Empresas activas (asumimos 0 o 1 activo por empresa)
-    const { count: empresasActivasCount, error: epCountErr } = await supabaseAdmin
-      .from("empresas_planes")
-      .select("empresa_id", { count: "exact", head: true })
-      .eq("activo", true);
+    const { data: activosRows, count: empresasActivasCount, error: epCountErr } =
+      await supabaseAdmin
+        .from("empresas_planes")
+        .select("empresa_id, plan_id, max_asesores_override", { count: "exact" })
+        .eq("activo", true);
 
     if (epCountErr) {
       return NextResponse.json({ error: epCountErr.message }, { status: 400 });
     }
+
     const empresasActivas = empresasActivasCount ?? 0;
 
     // 3) Asesores totales
     const { count: asesoresTotales, error: asesCountErr } = await supabaseAdmin
       .from("asesores")
       .select("id", { count: "exact", head: true });
-
     if (asesCountErr) {
       return NextResponse.json({ error: asesCountErr.message }, { status: 400 });
     }
@@ -79,24 +78,12 @@ export async function GET() {
     const { count: informesTotales, error: infCountErr } = await supabaseAdmin
       .from("informes")
       .select("id", { count: "exact", head: true });
-
     if (infCountErr) {
       return NextResponse.json({ error: infCountErr.message }, { status: 400 });
     }
 
-    // 5) MRR simulado
-    // 5.1 Traer planes activos por empresa
-    const { data: activos, error: epErr } = await supabaseAdmin
-      .from("empresas_planes")
-      .select("empresa_id, plan_id, max_asesores_override")
-      .eq("activo", true);
-
-    if (epErr) {
-      return NextResponse.json({ error: epErr.message }, { status: 400 });
-    }
-
-    // Si no hay activos, MRR = 0
-    if (!activos || activos.length === 0) {
+    // Si no hay empresas activas, devolver KPIs con MRR=0
+    if (!activosRows || activosRows.length === 0) {
       return NextResponse.json(
         {
           empresasActivas,
@@ -108,37 +95,37 @@ export async function GET() {
       );
     }
 
-    // 5.2 Traer planes involucrados
-    const planIds = Array.from(new Set(activos.map((a) => a.plan_id).filter(Boolean)));
+    // 5) Traer planes involucrados
+    const planIds = Array.from(new Set(activosRows.map((a: any) => a.plan_id).filter(Boolean)));
     const { data: planes, error: planesErr } = await supabaseAdmin
       .from("planes")
       .select("id, precio, max_asesores, precio_extra_por_asesor")
       .in("id", planIds);
-
     if (planesErr) {
       return NextResponse.json({ error: planesErr.message }, { status: 400 });
     }
-    const planMap = new Map(
-      (planes ?? []).map((p) => [p.id as string, p])
-    );
+    const planMap = new Map<string, any>((planes ?? []).map((p: any) => [p.id as string, p]));
 
-    // 5.3 Contar asesores por empresa
-    const { data: asesCounts, error: asesGrpErr } = await supabaseAdmin
-      .from("asesores")
-      .select("empresa_id, count:id")
-      .group("empresa_id");
+    // 6) Asesores por empresa (usamos la vista v_empresas_detalle_soporte para evitar 'group')
+    const empresaIds = Array.from(new Set(activosRows.map((a: any) => a.empresa_id as string)));
+    // Hacemos una sola llamada si el set es chico; si crece mucho, podríamos chunkear
+    const { data: detalleEmpresas, error: detErr } = await supabaseAdmin
+      .from("v_empresas_detalle_soporte")
+      .select("empresa_id, asesores_totales")
+      .in("empresa_id", empresaIds);
 
-    if (asesGrpErr) {
-      return NextResponse.json({ error: asesGrpErr.message }, { status: 400 });
+    if (detErr) {
+      return NextResponse.json({ error: detErr.message }, { status: 400 });
     }
+
     const asesMap = new Map<string, number>(
-      (asesCounts ?? []).map((r: any) => [r.empresa_id as string, Number(r.count) || 0])
+      (detalleEmpresas ?? []).map((r: any) => [r.empresa_id as string, Number(r.asesores_totales) || 0])
     );
 
-    // 5.4 Calcular MRR empresa por empresa
+    // 7) Calcular MRR empresa por empresa
     let mrrNeto = 0;
 
-    for (const row of activos) {
+    for (const row of activosRows) {
       const empresaId = row.empresa_id as string;
       const plan = planMap.get(row.plan_id as string);
       if (!plan) continue;
@@ -155,7 +142,7 @@ export async function GET() {
       mrrNeto += precioBase + extra;
     }
 
-    // 5.5 IVA 21% (solo para mostrar; BD sigue guardando neto)
+    // 8) IVA 21% (solo visual; BD mantiene netos)
     const iva = Math.round(mrrNeto * 0.21 * 100) / 100;
     const total = Math.round((mrrNeto + iva) * 100) / 100;
 

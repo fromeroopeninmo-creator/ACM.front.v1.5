@@ -15,16 +15,35 @@ export type Paged<T> = {
   items: T[];
 };
 
+// 🔎 TIPADO: incluir ambas variantes (snake y camel) para compatibilidad con tu UI
 export type EmpresaListItem = {
   id: string;
+
+  // Nombre/identidad
   razon_social: string;
+  plan_nombre?: string | null;     // snake
+  planNombre?: string | null;      // camel
+
+  // Localización / fiscales
   cuit?: string | null;
   ciudad?: string | null;
   provincia?: string | null;
-  plan_nombre?: string | null;
-  asesores_activos?: number | null;
-  informes_30d?: number | null;
-  created_at?: string | null;
+
+  // Cupos (plan / override)
+  max_asesores?: number | null;            // snake (plan base)
+  maxAsesoresBase?: number | null;         // camel (UI usa este)
+  max_asesores_override?: number | null;   // snake
+  maxAsesoresOverride?: number | null;     // camel (UI usa este)
+
+  // Métricas
+  asesores_activos?: number | null;  // snake
+  asesoresCount?: number | null;     // camel (UI usa este)
+  informes_30d?: number | null;      // snake
+  informes30d?: number | null;       // camel (UI usa este)
+
+  // Auditoría
+  created_at?: string | null;  // snake
+  createdAt?: string | null;   // camel
 };
 
 export type EmpresaDetalle = {
@@ -94,7 +113,6 @@ export type ListEmpresasParams = {
 
 // ---------- helpers ----------
 function getBaseUrl() {
-  // Prioridad: NEXT_PUBLIC_SITE_URL (configurala en Vercel)
   const envUrl =
     process.env.NEXT_PUBLIC_SITE_URL ||
     process.env.NEXT_PUBLIC_VERCEL_URL ||
@@ -103,8 +121,6 @@ function getBaseUrl() {
   if (envUrl) {
     return envUrl.startsWith("http") ? envUrl : `https://${envUrl}`;
   }
-
-  // Fallback local dev
   return "http://localhost:3000";
 }
 
@@ -144,7 +160,7 @@ export async function listEmpresas(
 export async function getEmpresaDetalle(
   empresaId: string,
   opts: FetchOpts = {}
-): Promise<EmpresaDetalle> {
+) {
   const base = getBaseUrl();
   const url = `${base}/api/soporte/empresas/${encodeURIComponent(empresaId)}`;
   const res = await fetch(url, {

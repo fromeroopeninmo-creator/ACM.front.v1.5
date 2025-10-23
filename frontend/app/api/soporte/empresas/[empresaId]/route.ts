@@ -71,10 +71,10 @@ export async function GET(
       return NextResponse.json({ error: "Empresa no encontrada." }, { status: 404 });
     }
 
-    // 2) Logo/color desde empresas (la vista detalle no los expone)
+    // 2) Logo/color + datos de empresa adicionales (para completar el detalle visual)
     const { data: empresaRow } = await supabaseAdmin
       .from("empresas")
-      .select("logo_url, color")
+      .select("logo_url, color, condicion_fiscal, telefono, direccion, localidad, provincia")
       .eq("id", empresaId)
       .maybeSingle();
 
@@ -90,7 +90,7 @@ export async function GET(
       return NextResponse.json({ error: accErr.message }, { status: 400 });
     }
 
-    // 4) Armar respuesta
+    // 4) Armar respuesta (mismo shape actual + nuevos campos en empresa)
     const resp = {
       empresa: {
         id: detalle.empresa_id,
@@ -98,6 +98,11 @@ export async function GET(
         cuit: detalle.cuit,
         logoUrl: empresaRow?.logo_url ?? null,
         color: empresaRow?.color ?? null,
+        condicion_fiscal: empresaRow?.condicion_fiscal ?? null,
+        telefono: empresaRow?.telefono ?? null,
+        direccion: empresaRow?.direccion ?? null,
+        localidad: empresaRow?.localidad ?? null,
+        provincia: empresaRow?.provincia ?? null,
       },
       plan: {
         nombre: detalle.plan_nombre ?? null,

@@ -6,10 +6,10 @@ import { getEmpresaDetalle, type EmpresaDetalle } from "#lib/soporteApi";
 import AccionesSoporte from "@/dashboard/soporte/AccionesSoporte";
 
 // Anticipados (comentados) — cuando quieras usar componentes separados sin tocar este archivo:
-// import EmpresaResumen from "@/dashboard/soporte/EmpresaResumen";
-// import AsesoresTable from "@/dashboard/soporte/AsesoresTable";
-// import InformesTable from "@/dashboard/soporte/InformesTable";
-// import HistorialAcciones from "@/dashboard/soporte/HistorialAcciones";
+import EmpresaResumen from "@/dashboard/soporte/EmpresaResumen";
+import AsesoresTable from "@/dashboard/soporte/AsesoresTable";
+import InformesTable from "@/dashboard/soporte/InformesTable";
+import HistorialAcciones from "@/dashboard/soporte/HistorialAcciones";
 
 export const dynamic = "force-dynamic";
 

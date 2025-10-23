@@ -25,9 +25,10 @@ export default async function SoportePage() {
     redirect("/login");
   }
 
+  // ⛑️ Ajuste mínimo: traigo nombre y apellido para mostrar "Soporte: …"
   const { data: profile } = await supa
     .from("profiles")
-    .select("id, role")
+    .select("id, role, nombre, apellido")
     .eq("id", user.id)
     .single();
 
@@ -57,10 +58,16 @@ export default async function SoportePage() {
     <main className="p-4 md:p-6 space-y-4">
       <header className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl md:text-2xl font-semibold">Panel de Soporte</h1>
+          <h1 className="text-xl md:text-2xl font-semibold">Dashboard de Soporte</h1>
           <p className="text-sm text-gray-500">
             Empresas · búsqueda, filtros y acciones (auditadas)
           </p>
+        </div>
+
+        {/* Lado derecho: etiqueta de rol para Soporte */}
+        <div className="text-sm text-gray-700 dark:text-gray-200">
+          <span className="font-medium">Soporte:</span>{" "}
+          {(profile?.nombre || "") + " " + (profile?.apellido || "")}
         </div>
       </header>
 

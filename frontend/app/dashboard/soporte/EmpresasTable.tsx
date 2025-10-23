@@ -97,15 +97,19 @@ export default function EmpresasTable({ initialData }: Props) {
   // Normalización de campos desde BD/backend (snake_case) → UI
   const rows = useMemo(() => {
     const items = data?.items || [];
-    return items.map((e) => {
+    return items.map((e: any) => {
+      // ✅ Ajuste: id robusto y nombre compatible con tu API
+      const id = e.id ?? e.empresa_id ?? e.empresaId;
+      const razon_social = e.razon_social || e.nombre_comercial || "—";
+
       const cupoBase = e.max_asesores ?? 0;                 // plan base
       const cupoOv = e.max_asesores_override ?? 0;          // override
       const asesores = e.asesores_activos ?? 0;             // métrica
       const informes30 = e.informes_30d ?? 0;               // métrica
       const plan = e.plan_nombre || "—";
       return {
-        id: e.id,
-        razon_social: e.razon_social,
+        id,
+        razon_social,
         cuit: e.cuit || "—",
         provincia: e.provincia || "—",
         plan,

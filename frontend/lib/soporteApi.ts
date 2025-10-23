@@ -79,12 +79,17 @@ export type EmpresaDetalle = {
   }>;
 };
 
-// --------- NEW: tipo exportado que espera EmpresasTable ----------
+// --------- Tipo exportado que espera EmpresasTable ----------
 export type ListEmpresasParams = {
   page: number;
   pageSize: number;
   estado?: "todos" | "activos" | "inactivos";
+  /** Búsqueda libre (alias histórico) */
   q?: string;
+  /** Búsqueda libre (lo que manda EmpresasTable) */
+  search?: string;
+  /** Filtro por provincia (lo que manda EmpresasTable) */
+  provincia?: string;
 };
 
 // ---------- helpers ----------

@@ -41,7 +41,7 @@ export default function DashboardHeader({ user, logout, color }: HeaderProps) {
   // 🎨 Color de fondo:
   // - Soporte/Admin: azul por defecto (no dependemos de theme de clientes)
   // - Empresa/Asesor: se mantiene como estaba (primaryColor o prop color)
-  const headerBg = (isSoporte || isAdmin) ? "#2563eb" : (primaryColor || color);
+  const headerBg = (isSoporte || isAdmin) ? "#004AAD" : (primaryColor || color);
 
   return (
     <header

@@ -79,12 +79,20 @@ export type EmpresaDetalle = {
   }>;
 };
 
+// --------- NEW: tipo exportado que espera EmpresasTable ----------
+export type ListEmpresasParams = {
+  page: number;
+  pageSize: number;
+  estado?: "todos" | "activos" | "inactivos";
+  q?: string;
+};
+
 // ---------- helpers ----------
 function getBaseUrl() {
   // Prioridad: NEXT_PUBLIC_SITE_URL (configurala en Vercel)
   const envUrl =
     process.env.NEXT_PUBLIC_SITE_URL ||
-    process.env.NEXT_PUBLIC_VERCEL_URL || // por si la tienes
+    process.env.NEXT_PUBLIC_VERCEL_URL ||
     process.env.VERCEL_URL;
 
   if (envUrl) {
@@ -108,7 +116,7 @@ function withQuery(url: string, params?: Record<string, any>) {
 
 // ---------- API calls ----------
 export async function listEmpresas(
-  params: { page: number; pageSize: number; estado?: "todos" | "activos" | "inactivos"; q?: string },
+  params: ListEmpresasParams,
   opts: FetchOpts = {}
 ): Promise<Paged<EmpresaListItem>> {
   const base = getBaseUrl();

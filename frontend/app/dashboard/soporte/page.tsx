@@ -3,7 +3,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { supabaseServer } from "#lib/supabaseServer";
 import { listEmpresas, type Paged, type EmpresaListItem } from "#lib/soporteApi";
-import EmpresasTable from "@/components/soporte/EmpresasTable";
+import EmpresaTable from "@/app/dashboard/soporte/EmpresaTable";
 
 export const dynamic = "force-dynamic";
 
@@ -32,7 +32,6 @@ export default async function SoportePage() {
     .single();
 
   if (!profile || profile.role !== "soporte") {
-    // Redirigir al dashboard correspondiente si no es soporte
     switch (profile?.role) {
       case "empresa":
         redirect("/dashboard/empresa");
@@ -42,7 +41,7 @@ export default async function SoportePage() {
       case "super_admin_root":
         redirect("/dashboard/admin");
       default:
-        redirect("/"); // público/landing
+        redirect("/");
     }
   }
 
@@ -66,7 +65,7 @@ export default async function SoportePage() {
       </header>
 
       <section className="bg-white dark:bg-neutral-900 rounded-2xl shadow p-4 md:p-5">
-        <EmpresasTable initialData={initialData} />
+        <EmpresaTable initialData={initialData} />
       </section>
     </main>
   );

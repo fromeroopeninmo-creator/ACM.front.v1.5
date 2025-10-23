@@ -160,7 +160,7 @@ export async function listEmpresas(
 export async function getEmpresaDetalle(
   empresaId: string,
   opts: FetchOpts = {}
-) {
+): Promise<EmpresaDetalle> {
   const base = getBaseUrl();
   const url = `${base}/api/soporte/empresas/${encodeURIComponent(empresaId)}`;
   const res = await fetch(url, {
@@ -175,7 +175,69 @@ export async function getEmpresaDetalle(
     const body = await res.text().catch(() => "");
     throw new Error(`getEmpresaDetalle ${res.status} ${res.statusText} ${body}`.trim());
   }
-  return res.json();
+
+  // 🔁 Mapeo del contrato actual del backend → contrato esperado por la UI
+  // Backend actual devuelve:
+  // {
+  //   empresa: { id, nombre, cuit, logoUrl, color },
+  //   plan: { nombre, maxAsesores, override, activo, fechaInicio, fechaFin },
+  //   kpis: { asesoresTotales, informesTotales },
+  //   ultimasAccionesSoporte: [{ id, soporteId, empresaId, descripcion, timestamp }]
+  // }
+  const raw = await res.json();
+
+  const empresaPlan =
+    raw?.plan
+      ? {
+          id: undefined as unknown as string, // no lo expone el backend; mantenemos shape
+          nombre: raw.plan.nombre ?? null,
+          max_asesores: raw.plan.maxAsesores ?? null,
+          duracion_dias: null,
+          precio: null,
+        }
+      : null;
+
+  const empresaOverride =
+    raw?.plan
+      ? {
+          max_asesores_override: raw.plan.override ?? null,
+          fecha_inicio: raw.plan.fechaInicio ?? null,
+          fecha_fin: raw.plan.fechaFin ?? null,
+          activo: raw.plan.activo ?? null,
+        }
+      : null;
+
+  const mapped: EmpresaDetalle = {
+    empresa: {
+      id: raw?.empresa?.id,
+      razon_social: raw?.empresa?.nombre ?? null,
+      cuit: raw?.empresa?.cuit ?? null,
+      condicion_fiscal: null,
+      telefono: null,
+      direccion: null,
+      localidad: null,
+      provincia: null,
+      logo_url: raw?.empresa?.logoUrl ?? null,
+      color: raw?.empresa?.color ?? null,
+      plan: empresaPlan,
+      override: empresaOverride,
+    },
+    metrics: {
+      asesores_count: raw?.kpis?.asesoresTotales ?? 0,
+      informes_30d: raw?.kpis?.informesTotales ?? 0,
+      ultima_actividad_at: null,
+    },
+    asesores: [], // aún no expuesto por el endpoint; la UI tolera vacío
+    informes: [], // aún no expuesto por el endpoint; la UI tolera vacío
+    acciones_soporte:
+      (raw?.ultimasAccionesSoporte || []).map((a: any) => ({
+        soporte: a.soporteId ? String(a.soporteId) : null,
+        descripcion: a.descripcion,
+        timestamp: a.timestamp,
+      })) ?? [],
+  };
+
+  return mapped;
 }
 
 export async function postResetPassword(

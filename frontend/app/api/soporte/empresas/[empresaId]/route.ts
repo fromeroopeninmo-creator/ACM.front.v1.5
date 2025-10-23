@@ -90,7 +90,30 @@ export async function GET(
       return NextResponse.json({ error: accErr.message }, { status: 400 });
     }
 
-    // 4) Armar respuesta (mismo shape actual + nuevos campos en empresa)
+    // 4) Listado de asesores de la empresa (para card de “Asesores”)
+    const { data: asesores, error: asesErr } = await supabaseAdmin
+      .from("asesores")
+      .select("id, nombre, apellido, email, activo, fecha_creacion")
+      .eq("empresa_id", empresaId)
+      .order("fecha_creacion", { ascending: false });
+
+    if (asesErr) {
+      return NextResponse.json({ error: asesErr.message }, { status: 400 });
+    }
+
+    // 5) Informes recientes de la empresa (para card “Informes recientes”)
+    const { data: informes, error: infErr } = await supabaseAdmin
+      .from("informes")
+      .select("id, titulo, estado, fecha_creacion")
+      .eq("empresa_id", empresaId)
+      .order("fecha_creacion", { ascending: false })
+      .limit(20);
+
+    if (infErr) {
+      return NextResponse.json({ error: infErr.message }, { status: 400 });
+    }
+
+    // 6) Armar respuesta (mismo shape actual + nuevos campos)
     const resp = {
       empresa: {
         id: detalle.empresa_id,
@@ -123,6 +146,23 @@ export async function GET(
           empresaId: a.empresa_id,
           descripcion: a.descripcion,
           timestamp: a.timestamp,
+        })) ?? [],
+      // ✅ Nuevos arrays para que la UI muestre contenido real
+      asesores:
+        (asesores || []).map((a) => ({
+          id: a.id,
+          nombre: a.nombre,
+          apellido: a.apellido,
+          email: a.email,
+          activo: a.activo,
+          fecha_creacion: a.fecha_creacion,
+        })) ?? [],
+      informes:
+        (informes || []).map((i) => ({
+          id: i.id,
+          titulo: i.titulo,
+          estado: i.estado,
+          fecha_creacion: i.fecha_creacion,
         })) ?? [],
     };
 

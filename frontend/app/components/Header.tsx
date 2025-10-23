@@ -19,14 +19,25 @@ export default function Header() {
 
     const fetchEmpresa = async () => {
       try {
+        // ⛑️ Cambios quirúrgicos:
+        // Solo consultamos empresa si es "empresa" o si es "asesor" con empresa_id.
+        // Para soporte/admin NO buscamos empresa (evita mezclar datos).
+        const role = (user as any).role;
+        const empresaId = (user as any).empresa_id;
+
+        if (role !== "empresa" && !(role === "asesor" && empresaId)) {
+          setEmpresa(null);
+          return;
+        }
+
         let query = supabase
           .from("empresas")
           .select("id, nombre_comercial, razon_social, matriculado, cpi, user_id");
 
-        if (user.role === "empresa") {
-          query = query.eq("user_id", user.id);
-        } else if ((user as any).empresa_id) {
-          query = query.eq("id", (user as any).empresa_id);
+        if (role === "empresa") {
+          query = query.eq("user_id", (user as any).id);
+        } else if (role === "asesor" && empresaId) {
+          query = query.eq("id", empresaId);
         }
 
         const { data, error } = await query.maybeSingle();
@@ -41,7 +52,7 @@ export default function Header() {
 
   if (!user) return null;
 
-  const role = user.role || "empresa";
+  const role = (user as any).role || "empresa";
   const safeUser = user as any;
 
   // 🔹 Datos seguros
@@ -51,6 +62,11 @@ export default function Header() {
     role === "asesor"
       ? `${safeUser.nombre ?? ""} ${safeUser.apellido ?? ""}`.trim() || "—"
       : "—";
+
+  // Etiquetas para Soporte/Admin (solo visual)
+  const nombreCompleto = `${safeUser.nombre ?? ""} ${safeUser.apellido ?? ""}`.trim() || "—";
+  const isSoporte = role === "soporte";
+  const isAdmin = role === "super_admin" || role === "super_admin_root";
 
   // 🔹 Ruta dinámica del dashboard
   const getDashboardRoute = () => {
@@ -82,9 +98,18 @@ export default function Header() {
       <div className="flex w-full items-center justify-between md:hidden">
         {/* Izquierda: datos */}
         <div className="flex flex-col text-[11px] sm:text-sm font-semibold text-gray-700 leading-tight text-left">
-          <p>Matriculado/a: {matriculado}</p>
-          <p>CPI: {cpi}</p>
-          <p>Asesor: {nombreAsesor}</p>
+          {/* 👇 Cambio visual: Soporte/Admin muestran su etiqueta; el resto mantiene Matriculado/CPI/Asesor */}
+          {isSoporte ? (
+            <p>Soporte: {nombreCompleto}</p>
+          ) : isAdmin ? (
+            <p>Admin: {nombreCompleto}</p>
+          ) : (
+            <>
+              <p>Matriculado/a: {matriculado}</p>
+              <p>CPI: {cpi}</p>
+              <p>Asesor: {nombreAsesor}</p>
+            </>
+          )}
 
           {/* Botón volver */}
           <div className="flex gap-2 mt-2">
@@ -156,9 +181,18 @@ export default function Header() {
 
         {/* Derecha: datos alineados a la izquierda */}
         <div className="flex flex-col items-start gap-0.5 text-xs sm:text-sm font-semibold text-gray-700 leading-tight text-left">
-          <p>Matriculado/a: {matriculado}</p>
-          <p>CPI: {cpi}</p>
-          <p>Asesor: {nombreAsesor}</p>
+          {/* 👇 Cambio visual: Soporte/Admin muestran su etiqueta; el resto mantiene Matriculado/CPI/Asesor */}
+          {isSoporte ? (
+            <p>Soporte: {nombreCompleto}</p>
+          ) : isAdmin ? (
+            <p>Admin: {nombreCompleto}</p>
+          ) : (
+            <>
+              <p>Matriculado/a: {matriculado}</p>
+              <p>CPI: {cpi}</p>
+              <p>Asesor: {nombreAsesor}</p>
+            </>
+          )}
         </div>
       </div>
     </header>

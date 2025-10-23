@@ -1,4 +1,4 @@
-// frontend/components/soporte/EmpresasTable.tsx
+// frontend/app/dashboard/soporte/EmpresaTable.tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -17,7 +17,10 @@ type Props = {
 const DEFAULT_PAGE_SIZE = 10;
 
 const fetcher = async (key: string) => {
-  const url = new URL(key, typeof window !== "undefined" ? window.location.origin : "http://localhost");
+  const url = new URL(
+    key,
+    typeof window !== "undefined" ? window.location.origin : "http://localhost"
+  );
   const params: ListEmpresasParams = {
     page: Number(url.searchParams.get("page") || "1"),
     pageSize: Number(url.searchParams.get("pageSize") || DEFAULT_PAGE_SIZE),
@@ -28,15 +31,17 @@ const fetcher = async (key: string) => {
   return listEmpresas(params);
 };
 
-export default function EmpresasTable({ initialData }: Props) {
-  // UI State
+export default function EmpresaTable({ initialData }: Props) {
   const [page, setPage] = useState<number>(initialData.page || 1);
-  const [pageSize, setPageSize] = useState<number>(initialData.pageSize || DEFAULT_PAGE_SIZE);
+  const [pageSize, setPageSize] = useState<number>(
+    initialData.pageSize || DEFAULT_PAGE_SIZE
+  );
   const [search, setSearch] = useState<string>("");
-  const [estado, setEstado] = useState<"todos" | "activo" | "suspendido">("todos");
+  const [estado, setEstado] = useState<"todos" | "activo" | "suspendido">(
+    "todos"
+  );
   const [provincia, setProvincia] = useState<string>("");
 
-  // Clave de SWR
   const swrKey = useMemo(() => {
     const u = new URL("/api/soporte/empresas", "http://local");
     u.searchParams.set("page", String(page || 1));
@@ -47,13 +52,17 @@ export default function EmpresasTable({ initialData }: Props) {
     return u.pathname + "?" + u.searchParams.toString();
   }, [page, pageSize, search, estado, provincia]);
 
-  const { data, error, isValidating, mutate } = useSWR<Paged<EmpresaListItem>>(swrKey, fetcher, {
-    keepPreviousData: true,
-    fallbackData: initialData,
-    revalidateOnFocus: false,
-  });
+  const { data, error, isValidating } = useSWR<Paged<EmpresaListItem>>(
+    swrKey,
+    fetcher,
+    {
+      keepPreviousData: true,
+      fallbackData: initialData,
+      revalidateOnFocus: false,
+    }
+  );
 
-  // Reset paginación al cambiar filtros/búsqueda
+  // Reset de paginación al cambiar filtros/búsqueda
   useEffect(() => {
     setPage(1);
   }, [search, estado, provincia]);
@@ -167,48 +176,4 @@ export default function EmpresasTable({ initialData }: Props) {
                             : "inline-flex items-center rounded-full px-2 py-0.5 text-xs bg-amber-100 text-amber-700"
                         }
                       >
-                        {e.estadoPlan === "activo" ? "Activo" : "Suspendido"}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2">{vence}</td>
-                    <td className="px-3 py-2">{last}</td>
-                    <td className="px-3 py-2">
-                      <a
-                        href={`/dashboard/soporte/${e.id}`}
-                        className="text-primary-600 hover:underline"
-                      >
-                        Ver detalle
-                      </a>
-                    </td>
-                  </tr>
-                );
-              })}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Paginación */}
-      <div className="flex items-center justify-between">
-        <p className="text-xs text-gray-500">
-          {isValidating ? "Actualizando…" : `Mostrando página ${page} de ${totalPages}`}
-        </p>
-        <div className="flex items-center gap-2">
-          <button
-            className="rounded-xl border px-3 py-1 text-sm disabled:opacity-50"
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
-            disabled={page <= 1 || isValidating}
-          >
-            Anterior
-          </button>
-          <button
-            className="rounded-xl border px-3 py-1 text-sm disabled:opacity-50"
-            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-            disabled={page >= totalPages || isValidating}
-          >
-            Siguiente
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
+                        {e.estadoPlan === "activo" ? "Activo" : "

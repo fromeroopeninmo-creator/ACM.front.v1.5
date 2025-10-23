@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { supabaseServer } from "#lib/supabaseServer";
 import { getEmpresaDetalle, type EmpresaDetalle } from "#lib/soporteApi";
+import AccionesSoporte from "@/dashboard/soporte/AccionesSoporte";
 
 export const dynamic = "force-dynamic";
 
@@ -89,7 +90,19 @@ export default async function SoporteEmpresaDetallePage({ params }: PageProps) {
     errorMsg = e?.message || "Error al cargar el detalle de la empresa.";
   }
 
-  // 3) Render
+  // 3) Derivar props para AccionesSoporte
+  const estadoPlanActual: "activo" | "suspendido" | undefined =
+    detalle?.empresa?.override?.activo === true
+      ? "activo"
+      : detalle?.empresa?.override?.activo === false
+      ? "suspendido"
+      : undefined;
+
+  // Elegimos un email por defecto para reset (opcional):
+  // Tomamos el primer asesor si existe; si preferís otro (dueño), ajustalo.
+  const correoResetDefault = detalle?.asesores?.[0]?.email || "";
+
+  // 4) Render
   return (
     <main className="p-4 md:p-6 space-y-4">
       <header className="flex items-center justify-between">
@@ -241,6 +254,15 @@ export default async function SoporteEmpresaDetallePage({ params }: PageProps) {
                 </dl>
               </div>
             </div>
+          </section>
+
+          {/* Acciones de Soporte */}
+          <section className="rounded-2xl border p-4 bg-white dark:bg-neutral-900">
+            <AccionesSoporte
+              empresaId={params.empresaId}
+              correoResetDefault={correoResetDefault}
+              estadoPlanActual={estadoPlanActual}
+            />
           </section>
 
           {/* Listas (solo lectura por ahora) */}

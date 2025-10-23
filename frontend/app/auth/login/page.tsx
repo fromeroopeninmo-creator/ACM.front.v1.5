@@ -36,16 +36,8 @@ export default function LoginPage() {
       } = await supabase.auth.getSession();
 
       if (session?.user) {
-        const role = session.user.user_metadata?.role || "empresa";
-        const roleDashboard: Record<string, string> = {
-          super_admin_root: "/dashboard/admin",
-          super_admin: "/dashboard/admin",
-          soporte: "/dashboard/soporte",
-          empresa: "/dashboard/empresa",
-          asesor: "/dashboard/asesor",
-        };
-
-        router.replace(roleDashboard[role] || "/dashboard/empresa");
+        // ✅ Dejar que /dashboard derive por rol (evita default "empresa")
+        router.replace("/dashboard");
       }
     };
 
@@ -99,16 +91,10 @@ export default function LoginPage() {
       return;
     }
 
-    const role = data.user.user_metadata?.role || "empresa";
-    const roleDashboard: Record<string, string> = {
-      super_admin_root: "/dashboard/admin",
-      super_admin: "/dashboard/admin",
-      soporte: "/dashboard/soporte",
-      empresa: "/dashboard/empresa",
-      asesor: "/dashboard/asesor",
-    };
-    router.push(roleDashboard[role] || "/dashboard/empresa");
+    // ✅ Dejar que /dashboard derive por rol (evita default "empresa")
+    router.push("/dashboard");
   };
+
 
   // 🔁 Reenviar correo de verificación
   const handleResend = async () => {

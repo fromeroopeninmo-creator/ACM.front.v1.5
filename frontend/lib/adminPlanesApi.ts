@@ -14,6 +14,8 @@ export type PlanRow = {
   duracion_dias: number | null;
   precio: number | null; // neto (ARS)
   activo: boolean;
+  // opcional en tu schema:
+  precio_extra_por_asesor?: number | null;
   created_at?: string | null;
   updated_at?: string | null;
 };
@@ -74,7 +76,7 @@ export async function listPlanes(
 }
 
 export async function createPlan(
-  input: Omit<PlanRow, "id" | "created_at" | "updated_at" | "activo"> & { activo?: boolean },
+  input: Omit<PlanRow, "id" | "created_at" | "updated_at">,
   opts: FetchOpts = {}
 ): Promise<{ ok: true }> {
   const base = getBaseUrl();

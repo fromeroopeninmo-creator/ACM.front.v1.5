@@ -9,22 +9,7 @@ type KpisResponse = {
   empresas_activas?: number | null;
   asesores_activos?: number | null;
   informes_totales?: number | null;
-  mrr?: number | null;
-};
-
-type CashflowItem = {
-  id?: string | number;
-  fecha?: string | null;
-  empresa_nombre?: string | null;
-  plan_nombre?: string | null;
-  concepto?: string | null;
-  monto?: number | null;
-  estado?: string | null;
-};
-
-type CashflowResponse = {
-  items?: CashflowItem[];
-  total?: number;
+  mrr?: number | null; // ingreso mensual recurrente
 };
 
 function buildCookieHeader(): string {
@@ -54,12 +39,6 @@ function fmtMoney(n?: number | null) {
     currency: "ARS",
     maximumFractionDigits: 0,
   }).format(n);
-}
-function fmtDateOnly(d?: string | null) {
-  if (!d) return "—";
-  const dt = new Date(d);
-  if (Number.isNaN(dt.getTime())) return "—";
-  return dt.toLocaleDateString();
 }
 
 export default async function AdminHomePage() {
@@ -95,46 +74,29 @@ export default async function AdminHomePage() {
     }
   }
 
-  // 2) Fetch SSR de KPIs y Cashflow (preview)
+  // 2) Fetch SSR de KPIs
   const cookieHeader = buildCookieHeader();
   const base = getBaseUrl();
 
   let kpis: KpisResponse | null = null;
-  let kpisError: string | null = null;
+  let errorMsg: string | null = null;
 
-  let cashflow: CashflowResponse | null = null;
-  let cashflowError: string | null = null;
-
-  // KPIs
   try {
     const res = await fetch(`${base}/api/admin/kpis`, {
       method: "GET",
-      headers: { cookie: cookieHeader },
+      headers: {
+        cookie: cookieHeader,
+      },
       cache: "no-store",
     });
+
     if (!res.ok) {
       const body = await res.text().catch(() => "");
       throw new Error(`GET /api/admin/kpis → ${res.status} ${res.statusText} ${body}`);
     }
     kpis = (await res.json()) as KpisResponse;
   } catch (e: any) {
-    kpisError = e?.message || "Error al cargar KPIs.";
-  }
-
-  // Cashflow (últimos 8 movimientos)
-  try {
-    const res = await fetch(`${base}/api/admin/cashflow?limit=8`, {
-      method: "GET",
-      headers: { cookie: cookieHeader },
-      cache: "no-store",
-    });
-    if (!res.ok) {
-      const body = await res.text().catch(() => "");
-      throw new Error(`GET /api/admin/cashflow → ${res.status} ${res.statusText} ${body}`);
-    }
-    cashflow = (await res.json()) as CashflowResponse;
-  } catch (e: any) {
-    cashflowError = e?.message || "Error al cargar Cashflow.";
+    errorMsg = e?.message || "Error al cargar KPIs.";
   }
 
   // 3) Render
@@ -150,34 +112,34 @@ export default async function AdminHomePage() {
       </header>
 
       {/* KPIs */}
-      {kpisError ? (
+      {errorMsg ? (
         <section className="rounded-2xl border border-red-200 bg-red-50 p-4 text-red-700">
-          {kpisError}
+          {errorMsg}
         </section>
       ) : (
         <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="rounded-2xl border p-4 bg-white dark:bg-neutral-900">
             <div className="text-xs text-gray-500">Empresas activas</div>
             <div className="text-2xl font-semibold mt-1">
-              {fmtNumber(kpis?.empresas_activas)}
+              {fmtNumber((kpis?.empresas_activas ?? 0))}
             </div>
           </div>
           <div className="rounded-2xl border p-4 bg-white dark:bg-neutral-900">
             <div className="text-xs text-gray-500">Asesores activos</div>
             <div className="text-2xl font-semibold mt-1">
-              {fmtNumber(kpis?.asesores_activos)}
+              {fmtNumber((kpis?.asesores_activos ?? 0))}
             </div>
           </div>
           <div className="rounded-2xl border p-4 bg-white dark:bg-neutral-900">
             <div className="text-xs text-gray-500">Informes totales</div>
             <div className="text-2xl font-semibold mt-1">
-              {fmtNumber(kpis?.informes_totales)}
+              {fmtNumber((kpis?.informes_totales ?? 0))}
             </div>
           </div>
           <div className="rounded-2xl border p-4 bg-white dark:bg-neutral-900">
             <div className="text-xs text-gray-500">MRR</div>
             <div className="text-2xl font-semibold mt-1">
-              {fmtMoney(kpis?.mrr)}
+              {fmtMoney((kpis?.mrr ?? 0))}
             </div>
           </div>
         </section>
@@ -215,6 +177,7 @@ export default async function AdminHomePage() {
           </p>
         </a>
 
+        {/* Card conectada a la futura página de Cashflow */}
         <a
           href="/dashboard/admin/cashflow"
           className="rounded-2xl border p-5 bg-white dark:bg-neutral-900 hover:bg-gray-50 dark:hover:bg-neutral-800 transition"
@@ -224,70 +187,6 @@ export default async function AdminHomePage() {
             Flujo de ingresos y estado de suscripciones.
           </p>
         </a>
-      </section>
-
-      {/* Cashflow (preview últimos movimientos) */}
-      <section className="rounded-2xl border p-4 bg-white dark:bg-neutral-900">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-base font-semibold">Cashflow reciente</h2>
-          <a
-            href="/dashboard/admin/cashflow"
-            className="text-sm text-blue-600 hover:underline"
-          >
-            Ver todo →
-          </a>
-        </div>
-
-        {cashflowError ? (
-          <div className="text-sm text-red-700 bg-red-50 rounded-xl p-3 border border-red-200">
-            {cashflowError}
-          </div>
-        ) : (
-          <div className="overflow-auto">
-            <table className="min-w-full text-sm">
-              <thead className="bg-gray-50 dark:bg-neutral-900">
-                <tr className="text-left">
-                  <th className="px-3 py-2">Fecha</th>
-                  <th className="px-3 py-2">Empresa</th>
-                  <th className="px-3 py-2">Plan / Concepto</th>
-                  <th className="px-3 py-2">Estado</th>
-                  <th className="px-3 py-2">Monto</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(cashflow?.items?.length ?? 0) === 0 ? (
-                  <tr>
-                    <td colSpan={5} className="px-3 py-6 text-center text-gray-500">
-                      Sin movimientos recientes.
-                    </td>
-                  </tr>
-                ) : (
-                  (cashflow?.items || []).map((m, idx) => (
-                    <tr key={String(m.id ?? idx)} className="border-t">
-                      <td className="px-3 py-2">{fmtDateOnly(m.fecha || null)}</td>
-                      <td className="px-3 py-2">{m.empresa_nombre || "—"}</td>
-                      <td className="px-3 py-2">
-                        {m.plan_nombre || m.concepto || "—"}
-                      </td>
-                      <td className="px-3 py-2">
-                        <span
-                          className={
-                            (m.estado || "").toLowerCase() === "pagado"
-                              ? "inline-flex items-center rounded-full px-2 py-0.5 text-xs bg-green-100 text-green-700"
-                              : "inline-flex items-center rounded-full px-2 py-0.5 text-xs bg-amber-100 text-amber-700"
-                          }
-                        >
-                          {m.estado || "—"}
-                        </span>
-                      </td>
-                      <td className="px-3 py-2">{fmtMoney(m.monto ?? null)}</td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        )}
       </section>
     </main>
   );

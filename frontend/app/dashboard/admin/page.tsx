@@ -2,9 +2,17 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { supabaseServer } from "#lib/supabaseServer";
-import { getAdminKPIs, type AdminKPIs } from "#lib/adminApi";
 
 export const dynamic = "force-dynamic";
+
+type KpisResponse = {
+  empresas_activas?: number | null;
+  asesores_activos?: number | null;
+  informes_totales?: number | null;
+  mrr?: number | null; // ingreso mensual recurrente
+  // Puedes extender si tu API devuelve más métricas:
+  // churn?, arpu?, ingresos_30d?, etc.
+};
 
 function buildCookieHeader(): string {
   const jar = cookies();
@@ -13,11 +21,19 @@ function buildCookieHeader(): string {
   return all.map((c) => `${c.name}=${c.value}`).join("; ");
 }
 
+function getBaseUrl() {
+  const envUrl =
+    process.env.NEXT_PUBLIC_SITE_URL ||
+    process.env.NEXT_PUBLIC_VERCEL_URL ||
+    process.env.VERCEL_URL;
+  if (envUrl) return envUrl.startsWith("http") ? envUrl : `https://${envUrl}`;
+  return "http://localhost:3000";
+}
+
 function fmtNumber(n?: number | null) {
   if (n === null || n === undefined) return "—";
   return new Intl.NumberFormat("es-AR").format(n);
 }
-
 function fmtMoney(n?: number | null) {
   if (n === null || n === undefined) return "—";
   return new Intl.NumberFormat("es-AR", {
@@ -38,7 +54,6 @@ export default async function AdminHomePage() {
     redirect("/login");
   }
 
-  // Buscamos el role en profiles; fallback a user_metadata.role
   const { data: profile } = await supa
     .from("profiles")
     .select("id, role")
@@ -61,24 +76,34 @@ export default async function AdminHomePage() {
     }
   }
 
-  // 2) Fetch SSR de KPIs admin
+  // 2) Fetch SSR de KPIs
   const cookieHeader = buildCookieHeader();
+  const base = getBaseUrl();
 
-  let kpis: AdminKPIs | null = null;
+  let kpis: KpisResponse | null = null;
   let errorMsg: string | null = null;
 
   try {
-    kpis = await getAdminKPIs({
-      headers: { cookie: cookieHeader },
+    const res = await fetch(`${base}/api/admin/kpis`, {
+      method: "GET",
+      headers: {
+        cookie: cookieHeader,
+      },
       cache: "no-store",
     });
+
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      throw new Error(`GET /api/admin/kpis → ${res.status} ${res.statusText} ${body}`);
+    }
+    kpis = (await res.json()) as KpisResponse;
   } catch (e: any) {
-    errorMsg = e?.message || "Error al cargar KPIs de administración.";
+    errorMsg = e?.message || "Error al cargar KPIs.";
   }
 
   // 3) Render
   return (
-    <main className="p-4 md:p-6 space-y-4">
+    <main className="p-4 md:p-6 space-y-5">
       <header className="flex items-center justify-between">
         <div className="space-y-1">
           <h1 className="text-xl md:text-2xl font-semibold">Panel de Administración</h1>
@@ -88,104 +113,82 @@ export default async function AdminHomePage() {
         </div>
       </header>
 
+      {/* KPIs */}
       {errorMsg ? (
         <section className="rounded-2xl border border-red-200 bg-red-50 p-4 text-red-700">
           {errorMsg}
         </section>
-      ) : !kpis ? (
-        <section className="rounded-2xl border p-4">Cargando…</section>
       ) : (
-        <>
-          {/* KPIs principales */}
-          <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <article className="rounded-2xl border p-4 bg-white dark:bg-neutral-900">
-              <div className="text-xs text-gray-500">Empresas activas</div>
-              <div className="mt-1 text-2xl font-semibold">
-                {fmtNumber(kpis.empresas_activas)}
-              </div>
-            </article>
-
-            <article className="rounded-2xl border p-4 bg-white dark:bg-neutral-900">
-              <div className="text-xs text-gray-500">Asesores activos</div>
-              <div className="mt-1 text-2xl font-semibold">
-                {fmtNumber(kpis.asesores_activos)}
-              </div>
-            </article>
-
-            <article className="rounded-2xl border p-4 bg-white dark:bg-neutral-900">
-              <div className="text-xs text-gray-500">Informes totales</div>
-              <div className="mt-1 text-2xl font-semibold">
-                {fmtNumber(kpis.informes_totales)}
-              </div>
-            </article>
-
-            <article className="rounded-2xl border p-4 bg-white dark:bg-neutral-900">
-              <div className="text-xs text-gray-500">MRR</div>
-              <div className="mt-1 text-2xl font-semibold">{fmtMoney(kpis.mrr)}</div>
-            </article>
-          </section>
-
-          {/* Accesos rápidos */}
-          <section className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-            <a
-              href="/dashboard/admin/empresas"
-              className="rounded-2xl border p-4 bg-white dark:bg-neutral-900 hover:bg-gray-50 dark:hover:bg-neutral-800 transition"
-            >
-              <div className="text-sm font-medium">Empresas</div>
-              <p className="text-xs text-gray-500 mt-1">
-                Listado y gestión integral de empresas.
-              </p>
-            </a>
-
-            <a
-              href="/dashboard/admin/soporte"
-              className="rounded-2xl border p-4 bg-white dark:bg-neutral-900 hover:bg-gray-50 dark:hover:bg-neutral-800 transition"
-            >
-              <div className="text-sm font-medium">Soporte</div>
-              <p className="text-xs text-gray-500 mt-1">
-                Alta de agentes, estados y auditoría de acciones.
-              </p>
-            </a>
-
-            <a
-              href="/dashboard/admin/planes"
-              className="rounded-2xl border p-4 bg-white dark:bg-neutral-900 hover:bg-gray-50 dark:hover:bg-neutral-800 transition"
-            >
-              <div className="text-sm font-medium">Planes</div>
-              <p className="text-xs text-gray-500 mt-1">
-                ABM de planes (precios netos) y auditoría.
-              </p>
-            </a>
-
-            <a
-              href="/dashboard/admin/cashflow"
-              className="rounded-2xl border p-4 bg-white dark:bg-neutral-900 hover:bg-gray-50 dark:hover:bg-neutral-800 transition"
-            >
-              <div className="text-sm font-medium">Cashflow / Pagos</div>
-              <p className="text-xs text-gray-500 mt-1">
-                Flujo de ingresos y estado de suscripciones.
-              </p>
-            </a>
-          </section>
-
-          {/* Actividad reciente / Auditoría (placeholder inicial) */}
-          <section className="rounded-2xl border p-4 bg-white dark:bg-neutral-900">
-            <div className="flex items-center justify-between mb-2">
-              <h2 className="text-base font-semibold">Actividad reciente</h2>
-              <a
-                href="/dashboard/soporte/logs"
-                className="text-xs text-blue-600 hover:underline"
-              >
-                Ver todo
-              </a>
+        <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="rounded-2xl border p-4 bg-white dark:bg-neutral-900">
+            <div className="text-xs text-gray-500">Empresas activas</div>
+            <div className="text-2xl font-semibold mt-1">
+              {fmtNumber(kpis?.empresas_activas)}
             </div>
-            <p className="text-sm text-gray-600 dark:text-gray-300">
-              Próximamente: feed unificado de auditoría (acciones de soporte, cambios de
-              plan, altas/bajas, pagos).
-            </p>
-          </section>
-        </>
+          </div>
+          <div className="rounded-2xl border p-4 bg-white dark:bg-neutral-900">
+            <div className="text-xs text-gray-500">Asesores activos</div>
+            <div className="text-2xl font-semibold mt-1">
+              {fmtNumber(kpis?.asesores_activos)}
+            </div>
+          </div>
+          <div className="rounded-2xl border p-4 bg-white dark:bg-neutral-900">
+            <div className="text-xs text-gray-500">Informes totales</div>
+            <div className="text-2xl font-semibold mt-1">
+              {fmtNumber(kpis?.informes_totales)}
+            </div>
+          </div>
+          <div className="rounded-2xl border p-4 bg-white dark:bg-neutral-900">
+            <div className="text-xs text-gray-500">MRR</div>
+            <div className="text-2xl font-semibold mt-1">
+              {fmtMoney(kpis?.mrr)}
+            </div>
+          </div>
+        </section>
       )}
+
+      {/* Accesos / módulos */}
+      <section className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+        <a
+          href="/dashboard/admin/empresas"
+          className="rounded-2xl border p-5 bg-white dark:bg-neutral-900 hover:bg-gray-50 dark:hover:bg-neutral-800 transition"
+        >
+          <h2 className="text-base font-semibold">Empresas</h2>
+          <p className="text-sm text-gray-600 dark:text-gray-300 mt-1">
+            Listado y gestión integral de empresas.
+          </p>
+        </a>
+
+        <a
+          href="/dashboard/admin/soporte"
+          className="rounded-2xl border p-5 bg-white dark:bg-neutral-900 hover:bg-gray-50 dark:hover:bg-neutral-800 transition"
+        >
+          <h2 className="text-base font-semibold">Soporte</h2>
+          <p className="text-sm text-gray-600 dark:text-gray-300 mt-1">
+            Alta de agentes, estados y auditoría de acciones.
+          </p>
+        </a>
+
+        <a
+          href="/dashboard/admin/planes"
+          className="rounded-2xl border p-5 bg-white dark:bg-neutral-900 hover:bg-gray-50 dark:hover:bg-neutral-800 transition"
+        >
+          <h2 className="text-base font-semibold">Planes</h2>
+          <p className="text-sm text-gray-600 dark:text-gray-300 mt-1">
+            ABM de planes (precios netos) y auditoría.
+          </p>
+        </a>
+
+        <a
+          href="/dashboard/admin/cashflow"
+          className="rounded-2xl border p-5 bg-white dark:bg-neutral-900 hover:bg-gray-50 dark:hover:bg-neutral-800 transition"
+        >
+          <h2 className="text-base font-semibold">Cashflow / Pagos</h2>
+          <p className="text-sm text-gray-600 dark:text-gray-300 mt-1">
+            Flujo de ingresos y estado de suscripciones.
+          </p>
+        </a>
+      </section>
     </main>
   );
 }

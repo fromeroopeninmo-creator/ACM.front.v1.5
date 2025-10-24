@@ -1,4 +1,3 @@
-// app/dashboard/admin/empresas/[empresaId]/page.tsx
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { supabaseServer } from "#lib/supabaseServer";

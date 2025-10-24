@@ -32,6 +32,45 @@ async function resolveUserRole(userId: string): Promise<Role | null> {
   return (p2?.role as Role) ?? null;
 }
 
+/**
+ * Buscar o crear usuario en Auth por email (idempotente).
+ * - Intenta crear (email_confirm = true).
+ * - Si ya existe, recorre listUsers() (paginado) y retorna el id.
+ */
+async function getOrCreateAuthUserIdByEmail(email: string, metadata?: Record<string, any>): Promise<string | null> {
+  // 1) Intentar crear
+  const createRes = await supabaseAdmin.auth.admin.createUser({
+    email,
+    email_confirm: true,
+    user_metadata: metadata ?? {},
+  });
+
+  if (!createRes.error && createRes.user?.id) {
+    return createRes.user.id;
+  }
+
+  // Si falló por "ya existe", buscamos en listUsers()
+  // (No hay endpoint directo por email, así que paginamos un poco)
+  // Ajustás el perPage si tenés muchísimos usuarios.
+  const PER_PAGE = 200;
+  const MAX_PAGES = 5;
+
+  for (let page = 1; page <= MAX_PAGES; page++) {
+    const list = await supabaseAdmin.auth.admin.listUsers({ page, perPage: PER_PAGE });
+    if (list.error) break;
+
+    const found = (list.data?.users || []).find(
+      (u) => u.email?.toLowerCase() === email.toLowerCase()
+    );
+    if (found?.id) return found.id;
+
+    // Si la página vino vacía o trae menos que perPage, no hay más
+    if ((list.data?.users?.length ?? 0) < PER_PAGE) break;
+  }
+
+  return null;
+}
+
 // ---- GET: listar agentes de soporte ----
 export async function GET() {
   try {
@@ -94,39 +133,16 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Falta email." }, { status: 400 });
     }
 
-    // 1) Buscar/crear usuario en Auth
-    let soporteUserId: string | null = null;
-
-    // Buscar por email en auth.users
-    const { data: userByEmail, error: findErr } = await supabaseAdmin
-      .from("auth.users")
-      .select("id")
-      .eq("email", email)
-      .maybeSingle() as unknown as { data: { id: string } | null; error: any };
-
-    if (findErr) {
-      // Nota: select directo a auth.users puede no estar permitido según config;
-      // si falla, recurrimos a admin API:
-    }
-
-    if (userByEmail?.id) {
-      soporteUserId = userByEmail.id;
-    } else {
-      // Crear usuario confirmado via Admin API
-      const { data: created, error: createErr } = await supabaseAdmin.auth.admin.createUser({
-        email,
-        email_confirm: true,
-        user_metadata: { role: "soporte", nombre, apellido },
-      });
-      if (createErr) {
-        return NextResponse.json({ error: createErr.message }, { status: 400 });
-      }
-      soporteUserId = created.user?.id ?? null;
-    }
+    // 1) Buscar/crear usuario en Auth (idempotente)
+    const soporteUserId = await getOrCreateAuthUserIdByEmail(email, {
+      role: "soporte",
+      nombre,
+      apellido,
+    });
 
     if (!soporteUserId) {
       return NextResponse.json(
-        { error: "No se pudo obtener/crear el usuario de soporte." },
+        { error: "No se pudo obtener/crear el usuario de soporte en Auth." },
         { status: 500 }
       );
     }

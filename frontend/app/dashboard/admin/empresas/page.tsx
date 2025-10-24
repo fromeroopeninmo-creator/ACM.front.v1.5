@@ -1,6 +1,6 @@
-// frontend/app/dashboard/admin/empresas/page.tsx
 import { redirect } from "next/navigation";
 import { supabaseServer } from "#lib/supabaseServer";
+import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 
@@ -228,13 +228,13 @@ export default async function AdminEmpresasPage({
                         <td className="px-3 py-2">{fmtDateOnly(e.fecha_inicio)}</td>
                         <td className="px-3 py-2">{fmtDateOnly(e.fecha_fin)}</td>
                         <td className="px-3 py-2">
-                          <a
-                            href={`/dashboard/soporte/${encodeURIComponent(e.empresa_id)}`}
+                          <Link
+                            href={`/dashboard/admin/empresas/${encodeURIComponent(e.empresa_id)}`}
                             className="text-blue-600 hover:underline"
-                            title="Ver detalle de la empresa (vista Soporte)"
+                            title="Ver detalle de la empresa (vista Admin)"
                           >
                             Ver detalle
-                          </a>
+                          </Link>
                         </td>
                       </tr>
                     );

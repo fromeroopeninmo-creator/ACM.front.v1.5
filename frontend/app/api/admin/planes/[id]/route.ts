@@ -1,4 +1,3 @@
-// app/api/admin/planes/[id]/route.ts
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -82,24 +81,33 @@ export async function PUT(
 
     // Preparar cambios (solo campos presentes en body)
     const patch: any = {};
+
     if ("nombre" in body) {
       if (!body.nombre || typeof body.nombre !== "string") {
         return NextResponse.json({ error: "Campo 'nombre' inválido." }, { status: 400 });
       }
       patch.nombre = body.nombre;
     }
+
+    // Acepta number o null; solo invalida si es < 0
     if ("precio" in body) {
-      const n = toNum(body.precio);
-      if (n === null || n < 0) return NextResponse.json({ error: "Campo 'precio' inválido." }, { status: 400 });
-      patch.precio = n;
+      const n = toNum(body.precio); // puede ser number o null
+      if (n !== null && n < 0) {
+        return NextResponse.json({ error: "Campo 'precio' inválido." }, { status: 400 });
+      }
+      patch.precio = n; // acepta null
     }
+
+    // Acepta number o null; si es number debe ser > 0
     if ("duracion_dias" in body) {
-      const n = Number(body.duracion_dias);
-      if (!Number.isFinite(n) || n <= 0) {
+      const n = body.duracion_dias == null ? null : Number(body.duracion_dias);
+      if (n !== null && (!Number.isFinite(n) || n <= 0)) {
         return NextResponse.json({ error: "Campo 'duracion_dias' inválido." }, { status: 400 });
       }
-      patch.duracion_dias = n;
+      patch.duracion_dias = n; // acepta null
     }
+
+    // Requiere number > 0 cuando se envía
     if ("max_asesores" in body) {
       const n = Number(body.max_asesores);
       if (!Number.isFinite(n) || n <= 0) {
@@ -107,12 +115,14 @@ export async function PUT(
       }
       patch.max_asesores = n;
     }
+
+    // Acepta number o null; solo invalida si es < 0
     if ("precio_extra_por_asesor" in body) {
-      const n = toNum(body.precio_extra_por_asesor);
-      if (n === null || n < 0) {
+      const n = toNum(body.precio_extra_por_asesor); // puede ser number o null
+      if (n !== null && n < 0) {
         return NextResponse.json({ error: "Campo 'precio_extra_por_asesor' inválido." }, { status: 400 });
       }
-      patch.precio_extra_por_asesor = n;
+      patch.precio_extra_por_asesor = n; // acepta null
     }
 
     if (Object.keys(patch).length === 0) {

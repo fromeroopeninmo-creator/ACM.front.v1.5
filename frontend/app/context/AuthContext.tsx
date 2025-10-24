@@ -27,11 +27,32 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   // =====================================================
   // 📦 Cargar perfil extendido desde Supabase
+  //  FIX: primero leemos `profiles` (rol verdadero). Si no hay fila,
+  //       recién ahí inferimos EMPRESA mirando `empresas.user_id`.
   // =====================================================
   const loadUserProfile = async (supabaseUser: any): Promise<Profile | null> => {
     if (!supabaseUser) return null;
 
-    // 🧩 1️⃣ Buscar si es una empresa
+    // 1) PERFIL en `profiles`
+    const { data: profile, error: profileErr } = await supabase
+      .from("profiles")
+      .select(
+        "id, email, nombre, apellido, matriculado_nombre, cpi, inmobiliaria, role, empresa_id, telefono"
+      )
+      .eq("id", supabaseUser.id)
+      .maybeSingle();
+
+    if (profileErr && profileErr.code !== "PGRST116") {
+      console.warn("⚠️ Error al buscar perfil:", profileErr.message);
+    }
+
+    if (profile) {
+      // ✅ Usar SIEMPRE el rol de profiles si existe
+      const perfilLimpio = JSON.parse(JSON.stringify(profile)) as Profile;
+      return perfilLimpio;
+    }
+
+    // 2) SIN `profiles` → intentar inferir EMPRESA por ownership
     const { data: empresaData, error: empresaError } = await supabase
       .from("empresas")
       .select(
@@ -44,12 +65,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       console.warn("⚠️ Error al buscar empresa:", empresaError.message);
     }
 
-    // 🔹 Aplanar datos y limpiar posibles proxies (previene alias 'a.')
-    const empresaLimpia = empresaData
-      ? JSON.parse(JSON.stringify(empresaData))
-      : null;
+    const empresaLimpia = empresaData ? JSON.parse(JSON.stringify(empresaData)) : null;
 
     if (empresaLimpia) {
+      // ▶️ Inferimos "empresa" sólo si NO hay perfil
       return {
         id: supabaseUser.id,
         email: supabaseUser.email,
@@ -58,30 +77,12 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         cpi: empresaLimpia.cpi,
         inmobiliaria: empresaLimpia.nombre_comercial,
         role: "empresa",
-        telefono: (empresaLimpia as any)?.telefono || undefined, // <-- ahora válido en Profile
+        telefono: (empresaLimpia as any)?.telefono || undefined,
         empresa_id: empresaLimpia.id,
       };
     }
 
-    // 🧩 2️⃣ Buscar si tiene perfil en tabla profiles (asesor, admin, soporte)
-    const { data: profile, error } = await supabase
-      .from("profiles")
-      .select(
-        "id, email, nombre, apellido, matriculado_nombre, cpi, inmobiliaria, role, empresa_id, telefono"
-      )
-      .eq("id", supabaseUser.id)
-      .maybeSingle();
-
-    if (error && error.code !== "PGRST116") {
-      console.warn("⚠️ Error al buscar perfil:", error.message);
-    }
-
-    // 🔹 Limpiar proxies si existen
-    const perfilLimpio = profile ? JSON.parse(JSON.stringify(profile)) : null;
-
-    if (perfilLimpio) return perfilLimpio as Profile;
-
-    // 🧩 3️⃣ Fallback: usar metadata (admins / soporte)
+    // 3) Fallback: metadata (admins / soporte creados sin profile)
     return {
       id: supabaseUser.id,
       email: supabaseUser.email,

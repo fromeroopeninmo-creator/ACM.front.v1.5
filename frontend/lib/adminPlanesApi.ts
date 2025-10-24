@@ -1,4 +1,3 @@
-// frontend/lib/adminPlanesApi.ts
 // Cliente para endpoints de planes (ADMIN). Seguro para usar en SERVER y CLIENT.
 // Usa URL absoluta + passthrough de cookies (cuando lo necesites).
 

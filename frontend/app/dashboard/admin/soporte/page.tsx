@@ -1,6 +1,7 @@
-// frontend/app/dashboard/admin/soporte/page.tsx
 import { redirect } from "next/navigation";
 import { supabaseServer } from "#lib/supabaseServer";
+import SoporteClient from "./SoporteClient";
+import type { SoporteItem } from "#lib/adminSoporteApi";
 
 export const dynamic = "force-dynamic";
 
@@ -64,10 +65,19 @@ export default async function AdminSoportePage() {
       .order("created_at", { ascending: false });
 
     if (error) throw error;
-    soportes = data || [];
+    soportes = (data || []) as SoporteRow[];
   } catch (e: any) {
     errorMsg = e?.message || "Error al cargar agentes de soporte.";
   }
+
+  // Mapeo SSR -> shape del cliente
+  const initialItems: SoporteItem[] = (soportes || []).map((s) => ({
+    id: s.id,
+    nombre: s.nombre,
+    email: s.email,
+    activo: !!s.activo,
+    created_at: s.created_at,
+  }));
 
   // 3) Render
   return (
@@ -80,14 +90,14 @@ export default async function AdminSoportePage() {
           </p>
         </div>
 
-        {/* Próximamente: botón "Nuevo agente" abre modal / panel (creación/upsert) */}
-        <button
-          className="rounded-lg border px-3 py-2 text-sm bg-gray-50 text-gray-400 cursor-not-allowed"
-          title="Próximamente"
-          disabled
+        {/* Ancla al formulario del componente cliente */}
+        <a
+          href="#nuevo-agente"
+          className="rounded-lg border px-3 py-2 text-sm bg-blue-600 text-white hover:bg-blue-700"
+          title="Crear/actualizar agente"
         >
           + Nuevo agente
-        </button>
+        </a>
       </header>
 
       {errorMsg ? (
@@ -95,74 +105,77 @@ export default async function AdminSoportePage() {
           {errorMsg}
         </section>
       ) : (
-        <section className="rounded-2xl border p-0 overflow-hidden bg-white dark:bg-neutral-900">
-          <div className="overflow-auto">
-            <table className="min-w-full text-sm">
-              <thead className="bg-gray-50 dark:bg-neutral-900">
-                <tr className="text-left">
-                  <th className="px-3 py-2">ID</th>
-                  <th className="px-3 py-2">Nombre</th>
-                  <th className="px-3 py-2">Email</th>
-                  <th className="px-3 py-2">Estado</th>
-                  <th className="px-3 py-2">Alta</th>
-                  <th className="px-3 py-2">Acciones</th>
-                </tr>
-              </thead>
-              <tbody>
-                {soportes.length === 0 ? (
-                  <tr>
-                    <td colSpan={6} className="px-3 py-6 text-center text-gray-500">
-                      No hay agentes de soporte aún.
-                    </td>
-                  </tr>
-                ) : (
-                  soportes.map((s) => (
-                    <tr key={s.id} className="border-t">
-                      <td className="px-3 py-2">{s.id}</td>
-                      <td className="px-3 py-2">{s.nombre || "—"}</td>
-                      <td className="px-3 py-2">{s.email}</td>
-                      <td className="px-3 py-2">
-                        <span
-                          className={
-                            s.activo
-                              ? "inline-flex items-center rounded-full px-2 py-0.5 text-xs bg-green-100 text-green-700"
-                              : "inline-flex items-center rounded-full px-2 py-0.5 text-xs bg-amber-100 text-amber-700"
-                          }
-                        >
-                          {s.activo ? "Activo" : "Inactivo"}
-                        </span>
-                      </td>
-                      <td className="px-3 py-2">{fmtDate(s.created_at)}</td>
-                      <td className="px-3 py-2">
-                        <div className="flex items-center gap-2">
-                          {/* Ver logs por soporte (placeholder: filtraremos en /soporte/logs) */}
-                          <a
-                            href={`/dashboard/soporte/logs?soporteId=${encodeURIComponent(
-                              String(s.id)
-                            )}`}
-                            className="text-blue-600 hover:underline"
-                            title="Ver registros de acciones"
-                          >
-                            Ver registros
-                          </a>
+        <>
+          {/* ✅ UI cliente (ABM + toggle) */}
+          <SoporteClient initialItems={initialItems} />
 
-                          {/* Próximamente: toggle activo/inactivo */}
-                          <button
-                            className="text-gray-400 cursor-not-allowed"
-                            title="Próximamente"
-                            disabled
-                          >
-                            {s.activo ? "Desactivar" : "Activar"}
-                          </button>
-                        </div>
+          {/* 🔒 Conservamos tu tabla SSR original como fallback (oculta para no duplicar UI) */}
+          <section className="rounded-2xl border p-0 overflow-hidden bg-white dark:bg-neutral-900 hidden">
+            <div className="overflow-auto">
+              <table className="min-w-full text-sm">
+                <thead className="bg-gray-50 dark:bg-neutral-900">
+                  <tr className="text-left">
+                    <th className="px-3 py-2">ID</th>
+                    <th className="px-3 py-2">Nombre</th>
+                    <th className="px-3 py-2">Email</th>
+                    <th className="px-3 py-2">Estado</th>
+                    <th className="px-3 py-2">Alta</th>
+                    <th className="px-3 py-2">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {soportes.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="px-3 py-6 text-center text-gray-500">
+                        No hay agentes de soporte aún.
                       </td>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </section>
+                  ) : (
+                    soportes.map((s) => (
+                      <tr key={s.id} className="border-t">
+                        <td className="px-3 py-2">{s.id}</td>
+                        <td className="px-3 py-2">{s.nombre || "—"}</td>
+                        <td className="px-3 py-2">{s.email}</td>
+                        <td className="px-3 py-2">
+                          <span
+                            className={
+                              s.activo
+                                ? "inline-flex items-center rounded-full px-2 py-0.5 text-xs bg-green-100 text-green-700"
+                                : "inline-flex items-center rounded-full px-2 py-0.5 text-xs bg-amber-100 text-amber-700"
+                            }
+                          >
+                            {s.activo ? "Activo" : "Inactivo"}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2">{fmtDate(s.created_at)}</td>
+                        <td className="px-3 py-2">
+                          <div className="flex items-center gap-2">
+                            <a
+                              href={`/dashboard/soporte/logs?soporteId=${encodeURIComponent(
+                                String(s.id)
+                              )}`}
+                              className="text-blue-600 hover:underline"
+                              title="Ver registros de acciones"
+                            >
+                              Ver registros
+                            </a>
+                            <button
+                              className="text-gray-400 cursor-not-allowed"
+                              title="Próximamente"
+                              disabled
+                            >
+                              {s.activo ? "Desactivar" : "Activar"}
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </>
       )}
 
       {/* Roadmap de la sección */}

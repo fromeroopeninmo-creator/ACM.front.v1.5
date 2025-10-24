@@ -432,7 +432,7 @@ export default function PlanesClient({ initial }: { initial: Paged<PlanRow> }) {
                         edit.max_asesores !== ""
                           ? Number(edit.max_asesores)
                           : undefined,
-                      // @ts-expect-error: si no existe en tu schema, el endpoint lo ignora
+                      
                       precio_extra_por_asesor:
                         edit.precio_extra_por_asesor !== ""
                           ? Number(edit.precio_extra_por_asesor)

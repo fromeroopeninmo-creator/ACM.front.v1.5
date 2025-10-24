@@ -1,4 +1,4 @@
-// frontend/app/dashboard/soporte/EmpresasTable.tsx
+// app/dashboard/soporte/EmpresasTable.tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -68,8 +68,6 @@ export default function EmpresasTable({ initialData }: Props) {
         setLoading(true);
         setError(null);
 
-        // ⚠️ Estos nombres coinciden con tu backend:
-        // page, pageSize, estado (todos|activos|inactivos), search (opcional), provincia (opcional)
         const res = await listEmpresas({
           page,
           pageSize,
@@ -97,29 +95,31 @@ export default function EmpresasTable({ initialData }: Props) {
   // Normalización de campos desde BD/backend (snake_case) → UI
   const rows = useMemo(() => {
     const items = data?.items || [];
-    return items.map((e: any) => {
-      // ✅ Ajuste: id robusto y nombre compatible con tu API
-      const id = e.id ?? e.empresa_id ?? e.empresaId;
-      const razon_social = e.razon_social || e.nombre_comercial || "—";
-
-      const cupoBase = e.max_asesores ?? 0;                 // plan base
-      const cupoOv = e.max_asesores_override ?? 0;          // override
-      const asesores = e.asesores_activos ?? 0;             // métrica
-      const informes30 = e.informes_30d ?? 0;               // métrica
-      const plan = e.plan_nombre || "—";
+    return items.map((e) => {
+      const cupoBase = (e.maxAsesoresBase ?? e.max_asesores) ?? 0;          // plan base
+      const cupoOv   = (e.maxAsesoresOverride ?? e.max_asesores_override) ?? 0; // override
+      const asesores = (e.asesoresCount ?? e.asesores_activos) ?? 0;        // métrica
+      const informes30 = (e.informes30d ?? e.informes_30d) ?? 0;            // métrica
+      const plan = e.planNombre ?? e.plan_nombre ?? "—";
       return {
-        id,
-        razon_social,
+        id: e.id,
+        razon_social: e.razon_social,
         cuit: e.cuit || "—",
         provincia: e.provincia || "—",
         plan,
         cupo: cupoOv > 0 ? `${cupoBase} → ${cupoOv}` : `${cupoBase}`,
         asesores,
         informes30,
-        created_at: e.created_at || null,
+        created_at: e.createdAt ?? e.created_at ?? null,
       };
     });
   }, [data]);
+
+  // 👉 Ruta de detalle según el contexto (Admin vs Soporte)
+  const detailBase =
+    pathname.startsWith("/dashboard/admin")
+      ? "/dashboard/admin/empresas"
+      : "/dashboard/soporte";
 
   return (
     <div className="space-y-3">
@@ -234,7 +234,7 @@ export default function EmpresasTable({ initialData }: Props) {
                   <td className="px-3 py-2">{fmtDateOnly(r.created_at)}</td>
                   <td className="px-3 py-2">
                     <a
-                      href={`/dashboard/soporte/${r.id}`}
+                      href={`${detailBase}/${r.id}`}
                       className="text-blue-600 hover:underline"
                     >
                       Ver detalle

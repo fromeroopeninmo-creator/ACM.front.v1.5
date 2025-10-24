@@ -1,4 +1,3 @@
-// frontend/app/dashboard/admin/planes/page.tsx
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { supabaseServer } from "#lib/supabaseServer";
@@ -7,9 +6,6 @@ import {
   listPlanes,
   type Paged,
   type PlanRow,
-  createPlan,
-  updatePlan,
-  deletePlan,
 } from "#lib/adminPlanesApi";
 
 export const dynamic = "force-dynamic";
@@ -19,6 +15,7 @@ type SearchParams = {
   activo?: "" | "true" | "false";
   page?: string;
   pageSize?: string;
+  new?: string; // para abrir modal de creación
 };
 
 function buildCookieHeader(): string {
@@ -26,15 +23,6 @@ function buildCookieHeader(): string {
   const all = jar.getAll();
   if (!all?.length) return "";
   return all.map((c) => `${c.name}=${c.value}`).join("; ");
-}
-
-function fmtNumber(n?: number | null) {
-  if (n === null || n === undefined) return "—";
-  return new Intl.NumberFormat("es-AR").format(n);
-}
-function fmtMoney(n?: number | null) {
-  if (n === null || n === undefined) return "—";
-  return new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 }).format(n);
 }
 
 export default async function AdminPlanesPage({ searchParams }: { searchParams: SearchParams }) {
@@ -98,7 +86,15 @@ export default async function AdminPlanesPage({ searchParams }: { searchParams: 
     );
   }
 
-  // 4) Render (client component para CRUD & navegación)
+  // 4) Render
+  const qs = new URLSearchParams({
+    ...(q ? { q } : {}),
+    ...(activo ? { activo } : {}),
+    page: String(page),
+    pageSize: String(pageSize),
+    new: "1", // para abrir modal de alta en el cliente
+  }).toString();
+
   return (
     <main className="p-4 md:p-6 space-y-4">
       <header className="flex items-center justify-between">
@@ -106,6 +102,14 @@ export default async function AdminPlanesPage({ searchParams }: { searchParams: 
           <h1 className="text-xl md:text-2xl font-semibold">Planes (Administración)</h1>
           <p className="text-sm text-gray-500">Listado, filtros y ABM de planes.</p>
         </div>
+
+        {/* Botón para abrir modal de creación (vía ?new=1) */}
+        <a
+          href={`/dashboard/admin/planes?${qs}`}
+          className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700"
+        >
+          + Nuevo plan
+        </a>
       </header>
 
       {/* Filtros (GET) */}

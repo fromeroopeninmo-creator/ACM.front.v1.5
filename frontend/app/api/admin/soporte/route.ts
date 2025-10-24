@@ -45,13 +45,13 @@ async function getOrCreateAuthUserIdByEmail(email: string, metadata?: Record<str
     user_metadata: metadata ?? {},
   });
 
-  if (!createRes.error && createRes.user?.id) {
-    return createRes.user.id;
+  // ✅ Supabase v2: la respuesta viene en createRes.data.user
+  const createdUserId = (createRes as any)?.data?.user?.id as string | undefined;
+  if (!createRes.error && createdUserId) {
+    return createdUserId;
   }
 
   // Si falló por "ya existe", buscamos en listUsers()
-  // (No hay endpoint directo por email, así que paginamos un poco)
-  // Ajustás el perPage si tenés muchísimos usuarios.
   const PER_PAGE = 200;
   const MAX_PAGES = 5;
 
@@ -59,13 +59,11 @@ async function getOrCreateAuthUserIdByEmail(email: string, metadata?: Record<str
     const list = await supabaseAdmin.auth.admin.listUsers({ page, perPage: PER_PAGE });
     if (list.error) break;
 
-    const found = (list.data?.users || []).find(
-      (u) => u.email?.toLowerCase() === email.toLowerCase()
-    );
+    const users = (list as any)?.data?.users as Array<{ id: string; email?: string }> | undefined;
+    const found = (users || []).find((u) => u.email?.toLowerCase() === email.toLowerCase());
     if (found?.id) return found.id;
 
-    // Si la página vino vacía o trae menos que perPage, no hay más
-    if ((list.data?.users?.length ?? 0) < PER_PAGE) break;
+    if ((users?.length ?? 0) < PER_PAGE) break;
   }
 
   return null;
@@ -167,7 +165,6 @@ export async function POST(req: Request) {
     }
 
     // 3) Upsert en soporte (si ya existe por email, actualizar nombre/activo)
-    // Intentamos update-by-email primero
     const { data: existingSoporte } = await supabaseAdmin
       .from("soporte")
       .select("id")

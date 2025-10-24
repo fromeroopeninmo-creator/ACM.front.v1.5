@@ -305,11 +305,11 @@ export default function PlanesClient({ initial }: { initial: Paged<PlanRow> }) {
                         max_asesores:
                           c.max_asesores !== "" ? Number(c.max_asesores) : 0,
                         // si tu schema no lo tiene, el endpoint lo ignora
-                        // @ts-expect-error - toleramos campo adicional
                         precio_extra_por_asesor:
                           c.precio_extra_por_asesor !== ""
                             ? Number(c.precio_extra_por_asesor)
                             : null,
+
                         activo: c.activo,
                       },
                       {}

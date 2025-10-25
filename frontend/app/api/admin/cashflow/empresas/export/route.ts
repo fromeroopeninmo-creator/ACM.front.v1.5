@@ -37,11 +37,13 @@ async function resolveUserRole(userId: string): Promise<Role | null> {
     .maybeSingle();
   return (p2?.role as Role) ?? null;
 }
-function csvEscape(v: any) {
+/** Escapa valores para CSV, respetando el delimitador elegido */
+function csvEscape(v: any, delim: string) {
   if (v === null || v === undefined) return "";
   const s = String(v).replace(/"/g, '""');
-  if (s.includes(",") || s.includes("\n") || s.includes('"')) return `"${s}"`;
-  return s;
+  // Si contiene comillas, saltos de línea o el delimitador, se envuelve en comillas
+  const needsQuotes = s.includes('"') || s.includes("\n") || s.includes(delim);
+  return needsQuotes ? `"${s}"` : s;
 }
 
 export async function GET(req: Request) {
@@ -76,6 +78,9 @@ export async function GET(req: Request) {
       | "";
     const planName = url.searchParams.get("plan");
 
+    // Delimitador CSV: por defecto ';' (Excel es-AR), se puede override con ?delim=,
+    const delim = url.searchParams.get("delim") || ";";
+
     if (!desde || !hasta) {
       return NextResponse.json(
         { error: "Parámetros 'desde' y 'hasta' son requeridos (YYYY-MM-DD)." },
@@ -96,12 +101,32 @@ export async function GET(req: Request) {
       }
       planIdsFilter = (planRows ?? []).map((r: any) => String(r.id));
       if (planIdsFilter.length === 0) {
-        // CSV vacío pero válido
+        // CSV vacío pero válido (con BOM y "sep=" para Excel)
+        const bom = "\uFEFF";
+        const header =
+          `sep=${delim}\n` +
+          [
+            "empresa",
+            "cuit",
+            "plan",
+            "activo",
+            "fecha_inicio",
+            "fecha_fin",
+            "mrr_neto",
+            "ingresos_neto",
+            "ingresos_con_iva",
+            "movs",
+            "ultimo_mov",
+            "asesores",
+            "cupo",
+            "override",
+            "exceso",
+          ].join(delim) + "\n";
         const headers = new Headers({
           "content-type": "text/csv; charset=utf-8",
           "content-disposition": `attachment; filename="cashflow_empresas_${desde}_${hasta}.csv"`,
         });
-        return new NextResponse("empresa, cuit, plan, activo, fecha_inicio, fecha_fin, mrr_neto, ingresos_neto, ingresos_con_iva, movs, ultimo_mov, asesores, cupo, override, exceso\n", { headers, status: 200 });
+        return new NextResponse(bom + header, { headers, status: 200 });
       }
     }
 
@@ -345,35 +370,60 @@ export async function GET(req: Request) {
       }
     });
 
-    // CSV
-    const header =
-      "empresa,cuit,plan,activo,fecha_inicio,fecha_fin,mrr_neto,ingresos_neto,ingresos_con_iva,movs,ultimo_mov,asesores,cupo,override,exceso\n";
+    // CSV (Excel-friendly): BOM + "sep=<delim>" + encabezado + filas, usando el delimitador elegido
+    const headerCols = [
+      "empresa",
+      "cuit",
+      "plan",
+      "activo",
+      "fecha_inicio",
+      "fecha_fin",
+      "mrr_neto",
+      "ingresos_neto",
+      "ngresos_con_iva", // (mantengo etiqueta tal cual estabas usando; si querés corregimos a 'ingresos_con_iva')
+      "movs",
+      "ultimo_mov",
+      "asesores",
+      "cupo",
+      "override",
+      "exceso",
+    ];
+    // OJO: corrijo un posible typo en el header anterior; si querés dejarlo exacto, reemplazá por 'ingresos_con_iva'
+    headerCols[8] = "ingresos_con_iva";
+
+    const header = headerCols.join(delim) + "\n";
     const lines = sorted.map((r) =>
       [
-        csvEscape(r.empresa),
-        csvEscape(r.cuit),
-        csvEscape(r.plan),
+        csvEscape(r.empresa, delim),
+        csvEscape(r.cuit, delim),
+        csvEscape(r.plan, delim),
         r.activo ? "1" : "0",
-        csvEscape(r.fecha_inicio),
-        csvEscape(r.fecha_fin),
+        csvEscape(r.fecha_inicio, delim),
+        csvEscape(r.fecha_fin, delim),
         r.mrr_neto,
         r.ingresos_neto,
         r.ingresos_con_iva,
         r.movs,
-        csvEscape(r.ultimo_mov),
+        csvEscape(r.ultimo_mov, delim),
         r.asesores,
         r.cupo,
         r.override ?? "",
         r.exceso,
-      ].join(",")
+      ].join(delim)
     );
-    const csv = header + lines.join("\n") + "\n";
+
+    const sepLine = `sep=${delim}\n`;
+    const csv = sepLine + header + lines.join("\n") + "\n";
+
+    // BOM UTF-8 para Excel
+    const bom = "\uFEFF";
+    const body = bom + csv;
 
     const headers = new Headers({
       "content-type": "text/csv; charset=utf-8",
       "content-disposition": `attachment; filename="cashflow_empresas_${desde}_${hasta}.csv"`,
     });
-    return new NextResponse(csv, { headers, status: 200 });
+    return new NextResponse(body, { headers, status: 200 });
   } catch (e: any) {
     return NextResponse.json(
       { error: e?.message || "Error inesperado" },

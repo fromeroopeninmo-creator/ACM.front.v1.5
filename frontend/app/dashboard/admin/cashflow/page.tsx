@@ -1,5 +1,4 @@
 // frontend/app/dashboard/admin/cashflow/page.tsx
-import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { supabaseServer } from "#lib/supabaseServer";
 
@@ -61,22 +60,6 @@ type SuscripcionesResponse = {
   pageSize: number;
   total: number;
 };
-
-function buildCookieHeader(): string {
-  const jar = cookies();
-  const all = jar.getAll();
-  if (!all?.length) return "";
-  return all.map((c) => `${c.name}=${c.value}`).join("; ");
-}
-
-function getBaseUrl() {
-  const envUrl =
-    process.env.NEXT_PUBLIC_SITE_URL ||
-    process.env.NEXT_PUBLIC_VERCEL_URL ||
-    process.env.VERCEL_URL;
-  if (envUrl) return envUrl.startsWith("http") ? envUrl : `https://${envUrl}`;
-  return "http://localhost:3000";
-}
 
 function pad2(n: number) {
   return String(n).padStart(2, "0");
@@ -148,10 +131,8 @@ export default async function AdminCashflowPage() {
     }
   }
 
-  // 2) SSR fetch (KPIs + primer page de movimientos y suscripciones)
+  // 2) SSR fetch (KPIs + primer page de movimientos y suscripciones) usando rutas relativas
   const { desde, hasta, label } = currentMonthRange();
-  const cookieHeader = buildCookieHeader();
-  const base = getBaseUrl();
 
   let kpis: CashflowKpisResponse | null = null;
   let movs: MovimientosResponse | null = null;
@@ -160,18 +141,17 @@ export default async function AdminCashflowPage() {
 
   try {
     const [resK, resM, resS] = await Promise.all([
-      fetch(`${base}/api/admin/cashflow/kpis?desde=${desde}&hasta=${hasta}`, {
+      fetch(`/api/admin/cashflow/kpis?desde=${desde}&hasta=${hasta}`, {
         method: "GET",
-        headers: { cookie: cookieHeader },
         cache: "no-store",
       }),
       fetch(
-        `${base}/api/admin/cashflow/movimientos?desde=${desde}&hasta=${hasta}&page=1&pageSize=20`,
-        { method: "GET", headers: { cookie: cookieHeader }, cache: "no-store" }
+        `/api/admin/cashflow/movimientos?desde=${desde}&hasta=${hasta}&page=1&pageSize=20`,
+        { method: "GET", cache: "no-store" }
       ),
       fetch(
-        `${base}/api/admin/cashflow/suscripciones?desde=${desde}&hasta=${hasta}&estado=todos&page=1&pageSize=20`,
-        { method: "GET", headers: { cookie: cookieHeader }, cache: "no-store" }
+        `/api/admin/cashflow/suscripciones?desde=${desde}&hasta=${hasta}&estado=todos&page=1&pageSize=20`,
+        { method: "GET", cache: "no-store" }
       ),
     ]);
 

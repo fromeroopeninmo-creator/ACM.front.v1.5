@@ -1,21 +1,17 @@
 // frontend/app/dashboard/admin/cashflow/page.tsx
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { supabaseServer } from "#lib/supabaseServer";
-import { cookies, headers } from "next/headers";
+import {
+  getCashflowKpis,
+  getCashflowMovimientos,
+  getCashflowSuscripciones,
+  type CashflowKpisResponse,
+  type MovimientosResponse,
+  type SuscripcionesResponse,
+} from "#lib/adminCashflowApi";
 
 export const dynamic = "force-dynamic";
-
-type CashflowKpisResponse = {
-  rango: { desde: string; hasta: string };
-  mrr_neto: number;
-  ingresos_neto_total: number;
-  ingresos_con_iva: number;
-  arpu_neto: number;
-  empresas_activas: number;
-  churn_empresas: number;
-  upgrades: number;
-  downgrades: number;
-};
 
 type MovimientoItem = {
   id: string | null;
@@ -34,13 +30,6 @@ type MovimientoItem = {
   metadata: Record<string, any>;
 };
 
-type MovimientosResponse = {
-  items: MovimientoItem[];
-  page: number;
-  pageSize: number;
-  total: number;
-};
-
 type SuscripcionItem = {
   empresa_id: string;
   empresa_nombre: string;
@@ -53,13 +42,6 @@ type SuscripcionItem = {
   max_asesores_override: number | null;
   asesores_utilizados: number;
   cupo_excedido: number;
-};
-
-type SuscripcionesResponse = {
-  items: SuscripcionItem[];
-  page: number;
-  pageSize: number;
-  total: number;
 };
 
 function pad2(n: number) {
@@ -94,7 +76,9 @@ function fmtDateISO(iso?: string | null) {
   if (!iso) return "—";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "—";
-  return new Intl.DateTimeFormat("es-AR", { dateStyle: "medium" }).format(d);
+  return new Intl.DateTimeFormat("es-AR", {
+    dateStyle: "medium",
+  }).format(d);
 }
 
 function buildCookieHeader(): string {
@@ -102,20 +86,6 @@ function buildCookieHeader(): string {
   const all = jar.getAll();
   if (!all?.length) return "";
   return all.map((c) => `${c.name}=${c.value}`).join("; ");
-}
-
-function getOrigin(): string {
-  const h = headers();
-  const proto = h.get("x-forwarded-proto") || "https";
-  const host = h.get("x-forwarded-host") || h.get("host");
-  if (host) return `${proto}://${host}`;
-  // fallback local
-  const envUrl =
-    process.env.NEXT_PUBLIC_SITE_URL ||
-    process.env.NEXT_PUBLIC_VERCEL_URL ||
-    process.env.VERCEL_URL;
-  if (envUrl) return envUrl.startsWith("http") ? envUrl : `https://${envUrl}`;
-  return "http://localhost:3000";
 }
 
 export default async function AdminCashflowPage() {
@@ -151,9 +121,8 @@ export default async function AdminCashflowPage() {
     }
   }
 
-  // 2) SSR fetch (KPIs + primer page de movimientos y suscripciones) con URL absoluta y cookie
+  // 2) SSR fetch (KPIs + primer page de movimientos y suscripciones) vía lib + cookie
   const { desde, hasta, label } = currentMonthRange();
-  const base = getOrigin();
   const cookieHeader = buildCookieHeader();
 
   let kpis: CashflowKpisResponse | null = null;
@@ -162,29 +131,14 @@ export default async function AdminCashflowPage() {
   let errorMsg: string | null = null;
 
   try {
-    const [resK, resM, resS] = await Promise.all([
-      fetch(`${base}/api/admin/cashflow/kpis?desde=${desde}&hasta=${hasta}`, {
-        method: "GET",
-        headers: { cookie: cookieHeader },
-        cache: "no-store",
-      }),
-      fetch(
-        `${base}/api/admin/cashflow/movimientos?desde=${desde}&hasta=${hasta}&page=1&pageSize=20`,
-        { method: "GET", headers: { cookie: cookieHeader }, cache: "no-store" }
-      ),
-      fetch(
-        `${base}/api/admin/cashflow/suscripciones?desde=${desde}&hasta=${hasta}&estado=todos&page=1&pageSize=20`,
-        { method: "GET", headers: { cookie: cookieHeader }, cache: "no-store" }
-      ),
+    const [k, m, s] = await Promise.all([
+      getCashflowKpis({ desde, hasta }, { headers: { cookie: cookieHeader }, cache: "no-store" }),
+      getCashflowMovimientos({ desde, hasta, page: 1, pageSize: 20 }, { headers: { cookie: cookieHeader }, cache: "no-store" }),
+      getCashflowSuscripciones({ desde, hasta, estado: "todos", page: 1, pageSize: 20 }, { headers: { cookie: cookieHeader }, cache: "no-store" }),
     ]);
-
-    if (!resK.ok) throw new Error(`GET /cashflow/kpis → ${resK.status}`);
-    if (!resM.ok) throw new Error(`GET /cashflow/movimientos → ${resM.status}`);
-    if (!resS.ok) throw new Error(`GET /cashflow/suscripciones → ${resS.status}`);
-
-    kpis = (await resK.json()) as CashflowKpisResponse;
-    movs = (await resM.json()) as MovimientosResponse;
-    subs = (await resS.json()) as SuscripcionesResponse;
+    kpis = k;
+    movs = m;
+    subs = s;
   } catch (e: any) {
     errorMsg = e?.message || "Error al cargar datos de Cashflow.";
   }
@@ -280,7 +234,7 @@ export default async function AdminCashflowPage() {
                       </td>
                     </tr>
                   ) : (
-                    movs!.items.map((m) => (
+                    movs!.items.map((m: MovimientoItem) => (
                       <tr key={(m.id || `${m.empresa_id}-${m.fecha}-${m.tipo}`)} className="border-b last:border-0">
                         <td className="px-4 py-3">{fmtDateISO(m.fecha)}</td>
                         <td className="px-4 py-3">{m.empresa_nombre || "—"}</td>
@@ -339,7 +293,7 @@ export default async function AdminCashflowPage() {
                       </td>
                     </tr>
                   ) : (
-                    subs!.items.map((s) => (
+                    subs!.items.map((s: SuscripcionItem) => (
                       <tr key={`${s.empresa_id}-${s.plan_id}-${s.fecha_inicio || "null"}`} className="border-b last:border-0">
                         <td className="px-4 py-3">{s.empresa_nombre}</td>
                         <td className="px-4 py-3">{s.plan_nombre}</td>

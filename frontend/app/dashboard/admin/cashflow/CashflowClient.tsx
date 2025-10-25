@@ -11,7 +11,7 @@ import {
   type SuscripcionesResponse,
   type MovimientoItem,
   type SuscripcionItem,
-} from "@/frontend/lib/adminCashflowApi";
+} from "@/lib/adminCashflowApi";
 
 function pad2(n: number) {
   return String(n).padStart(2, "0");

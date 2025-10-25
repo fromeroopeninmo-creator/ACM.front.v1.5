@@ -12,6 +12,18 @@ type KpisResponse = {
   mrr?: number | null; // ingreso mensual recurrente
 };
 
+type CashflowKpisResponse = {
+  rango: { desde: string; hasta: string };
+  mrr_neto: number;
+  ingresos_neto_total: number;
+  ingresos_con_iva: number;
+  arpu_neto: number;
+  empresas_activas: number;
+  churn_empresas: number;
+  upgrades: number;
+  downgrades: number;
+};
+
 function buildCookieHeader(): string {
   const jar = cookies();
   const all = jar.getAll();
@@ -39,6 +51,19 @@ function fmtMoney(n?: number | null) {
     currency: "ARS",
     maximumFractionDigits: 0,
   }).format(n);
+}
+
+function currentMonthRange(): { desde: string; hasta: string } {
+  // Mes actual en formato YYYY-MM-DD
+  const now = new Date();
+  const y = now.getUTCFullYear();
+  const m = now.getUTCMonth(); // 0-11
+  const first = new Date(Date.UTC(y, m, 1));
+  const last = new Date(Date.UTC(y, m + 1, 0));
+  const pad = (x: number) => String(x).padStart(2, "0");
+  const desde = `${first.getUTCFullYear()}-${pad(first.getUTCMonth() + 1)}-${pad(first.getUTCDate())}`;
+  const hasta = `${last.getUTCFullYear()}-${pad(last.getUTCMonth() + 1)}-${pad(last.getUTCDate())}`;
+  return { desde, hasta };
 }
 
 export default async function AdminHomePage() {
@@ -97,6 +122,22 @@ export default async function AdminHomePage() {
     kpis = (await res.json()) as KpisResponse;
   } catch (e: any) {
     errorMsg = e?.message || "Error al cargar KPIs.";
+  }
+
+  // 2.b) Fetch SSR de KPIs de Cashflow (mes actual) para mostrar mini-dato en la card
+  let cashflowMini: CashflowKpisResponse | null = null;
+  try {
+    const { desde, hasta } = currentMonthRange();
+    const res = await fetch(`${base}/api/admin/cashflow/kpis?desde=${desde}&hasta=${hasta}`, {
+      method: "GET",
+      headers: { cookie: cookieHeader },
+      cache: "no-store",
+    });
+    if (res.ok) {
+      cashflowMini = (await res.json()) as CashflowKpisResponse;
+    }
+  } catch {
+    // Silencioso: si falla, simplemente no mostramos el mini-dato
   }
 
   // 3) Render
@@ -186,6 +227,13 @@ export default async function AdminHomePage() {
           <p className="text-sm text-gray-600 dark:text-gray-300 mt-1">
             Flujo de ingresos y estado de suscripciones.
           </p>
+          {cashflowMini ? (
+            <div className="mt-3 inline-flex items-center gap-2 text-sm">
+              <span className="px-2 py-0.5 rounded-full border bg-gray-50 dark:bg-neutral-800">
+                MRR (mes): <strong className="ml-1">{fmtMoney(cashflowMini.mrr_neto)}</strong>
+              </span>
+            </div>
+          ) : null}
         </a>
       </section>
     </main>

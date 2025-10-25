@@ -23,11 +23,14 @@ export default function DashboardSidebar({ role, color }: SidebarProps) {
       { name: "Empresas", href: "/dashboard/admin/empresas" },
       { name: "Soporte", href: "/dashboard/admin/soporte" },
       { name: "Planes", href: "/dashboard/admin/planes" },
+      { name: "Cashflow / Pagos", href: "/dashboard/admin/cashflow" },
     ],
     super_admin: [
       { name: "Inicio", href: "/dashboard/admin" },
       { name: "Empresas", href: "/dashboard/admin/empresas" },
       { name: "Soporte", href: "/dashboard/admin/soporte" },
+      { name: "Planes", href: "/dashboard/admin/planes" },
+      { name: "Cashflow / Pagos", href: "/dashboard/admin/cashflow" },
     ],
     soporte: [
       { name: "Inicio", href: "/dashboard/soporte" },

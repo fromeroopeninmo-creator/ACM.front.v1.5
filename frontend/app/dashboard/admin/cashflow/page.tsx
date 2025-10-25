@@ -2,10 +2,6 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { supabaseServer } from "#lib/supabaseServer";
-import {
-  getCashflowKpis,
-  type CashflowKpisResponse,
-} from "#lib/adminCashflowApi";
 
 export const dynamic = "force-dynamic";
 
@@ -42,6 +38,27 @@ function buildCookieHeader(): string {
   if (!all?.length) return "";
   return all.map((c) => `${c.name}=${c.value}`).join("; ");
 }
+function getBaseUrl() {
+  const envUrl =
+    process.env.NEXT_PUBLIC_SITE_URL ||
+    process.env.NEXT_PUBLIC_VERCEL_URL ||
+    process.env.VERCEL_URL;
+  if (envUrl) return envUrl.startsWith("http") ? envUrl : `https://${envUrl}`;
+  return "http://localhost:3000";
+}
+
+/* ===================== Tipos mínimos ===================== */
+type CashflowKpisResponse = {
+  rango: { desde: string; hasta: string };
+  mrr_neto: number;
+  ingresos_neto_total: number;
+  ingresos_con_iva: number;
+  arpu_neto: number;
+  empresas_activas: number;
+  churn_empresas: number;
+  upgrades: number;
+  downgrades: number;
+};
 
 /* =================================================== */
 /*                      PAGE (SSR)                     */
@@ -66,63 +83,34 @@ export default async function AdminCashflowPage() {
     }
   }
 
-  /* ---------- 2) Rango + cookie ---------- */
+  /* ---------- 2) Rango + cookie + base ---------- */
   const { desde, hasta, label } = currentMonthRange();
   const cookieHeader = buildCookieHeader();
+  const base = getBaseUrl();
 
-  /* ---------- 3) SSR fetch (SOLO KPIs) ---------- */
+  /* ---------- 3) SSR fetch (SOLO KPIs) con patrón de Planes ---------- */
   let kpis: CashflowKpisResponse | null = null;
   let errorMsg: string | null = null;
+
   try {
-    kpis = await getCashflowKpis(
-      { desde, hasta },
-      { headers: { cookie: cookieHeader }, cache: "no-store" }
-    );
+    const url = `${base}/api/admin/cashflow/kpis?desde=${desde}&hasta=${hasta}`;
+    const res = await fetch(url, {
+      method: "GET",
+      headers: { cookie: cookieHeader },
+      cache: "no-store",
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      throw new Error(`GET ${url} → ${res.status} ${res.statusText} ${body}`.trim());
+    }
+    kpis = (await res.json()) as CashflowKpisResponse;
   } catch (e: any) {
-    errorMsg = e?.message || "Error al cargar datos de Cashflow.";
+    errorMsg = e?.message || "Error al cargar KPIs de Cashflow.";
   }
 
-  /* ---------- 4) Datos iniciales para tablas (sin tocar endpoints hijos aún) ---------- */
-  const movs = {
-    items: [] as Array<{
-      id: string | null;
-      fecha: string;
-      empresa_id: string;
-      empresa_nombre: string;
-      tipo: "subscription" | "extra_asesor" | "ajuste";
-      concepto: string | null;
-      pasarela: string;
-      moneda: string;
-      monto_neto: number;
-      iva_21: number;
-      total_con_iva: number;
-      estado: "pending" | "paid" | "failed" | "refunded";
-      referencia_pasarela: string | null;
-      metadata: Record<string, any>;
-    }>,
-    page: 1,
-    pageSize: 20,
-    total: 0,
-  };
-
-  const subs = {
-    items: [] as Array<{
-      empresa_id: string;
-      empresa_nombre: string;
-      plan_id: string;
-      plan_nombre: string;
-      fecha_inicio: string | null;
-      fecha_fin: string | null;
-      activo: boolean;
-      max_asesores_plan: number;
-      max_asesores_override: number | null;
-      asesores_utilizados: number;
-      cupo_excedido: number;
-    }>,
-    page: 1,
-    pageSize: 20,
-    total: 0,
-  };
+  /* ---------- 4) Datos iniciales para tablas (placeholder, sin tocar endpoints hijos aún) ---------- */
+  const movs = { items: [] as any[], page: 1, pageSize: 20, total: 0 };
+  const subs = { items: [] as any[], page: 1, pageSize: 20, total: 0 };
 
   /* ---------- 5) Render ---------- */
   return (
@@ -192,7 +180,7 @@ export default async function AdminCashflowPage() {
                       <td className="px-4 py-4 text-gray-500" colSpan={8}>Sin movimientos en el período.</td>
                     </tr>
                   ) : (
-                    movs.items.map((m) => (
+                    movs.items.map((m: any) => (
                       <tr key={(m.id || `${m.empresa_id}-${m.fecha}-${m.tipo}`)} className="border-b last:border-0">
                         <td className="px-4 py-3">{fmtDateISO(m.fecha)}</td>
                         <td className="px-4 py-3">{m.empresa_nombre || "—"}</td>
@@ -242,7 +230,7 @@ export default async function AdminCashflowPage() {
                       <td className="px-4 py-4 text-gray-500" colSpan={9}>Sin suscripciones en el período.</td>
                     </tr>
                   ) : (
-                    subs.items.map((s) => (
+                    subs.items.map((s: any) => (
                       <tr key={`${s.empresa_id}-${s.plan_id}-${s.fecha_inicio || "null"}`} className="border-b last:border-0">
                         <td className="px-4 py-3">{s.empresa_nombre}</td>
                         <td className="px-4 py-3">{s.plan_nombre}</td>

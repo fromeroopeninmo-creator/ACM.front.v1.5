@@ -1,8 +1,14 @@
 // frontend/lib/adminCashflowApi.ts
-// Cliente para endpoints de Cashflow (Admin). Usa rutas relativas a la misma app.
-// Admite un segundo parámetro opcional `init?: RequestInit` para pasar headers (cookie) en SSR.
+// Cliente para endpoints de Cashflow (ADMIN). Seguro para usar en SERVER y CLIENT.
+// Usa URL absoluta + passthrough de cookies (cuando lo necesites), igual que adminPlanesApi.
 
 export type Role = "empresa" | "asesor" | "soporte" | "super_admin" | "super_admin_root";
+
+type FetchOpts = {
+  headers?: Record<string, string>;
+  cache?: RequestCache;
+  next?: NextFetchRequestConfig;
+};
 
 /** ==== Tipos de respuestas ==== */
 export interface CashflowKpisResponse {
@@ -64,7 +70,7 @@ export interface SimularPeriodoBody {
   desde: string;        // YYYY-MM-DD
   hasta: string;        // YYYY-MM-DD
   empresaId?: string;   // opcional
-  overwrite?: boolean;  // opcional: borra simulados previos del rango/periodo
+  overwrite?: boolean;  // opcional
 }
 export interface SimularPeriodoResponse {
   inserted: number;
@@ -74,108 +80,108 @@ export interface SimularPeriodoResponse {
   detalles: Array<Record<string, any>>;
 }
 
-/** ==== Utils ==== */
-async function handleJson<T>(res: Response): Promise<T> {
-  const ct = res.headers.get("content-type");
-  const isJson = ct && ct.includes("application/json");
-  if (!res.ok) {
-    if (isJson) {
-      const body = await res.json().catch(() => ({}));
-      throw new Error(body?.error || `HTTP ${res.status}`);
-    }
-    const text = await res.text().catch(() => "");
-    throw new Error(text || `HTTP ${res.status}`);
-  }
-  if (isJson) return (await res.json()) as T;
-  return {} as T;
-}
+/** ==== Utils (mismo patrón que adminPlanesApi) ==== */
+function getBaseUrl() {
+  const envUrl =
+    process.env.NEXT_PUBLIC_SITE_URL ||
+    process.env.NEXT_PUBLIC_VERCEL_URL ||
+    process.env.VERCEL_URL;
 
-function q(params: Record<string, any>) {
+  if (envUrl) return envUrl.startsWith("http") ? envUrl : `https://${envUrl}`;
+  return "http://localhost:3000";
+}
+function withQuery(url: string, params?: Record<string, any>) {
+  if (!params) return url;
   const usp = new URLSearchParams();
   Object.entries(params).forEach(([k, v]) => {
     if (v === undefined || v === null || v === "") return;
     usp.set(k, String(v));
   });
   const qs = usp.toString();
-  return qs ? `?${qs}` : "";
+  return qs ? `${url}?${qs}` : url;
+}
+async function handleJson<T>(res: Response): Promise<T> {
+  const ct = res.headers.get("content-type");
+  const isJson = ct && ct.includes("application/json");
+  if (!res.ok) {
+    const body = isJson ? await res.text().catch(() => "") : await res.text().catch(() => "");
+    throw new Error(`HTTP ${res.status} ${res.statusText} ${body}`.trim());
+  }
+  return (isJson ? res.json() : ({} as any)) as T;
 }
 
-/** ==== API (con init opcional para SSR) ==== */
+/** ==== API calls (URL absoluta + opts.headers para cookie) ==== */
 
-/** KPIs: GET /api/admin/cashflow/kpis?desde&hasta&empresaId */
+// KPIs
 export async function getCashflowKpis(
-  params: { desde: string; hasta: string; empresaId?: string; signal?: AbortSignal },
-  init?: RequestInit
-) {
-  const url = `/api/admin/cashflow/kpis${q({
-    desde: params.desde,
-    hasta: params.hasta,
-    empresaId: params.empresaId,
-  })}`;
+  params: { desde: string; hasta: string; empresaId?: string },
+  opts: FetchOpts = {}
+): Promise<CashflowKpisResponse> {
+  const base = getBaseUrl();
+  const url = withQuery(`${base}/api/admin/cashflow/kpis`, params);
   const res = await fetch(url, {
     method: "GET",
-    signal: params.signal,
-    ...(init || {}),
+    headers: { ...(opts.headers || {}) },
+    cache: opts.cache ?? "no-store",
+    next: opts.next,
   });
   return handleJson<CashflowKpisResponse>(res);
 }
 
-/** Movimientos: GET /api/admin/cashflow/movimientos?... */
+// Movimientos
 export async function getCashflowMovimientos(
   params: {
     desde: string; hasta: string; empresaId?: string;
     pasarela?: string; estado?: "pending" | "paid" | "failed" | "refunded";
     tipo?: "subscription" | "extra_asesor" | "ajuste";
-    page?: number; pageSize?: number; signal?: AbortSignal;
+    page?: number; pageSize?: number;
   },
-  init?: RequestInit
-) {
-  const url = `/api/admin/cashflow/movimientos${q({
-    desde: params.desde, hasta: params.hasta,
-    empresaId: params.empresaId, pasarela: params.pasarela,
-    estado: params.estado, tipo: params.tipo,
-    page: params.page, pageSize: params.pageSize,
-  })}`;
+  opts: FetchOpts = {}
+): Promise<MovimientosResponse> {
+  const base = getBaseUrl();
+  const url = withQuery(`${base}/api/admin/cashflow/movimientos`, params);
   const res = await fetch(url, {
     method: "GET",
-    signal: params.signal,
-    ...(init || {}),
+    headers: { ...(opts.headers || {}) },
+    cache: opts.cache ?? "no-store",
+    next: opts.next,
   });
   return handleJson<MovimientosResponse>(res);
 }
 
-/** Suscripciones: GET /api/admin/cashflow/suscripciones?... */
+// Suscripciones
 export async function getCashflowSuscripciones(
   params: {
     desde: string; hasta: string; empresaId?: string;
     estado?: "activo" | "inactivo" | "todos";
-    page?: number; pageSize?: number; signal?: AbortSignal;
+    page?: number; pageSize?: number;
   },
-  init?: RequestInit
-) {
-  const url = `/api/admin/cashflow/suscripciones${q({
-    desde: params.desde, hasta: params.hasta,
-    empresaId: params.empresaId, estado: params.estado,
-    page: params.page, pageSize: params.pageSize,
-  })}`;
+  opts: FetchOpts = {}
+): Promise<SuscripcionesResponse> {
+  const base = getBaseUrl();
+  const url = withQuery(`${base}/api/admin/cashflow/suscripciones`, params);
   const res = await fetch(url, {
     method: "GET",
-    signal: params.signal,
-    ...(init || {}),
+    headers: { ...(opts.headers || {}) },
+    cache: opts.cache ?? "no-store",
+    next: opts.next,
   });
   return handleJson<SuscripcionesResponse>(res);
 }
 
-/** Simular período: POST /api/admin/cashflow/simular-periodo */
+// Simular período (ledger)
 export async function postCashflowSimularPeriodo(
   body: SimularPeriodoBody,
-  init?: RequestInit
-) {
-  const res = await fetch(`/api/admin/cashflow/simular-periodo`, {
+  opts: FetchOpts = {}
+): Promise<SimularPeriodoResponse> {
+  const base = getBaseUrl();
+  const url = `${base}/api/admin/cashflow/simular-periodo`;
+  const res = await fetch(url, {
     method: "POST",
-    headers: { "content-type": "application/json", ...(init?.headers || {}) },
+    headers: { "content-type": "application/json", ...(opts.headers || {}) },
     body: JSON.stringify(body),
-    ...(init || {}),
+    cache: "no-store",
+    next: opts.next,
   });
   return handleJson<SimularPeriodoResponse>(res);
 }

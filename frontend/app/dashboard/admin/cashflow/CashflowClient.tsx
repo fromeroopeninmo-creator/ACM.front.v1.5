@@ -3,16 +3,11 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   getCashflowKpis,
-  getCashflowMovimientos,
-  getCashflowSuscripciones,
   postCashflowSimularPeriodo,
   type CashflowKpisResponse,
-  type MovimientosResponse,
-  type SuscripcionesResponse,
-  type MovimientoItem,
-  type SuscripcionItem,
 } from "#lib/adminCashflowApi";
 
+/* ================= Helpers ================= */
 function pad2(n: number) {
   return String(n).padStart(2, "0");
 }
@@ -26,7 +21,6 @@ function monthRangeToday() {
   const hasta = `${last.getFullYear()}-${pad2(last.getMonth() + 1)}-${pad2(last.getDate())}`;
   return { desde, hasta };
 }
-
 function fmtNumber(n?: number | null) {
   if (n === null || n === undefined) return "—";
   return new Intl.NumberFormat("es-AR").format(n);
@@ -45,79 +39,102 @@ function fmtDateISO(iso?: string | null) {
   if (Number.isNaN(d.getTime())) return "—";
   return new Intl.DateTimeFormat("es-AR", { dateStyle: "medium" }).format(d);
 }
+function withQuery(url: string, params?: Record<string, any>) {
+  if (!params) return url;
+  const usp = new URLSearchParams();
+  Object.entries(params).forEach(([k, v]) => {
+    if (v === undefined || v === null || v === "") return;
+    usp.set(k, String(v));
+  });
+  const qs = usp.toString();
+  return qs ? `${url}?${qs}` : url;
+}
 
-type Estado = "pending" | "paid" | "failed" | "refunded" | "";
-type Tipo = "subscription" | "extra_asesor" | "ajuste" | "";
+/* ============== Tipos locales (empresas resumen) ============== */
+type EmpresaResumen = {
+  empresa_id: string;
+  empresa_nombre: string;
+  cuit: string | null;
 
+  plan_nombre: string | null;
+  plan_activo: boolean;
+  fecha_inicio: string | null;
+  fecha_fin: string | null;
+
+  ingresos_neto_periodo: number;
+  ingresos_con_iva_periodo: number;
+  mrr_neto_actual: number;
+
+  movimientos_count: number;
+  ultimo_movimiento: string | null;
+
+  asesores_usados: number;
+  cupo_plan: number;
+  override: number | null;
+  exceso: number;
+};
+type EmpresasPaged = {
+  page: number;
+  pageSize: number;
+  total: number;
+  items: EmpresaResumen[];
+};
+
+/* =================== Componente =================== */
 export default function CashflowClient() {
   // ======= Filtros / estado =======
   const { desde: mesDesde, hasta: mesHasta } = monthRangeToday();
   const [desde, setDesde] = useState(mesDesde);
   const [hasta, setHasta] = useState(mesHasta);
 
-  const [empresaId, setEmpresaId] = useState<string>("");
-  const [pasarela, setPasarela] = useState<string>("");
-  const [estado, setEstado] = useState<Estado>("");
-  const [tipo, setTipo] = useState<Tipo>("");
+  // filtros de índice (resumen de empresas)
+  const [q, setQ] = useState<string>("");
+  const [plan, setPlan] = useState<string>("");
+  const [estadoPlan, setEstadoPlan] = useState<"" | "activo" | "inactivo" | "todos">("todos");
 
-  // paginación
-  const [movPage, setMovPage] = useState(1);
-  const [movPageSize, setMovPageSize] = useState(20);
-
-  const [subPage, setSubPage] = useState(1);
-  const [subPageSize, setSubPageSize] = useState(20);
+  // paginación índice
+  const [empPage, setEmpPage] = useState(1);
+  const [empPageSize, setEmpPageSize] = useState(20);
 
   // data
   const [kpis, setKpis] = useState<CashflowKpisResponse | null>(null);
-  const [movs, setMovs] = useState<MovimientosResponse | null>(null);
-  const [subs, setSubs] = useState<SuscripcionesResponse | null>(null);
+  const [empresas, setEmpresas] = useState<EmpresasPaged | null>(null);
 
   const [loading, setLoading] = useState(false);
   const [errMsg, setErrMsg] = useState<string | null>(null);
 
-  // ======= Fetch principal =======
   const canQuery = useMemo(() => !!desde && !!hasta, [desde, hasta]);
 
+  /* ========= Fetch de KPIs + Empresas (índice) ========= */
   async function fetchAll() {
     if (!canQuery) return;
     setLoading(true);
     setErrMsg(null);
     try {
-      // 1) KPIs: si falla, mostramos el error (como antes)
-      const k = await getCashflowKpis({ desde, hasta, empresaId: empresaId || undefined });
+      // KPIs (globales del período)
+      const k = await getCashflowKpis({
+        desde,
+        hasta,
+      });
       setKpis(k);
 
-      // 2) Movimientos: no rompas todo si aún no está implementado o falla
-      try {
-        const m = await getCashflowMovimientos({
-          desde,
-          hasta,
-          empresaId: empresaId || undefined,
-          pasarela: pasarela || undefined,
-          estado: (estado || undefined) as any,
-          tipo: (tipo || undefined) as any,
-          page: movPage,
-          pageSize: movPageSize,
-        });
-        setMovs(m);
-      } catch {
-        setMovs({ items: [], page: movPage, pageSize: movPageSize, total: 0 });
+      // Empresas (resumen del período)
+      const url = withQuery("/api/admin/cashflow/empresas", {
+        desde,
+        hasta,
+        q: q || undefined,
+        plan: plan || undefined,
+        estado_plan: estadoPlan || undefined,
+        page: empPage,
+        pageSize: empPageSize,
+      });
+      const res = await fetch(url, { method: "GET", cache: "no-store" });
+      if (!res.ok) {
+        const body = await res.text().catch(() => "");
+        throw new Error(`GET ${url} → ${res.status} ${res.statusText} ${body}`.trim());
       }
-
-      // 3) Suscripciones: idem movimientos
-      try {
-        const s = await getCashflowSuscripciones({
-          desde,
-          hasta,
-          empresaId: empresaId || undefined,
-          estado: "todos",
-          page: subPage,
-          pageSize: subPageSize,
-        });
-        setSubs(s);
-      } catch {
-        setSubs({ items: [], page: subPage, pageSize: subPageSize, total: 0 });
-      }
+      const list = (await res.json()) as EmpresasPaged;
+      setEmpresas(list);
     } catch (e: any) {
       setErrMsg(e?.message || "Error al cargar datos.");
     } finally {
@@ -128,22 +145,19 @@ export default function CashflowClient() {
   useEffect(() => {
     fetchAll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [desde, hasta, empresaId, pasarela, estado, tipo, movPage, movPageSize, subPage, subPageSize]);
+  }, [desde, hasta, q, plan, estadoPlan, empPage, empPageSize]);
 
-  // ======= Acciones =======
+  /* ========= Acciones ========= */
   async function onSimularPeriodo() {
     if (!desde || !hasta) return;
     setLoading(true);
     setErrMsg(null);
     try {
-      // inserta movimientos simulados (subscription/extra_asesor) en ledger
       await postCashflowSimularPeriodo({
         desde,
         hasta,
-        empresaId: empresaId || undefined,
         overwrite: false,
       });
-      // recargar
       await fetchAll();
     } catch (e: any) {
       setErrMsg(e?.message || "No se pudo simular el período.");
@@ -152,10 +166,18 @@ export default function CashflowClient() {
     }
   }
 
-  // ======= Render =======
+  /* ========= Helpers UI ========= */
+  const totalEmpresas = empresas?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(totalEmpresas / empPageSize));
+  function empresaDetalleHref(empresaId: string) {
+    const usp = new URLSearchParams({ desde, hasta });
+    return `/dashboard/admin/cashflow/${encodeURIComponent(empresaId)}?${usp.toString()}`;
+  }
+
+  /* =================== Render =================== */
   return (
     <section className="space-y-6">
-      {/* Filtros */}
+      {/* Filtros del índice (empresas resumen) */}
       <div className="rounded-2xl border bg-white dark:bg-neutral-900 p-4">
         <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
           <div className="flex flex-col">
@@ -165,8 +187,7 @@ export default function CashflowClient() {
               className="rounded-md border px-3 py-2 bg-transparent"
               value={desde}
               onChange={(e) => {
-                setMovPage(1);
-                setSubPage(1);
+                setEmpPage(1);
                 setDesde(e.target.value);
               }}
             />
@@ -178,77 +199,53 @@ export default function CashflowClient() {
               className="rounded-md border px-3 py-2 bg-transparent"
               value={hasta}
               onChange={(e) => {
-                setMovPage(1);
-                setSubPage(1);
+                setEmpPage(1);
                 setHasta(e.target.value);
               }}
             />
           </div>
 
-          <div className="flex flex-col">
-            <label className="text-xs text-gray-500 mb-1">Empresa ID (opcional)</label>
+          <div className="flex flex-col md:col-span-2">
+            <label className="text-xs text-gray-500 mb-1">Buscar (empresa o CUIT)</label>
             <input
               type="text"
-              placeholder="uuid empresa"
+              placeholder="Nombre, razón social o CUIT"
               className="rounded-md border px-3 py-2 bg-transparent"
-              value={empresaId}
+              value={q}
               onChange={(e) => {
-                setMovPage(1);
-                setSubPage(1);
-                setEmpresaId(e.target.value.trim());
+                setEmpPage(1);
+                setQ(e.target.value);
               }}
             />
           </div>
 
           <div className="flex flex-col">
-            <label className="text-xs text-gray-500 mb-1">Pasarela</label>
-            <select
+            <label className="text-xs text-gray-500 mb-1">Plan</label>
+            <input
+              type="text"
+              placeholder="Nombre exacto del plan"
               className="rounded-md border px-3 py-2 bg-transparent"
-              value={pasarela}
+              value={plan}
               onChange={(e) => {
-                setMovPage(1);
-                setPasarela(e.target.value);
+                setEmpPage(1);
+                setPlan(e.target.value);
               }}
-            >
-              <option value="">Todas</option>
-              <option value="simulada">Simulada</option>
-              <option value="mercadopago">Mercado Pago</option>
-              <option value="stripe">Stripe</option>
-            </select>
+            />
           </div>
 
           <div className="flex flex-col">
-            <label className="text-xs text-gray-500 mb-1">Estado</label>
+            <label className="text-xs text-gray-500 mb-1">Estado plan</label>
             <select
               className="rounded-md border px-3 py-2 bg-transparent"
-              value={estado}
+              value={estadoPlan}
               onChange={(e) => {
-                setMovPage(1);
-                setEstado(e.target.value as Estado);
+                setEmpPage(1);
+                setEstadoPlan(e.target.value as any);
               }}
             >
-              <option value="">Todos</option>
-              <option value="paid">Pagado</option>
-              <option value="pending">Pendiente</option>
-              <option value="failed">Fallido</option>
-              <option value="refunded">Reembolsado</option>
-            </select>
-          </div>
-
-          <div className="flex flex-col">
-            <label className="text-xs text-gray-500 mb-1">Tipo</label>
-            <select
-              className="rounded-md border px-3 py-2 bg-transparent"
-              value={tipo}
-              onChange={(e) => {
-                setMovPage(1);
-                setTipo(e.target.value as Tipo);
-              }}
-            >
-              <option value="">Todos</option>
-              <option value="subscription">Subscription</option>
-              <option value="extra_asesor">Extra asesor</option>
-              <option value="ajuste">Ajuste</option>
+              <option value="todos">Todos</option>
+              <option value="activo">Activo</option>
+              <option value="inactivo">Inactivo</option>
             </select>
           </div>
         </div>
@@ -274,7 +271,7 @@ export default function CashflowClient() {
         </div>
       </div>
 
-      {/* KPIs */}
+      {/* KPIs (globales del período) */}
       <section className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         <div className="rounded-2xl border p-4 bg-white dark:bg-neutral-900">
           <div className="text-xs text-gray-500">MRR (neto)</div>
@@ -285,7 +282,9 @@ export default function CashflowClient() {
         </div>
         <div className="rounded-2xl border p-4 bg-white dark:bg-neutral-900">
           <div className="text-xs text-gray-500">Ingresos (neto) en el período</div>
-          <div className="text-2xl font-semibold mt-1">{fmtMoney(kpis?.ingresos_neto_total ?? 0)}</div>
+          <div className="text-2xl font-semibold mt-1">
+            {fmtMoney(kpis?.ingresos_neto_total ?? 0)}
+          </div>
           <div className="text-xs text-gray-400 mt-1">
             Visual con IVA: {fmtMoney(kpis ? kpis.ingresos_con_iva : 0)}
           </div>
@@ -308,148 +307,83 @@ export default function CashflowClient() {
         </div>
       </section>
 
-      {/* Movimientos */}
+      {/* Empresas (resumen del período) */}
       <section className="rounded-2xl border bg-white dark:bg-neutral-900">
         <div className="p-4 border-b flex items-center justify-between">
-          <h2 className="text-base font-semibold">Movimientos</h2>
+          <h2 className="text-base font-semibold">Empresas (resumen)</h2>
           <div className="text-xs text-gray-500">
-            {fmtNumber(movs?.items.length ?? 0)} / {fmtNumber(movs?.total ?? 0)}
+            {fmtNumber(empresas?.items.length ?? 0)} / {fmtNumber(empresas?.total ?? 0)}
           </div>
         </div>
-        <div className="overflow-x-auto">
-          <table className="min-w-full text-sm">
-            <thead>
-              <tr className="text-left border-b">
-                <th className="px-4 py-3">Fecha</th>
-                <th className="px-4 py-3">Empresa</th>
-                <th className="px-4 py-3">Tipo</th>
-                <th className="px-4 py-3">Concepto</th>
-                <th className="px-4 py-3">Estado</th>
-                <th className="px-4 py-3 text-right">Neto</th>
-                <th className="px-4 py-3 text-right">IVA 21%</th>
-                <th className="px-4 py-3 text-right">Total</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(movs?.items ?? []).length === 0 ? (
-                <tr>
-                  <td className="px-4 py-4 text-gray-500" colSpan={8}>
-                    Sin movimientos.
-                  </td>
-                </tr>
-              ) : (
-                movs!.items.map((m: MovimientoItem) => (
-                  <tr key={(m.id || `${m.empresa_id}-${m.fecha}-${m.tipo}`)} className="border-b last:border-0">
-                    <td className="px-4 py-3">{fmtDateISO(m.fecha)}</td>
-                    <td className="px-4 py-3">{m.empresa_nombre || "—"}</td>
-                    <td className="px-4 py-3 capitalize">{m.tipo}</td>
-                    <td className="px-4 py-3">{m.concepto || "—"}</td>
-                    <td className="px-4 py-3 uppercase text-xs">{m.estado}</td>
-                    <td className="px-4 py-3 text-right">{fmtMoney(m.monto_neto)}</td>
-                    <td className="px-4 py-3 text-right">{fmtMoney(m.iva_21)}</td>
-                    <td className="px-4 py-3 text-right">{fmtMoney(m.total_con_iva)}</td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-        {/* Paginación movimientos */}
-        <div className="px-4 py-3 flex items-center justify-between border-t text-sm">
-          <div className="flex items-center gap-2">
-            <button
-              className="rounded-md border px-3 py-1 disabled:opacity-50"
-              onClick={() => setMovPage((p) => Math.max(1, p - 1))}
-              disabled={loading || (movPage <= 1)}
-            >
-              ← Anterior
-            </button>
-            <span className="text-xs text-gray-600">Página {movPage}</span>
-            <button
-              className="rounded-md border px-3 py-1 disabled:opacity-50"
-              onClick={() => {
-                const total = movs?.total ?? 0;
-                const maxPage = Math.max(1, Math.ceil(total / movPageSize));
-                setMovPage((p) => Math.min(maxPage, p + 1));
-              }}
-              disabled={loading || ((movs?.items.length ?? 0) === 0)}
-            >
-              Siguiente →
-            </button>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs">Por página</span>
-            <select
-              className="rounded-md border px-2 py-1 bg-transparent text-xs"
-              value={movPageSize}
-              onChange={(e) => {
-                setMovPage(1);
-                setMovPageSize(Number(e.target.value));
-              }}
-            >
-              {[10, 20, 50, 100, 200].map((n) => (
-                <option key={n} value={n}>
-                  {n}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-      </section>
 
-      {/* Suscripciones */}
-      <section className="rounded-2xl border bg-white dark:bg-neutral-900">
-        <div className="p-4 border-b flex items-center justify-between">
-          <h2 className="text-base font-semibold">Suscripciones</h2>
-          <div className="text-xs text-gray-500">
-            {fmtNumber(subs?.items.length ?? 0)} / {fmtNumber(subs?.total ?? 0)}
-          </div>
-        </div>
         <div className="overflow-x-auto">
           <table className="min-w-full text-sm">
             <thead>
               <tr className="text-left border-b">
                 <th className="px-4 py-3">Empresa</th>
                 <th className="px-4 py-3">Plan</th>
-                <th className="px-4 py-3">Inicio</th>
-                <th className="px-4 py-3">Fin</th>
-                <th className="px-4 py-3">Estado</th>
-                <th className="px-4 py-3 text-right">Cupo plan</th>
+                <th className="px-4 py-3">Vigencia</th>
+                <th className="px-4 py-3 text-right">MRR neto</th>
+                <th className="px-4 py-3 text-right">Ingresos neto</th>
+                <th className="px-4 py-3 text-right">Total c/ IVA</th>
+                <th className="px-4 py-3 text-right">Movs</th>
+                <th className="px-4 py-3">Último mov.</th>
+                <th className="px-4 py-3 text-right">Asesores</th>
+                <th className="px-4 py-3 text-right">Cupo</th>
                 <th className="px-4 py-3 text-right">Override</th>
-                <th className="px-4 py-3 text-right">Usados</th>
                 <th className="px-4 py-3 text-right">Exceso</th>
+                <th className="px-4 py-3">Acciones</th>
               </tr>
             </thead>
             <tbody>
-              {(subs?.items ?? []).length === 0 ? (
+              {(empresas?.items ?? []).length === 0 ? (
                 <tr>
-                  <td className="px-4 py-4 text-gray-500" colSpan={9}>
-                    Sin suscripciones.
+                  <td className="px-4 py-4 text-gray-500" colSpan={13}>
+                    Sin resultados.
                   </td>
                 </tr>
               ) : (
-                subs!.items.map((s: SuscripcionItem) => (
-                  <tr key={`${s.empresa_id}-${s.plan_id}-${s.fecha_inicio || "null"}`} className="border-b last:border-0">
-                    <td className="px-4 py-3">{s.empresa_nombre}</td>
-                    <td className="px-4 py-3">{s.plan_nombre}</td>
-                    <td className="px-4 py-3">{fmtDateISO(s.fecha_inicio)}</td>
-                    <td className="px-4 py-3">{fmtDateISO(s.fecha_fin)}</td>
+                empresas!.items.map((e) => (
+                  <tr key={e.empresa_id} className="border-b last:border-0">
                     <td className="px-4 py-3">
-                      {s.activo ? (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-full border text-xs">activo</span>
-                      ) : (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-full border text-xs">inactivo</span>
-                      )}
+                      <div className="font-medium">{e.empresa_nombre || "—"}</div>
+                      <div className="text-xs text-gray-500">{e.cuit || "—"}</div>
                     </td>
-                    <td className="px-4 py-3 text-right">{fmtNumber(s.max_asesores_plan)}</td>
-                    <td className="px-4 py-3 text-right">{fmtNumber(s.max_asesores_override ?? 0)}</td>
-                    <td className="px-4 py-3 text-right">{fmtNumber(s.asesores_utilizados)}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <span>{e.plan_nombre || "—"}</span>
+                        <span
+                          className={
+                            e.plan_activo
+                              ? "inline-flex items-center rounded-full px-2 py-0.5 text-xs bg-green-100 text-green-700"
+                              : "inline-flex items-center rounded-full px-2 py-0.5 text-xs bg-amber-100 text-amber-700"
+                          }
+                        >
+                          {e.plan_activo ? "Activo" : "Inactivo"}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div>{fmtDateISO(e.fecha_inicio)} → {fmtDateISO(e.fecha_fin)}</div>
+                    </td>
+                    <td className="px-4 py-3 text-right">{fmtMoney(e.mrr_neto_actual)}</td>
+                    <td className="px-4 py-3 text-right">{fmtMoney(e.ingresos_neto_periodo)}</td>
+                    <td className="px-4 py-3 text-right">{fmtMoney(e.ingresos_con_iva_periodo)}</td>
+                    <td className="px-4 py-3 text-right">{fmtNumber(e.movimientos_count)}</td>
+                    <td className="px-4 py-3">{fmtDateISO(e.ultimo_movimiento)}</td>
+                    <td className="px-4 py-3 text-right">{fmtNumber(e.asesores_usados)}</td>
+                    <td className="px-4 py-3 text-right">{fmtNumber(e.cupo_plan)}</td>
+                    <td className="px-4 py-3 text-right">{fmtNumber(e.override ?? 0)}</td>
                     <td className="px-4 py-3 text-right">
-                      {s.cupo_excedido > 0 ? (
-                        <span className="text-red-600 font-medium">{fmtNumber(s.cupo_excedido)}</span>
-                      ) : (
-                        "—"
-                      )}
+                      {e.exceso > 0 ? <span className="text-red-600 font-medium">{fmtNumber(e.exceso)}</span> : "—"}
+                    </td>
+                    <td className="px-4 py-3">
+                      <a
+                        href={empresaDetalleHref(e.empresa_id)}
+                        className="text-blue-600 hover:underline"
+                      >
+                        Ver detalle
+                      </a>
                     </td>
                   </tr>
                 ))
@@ -457,25 +391,22 @@ export default function CashflowClient() {
             </tbody>
           </table>
         </div>
-        {/* Paginación suscripciones */}
+
+        {/* Paginación índice */}
         <div className="px-4 py-3 flex items-center justify-between border-t text-sm">
           <div className="flex items-center gap-2">
             <button
               className="rounded-md border px-3 py-1 disabled:opacity-50"
-              onClick={() => setSubPage((p) => Math.max(1, p - 1))}
-              disabled={loading || (subPage <= 1)}
+              onClick={() => setEmpPage((p) => Math.max(1, p - 1))}
+              disabled={loading || empPage <= 1}
             >
               ← Anterior
             </button>
-            <span className="text-xs text-gray-600">Página {subPage}</span>
+            <span className="text-xs text-gray-600">Página {empPage} de {totalPages}</span>
             <button
               className="rounded-md border px-3 py-1 disabled:opacity-50"
-              onClick={() => {
-                const total = subs?.total ?? 0;
-                const maxPage = Math.max(1, Math.ceil(total / subPageSize));
-                setSubPage((p) => Math.min(maxPage, p + 1));
-              }}
-              disabled={loading || ((subs?.items.length ?? 0) === 0)}
+              onClick={() => setEmpPage((p) => Math.min(totalPages, p + 1))}
+              disabled={loading || (empresas?.items.length ?? 0) === 0 || empPage >= totalPages}
             >
               Siguiente →
             </button>
@@ -484,10 +415,10 @@ export default function CashflowClient() {
             <span className="text-xs">Por página</span>
             <select
               className="rounded-md border px-2 py-1 bg-transparent text-xs"
-              value={subPageSize}
+              value={empPageSize}
               onChange={(e) => {
-                setSubPage(1);
-                setSubPageSize(Number(e.target.value));
+                setEmpPage(1);
+                setEmpPageSize(Number(e.target.value));
               }}
             >
               {[10, 20, 50, 100, 200].map((n) => (

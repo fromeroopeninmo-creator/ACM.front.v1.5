@@ -83,9 +83,13 @@ export default function CashflowClient() {
     setLoading(true);
     setErrMsg(null);
     try {
-      const [k, m, s] = await Promise.all([
-        getCashflowKpis({ desde, hasta, empresaId: empresaId || undefined }),
-        getCashflowMovimientos({
+      // 1) KPIs: si falla, mostramos el error (como antes)
+      const k = await getCashflowKpis({ desde, hasta, empresaId: empresaId || undefined });
+      setKpis(k);
+
+      // 2) Movimientos: no rompas todo si aún no está implementado o falla
+      try {
+        const m = await getCashflowMovimientos({
           desde,
           hasta,
           empresaId: empresaId || undefined,
@@ -94,19 +98,26 @@ export default function CashflowClient() {
           tipo: (tipo || undefined) as any,
           page: movPage,
           pageSize: movPageSize,
-        }),
-        getCashflowSuscripciones({
+        });
+        setMovs(m);
+      } catch {
+        setMovs({ items: [], page: movPage, pageSize: movPageSize, total: 0 });
+      }
+
+      // 3) Suscripciones: idem movimientos
+      try {
+        const s = await getCashflowSuscripciones({
           desde,
           hasta,
           empresaId: empresaId || undefined,
           estado: "todos",
           page: subPage,
           pageSize: subPageSize,
-        }),
-      ]);
-      setKpis(k);
-      setMovs(m);
-      setSubs(s);
+        });
+        setSubs(s);
+      } catch {
+        setSubs({ items: [], page: subPage, pageSize: subPageSize, total: 0 });
+      }
     } catch (e: any) {
       setErrMsg(e?.message || "Error al cargar datos.");
     } finally {

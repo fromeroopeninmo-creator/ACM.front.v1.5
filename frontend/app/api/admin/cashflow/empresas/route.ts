@@ -51,10 +51,12 @@ async function resolveUserRole(userId: string): Promise<Role | null> {
  *  - desde (YYYY-MM-DD) [requerido]
  *  - hasta (YYYY-MM-DD) [requerido]
  *  - q (string) [opcional] => busca por nombre/cuit
- *  - page (number, default 1)
- *  - pageSize (number, default 20)
  *  - plan (string) [opcional] => nombre exacto de plan
  *  - estado_plan ("activo" | "inactivo" | "todos", default "todos")
+ *  - page (number, default 1)
+ *  - pageSize (number, default 20)
+ *  - sortBy ("mrr" | "ingresos" | "nombre" | "movs" | "ultimo_mov") [opcional]
+ *  - sortDir ("asc" | "desc"), default "desc" (para métricas) / "asc" (para nombre)
  *
  * Respuesta:
  * {
@@ -101,6 +103,25 @@ export async function GET(req: Request) {
     const offset = (page - 1) * pageSize;
     const limit = pageSize;
 
+    const sortBy = (url.searchParams.get("sortBy") ||
+      "") as "mrr" | "ingresos" | "nombre" | "movs" | "ultimo_mov" | "";
+    let sortDir = (url.searchParams.get("sortDir") || "").toLowerCase() as
+      | "asc"
+      | "desc"
+      | "";
+
+    if (!desde || !hasta) {
+      return NextResponse.json(
+        { error: "Parámetros 'desde' y 'hasta' son requeridos (YYYY-MM-DD)." },
+        { status: 400 }
+      );
+    }
+
+    // Por defecto: para métricas → desc; para nombre → asc
+    if (!sortDir) {
+      sortDir = sortBy === "nombre" ? "asc" : "desc";
+    }
+
     const planName = url.searchParams.get("plan");
     let planIdsFilter: string[] | null = null;
     if (planName && planName.trim().length > 0) {
@@ -120,25 +141,15 @@ export async function GET(req: Request) {
       }
     }
 
-    if (!desde || !hasta) {
-      return NextResponse.json(
-        { error: "Parámetros 'desde' y 'hasta' son requeridos (YYYY-MM-DD)." },
-        { status: 400 }
-      );
-    }
-
-    // 3) Traer empresas_planes (base). Preferimos “vigente” para cada empresa:
-    //    activo=true y fecha_fin >= desde; si no hay, tomamos la fila más reciente por empresa.
+    // 3) Traer empresas_planes (base)
     let epQuery = supabaseAdmin
       .from("empresas_planes")
       .select("id, empresa_id, plan_id, max_asesores_override, fecha_inicio, fecha_fin, activo");
 
     if (planIdsFilter) epQuery = epQuery.in("plan_id", planIdsFilter);
-
     if (estadoPlan === "activo") epQuery = epQuery.eq("activo", true);
     if (estadoPlan === "inactivo") epQuery = epQuery.eq("activo", false);
 
-    // Nota: no forzamos filtro por fechas acá; usaremos heurística después para elegir “vigente”
     const { data: epRows, error: epErr } = await epQuery;
     if (epErr) {
       return NextResponse.json({ error: epErr.message }, { status: 400 });
@@ -150,7 +161,7 @@ export async function GET(req: Request) {
       );
     }
 
-    // 4) Elegir una fila representativa por empresa (vigente si existe, si no la más reciente)
+    // 4) Elegir fila representativa por empresa (vigente o más reciente)
     type Ep = {
       id: string;
       empresa_id: string;
@@ -180,7 +191,6 @@ export async function GET(req: Request) {
     }
 
     function isVigente(row: Ep) {
-      // vigente si activo=true y fecha_fin >= desde (o null -> considerar vigente)
       if (!row.activo) return false;
       if (!row.fecha_fin) return true;
       try {
@@ -192,14 +202,12 @@ export async function GET(req: Request) {
     function pickRepresentativa(arr: Ep[]): Ep {
       const vigentes = arr.filter(isVigente);
       if (vigentes.length > 0) {
-        // si hay varias vigentes, tomar la de fecha_inicio más reciente
         return vigentes.sort((a, b) => {
           const da = a.fecha_inicio ? new Date(a.fecha_inicio).getTime() : 0;
           const db = b.fecha_inicio ? new Date(b.fecha_inicio).getTime() : 0;
           return db - da;
         })[0];
       }
-      // si no hay vigentes, tomar la de fecha_inicio más reciente
       return arr.sort((a, b) => {
         const da = a.fecha_inicio ? new Date(a.fecha_inicio).getTime() : 0;
         const db = b.fecha_inicio ? new Date(b.fecha_inicio).getTime() : 0;
@@ -219,7 +227,7 @@ export async function GET(req: Request) {
       );
     }
 
-    // 5) Traer empresas y planes para mapear
+    // 5) Traer empresas y planes
     const empresaIds = Array.from(new Set(representantes.map((r) => r.empresa_id)));
     const planIds = Array.from(new Set(representantes.map((r) => r.plan_id)));
 
@@ -237,17 +245,10 @@ export async function GET(req: Request) {
         .in("id", planIds),
     ]);
 
-    if (empErr) {
-      return NextResponse.json({ error: empErr.message }, { status: 400 });
-    }
-    if (planErr2) {
-      return NextResponse.json({ error: planErr2.message }, { status: 400 });
-    }
+    if (empErr) return NextResponse.json({ error: empErr.message }, { status: 400 });
+    if (planErr2) return NextResponse.json({ error: planErr2.message }, { status: 400 });
 
-    const empresaMap = new Map<
-      string,
-      { nombre: string; cuit: string | null }
-    >(
+    const empresaMap = new Map<string, { nombre: string; cuit: string | null }>(
       (empresas ?? []).map((e: any) => [
         String(e.id),
         {
@@ -271,21 +272,17 @@ export async function GET(req: Request) {
       ])
     );
 
-    // 6) Asesores usados por empresa (vista soporte)
+    // 6) Asesores usados por empresa
     const { data: detalleRows, error: detErr } = await supabaseAdmin
       .from("v_empresas_detalle_soporte")
       .select("empresa_id, asesores_totales")
       .in("empresa_id", empresaIds);
-
-    if (detErr) {
-      return NextResponse.json({ error: detErr.message }, { status: 400 });
-    }
+    if (detErr) return NextResponse.json({ error: detErr.message }, { status: 400 });
     const asesMap = new Map<string, number>(
       (detalleRows ?? []).map((r: any) => [String(r.empresa_id), Number(r.asesores_totales) || 0])
     );
 
-    // 7) Si existe ledger, contamos movimientos del período. Si no, fallback 0.
-    //    Intentamos consulta; si falla (tabla no existe), ignoramos sin romper.
+    // 7) Movimientos del período (si existe ledger)
     type LedgerAgg = { empresa_id: string; count: number; max_fecha: string | null };
     let ledgerAgg = new Map<string, LedgerAgg>();
     try {
@@ -315,10 +312,10 @@ export async function GET(req: Request) {
         );
       }
     } catch {
-      // sin ledger aún → dejamos en 0/null
+      // tabla ledger aún no creada → ignorar
     }
 
-    // 8) Armar items con cálculo MRR/ingresos (visual)
+    // 8) Armar items + cálculos
     type Item = {
       empresa_id: string;
       empresa_nombre: string;
@@ -327,17 +324,11 @@ export async function GET(req: Request) {
       plan_activo: boolean;
       fecha_inicio: string | null;
       fecha_fin: string | null;
-
-      // métricas período
       ingresos_neto_periodo: number;
       ingresos_con_iva_periodo: number;
       mrr_neto_actual: number;
-
-      // actividad
       movimientos_count: number;
       ultimo_movimiento: string | null;
-
-      // asesores/cupo
       asesores_usados: number;
       cupo_plan: number;
       override: number | null;
@@ -354,9 +345,10 @@ export async function GET(req: Request) {
       const plan_nombre = planMeta?.nombre ?? null;
 
       const cupo_base = planMeta ? planMeta.max_asesores : 0;
-      const cupo = row.max_asesores_override !== null && row.max_asesores_override !== undefined
-        ? Number(row.max_asesores_override)
-        : cupo_base;
+      const cupo =
+        row.max_asesores_override !== null && row.max_asesores_override !== undefined
+          ? Number(row.max_asesores_override)
+          : cupo_base;
 
       const asesores_usados = asesMap.get(row.empresa_id) ?? 0;
       const excedente = Math.max(0, asesores_usados - cupo);
@@ -365,7 +357,6 @@ export async function GET(req: Request) {
       const extra = excedente * precio_extra;
 
       const mrr_neto_actual = precio_base + extra;
-      // Para el índice (resumen) usamos mismo criterio visual que /kpis (sin prorrateo):
       const ingresos_neto_periodo = mrr_neto_actual;
       const ingresos_con_iva_periodo = Math.round(ingresos_neto_periodo * 1.21);
 
@@ -381,14 +372,11 @@ export async function GET(req: Request) {
         plan_activo: row.activo,
         fecha_inicio: row.fecha_inicio,
         fecha_fin: row.fecha_fin,
-
         ingresos_neto_periodo,
         ingresos_con_iva_periodo,
         mrr_neto_actual,
-
         movimientos_count,
         ultimo_movimiento,
-
         asesores_usados,
         cupo_plan: cupo_base,
         override: row.max_asesores_override,
@@ -404,11 +392,31 @@ export async function GET(req: Request) {
         })
       : itemsAll;
 
-    // Orden (nombre asc)
-    filtered.sort((a, b) => a.empresa_nombre.localeCompare(b.empresa_nombre, "es"));
+    // 10) Ordenamiento
+    const dir = sortDir === "asc" ? 1 : -1;
+    const sorted = filtered.sort((a, b) => {
+      switch (sortBy) {
+        case "mrr":
+          return (a.mrr_neto_actual - b.mrr_neto_actual) * dir;
+        case "ingresos":
+          return (a.ingresos_neto_periodo - b.ingresos_neto_periodo) * dir;
+        case "movs":
+          return (a.movimientos_count - b.movimientos_count) * dir;
+        case "ultimo_mov": {
+          const ta = a.ultimo_movimiento ? new Date(a.ultimo_movimiento).getTime() : 0;
+          const tb = b.ultimo_movimiento ? new Date(b.ultimo_movimiento).getTime() : 0;
+          return (ta - tb) * dir;
+        }
+        case "nombre":
+          return a.empresa_nombre.localeCompare(b.empresa_nombre, "es") * (dir === 1 ? 1 : -1);
+        default:
+          // por defecto: mrr desc
+          return (a.mrr_neto_actual - b.mrr_neto_actual) * -1;
+      }
+    });
 
-    const total = filtered.length;
-    const pageItems = filtered.slice(offset, offset + limit);
+    const total = sorted.length;
+    const pageItems = sorted.slice(offset, offset + limit);
 
     return NextResponse.json(
       {

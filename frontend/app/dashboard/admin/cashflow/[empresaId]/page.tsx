@@ -79,12 +79,21 @@ export default async function CashflowEmpresaPage({
             Período: <strong>{desde}</strong> → <strong>{hasta}</strong> (por defecto {label})
           </p>
         </div>
-        <a
-          href={`/dashboard/admin/cashflow?desde=${encodeURIComponent(desde)}&hasta=${encodeURIComponent(hasta)}`}
-          className="rounded-lg border px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-neutral-800"
-        >
-          ← Volver al listado
-        </a>
+        <div className="flex items-center gap-2">
+          <a
+            href={`/api/admin/cashflow/empresas/${encodeURIComponent(params.empresaId)}/export?desde=${encodeURIComponent(desde)}&hasta=${encodeURIComponent(hasta)}`}
+            className="rounded-lg border px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-neutral-800"
+            title="Descargar CSV (Excel) con los movimientos del período"
+          >
+            Descargar CSV
+          </a>
+          <a
+            href={`/dashboard/admin/cashflow?desde=${encodeURIComponent(desde)}&hasta=${encodeURIComponent(hasta)}`}
+            className="rounded-lg border px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-neutral-800"
+          >
+            ← Volver al listado
+          </a>
+        </div>
       </header>
 
       <CashflowEmpresaClient

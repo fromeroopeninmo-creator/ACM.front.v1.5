@@ -94,9 +94,14 @@ export default async function AdminCashflowPage() {
 
   try {
     const url = `${base}/api/admin/cashflow/kpis?desde=${desde}&hasta=${hasta}`;
+
+    // ⚠️ Diferencia clave: sólo agregamos 'cookie' si realmente hay valor
+    const headers: Record<string, string> = {};
+    if (cookieHeader) headers.cookie = cookieHeader;
+
     const res = await fetch(url, {
       method: "GET",
-      headers: { cookie: cookieHeader },
+      headers,
       cache: "no-store",
     });
     if (!res.ok) {
@@ -205,7 +210,7 @@ export default async function AdminCashflowPage() {
           <section className="rounded-2xl border bg-white dark:bg-neutral-900">
             <div className="p-4 border-b flex items-center justify-between">
               <h2 className="text-base font-semibold">Suscripciones (primeras 20)</h2>
-              <a href="#" className="text-sm text-blue-600 hover:underline" onClick={(e) => e.preventDefault()} aria-disabled title="En la siguiente iteración sumamos filtros y paginación interactiva">
+            <a href="#" className="text-sm text-blue-600 hover:underline" onClick={(e) => e.preventDefault()} aria-disabled title="En la siguiente iteración sumamos filtros y paginación interactiva">
                 Próximamente: filtros & paginación
               </a>
             </div>

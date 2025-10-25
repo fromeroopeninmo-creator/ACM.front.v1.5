@@ -266,6 +266,36 @@ export default function CashflowClient() {
           >
             Simular período (ledger)
           </button>
+
+          {/* Export CSV (mismos filtros del listado de empresas) */}
+          {(() => {
+            const exportUrl = withQuery("/api/admin/cashflow/empresas/export", {
+              desde,
+              hasta,
+              q: q || undefined,
+              plan: plan || undefined,
+              estado_plan: estadoPlan || undefined,
+              page: empPage,
+              pageSize: empPageSize,
+            });
+            const disabled = loading || !canQuery;
+            return (
+              <a
+                href={disabled ? undefined : exportUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-disabled={disabled}
+                className={`rounded-md border px-3 py-2 text-sm transition ${
+                  disabled
+                    ? "opacity-60 pointer-events-none"
+                    : "hover:bg-gray-50 dark:hover:bg-neutral-800"
+                }`}
+              >
+                Export CSV
+              </a>
+            );
+          })()}
+
           {loading ? <span className="text-xs text-gray-500">Cargando…</span> : null}
           {errMsg ? <span className="text-xs text-red-600">{errMsg}</span> : null}
         </div>

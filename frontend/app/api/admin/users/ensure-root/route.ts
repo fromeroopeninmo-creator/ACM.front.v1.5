@@ -114,13 +114,17 @@ export async function POST(req: Request) {
       });
       if (linkErr) return NextResponse.json({ error: linkErr.message }, { status: 400 });
 
+      // ✅ En v2 viene en data.properties.action_link
+      const actionLink =
+        (linkData as any)?.properties?.action_link ?? null;
+
       return NextResponse.json(
         {
           ok: true,
           mode: "recovery",
           email,
           role: targetRole,
-          action_link: linkData?.properties?.action_link || linkData?.action_link || null,
+          action_link: actionLink,
           message:
             "Envia este action_link al usuario para que establezca su contraseña y acceda.",
         },

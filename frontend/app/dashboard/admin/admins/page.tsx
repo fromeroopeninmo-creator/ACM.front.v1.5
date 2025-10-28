@@ -21,6 +21,8 @@ type SearchParams = {
   new?: string; // abrir modal de creación
 };
 
+type Role = "empresa" | "asesor" | "soporte" | "super_admin" | "super_admin_root";
+
 function buildCookieHeader(): string {
   const jar = cookies();
   const all = jar.getAll();
@@ -43,8 +45,9 @@ export default async function AdminUsersPage({ searchParams }: { searchParams: S
     .eq("id", user.id)
     .maybeSingle();
 
-  const role = profile?.role || (user.user_metadata as any)?.role || null;
-  const isAdmin = role === "super_admin" || role === "super_admin_root";
+  const role = (profile?.role as Role) || (user.user_metadata as any)?.role || null;
+  const isRoot = role === "super_admin_root";
+  const isAdmin = isRoot || role === "super_admin";
 
   if (!isAdmin) {
     switch (role) {
@@ -98,6 +101,15 @@ export default async function AdminUsersPage({ searchParams }: { searchParams: S
     );
   }
 
+  // Permisos para crear según rol del caller
+  const allowedCreateRoles: Array<"super_admin_root" | "super_admin" | "soporte"> = isRoot
+    ? ["super_admin_root", "super_admin", "soporte"]
+    : ["soporte"];
+  const canCreateRoot = isRoot;
+
+  // ¿Abrir modal de creación por query param?
+  const openCreateDefault = searchParams.new === "1";
+
   // 4) Render
   const qsNew = new URLSearchParams({
     ...(q ? { q } : {}),
@@ -114,7 +126,7 @@ export default async function AdminUsersPage({ searchParams }: { searchParams: S
       <header className="flex items-center justify-between">
         <div className="space-y-1">
           <h1 className="text-xl md:text-2xl font-semibold">Administradores</h1>
-          <p className="text-sm text-gray-500">ABM de administradores (root/admin), con reset de contraseña.</p>
+          <p className="text-sm text-gray-500">ABM de administradores (root/admin/soporte), con reset de contraseña.</p>
         </div>
 
         <a
@@ -186,7 +198,12 @@ export default async function AdminUsersPage({ searchParams }: { searchParams: S
       </section>
 
       {/* Tabla + acciones (cliente) */}
-      <AdminsClient initial={initial} />
+      <AdminsClient
+        initial={initial}
+        allowedCreateRoles={allowedCreateRoles}
+        canCreateRoot={canCreateRoot}
+        openCreateDefault={openCreateDefault}
+      />
     </main>
   );
 }

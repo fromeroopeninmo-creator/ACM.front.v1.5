@@ -32,7 +32,7 @@ export default function AdminsClient({ initial }: { initial: Paged<AdminRow> }) 
     email: string;
     nombre: string;
     apellido: string;
-    role: "super_admin" | "super_admin_root";
+    role: "super_admin" | "super_admin_root" | "soporte";
     sendInvite: boolean;
   }>({
     email: "",
@@ -63,7 +63,7 @@ export default function AdminsClient({ initial }: { initial: Paged<AdminRow> }) 
     email: string;
     nombre: string;
     apellido: string;
-    role: "super_admin" | "super_admin_root";
+    role: "super_admin" | "super_admin_root" | "soporte";
   } | null>(null);
 
   // ===== Data/Paginación =====
@@ -199,10 +199,12 @@ export default function AdminsClient({ initial }: { initial: Paged<AdminRow> }) 
                         className={
                           row.role === "super_admin_root"
                             ? "inline-flex items-center rounded-full px-2 py-0.5 text-xs bg-purple-100 text-purple-700"
-                            : "inline-flex items-center rounded-full px-2 py-0.5 text-xs bg-blue-100 text-blue-700"
+                            : row.role === "super_admin"
+                            ? "inline-flex items-center rounded-full px-2 py-0.5 text-xs bg-blue-100 text-blue-700"
+                            : "inline-flex items-center rounded-full px-2 py-0.5 text-xs bg-amber-100 text-amber-700"
                         }
                       >
-                        {row.role === "super_admin_root" ? "Root" : "Admin"}
+                        {row.role === "super_admin_root" ? "Root" : row.role === "super_admin" ? "Admin" : "Soporte"}
                       </span>
                     </td>
                     <td className="px-3 py-2">{fmtDateISO(row.created_at)}</td>
@@ -217,7 +219,7 @@ export default function AdminsClient({ initial }: { initial: Paged<AdminRow> }) 
                               email: row.email || "",
                               nombre: row.nombre || "",
                               apellido: row.apellido || "",
-                              role: row.role,
+                              role: (row.role as "super_admin" | "super_admin_root" | "soporte"),
                             });
                             setEditOpen(true);
                           }}
@@ -334,6 +336,7 @@ export default function AdminsClient({ initial }: { initial: Paged<AdminRow> }) 
                 >
                   <option value="super_admin">Admin</option>
                   <option value="super_admin_root">Root</option>
+                  <option value="soporte">Soporte</option>
                 </select>
               </label>
 
@@ -442,6 +445,7 @@ export default function AdminsClient({ initial }: { initial: Paged<AdminRow> }) 
                 >
                   <option value="super_admin">Admin</option>
                   <option value="super_admin_root">Root</option>
+                  <option value="soporte">Soporte</option>
                 </select>
               </label>
             </div>

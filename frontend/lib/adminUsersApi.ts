@@ -20,7 +20,8 @@ export type Paged<T> = {
 
 export type ListAdminsParams = {
   q?: string;
-  role?: "super_admin" | "super_admin_root" | "todos";
+  // ⬇️ Agrego "soporte" para que el page.tsx compile cuando filtra ese rol
+  role?: "super_admin" | "super_admin_root" | "soporte" | "todos";
   page?: number;
   pageSize?: number;
   sortBy?: "nombre" | "email" | "role" | "created_at";
@@ -83,8 +84,10 @@ export async function createAdmin(
     nombre?: string | null;
     apellido?: string | null;
     role: "super_admin" | "super_admin_root";
-    password?: string;       // 👈 NUEVO: si viene, se crea con contraseña
-    sendInvite?: boolean;    // si true (y no hay password), genera link de invitación
+    // opcional: crear y devolver link de invitación
+    sendInvite?: boolean;
+    // opcional: crear con password directo
+    password?: string;
   },
   opts: FetchOpts = {}
 ): Promise<{ ok: true; user_id: string; invite_link?: string | null }> {

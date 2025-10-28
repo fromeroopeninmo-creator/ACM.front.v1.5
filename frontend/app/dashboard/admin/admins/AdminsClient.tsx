@@ -33,15 +33,15 @@ export default function AdminsClient({ initial }: { initial: Paged<AdminRow> }) 
     nombre: string;
     apellido: string;
     role: "super_admin" | "super_admin_root";
-    password: string;     // 👈 NUEVO
     sendInvite: boolean;
+    password: string; // ⬅️ agregado (opcional)
   }>({
     email: "",
     nombre: "",
     apellido: "",
     role: "super_admin",
-    password: "",
     sendInvite: true,
+    password: "", // ⬅️ nuevo
   });
 
   useEffect(() => {
@@ -51,7 +51,8 @@ export default function AdminsClient({ initial }: { initial: Paged<AdminRow> }) 
   const clearNewParam = () => {
     const usp = new URLSearchParams(params.toString());
     usp.delete("new");
-    router.replace(`${pathname}?${usp.toString()}`);
+    const qs = usp.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname);
   };
 
   // ===== Modal Edit =====
@@ -79,7 +80,8 @@ export default function AdminsClient({ initial }: { initial: Paged<AdminRow> }) 
     const usp = new URLSearchParams(params.toString());
     usp.set("page", String(nextPage));
     usp.set("pageSize", String(pageSize));
-    return `${pathname}?${usp.toString()}`;
+    const qs = usp.toString();
+    return qs ? `${pathname}?${qs}` : pathname;
   };
 
   // ===== Refresh client-side cuando cambie query (para UX fluido)
@@ -119,6 +121,7 @@ export default function AdminsClient({ initial }: { initial: Paged<AdminRow> }) 
   async function doResetPassword(row: AdminRow) {
     if (!row?.id) return;
 
+    // Dialog simple: opción 1) generar link, opción 2) forzar nueva contraseña
     const action = window.prompt(
       `Reset para ${row.email || "sin email"}:\n` +
         `Escribí:\n` +
@@ -146,6 +149,7 @@ export default function AdminsClient({ initial }: { initial: Paged<AdminRow> }) 
           alert("Listo.");
         }
       } else {
+        // Forzar contraseña
         const newPassword = choice;
         if (newPassword.length < 8) {
           alert("La contraseña debe tener al menos 8 caracteres.");
@@ -164,6 +168,9 @@ export default function AdminsClient({ initial }: { initial: Paged<AdminRow> }) 
       setResetting(null);
     }
   }
+
+  // ====== Render memo de navegación ======
+  const NavList = useMemo(() => null, []); // (placeholder si alguna vez lo usás)
 
   return (
     <>
@@ -337,16 +344,15 @@ export default function AdminsClient({ initial }: { initial: Paged<AdminRow> }) 
                 </select>
               </label>
 
+              {/* ⬇️ Campo opcional de contraseña */}
               <label className="block">
-                <span className="text-sm text-gray-600">
-                  Contraseña (opcional) — si la ingresás se crea con esa clave
-                </span>
+                <span className="text-sm text-gray-600">Contraseña (opcional)</span>
                 <input
                   type="password"
                   className="mt-1 w-full rounded-lg border px-3 py-2 text-sm"
                   value={c.password}
                   onChange={(e) => setC({ ...c, password: e.target.value })}
-                  placeholder="mínimo 6 caracteres"
+                  placeholder="Mínimo 6 caracteres, o usar link de invitación"
                 />
               </label>
 
@@ -356,9 +362,7 @@ export default function AdminsClient({ initial }: { initial: Paged<AdminRow> }) 
                   checked={c.sendInvite}
                   onChange={(e) => setC({ ...c, sendInvite: e.target.checked })}
                 />
-                <span className="text-sm text-gray-700">
-                  Enviar link de invitación (si no ponés contraseña)
-                </span>
+                <span className="text-sm text-gray-700">Enviar link de invitación</span>
               </label>
             </div>
 
@@ -378,39 +382,30 @@ export default function AdminsClient({ initial }: { initial: Paged<AdminRow> }) 
                 type="button"
                 className="rounded-lg bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
                 onClick={async () => {
-                  if (!c.email.trim()) {
+                  const email = c.email.trim();
+                  if (!email) {
                     alert("El email es obligatorio.");
                     return;
                   }
-                  const hasPassword = c.password.trim().length > 0;
-                  if (!hasPassword && !c.sendInvite) {
-                    alert("Poné una contraseña (mín. 6) o marcá 'Enviar link de invitación'.");
+                  const pwd = (c.password || "").trim();
+                  if (pwd.length < 6 && !c.sendInvite) {
+                    alert("Definí una contraseña de al menos 6 caracteres o marcá 'Enviar link de invitación'.");
                     return;
                   }
-                  if (hasPassword && c.password.trim().length < 6) {
-                    alert("La contraseña debe tener al menos 6 caracteres.");
-                    return;
-                  }
-
                   try {
                     setCreating(true);
-                    const payload: Parameters<typeof createAdmin>[0] = {
-                      email: c.email.trim(),
+                    const resp = await createAdmin({
+                      email,
                       nombre: c.nombre.trim() || undefined,
                       apellido: c.apellido.trim() || undefined,
                       role: c.role,
                       sendInvite: c.sendInvite,
-                      ...(hasPassword ? { password: c.password.trim() } : {}),
-                    };
-                    const resp = await createAdmin(payload);
+                      password: pwd || undefined,
+                    });
                     setCreateOpen(false);
                     clearNewParam();
                     if ("invite_link" in resp && resp.invite_link) {
                       alert(`Usuario creado. Link de invitación:\n\n${resp.invite_link}`);
-                    } else if (hasPassword) {
-                      alert("Usuario creado con contraseña.");
-                    } else {
-                      alert("Usuario creado. Revisa el correo de invitación.");
                     }
                     router.refresh();
                   } catch (e: any) {
@@ -440,7 +435,7 @@ export default function AdminsClient({ initial }: { initial: Paged<AdminRow> }) 
                 <input
                   className="mt-1 w-full rounded-lg border px-3 py-2 text-sm"
                   value={edit.email}
-                  onChange={(e) => setEdit({ ...edit!, email: e.target.value })}
+                  onChange={(e) => setEdit({ ...edit, email: e.target.value })}
                 />
               </label>
 
@@ -450,8 +445,8 @@ export default function AdminsClient({ initial }: { initial: Paged<AdminRow> }) 
                   <input
                     className="mt-1 w-full rounded-lg border px-3 py-2 text-sm"
                     value={edit.nombre}
-                    onChange={(e) => setEdit({ ...edit!, nombre: e.target.value })}
-                  />
+                    onChange={(e) => setEdit({ ...edit, nombre: e.target.value })}
+                />
                 </label>
 
                 <label className="block">
@@ -459,7 +454,7 @@ export default function AdminsClient({ initial }: { initial: Paged<AdminRow> }) 
                   <input
                     className="mt-1 w-full rounded-lg border px-3 py-2 text-sm"
                     value={edit.apellido}
-                    onChange={(e) => setEdit({ ...edit!, apellido: e.target.value })}
+                    onChange={(e) => setEdit({ ...edit, apellido: e.target.value })}
                   />
                 </label>
               </div>
@@ -469,7 +464,7 @@ export default function AdminsClient({ initial }: { initial: Paged<AdminRow> }) 
                 <select
                   className="mt-1 w-full rounded-lg border px-3 py-2 text-sm"
                   value={edit.role}
-                  onChange={(e) => setEdit({ ...edit!, role: e.target.value as any })}
+                  onChange={(e) => setEdit({ ...edit, role: e.target.value as any })}
                 >
                   <option value="super_admin">Admin</option>
                   <option value="super_admin_root">Root</option>

@@ -1,216 +1,521 @@
 // frontend/app/dashboard/admin/usuarios/UsuariosClient.tsx
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
-  // asumimos que ya existen en tu adminUsersApi
-  // listAdmins no se usa aquí porque viene SSR
-  updateAdminIdentity,
+  type Paged,
+  type AdminRow,
+  listAdmins,
+  createAdmin,
+  updateAdminIdentity, // wrapper que ya apunta a updateAdmin
+  deleteAdmin,
+  resetAdminPassword,
 } from "#lib/adminUsersApi";
 
-type Role = "super_admin_root" | "super_admin" | "soporte" | "empresa" | "asesor";
-
-async function postJSON(url: string, body: any) {
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body || {}),
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`${url} → ${res.status} ${res.statusText} ${text}`.trim());
-  }
-  return res.json();
+function fmtDateISO(iso?: string | null) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return new Intl.DateTimeFormat("es-AR", { dateStyle: "medium" }).format(d);
 }
 
-export default function UsuariosClient({
-  initial,
-  isRoot,
-}: {
-  initial: { items: any[] };
-  isRoot: boolean;
-}) {
+export default function UsuariosClient({ initial }: { initial: Paged<AdminRow> }) {
   const router = useRouter();
-  const [rows, setRows] = useState(
-    (initial?.items || []).map((u: any) => ({
-      id: u.id,                      // user_id
-      email: u.email ?? "",
-      nombre: u.nombre ?? "",
-      apellido: u.apellido ?? "",
-      role: (u.role as Role) ?? "soporte",
-    }))
-  );
+  const pathname = usePathname();
+  const params = useSearchParams();
 
-  const [busy, setBusy] = useState<string | null>(null);
+  // ===== Modal Create =====
+  const [createOpen, setCreateOpen] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [c, setC] = useState<{
+    email: string;
+    nombre: string;
+    apellido: string;
+    // Nota: AdminRow.role es "super_admin" | "super_admin_root"
+    // Si más adelante tu backend admite "soporte" aquí, podés ampliar el tipo localmente.
+    role: "super_admin" | "super_admin_root";
+    sendInvite: boolean;
+    password: string; // ⬅️ agregado (opcional)
+  }>({
+    email: "",
+    nombre: "",
+    apellido: "",
+    role: "super_admin",
+    sendInvite: true,
+    password: "", // ⬅️ nuevo
+  });
 
-  const saveRole = async (userId: string, role: Role) => {
-    setBusy(userId);
-    try {
-      // endpoint existente:
-      // POST /api/admin/usuarios/role  body: { user_id, role }
-      await postJSON("/api/admin/usuarios/role", { user_id: userId, role });
-      router.refresh();
-    } catch (e: any) {
-      alert(e?.message || "No se pudo actualizar el rol.");
-    } finally {
-      setBusy(null);
-    }
+  useEffect(() => {
+    if (params.get("new") === "1") setCreateOpen(true);
+  }, [params]);
+
+  const clearNewParam = () => {
+    const usp = new URLSearchParams(params.toString());
+    usp.delete("new");
+    const qs = usp.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname);
   };
 
-  const resetPassword = async (userId: string) => {
-    setBusy(userId);
+  // ===== Modal Edit =====
+  const [editOpen, setEditOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const [resetting, setResetting] = useState<string | null>(null);
+
+  const [edit, setEdit] = useState<{
+    id: string;
+    email: string;
+    nombre: string;
+    apellido: string;
+    role: "super_admin" | "super_admin_root";
+  } | null>(null);
+
+  // ===== Data/Paginación =====
+  const [data, setData] = useState<Paged<AdminRow>>(initial);
+  const page = data.page;
+  const pageSize = data.pageSize;
+  const total = data.total;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+
+  const makeHref = (nextPage: number) => {
+    const usp = new URLSearchParams(params.toString());
+    usp.set("page", String(nextPage));
+    usp.set("pageSize", String(pageSize));
+    const qs = usp.toString();
+    return qs ? `${pathname}?${qs}` : pathname;
+  };
+
+  // ===== Refresh client-side cuando cambie query (para UX fluido)
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      const q = (params.get("q") || "").trim();
+      // en tu page.tsx podés pasar role "soporte" para filtrar,
+      // listAdmins soporta "soporte" en los params de búsqueda
+      const fRole = (params.get("role") || "") as "" | "super_admin" | "super_admin_root" | "soporte" | "todos";
+      const p = Math.max(1, parseInt(params.get("page") || "1", 10) || 1);
+      const ps = [10, 20, 50].includes(parseInt(params.get("pageSize") || "", 10))
+        ? parseInt(params.get("pageSize")!, 10)
+        : 10;
+      const sortBy = (params.get("sortBy") || "created_at") as "nombre" | "email" | "role" | "created_at";
+      const sortDir = (params.get("sortDir") || "desc") as "asc" | "desc";
+
+      try {
+        const fresh = await listAdmins({
+          q: q || undefined,
+          role: (fRole || undefined) as any, // params puede incluir "soporte"/"todos"
+          page: p,
+          pageSize: ps,
+          sortBy,
+          sortDir,
+        });
+        if (mounted) setData(fresh);
+      } catch {
+        // si falla, nos quedamos con initial/data actual
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params]);
+
+  // ========= Reset password helper =========
+  async function doResetPassword(row: AdminRow) {
+    if (!row?.id) return;
+
+    const action = window.prompt(
+      `Reset para ${row.email || "sin email"}:\n` +
+        `Escribí:\n` +
+        `- "link" → generar link de recuperación (recomendado)\n` +
+        `- o una contraseña nueva → para fijarla directamente (solo ROOT)\n\n` +
+        `Dejar vacío para cancelar.`
+    );
+    if (action === null) return;
+    const choice = (action || "").trim();
+
     try {
-      // endpoint existente: POST /api/admin/admins/[id]/reset
-      const data = await postJSON(`/api/admin/admins/${encodeURIComponent(userId)}/reset`, {});
-      const link =
-        data?.action_link ||
-        data?.properties?.action_link ||
-        data?.link ||
-        null;
-      if (link) {
-        // Mostramos el link para copiar (podés reemplazar por un modal si querés)
-        prompt("Action link generado (copiar y enviar al usuario):", link);
+      setResetting(row.id);
+
+      if (!choice) return; // cancelado
+
+      if (choice.toLowerCase() === "link") {
+        const resp = await resetAdminPassword(row.id, {});
+        if ("mode" in resp && resp.mode === "recovery_link") {
+          const msg =
+            `Link de recuperación generado para ${resp.email}:\n\n` +
+            `${resp.action_link || "(SDK no devolvió URL; revisar correo de magic link)"}\n\n` +
+            `${resp.message}`;
+          alert(msg);
+        } else {
+          alert("Listo.");
+        }
       } else {
-        alert("Enlace de reseteo generado (ver logs).");
+        const newPassword = choice;
+        if (newPassword.length < 8) {
+          alert("La contraseña debe tener al menos 8 caracteres.");
+          return;
+        }
+        const resp = await resetAdminPassword(row.id, { newPassword });
+        if ("mode" in resp && resp.mode === "direct") {
+          alert("Contraseña actualizada.");
+        } else {
+          alert("Listo.");
+        }
       }
     } catch (e: any) {
-      alert(e?.message || "No se pudo generar el enlace de reseteo.");
+      alert(e?.message || "No se pudo resetear la contraseña.");
     } finally {
-      setBusy(null);
+      setResetting(null);
     }
-  };
-
-  const saveIdentity = async (userId: string, email: string, nombre: string, apellido: string) => {
-    setBusy(userId);
-    try {
-      await updateAdminIdentity(userId, {
-        email: email || undefined,
-        nombre: nombre || undefined,
-        apellido: apellido || undefined,
-      });
-      router.refresh();
-    } catch (e: any) {
-      alert(e?.message || "No se pudo actualizar la identidad.");
-    } finally {
-      setBusy(null);
-    }
-  };
+  }
 
   return (
-    <section className="rounded-2xl border bg-white dark:bg-neutral-900 overflow-hidden">
-      <div className="overflow-x-auto">
-        <table className="min-w-full text-sm">
-          <thead className="bg-gray-50 dark:bg-neutral-900">
-            <tr className="text-left">
-              <th className="px-3 py-2">Nombre</th>
-              <th className="px-3 py-2">Apellido</th>
-              <th className="px-3 py-2">Email</th>
-              <th className="px-3 py-2">Rol</th>
-              <th className="px-3 py-2">Acciones</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.length === 0 ? (
-              <tr>
-                <td colSpan={5} className="px-3 py-6 text-center text-gray-500">
-                  Sin usuarios.
-                </td>
+    <>
+      {/* Tabla */}
+      <section className="rounded-2xl border p-0 overflow-hidden bg-white dark:bg-neutral-900">
+        <div className="overflow-auto">
+          <table className="min-w-full text-sm">
+            <thead className="bg-gray-50 dark:bg-neutral-900">
+              <tr className="text-left">
+                <th className="px-3 py-2">Nombre</th>
+                <th className="px-3 py-2">Email</th>
+                <th className="px-3 py-2">Rol</th>
+                <th className="px-3 py-2">Creado</th>
+                <th className="px-3 py-2">Acciones</th>
               </tr>
-            ) : (
-              rows.map((u, idx) => (
-                <tr key={u.id} className="border-t">
-                  <td className="px-3 py-2">
-                    <input
-                      className="w-full rounded-md border px-2 py-1 bg-transparent"
-                      value={u.nombre}
-                      onChange={(e) => {
-                        const copy = [...rows];
-                        copy[idx] = { ...copy[idx], nombre: e.target.value };
-                        setRows(copy);
-                      }}
-                    />
-                  </td>
-                  <td className="px-3 py-2">
-                    <input
-                      className="w-full rounded-md border px-2 py-1 bg-transparent"
-                      value={u.apellido}
-                      onChange={(e) => {
-                        const copy = [...rows];
-                        copy[idx] = { ...copy[idx], apellido: e.target.value };
-                        setRows(copy);
-                      }}
-                    />
-                  </td>
-                  <td className="px-3 py-2">
-                    <input
-                      type="email"
-                      className="w-full rounded-md border px-2 py-1 bg-transparent"
-                      value={u.email}
-                      onChange={(e) => {
-                        const copy = [...rows];
-                        copy[idx] = { ...copy[idx], email: e.target.value };
-                        setRows(copy);
-                      }}
-                    />
-                  </td>
-                  <td className="px-3 py-2">
-                    <select
-                      className="rounded-md border px-2 py-1 bg-transparent"
-                      value={u.role}
-                      onChange={(e) => {
-                        const next = e.target.value as Role;
-                        const copy = [...rows];
-                        copy[idx] = { ...copy[idx], role: next };
-                        setRows(copy);
-                      }}
-                    >
-                      {/* Si NO es root, ocultamos super_admin_root para no auto-elevar */}
-                      {isRoot && <option value="super_admin_root">super_admin_root</option>}
-                      <option value="super_admin">super_admin</option>
-                      <option value="soporte">soporte</option>
-                      {/* Podrías permitir bajar a 'empresa' / 'asesor' si querés */}
-                    </select>
-                  </td>
-                  <td className="px-3 py-2">
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        disabled={busy === u.id}
-                        className="rounded-md border px-2 py-1 text-xs hover:bg-gray-50"
-                        onClick={() => saveRole(u.id, u.role)}
-                        title="Guardar rol"
-                      >
-                        {busy === u.id ? "..." : "Guardar rol"}
-                      </button>
-
-                      <button
-                        type="button"
-                        disabled={busy === u.id}
-                        className="rounded-md border px-2 py-1 text-xs hover:bg-gray-50"
-                        onClick={() => saveIdentity(u.id, u.email, u.nombre, u.apellido)}
-                        title="Guardar identidad"
-                      >
-                        {busy === u.id ? "..." : "Guardar identidad"}
-                      </button>
-
-                      <button
-                        type="button"
-                        disabled={busy === u.id}
-                        className="rounded-md border px-2 py-1 text-xs hover:bg-gray-50"
-                        onClick={() => resetPassword(u.id)}
-                        title="Generar link de reseteo"
-                      >
-                        {busy === u.id ? "..." : "Reset password"}
-                      </button>
-                    </div>
+            </thead>
+            <tbody>
+              {data.items.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="px-3 py-6 text-center text-gray-500">
+                    Sin usuarios.
                   </td>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
-    </section>
+              ) : (
+                data.items.map((row) => (
+                  <tr key={row.id} className="border-t">
+                    <td className="px-3 py-2">
+                      {(row.nombre || row.apellido) ? `${row.nombre || ""} ${row.apellido || ""}`.trim() : "—"}
+                    </td>
+                    <td className="px-3 py-2">{row.email || "—"}</td>
+                    <td className="px-3 py-2">
+                      <span
+                        className={
+                          row.role === "super_admin_root"
+                            ? "inline-flex items-center rounded-full px-2 py-0.5 text-xs bg-purple-100 text-purple-700"
+                            : "inline-flex items-center rounded-full px-2 py-0.5 text-xs bg-blue-100 text-blue-700"
+                        }
+                      >
+                        {row.role === "super_admin_root" ? "Root" : "Admin"}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2">{fmtDateISO(row.created_at)}</td>
+                    <td className="px-3 py-2">
+                      <div className="flex items-center gap-3">
+                        <button
+                          type="button"
+                          className="text-blue-600 hover:underline"
+                          onClick={() => {
+                            setEdit({
+                              id: row.id,
+                              email: row.email || "",
+                              nombre: row.nombre || "",
+                              apellido: row.apellido || "",
+                              role: row.role,
+                            });
+                            setEditOpen(true);
+                          }}
+                        >
+                          Editar
+                        </button>
+
+                        <button
+                          type="button"
+                          className="text-amber-700 hover:underline disabled:opacity-50"
+                          disabled={!!resetting}
+                          onClick={() => doResetPassword(row)}
+                          title="Generar link o fijar nueva contraseña"
+                        >
+                          {resetting === row.id ? "Reseteando…" : "Reset pass"}
+                        </button>
+
+                        <button
+                          type="button"
+                          className="text-red-600 hover:underline disabled:opacity-50"
+                          disabled={deleting === row.id}
+                          onClick={async () => {
+                            if (!confirm(`¿Eliminar al usuario ${row.email || row.id}?`)) return;
+                            try {
+                              setDeleting(row.id);
+                              await deleteAdmin(row.id);
+                              router.refresh();
+                            } catch (e: any) {
+                              alert(e?.message || "Error al eliminar.");
+                            } finally {
+                              setDeleting(null);
+                            }
+                          }}
+                        >
+                          {deleting === row.id ? "Eliminando…" : "Eliminar"}
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      {/* Paginación */}
+      <section className="flex items-center justify-between mt-3">
+        <p className="text-xs text-gray-500">
+          {`Mostrando ${data.items.length} de ${total} • Página ${page} de ${totalPages}`}
+        </p>
+        <div className="flex items-center gap-2">
+          <a
+            href={makeHref(Math.max(1, page - 1))}
+            className={`rounded-xl border px-3 py-1 text-sm ${
+              page <= 1 ? "pointer-events-none opacity-50" : "hover:bg-gray-50"
+            }`}
+          >
+            Anterior
+          </a>
+          <a
+            href={makeHref(Math.min(totalPages, page + 1))}
+            className={`rounded-xl border px-3 py-1 text-sm ${
+              page >= totalPages ? "pointer-events-none opacity-50" : "hover:bg-gray-50"
+            }`}
+          >
+            Siguiente
+          </a>
+        </div>
+      </section>
+
+      {/* Modal creación */}
+      {createOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="w-full max-w-md rounded-2xl bg-white p-4 shadow">
+            <h3 className="text-lg font-semibold mb-3">Nuevo usuario</h3>
+
+            <div className="space-y-3">
+              <label className="block">
+                <span className="text-sm text-gray-600">Email *</span>
+                <input
+                  className="mt-1 w-full rounded-lg border px-3 py-2 text-sm"
+                  value={c.email}
+                  onChange={(e) => setC({ ...c, email: e.target.value })}
+                />
+              </label>
+
+              <div className="grid grid-cols-2 gap-3">
+                <label className="block">
+                  <span className="text-sm text-gray-600">Nombre</span>
+                  <input
+                    className="mt-1 w-full rounded-lg border px-3 py-2 text-sm"
+                    value={c.nombre}
+                    onChange={(e) => setC({ ...c, nombre: e.target.value })}
+                  />
+                </label>
+
+                <label className="block">
+                  <span className="text-sm text-gray-600">Apellido</span>
+                  <input
+                    className="mt-1 w-full rounded-lg border px-3 py-2 text-sm"
+                    value={c.apellido}
+                    onChange={(e) => setC({ ...c, apellido: e.target.value })}
+                  />
+                </label>
+              </div>
+
+              <label className="block">
+                <span className="text-sm text-gray-600">Rol *</span>
+                <select
+                  className="mt-1 w-full rounded-lg border px-3 py-2 text-sm"
+                  value={c.role}
+                  onChange={(e) => setC({ ...c, role: e.target.value as any })}
+                >
+                  <option value="super_admin">Admin</option>
+                  <option value="super_admin_root">Root</option>
+                  {/* Si más adelante habilitás crear soporte desde este modal:
+                      <option value="soporte">Soporte</option>
+                      y ajustás el backend + tipos de createAdmin */}
+                </select>
+              </label>
+
+              {/* ⬇️ Campo opcional de contraseña */}
+              <label className="block">
+                <span className="text-sm text-gray-600">Contraseña (opcional)</span>
+                <input
+                  type="password"
+                  className="mt-1 w-full rounded-lg border px-3 py-2 text-sm"
+                  value={c.password}
+                  onChange={(e) => setC({ ...c, password: e.target.value })}
+                  placeholder="Mínimo 6 caracteres, o usar link de invitación"
+                />
+              </label>
+
+              <label className="inline-flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={c.sendInvite}
+                  onChange={(e) => setC({ ...c, sendInvite: e.target.checked })}
+                />
+                <span className="text-sm text-gray-700">Enviar link de invitación</span>
+              </label>
+            </div>
+
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                className="rounded-lg border px-3 py-2 text-sm"
+                onClick={() => {
+                  setCreateOpen(false);
+                  clearNewParam();
+                }}
+                disabled={creating}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="rounded-lg bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
+                onClick={async () => {
+                  const email = c.email.trim();
+                  if (!email) {
+                    alert("El email es obligatorio.");
+                    return;
+                  }
+                  const pwd = (c.password || "").trim();
+                  if (pwd.length < 6 && !c.sendInvite) {
+                    alert("Definí una contraseña de al menos 6 caracteres o marcá 'Enviar link de invitación'.");
+                    return;
+                  }
+                  try {
+                    setCreating(true);
+                    const resp = await createAdmin({
+                      email,
+                      nombre: c.nombre.trim() || undefined,
+                      apellido: c.apellido.trim() || undefined,
+                      role: c.role,
+                      sendInvite: c.sendInvite,
+                      password: pwd || undefined,
+                    });
+                    setCreateOpen(false);
+                    clearNewParam();
+                    if ("invite_link" in resp && resp.invite_link) {
+                      alert(`Usuario creado. Link de invitación:\n\n${resp.invite_link}`);
+                    }
+                    router.refresh();
+                  } catch (e: any) {
+                    alert(e?.message || "Error al crear usuario.");
+                  } finally {
+                    setCreating(false);
+                  }
+                }}
+                disabled={creating}
+              >
+                {creating ? "Creando…" : "Crear usuario"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal edición */}
+      {editOpen && edit && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="w-full max-w-md rounded-2xl bg-white p-4 shadow">
+            <h3 className="text-lg font-semibold mb-3">Editar usuario</h3>
+
+            <div className="space-y-3">
+              <label className="block">
+                <span className="text-sm text-gray-600">Email</span>
+                <input
+                  className="mt-1 w-full rounded-lg border px-3 py-2 text-sm"
+                  value={edit.email}
+                  onChange={(e) => setEdit({ ...edit, email: e.target.value })}
+                />
+              </label>
+
+              <div className="grid grid-cols-2 gap-3">
+                <label className="block">
+                  <span className="text-sm text-gray-600">Nombre</span>
+                  <input
+                    className="mt-1 w-full rounded-lg border px-3 py-2 text-sm"
+                    value={edit.nombre}
+                    onChange={(e) => setEdit({ ...edit, nombre: e.target.value })}
+                />
+                </label>
+
+                <label className="block">
+                  <span className="text-sm text-gray-600">Apellido</span>
+                  <input
+                    className="mt-1 w-full rounded-lg border px-3 py-2 text-sm"
+                    value={edit.apellido}
+                    onChange={(e) => setEdit({ ...edit, apellido: e.target.value })}
+                  />
+                </label>
+              </div>
+
+              <label className="block">
+                <span className="text-sm text-gray-600">Rol</span>
+                <select
+                  className="mt-1 w-full rounded-lg border px-3 py-2 text-sm"
+                  value={edit.role}
+                  onChange={(e) => setEdit({ ...edit, role: e.target.value as any })}
+                >
+                  <option value="super_admin">Admin</option>
+                  <option value="super_admin_root">Root</option>
+                </select>
+              </label>
+            </div>
+
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                className="rounded-lg border px-3 py-2 text-sm"
+                onClick={() => {
+                  setEditOpen(false);
+                  setEdit(null);
+                }}
+                disabled={saving}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="rounded-lg bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
+                onClick={async () => {
+                  if (!edit) return;
+                  try {
+                    setSaving(true);
+                    await updateAdminIdentity(edit.id, {
+                      email: edit.email || undefined,
+                      nombre: edit.nombre || undefined,
+                      apellido: edit.apellido || undefined,
+                      role: edit.role || undefined,
+                    });
+                    setEditOpen(false);
+                    setEdit(null);
+                    router.refresh();
+                  } catch (e: any) {
+                    alert(e?.message || "Error al guardar cambios.");
+                  } finally {
+                    setSaving(false);
+                  }
+                }}
+                disabled={saving}
+              >
+                {saving ? "Guardando…" : "Guardar cambios"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }

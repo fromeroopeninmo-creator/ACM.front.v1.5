@@ -1,20 +1,14 @@
 // frontend/lib/adminUsersApi.ts
-// Cliente para endpoints de Admins (ADMIN). Seguro para usar en SERVER y CLIENT.
-
-type FetchOpts = {
-  headers?: Record<string, string>;
-  cache?: RequestCache;
-  next?: NextFetchRequestConfig;
-};
 
 export type AdminRow = {
-  id: string;            // user_id / profile.id
-  email: string | null;
+  id: string;
+  email: string;
+  role: "super_admin" | "super_admin_root";
   nombre: string | null;
   apellido: string | null;
-  role: "super_admin" | "super_admin_root";
-  created_at?: string | null;
-  updated_at?: string | null;
+  telefono: string | null;
+  created_at: string | null;
+  updated_at: string | null;
 };
 
 export type Paged<T> = {
@@ -26,13 +20,21 @@ export type Paged<T> = {
 
 export type ListAdminsParams = {
   q?: string;
-  role?: "" | "super_admin" | "super_admin_root";
+  role?: "super_admin" | "super_admin_root" | "todos";
   page?: number;
-  pageSize?: number; // 10/20/50
+  pageSize?: number;
   sortBy?: "nombre" | "email" | "role" | "created_at";
   sortDir?: "asc" | "desc";
 };
 
+type FetchOpts = {
+  headers?: Record<string, string>;
+  cache?: RequestCache;
+  // usar 'any' para evitar dependencias de tipos internos de Next
+  next?: any;
+};
+
+/* =============== Helpers únicos (sin duplicados) =============== */
 function getBaseUrl() {
   const envUrl =
     process.env.NEXT_PUBLIC_SITE_URL ||
@@ -54,7 +56,8 @@ function withQuery(url: string, params?: Record<string, any>) {
   return qs ? `${url}?${qs}` : url;
 }
 
-// ------- API calls --------
+/* ======================= API calls ======================= */
+
 export async function listAdmins(
   params: ListAdminsParams,
   opts: FetchOpts = {}
@@ -80,7 +83,7 @@ export async function createAdmin(
     nombre?: string | null;
     apellido?: string | null;
     role: "super_admin" | "super_admin_root";
-    // Si querés que se cree y se envíe link de invitación:
+    // opcional: crear y devolver link de invitación
     sendInvite?: boolean;
   },
   opts: FetchOpts = {}
@@ -140,9 +143,7 @@ export async function deleteAdmin(
 
 export async function resetAdminPassword(
   id: string,
-  input:
-    | {} // generar link
-    | { newPassword: string }, // set directo (solo root)
+  input: {} | { newPassword: string }, // {} => genera link de recuperación; { newPassword } => set directo (solo root)
   opts: FetchOpts = {}
 ): Promise<
   | { ok: true; mode: "recovery_link"; email: string; action_link: string | null; message: string }
@@ -159,44 +160,6 @@ export async function resetAdminPassword(
   if (!res.ok) {
     const body = await res.text().catch(() => "");
     throw new Error(`resetAdminPassword ${res.status} ${res.statusText} ${body}`.trim());
-  }
-  return res.json();
-}
-// frontend/lib/adminUsersApi.ts
-// (Añade esto al final del archivo existente; no borres nada de lo que ya tienes)
-
-type FetchOpts = {
-  headers?: Record<string, string>;
-  cache?: RequestCache;
-  next?: NextFetchRequestConfig;
-};
-
-function getBaseUrl() {
-  const envUrl =
-    process.env.NEXT_PUBLIC_SITE_URL ||
-    process.env.NEXT_PUBLIC_VERCEL_URL ||
-    process.env.VERCEL_URL;
-  if (envUrl) return envUrl.startsWith("http") ? envUrl : `https://${envUrl}`;
-  return "http://localhost:3000";
-}
-
-// Actualiza email (y opcionalmente nombre/apellido) de un admin/soporte/root
-export async function updateAdminIdentity(
-  id: string,
-  payload: { email?: string; nombre?: string; apellido?: string },
-  opts: FetchOpts = {}
-): Promise<{ ok: true }> {
-  const base = getBaseUrl();
-  const url = `${base}/api/admin/admins/${encodeURIComponent(id)}`;
-  const res = await fetch(url, {
-    method: "PUT",
-    headers: { "content-type": "application/json", ...(opts.headers || {}) },
-    body: JSON.stringify(payload),
-    cache: "no-store",
-  });
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new Error(`updateAdminIdentity ${res.status} ${res.statusText} ${body}`.trim());
   }
   return res.json();
 }

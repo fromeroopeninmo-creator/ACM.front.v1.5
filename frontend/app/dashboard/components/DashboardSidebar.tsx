@@ -24,6 +24,7 @@ export default function DashboardSidebar({ role, color }: SidebarProps) {
       { name: "Soporte", href: "/dashboard/admin/soporte" },
       { name: "Planes", href: "/dashboard/admin/planes" },
       { name: "Cashflow / Pagos", href: "/dashboard/admin/cashflow" },
+      { name: "Admins", href: "/dashboard/admin/usuarios" }, // NUEVO
       { name: "Configuración", href: "/dashboard/admin/cuenta" },
     ],
     super_admin: [
@@ -32,6 +33,7 @@ export default function DashboardSidebar({ role, color }: SidebarProps) {
       { name: "Soporte", href: "/dashboard/admin/soporte" },
       { name: "Planes", href: "/dashboard/admin/planes" },
       { name: "Cashflow / Pagos", href: "/dashboard/admin/cashflow" },
+      { name: "Admins", href: "/dashboard/admin/usuarios" }, // NUEVO
       { name: "Configuración", href: "/dashboard/admin/cuenta" },
     ],
     soporte: [

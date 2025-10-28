@@ -2,9 +2,24 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { supabaseServer } from "#lib/supabaseServer";
-import UsuariosClient from "./UsuariosClient";
+import AdminsClient from "../admins/AdminsClient";
+import {
+  listAdmins,
+  type Paged,
+  type AdminRow,
+} from "#lib/adminUsersApi";
 
 export const dynamic = "force-dynamic";
+
+type SearchParams = {
+  q?: string;
+  role?: "" | "super_admin" | "super_admin_root" | "soporte";
+  page?: string;
+  pageSize?: string;
+  sortBy?: "nombre" | "email" | "role" | "created_at";
+  sortDir?: "asc" | "desc";
+  new?: string; // abrir modal de creación
+};
 
 function buildCookieHeader(): string {
   const jar = cookies();
@@ -13,19 +28,13 @@ function buildCookieHeader(): string {
   return all.map((c) => `${c.name}=${c.value}`).join("; ");
 }
 
-function getBaseUrl() {
-  const envUrl =
-    process.env.NEXT_PUBLIC_SITE_URL ||
-    process.env.NEXT_PUBLIC_VERCEL_URL ||
-    process.env.VERCEL_URL;
-  if (envUrl) return envUrl.startsWith("http") ? envUrl : `https://${envUrl}`;
-  return "http://localhost:3000";
-}
-
-export default async function AdminUsuariosPage() {
-  // Guard de sesión + rol
+export default async function AdminUsuariosPage({ searchParams }: { searchParams: SearchParams }) {
+  // 1) Guard de sesión + rol
   const supa = supabaseServer();
-  const { data: { user } } = await supa.auth.getUser();
+  const {
+    data: { user },
+  } = await supa.auth.getUser();
+
   if (!user) redirect("/login");
 
   const { data: profile } = await supa
@@ -35,59 +44,152 @@ export default async function AdminUsuariosPage() {
     .maybeSingle();
 
   const role = profile?.role || (user.user_metadata as any)?.role || null;
-  const isRoot = role === "super_admin_root";
-  const isAdmin = role === "super_admin" || isRoot;
+  const isAdmin = role === "super_admin" || role === "super_admin_root";
 
   if (!isAdmin) {
     switch (role) {
-      case "soporte": redirect("/dashboard/soporte");
-      case "empresa": redirect("/dashboard/empresa");
-      case "asesor" : redirect("/dashboard/asesor");
-      default: redirect("/");
+      case "soporte":
+        redirect("/dashboard/soporte");
+      case "empresa":
+        redirect("/dashboard/empresa");
+      case "asesor":
+        redirect("/dashboard/asesor");
+      default:
+        redirect("/");
     }
   }
 
-  // SSR fetch del listado
-  const cookieHeader = buildCookieHeader();
-  const base = getBaseUrl();
-  let initial: { items: any[] };
+  // 2) Filtros + paginación + orden
+  const q = (searchParams.q || "").trim();
+  const fRole = (searchParams.role || "") as "" | "super_admin" | "super_admin_root" | "soporte";
+  const page = Math.max(1, parseInt(searchParams.page || "1", 10) || 1);
+  const pageSize = [10, 20, 50].includes(parseInt(searchParams.pageSize || "", 10))
+    ? parseInt(searchParams.pageSize!, 10)
+    : 10;
+  const sortBy = (searchParams.sortBy || "created_at") as "nombre" | "email" | "role" | "created_at";
+  const sortDir = (searchParams.sortDir || "desc") as "asc" | "desc";
 
+  // 3) SSR fetch (primer render con cookies)
+  const cookieHeader = buildCookieHeader();
+  let initial: Paged<AdminRow>;
   try {
-    const res = await fetch(`${base}/api/admin/admins`, {
-      method: "GET",
-      headers: { cookie: cookieHeader },
-      cache: "no-store",
-    });
-    if (!res.ok) {
-      const body = await res.text().catch(() => "");
-      throw new Error(`GET /api/admin/admins → ${res.status} ${res.statusText} ${body}`.trim());
-    }
-    initial = await res.json();
+    initial = await listAdmins(
+      {
+        q: q || undefined,
+        role: fRole || undefined,
+        page,
+        pageSize,
+        sortBy,
+        sortDir,
+      },
+      { headers: { cookie: cookieHeader } }
+    );
   } catch (e: any) {
-    // Render de error simple
     return (
       <main className="p-4 md:p-6 space-y-4">
-        <header className="space-y-1">
-          <h1 className="text-xl md:text-2xl font-semibold">Usuarios (Admins & Soporte)</h1>
-          <p className="text-sm text-gray-500">Error al cargar usuarios.</p>
+        <header className="flex items-center justify-between">
+          <div className="space-y-1">
+            <h1 className="text-xl md:text-2xl font-semibold">Usuarios (Admins & Soporte)</h1>
+            <p className="text-sm text-gray-500">Error al cargar usuarios.</p>
+          </div>
         </header>
-        <section className="rounded-2xl border bg-red-50 text-red-700 p-4">
-          {e?.message || String(e)}
-        </section>
+        <section className="rounded-2xl border p-4 text-red-700 bg-red-50">{e?.message || String(e)}</section>
       </main>
     );
   }
 
+  // 4) Link que abre modal de creación (?new=1)
+  const qsNew = new URLSearchParams({
+    ...(q ? { q } : {}),
+    ...(fRole ? { role: fRole } : {}),
+    page: String(page),
+    pageSize: String(pageSize),
+    sortBy,
+    sortDir,
+    new: "1",
+  }).toString();
+
   return (
     <main className="p-4 md:p-6 space-y-4">
-      <header className="space-y-1">
-        <h1 className="text-xl md:text-2xl font-semibold">Usuarios (Admins & Soporte)</h1>
-        <p className="text-sm text-gray-500">
-          Gestioná roles, e-mails y enlaces de reseteo de contraseña.
-        </p>
+      <header className="flex items-center justify-between">
+        <div className="space-y-1">
+          <h1 className="text-xl md:text-2xl font-semibold">Usuarios (Admins & Soporte)</h1>
+          <p className="text-sm text-gray-500">
+            Gestioná roles, e-mails y enlaces de reseteo de contraseña.
+          </p>
+        </div>
+
+        <a
+          href={`/dashboard/admin/usuarios?${qsNew}`}
+          className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700"
+        >
+          + Nuevo usuario
+        </a>
       </header>
 
-      <UsuariosClient initial={initial} isRoot={isRoot} />
+      {/* Filtros */}
+      <section className="rounded-2xl border p-4 bg-white dark:bg-neutral-900">
+        <form className="grid grid-cols-1 md:grid-cols-5 gap-3">
+          <div className="md:col-span-2">
+            <label className="block text-sm text-gray-600 mb-1">Buscar</label>
+            <input
+              name="q"
+              defaultValue={q}
+              placeholder="nombre / apellido / email"
+              className="w-full rounded-xl border px-3 py-2 text-sm bg-white dark:bg-neutral-950"
+            />
+          </div>
+          <div>
+            <label className="block text-sm text-gray-600 mb-1">Rol</label>
+            <select
+              name="role"
+              defaultValue={fRole}
+              className="w-full rounded-xl border px-3 py-2 text-sm bg-white dark:bg-neutral-950"
+            >
+              <option value="">Todos</option>
+              <option value="super_admin">Admin</option>
+              <option value="super_admin_root">Root</option>
+              <option value="soporte">Soporte</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm text-gray-600 mb-1">Ordenar por</label>
+            <select
+              name="sortBy"
+              defaultValue={sortBy}
+              className="w-full rounded-xl border px-3 py-2 text-sm bg-white dark:bg-neutral-950"
+            >
+              <option value="created_at">Creación</option>
+              <option value="nombre">Nombre</option>
+              <option value="email">Email</option>
+              <option value="role">Rol</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm text-gray-600 mb-1">Dirección</label>
+            <select
+              name="sortDir"
+              defaultValue={sortDir}
+              className="w-full rounded-xl border px-3 py-2 text-sm bg-white dark:bg-neutral-950"
+            >
+              <option value="desc">Desc</option>
+              <option value="asc">Asc</option>
+            </select>
+          </div>
+
+          <div className="md:col-span-5 flex items-end gap-2">
+            <button type="submit" className="rounded-xl border px-4 py-2 text-sm bg-gray-50 hover:bg-gray-100">
+              Aplicar
+            </button>
+            <a href="/dashboard/admin/usuarios" className="rounded-xl border px-4 py-2 text-sm bg-white hover:bg-gray-50">
+              Limpiar
+            </a>
+          </div>
+        </form>
+      </section>
+
+      {/* Tabla + acciones (cliente) */}
+      <AdminsClient initial={initial} />
     </main>
   );
 }

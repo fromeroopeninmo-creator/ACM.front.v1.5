@@ -13,6 +13,8 @@ import {
   resetAdminPassword,
 } from "#lib/adminUsersApi";
 
+type RoleAdminUI = "super_admin" | "super_admin_root" | "soporte";
+
 function fmtDateISO(iso?: string | null) {
   if (!iso) return "—";
   const d = new Date(iso);
@@ -20,10 +22,28 @@ function fmtDateISO(iso?: string | null) {
   return new Intl.DateTimeFormat("es-AR", { dateStyle: "medium" }).format(d);
 }
 
-export default function AdminsClient({ initial }: { initial: Paged<AdminRow> }) {
+export default function AdminsClient({
+  initial,
+  allowedCreateRoles,
+  canCreateRoot,
+  openCreateDefault,
+}: {
+  initial: Paged<AdminRow>;
+  /** Opcional: limitar qué roles puede crear este usuario (UI). Por defecto: los tres */
+  allowedCreateRoles?: RoleAdminUI[];
+  /** Opcional: si false, oculta/inhabilita la opción Root en el selector */
+  canCreateRoot?: boolean;
+  /** Opcional: abrir el modal de creación al montar el componente */
+  openCreateDefault?: boolean;
+}) {
   const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();
+
+  const ALLOWED: RoleAdminUI[] =
+    allowedCreateRoles && allowedCreateRoles.length > 0
+      ? allowedCreateRoles
+      : ["super_admin", "super_admin_root", "soporte"];
 
   // ===== Modal Create =====
   const [createOpen, setCreateOpen] = useState(false);
@@ -32,19 +52,21 @@ export default function AdminsClient({ initial }: { initial: Paged<AdminRow> }) 
     email: string;
     nombre: string;
     apellido: string;
-    role: "super_admin" | "super_admin_root" | "soporte";
+    role: RoleAdminUI;
     sendInvite: boolean;
   }>({
     email: "",
     nombre: "",
     apellido: "",
-    role: "super_admin",
+    role: (ALLOWED.includes("super_admin") ? "super_admin" : ALLOWED[0]) as RoleAdminUI,
     sendInvite: true,
   });
 
   useEffect(() => {
-    if (params.get("new") === "1") setCreateOpen(true);
-  }, [params]);
+    // abrir por query ?new=1 o por prop openCreateDefault
+    if (params.get("new") === "1" || openCreateDefault) setCreateOpen(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const clearNewParam = () => {
     const usp = new URLSearchParams(params.toString());
@@ -63,7 +85,7 @@ export default function AdminsClient({ initial }: { initial: Paged<AdminRow> }) 
     email: string;
     nombre: string;
     apellido: string;
-    role: "super_admin" | "super_admin_root" | "soporte";
+    role: RoleAdminUI;
   } | null>(null);
 
   // ===== Data/Paginación =====
@@ -80,7 +102,7 @@ export default function AdminsClient({ initial }: { initial: Paged<AdminRow> }) 
     return `${pathname}?${usp.toString()}`;
   };
 
-  // ===== Refresh client-side cuando cambie query (para UX fluido)
+  // ===== Refresh client-side cuando cambie query (UX fluido)
   useEffect(() => {
     let mounted = true;
     (async () => {
@@ -117,7 +139,6 @@ export default function AdminsClient({ initial }: { initial: Paged<AdminRow> }) 
   async function doResetPassword(row: AdminRow) {
     if (!row?.id) return;
 
-    // Dialog simple: opción 1) generar link, opción 2) forzar nueva contraseña
     const action = window.prompt(
       `Reset para ${row.email || "sin email"}:\n` +
         `Escribí:\n` +
@@ -130,8 +151,7 @@ export default function AdminsClient({ initial }: { initial: Paged<AdminRow> }) 
 
     try {
       setResetting(row.id);
-
-      if (!choice) return; // cancelado
+      if (!choice) return;
 
       if (choice.toLowerCase() === "link") {
         const resp = await resetAdminPassword(row.id, {});
@@ -145,7 +165,6 @@ export default function AdminsClient({ initial }: { initial: Paged<AdminRow> }) 
           alert("Listo.");
         }
       } else {
-        // Forzar contraseña
         const newPassword = choice;
         if (newPassword.length < 8) {
           alert("La contraseña debe tener al menos 8 caracteres.");
@@ -164,6 +183,18 @@ export default function AdminsClient({ initial }: { initial: Paged<AdminRow> }) 
       setResetting(null);
     }
   }
+
+  const roleBadge = (role: string | null | undefined) => {
+    const r = (role || "") as RoleAdminUI;
+    const cls =
+      r === "super_admin_root"
+        ? "inline-flex items-center rounded-full px-2 py-0.5 text-xs bg-purple-100 text-purple-700"
+        : r === "super_admin"
+        ? "inline-flex items-center rounded-full px-2 py-0.5 text-xs bg-blue-100 text-blue-700"
+        : "inline-flex items-center rounded-full px-2 py-0.5 text-xs bg-amber-100 text-amber-700";
+    const label = r === "super_admin_root" ? "Root" : r === "super_admin" ? "Admin" : "Soporte";
+    return <span className={cls}>{label}</span>;
+  };
 
   return (
     <>
@@ -194,19 +225,7 @@ export default function AdminsClient({ initial }: { initial: Paged<AdminRow> }) 
                       {(row.nombre || row.apellido) ? `${row.nombre || ""} ${row.apellido || ""}`.trim() : "—"}
                     </td>
                     <td className="px-3 py-2">{row.email || "—"}</td>
-                    <td className="px-3 py-2">
-                      <span
-                        className={
-                          row.role === "super_admin_root"
-                            ? "inline-flex items-center rounded-full px-2 py-0.5 text-xs bg-purple-100 text-purple-700"
-                            : row.role === "super_admin"
-                            ? "inline-flex items-center rounded-full px-2 py-0.5 text-xs bg-blue-100 text-blue-700"
-                            : "inline-flex items-center rounded-full px-2 py-0.5 text-xs bg-amber-100 text-amber-700"
-                        }
-                      >
-                        {row.role === "super_admin_root" ? "Root" : row.role === "super_admin" ? "Admin" : "Soporte"}
-                      </span>
-                    </td>
+                    <td className="px-3 py-2">{roleBadge(row.role as any)}</td>
                     <td className="px-3 py-2">{fmtDateISO(row.created_at)}</td>
                     <td className="px-3 py-2">
                       <div className="flex items-center gap-3">
@@ -219,7 +238,7 @@ export default function AdminsClient({ initial }: { initial: Paged<AdminRow> }) 
                               email: row.email || "",
                               nombre: row.nombre || "",
                               apellido: row.apellido || "",
-                              role: (row.role as "super_admin" | "super_admin_root" | "soporte"),
+                              role: (row.role as RoleAdminUI) || "super_admin",
                             });
                             setEditOpen(true);
                           }}
@@ -332,11 +351,15 @@ export default function AdminsClient({ initial }: { initial: Paged<AdminRow> }) 
                 <select
                   className="mt-1 w-full rounded-lg border px-3 py-2 text-sm"
                   value={c.role}
-                  onChange={(e) => setC({ ...c, role: e.target.value as any })}
+                  onChange={(e) => setC({ ...c, role: e.target.value as RoleAdminUI })}
                 >
-                  <option value="super_admin">Admin</option>
-                  <option value="super_admin_root">Root</option>
-                  <option value="soporte">Soporte</option>
+                  {ALLOWED.includes("super_admin") && <option value="super_admin">Admin</option>}
+                  {ALLOWED.includes("super_admin_root") && (
+                    <option value="super_admin_root" disabled={canCreateRoot === false}>
+                      Root
+                    </option>
+                  )}
+                  {ALLOWED.includes("soporte") && <option value="soporte">Soporte</option>}
                 </select>
               </label>
 
@@ -376,7 +399,7 @@ export default function AdminsClient({ initial }: { initial: Paged<AdminRow> }) 
                       email: c.email.trim(),
                       nombre: c.nombre.trim() || undefined,
                       apellido: c.apellido.trim() || undefined,
-                      role: c.role,
+                      role: c.role, // ahora puede ser soporte también
                       sendInvite: c.sendInvite,
                     });
                     setCreateOpen(false);
@@ -441,11 +464,15 @@ export default function AdminsClient({ initial }: { initial: Paged<AdminRow> }) 
                 <select
                   className="mt-1 w-full rounded-lg border px-3 py-2 text-sm"
                   value={edit.role}
-                  onChange={(e) => setEdit({ ...edit, role: e.target.value as any })}
+                  onChange={(e) => setEdit({ ...edit, role: e.target.value as RoleAdminUI })}
                 >
-                  <option value="super_admin">Admin</option>
-                  <option value="super_admin_root">Root</option>
-                  <option value="soporte">Soporte</option>
+                  {ALLOWED.includes("super_admin") && <option value="super_admin">Admin</option>}
+                  {ALLOWED.includes("super_admin_root") && (
+                    <option value="super_admin_root" disabled={canCreateRoot === false}>
+                      Root
+                    </option>
+                  )}
+                  {ALLOWED.includes("soporte") && <option value="soporte">Soporte</option>}
                 </select>
               </label>
             </div>
@@ -474,7 +501,7 @@ export default function AdminsClient({ initial }: { initial: Paged<AdminRow> }) 
                       nombre: edit.nombre || undefined,
                       apellido: edit.apellido || undefined,
                       role: edit.role || undefined,
-                    });
+                    } as any); // el tipo del API acepta los tres roles tras el paso 2
                     setEditOpen(false);
                     setEdit(null);
                     router.refresh();

@@ -3,7 +3,7 @@
 export type AdminRow = {
   id: string;
   email: string;
-  role: "super_admin" | "super_admin_root" | "soporte";
+  role: "super_admin" | "super_admin_root";
   nombre: string | null;
   apellido: string | null;
   telefono: string | null;
@@ -20,7 +20,7 @@ export type Paged<T> = {
 
 export type ListAdminsParams = {
   q?: string;
-  role?: "super_admin" | "super_admin_root" | "soporte" | "todos";
+  role?: "super_admin" | "super_admin_root" | "todos";
   page?: number;
   pageSize?: number;
   sortBy?: "nombre" | "email" | "role" | "created_at";
@@ -82,9 +82,9 @@ export async function createAdmin(
     email: string;
     nombre?: string | null;
     apellido?: string | null;
-    role: "super_admin" | "super_admin_root" | "soporte";
-    // opcional: crear y devolver link de invitación
-    sendInvite?: boolean;
+    role: "super_admin" | "super_admin_root";
+    password?: string;       // 👈 NUEVO: si viene, se crea con contraseña
+    sendInvite?: boolean;    // si true (y no hay password), genera link de invitación
   },
   opts: FetchOpts = {}
 ): Promise<{ ok: true; user_id: string; invite_link?: string | null }> {

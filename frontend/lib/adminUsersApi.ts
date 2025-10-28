@@ -162,3 +162,41 @@ export async function resetAdminPassword(
   }
   return res.json();
 }
+// frontend/lib/adminUsersApi.ts
+// (Añade esto al final del archivo existente; no borres nada de lo que ya tienes)
+
+type FetchOpts = {
+  headers?: Record<string, string>;
+  cache?: RequestCache;
+  next?: NextFetchRequestConfig;
+};
+
+function getBaseUrl() {
+  const envUrl =
+    process.env.NEXT_PUBLIC_SITE_URL ||
+    process.env.NEXT_PUBLIC_VERCEL_URL ||
+    process.env.VERCEL_URL;
+  if (envUrl) return envUrl.startsWith("http") ? envUrl : `https://${envUrl}`;
+  return "http://localhost:3000";
+}
+
+// Actualiza email (y opcionalmente nombre/apellido) de un admin/soporte/root
+export async function updateAdminIdentity(
+  id: string,
+  payload: { email?: string; nombre?: string; apellido?: string },
+  opts: FetchOpts = {}
+): Promise<{ ok: true }> {
+  const base = getBaseUrl();
+  const url = `${base}/api/admin/admins/${encodeURIComponent(id)}`;
+  const res = await fetch(url, {
+    method: "PUT",
+    headers: { "content-type": "application/json", ...(opts.headers || {}) },
+    body: JSON.stringify(payload),
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`updateAdminIdentity ${res.status} ${res.statusText} ${body}`.trim());
+  }
+  return res.json();
+}

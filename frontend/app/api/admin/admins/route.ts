@@ -1,3 +1,4 @@
+// frontend/app/api/admin/admins/route.ts
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -11,13 +12,6 @@ const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE);
 
 type Role = "empresa" | "asesor" | "soporte" | "super_admin" | "super_admin_root";
 
-type ListParams = {
-  q?: string;
-  role?: "" | "super_admin" | "super_admin_root";
-  page?: number;       // default 1
-  pageSize?: number;   // default 20
-};
-
 type AdminRow = {
   id: string;
   email: string;
@@ -29,30 +23,9 @@ type AdminRow = {
   updated_at: string | null;
 };
 
-type Paged<T> = {
-  page: number;
-  pageSize: number;
-  total: number;
-  items: T[];
-};
-
-type CreateBody = {
-  email: string;
-  role?: "super_admin" | "super_admin_root"; // default super_admin
-  password?: string;                          // si no viene, se puede usar recovery_link
-  generate_recovery_link?: boolean;           // si true, devuelve action_link
-  nombre?: string;
-  apellido?: string;
-  telefono?: string;
-};
-
-function parseIntSafe(v: string | null, def: number): number {
-  const n = v ? parseInt(v, 10) : NaN;
-  return Number.isFinite(n) && n > 0 ? n : def;
-}
+type Paged<T> = { page: number; pageSize: number; total: number; items: T[] };
 
 async function resolveUserRole(userId: string): Promise<Role | null> {
-  // Primero por profiles.user_id
   const { data: p1 } = await supabaseAdmin
     .from("profiles")
     .select("role")
@@ -60,7 +33,6 @@ async function resolveUserRole(userId: string): Promise<Role | null> {
     .maybeSingle();
   if (p1?.role) return p1.role as Role;
 
-  // Fallback profiles.id
   const { data: p2 } = await supabaseAdmin
     .from("profiles")
     .select("role")
@@ -69,72 +41,106 @@ async function resolveUserRole(userId: string): Promise<Role | null> {
   return (p2?.role as Role) ?? null;
 }
 
-/* ======================== GET: listar admins ======================== */
+function deny(msg: string, status = 403) {
+  return NextResponse.json({ error: msg }, { status });
+}
+
+/* ========================= GET: listado =========================
+   Filtros: q, role ("super_admin" | "super_admin_root" | "todos")
+   Paginación: page, pageSize
+   Orden: sortBy ("nombre" | "email" | "role" | "created_at"), sortDir ("asc" | "desc")
+=================================================================*/
 export async function GET(req: Request) {
   try {
-    // Auth + autorización
+    // Auth
     const server = supabaseServer();
     const { data: auth } = await server.auth.getUser();
     const callerId = auth?.user?.id ?? null;
     if (!callerId) return NextResponse.json({ error: "No autenticado." }, { status: 401 });
+
     const callerRole = await resolveUserRole(callerId);
     const isRoot = callerRole === "super_admin_root";
     const isAdmin = isRoot || callerRole === "super_admin";
-    if (!isAdmin) {
-      return NextResponse.json({ error: "Acceso denegado." }, { status: 403 });
-    }
+    if (!isAdmin) return deny("Acceso denegado.");
 
-    // Params
     const url = new URL(req.url);
     const q = (url.searchParams.get("q") || "").trim().toLowerCase();
-    const roleParam = (url.searchParams.get("role") || "") as "" | "super_admin" | "super_admin_root";
-    const page = parseIntSafe(url.searchParams.get("page"), 1);
-    const pageSize = parseIntSafe(url.searchParams.get("pageSize"), 20);
-    const offset = (page - 1) * pageSize;
+    const role = (url.searchParams.get("role") ||
+      "todos") as "super_admin" | "super_admin_root" | "todos";
+    const page = Math.max(1, parseInt(url.searchParams.get("page") || "1", 10) || 1);
+    const pageSizeRaw = parseInt(url.searchParams.get("pageSize") || "", 10);
+    const pageSize = [10, 20, 50].includes(pageSizeRaw) ? pageSizeRaw : 10;
+    const sortBy = (url.searchParams.get("sortBy") ||
+      "created_at") as "nombre" | "email" | "role" | "created_at";
+    const sortDir = (url.searchParams.get("sortDir") || "desc") as "asc" | "desc";
 
-    // Filtro roles visibles por el caller:
-    // - super_admin_root ve root + admins
-    // - super_admin NO ve root (solo admins)
-    const rolesVisibles = isRoot
-      ? ["super_admin", "super_admin_root"]
-      : ["super_admin"];
-
-    let qProfiles = supabaseAdmin
+    let query = supabaseAdmin
       .from("profiles")
-      .select("id, email, nombre, apellido, telefono, role, created_at, updated_at", { count: "exact" })
-      .in("role", roleParam ? [roleParam] : rolesVisibles);
+      .select(
+        "id, email, role, nombre, apellido, telefono, created_at, updated_at",
+        { count: "exact" }
+      )
+      .in("role", ["super_admin", "super_admin_root"] as Role[]);
 
-    if (q) {
-      // búsqueda simple sobre email / nombre / apellido
-      qProfiles = qProfiles.or(
-        `email.ilike.%${q}%,nombre.ilike.%${q}%,apellido.ilike.%${q}%`
-      );
-    }
+    if (role !== "todos") query = query.eq("role", role);
 
-    // Orden por creado desc y paginación
-    qProfiles = qProfiles
-      .order("created_at", { ascending: false })
-      .range(offset, offset + pageSize - 1);
-
-    const { data: rows, error, count } = await qProfiles;
+    const { data, error, count } = await query;
     if (error) return NextResponse.json({ error: error.message }, { status: 400 });
 
-    const items: AdminRow[] = (rows || []).map((r: any) => ({
-      id: String(r.id),
-      email: String(r.email || ""),
-      role: (r.role as "super_admin" | "super_admin_root") || "super_admin",
-      nombre: r.nombre ?? null,
-      apellido: r.apellido ?? null,
-      telefono: r.telefono ?? null,
-      created_at: r.created_at ? String(r.created_at) : null,
-      updated_at: r.updated_at ? String(r.updated_at) : null,
-    }));
+    let rows: AdminRow[] =
+      (data ?? []).map((r: any) => ({
+        id: String(r.id),
+        email: r.email || "",
+        role: (r.role as "super_admin" | "super_admin_root") || "super_admin",
+        nombre: r.nombre ?? null,
+        apellido: r.apellido ?? null,
+        telefono: r.telefono ?? null,
+        created_at: r.created_at ? String(r.created_at) : null,
+        updated_at: r.updated_at ? String(r.updated_at) : null,
+      })) || [];
+
+    // filtro q
+    if (q) {
+      rows = rows.filter((r) => {
+        const h = `${r.nombre || ""} ${r.apellido || ""} ${r.email || ""}`.toLowerCase();
+        return h.includes(q);
+      });
+    }
+
+    // orden
+    rows.sort((a, b) => {
+      const dir = sortDir === "asc" ? 1 : -1;
+      switch (sortBy) {
+        case "nombre": {
+          const an = `${a.nombre || ""} ${a.apellido || ""}`.trim();
+          const bn = `${b.nombre || ""} ${b.apellido || ""}`.trim();
+          return an.localeCompare(bn, "es") * dir;
+        }
+        case "email":
+          return (a.email || "").localeCompare(b.email || "", "es") * dir;
+        case "role":
+          return a.role.localeCompare(b.role) * dir;
+        case "created_at": {
+          const ta = a.created_at ? new Date(a.created_at).getTime() : 0;
+          const tb = b.created_at ? new Date(b.created_at).getTime() : 0;
+          return (ta - tb) * dir;
+        }
+        default:
+          return 0;
+      }
+    });
+
+    // paginación
+    const total = count ?? rows.length;
+    const start = (page - 1) * pageSize;
+    const end = start + pageSize;
+    const pageItems = rows.slice(start, end);
 
     const resp: Paged<AdminRow> = {
       page,
       pageSize,
-      total: count ?? items.length,
-      items,
+      total,
+      items: pageItems,
     };
     return NextResponse.json(resp, { status: 200 });
   } catch (e: any) {
@@ -145,140 +151,136 @@ export async function GET(req: Request) {
   }
 }
 
-/* ======================== POST: crear/asegurar admin ======================== */
+/* ========================= POST: crear =========================
+   Body:
+   {
+     email: string (req),
+     role: "super_admin" | "super_admin_root" (req),
+     nombre?: string, apellido?: string,
+     password?: string,        // opcional: si viene, se crea con contraseña
+     sendInvite?: boolean      // opcional: si true, genera link de invitación
+   }
+   Reglas:
+   - admin puede crear "super_admin"
+   - solo root puede crear "super_admin_root"
+=================================================================*/
 export async function POST(req: Request) {
   try {
-    // Auth + autorización
+    // Auth
     const server = supabaseServer();
     const { data: auth } = await server.auth.getUser();
     const callerId = auth?.user?.id ?? null;
     if (!callerId) return NextResponse.json({ error: "No autenticado." }, { status: 401 });
+
     const callerRole = await resolveUserRole(callerId);
     const isRoot = callerRole === "super_admin_root";
     const isAdmin = isRoot || callerRole === "super_admin";
-    if (!isAdmin) {
-      return NextResponse.json({ error: "Acceso denegado." }, { status: 403 });
+    if (!isAdmin) return deny("Acceso denegado.");
+
+    const body = await req.json();
+    const email: string = (body.email || "").trim().toLowerCase();
+    const role: "super_admin" | "super_admin_root" = body.role;
+    const nombre: string | undefined = body.nombre?.trim() || undefined;
+    const apellido: string | undefined = body.apellido?.trim() || undefined;
+    const password: string | undefined = body.password?.trim() || undefined;
+    const sendInvite: boolean = !!body.sendInvite;
+
+    if (!email) return NextResponse.json({ error: "Email requerido." }, { status: 400 });
+    if (!role) return NextResponse.json({ error: "Rol requerido." }, { status: 400 });
+
+    if (role === "super_admin_root" && !isRoot) {
+      return deny("Solo ROOT puede crear usuarios ROOT.");
     }
 
-    // Body
-    const body = (await req.json()) as CreateBody;
-    const email = (body.email || "").trim().toLowerCase();
-    const targetRole: "super_admin" | "super_admin_root" = body.role || "super_admin";
-    const password = body.password?.trim();
-    const wantRecovery = body.generate_recovery_link === true;
-    const nombre = body.nombre?.trim() || null;
-    const apellido = body.apellido?.trim() || null;
-    const telefono = body.telefono?.trim() || null;
-
-    if (!email) {
-      return NextResponse.json({ error: "Email es requerido." }, { status: 400 });
-    }
-    if (targetRole === "super_admin_root" && !isRoot) {
+    // Si no hay password y tampoco sendInvite → error
+    if (!password && !sendInvite) {
       return NextResponse.json(
-        { error: "Solo super_admin_root puede crear/asegurar cuentas root." },
-        { status: 403 }
-      );
-    }
-
-    // Buscar usuario por email en Auth
-    const { data: list, error: listErr } = await supabaseAdmin.auth.admin.listUsers({
-      page: 1,
-      perPage: 200,
-    });
-    if (listErr) return NextResponse.json({ error: listErr.message }, { status: 400 });
-    const existing = list?.users?.find((u) => u.email?.toLowerCase() === email) || null;
-
-    // Si piden recovery link
-    if (wantRecovery) {
-      let userId = existing?.id || null;
-
-      if (!userId) {
-        // crear user sin password, email confirmado
-        const { data: created, error: createErr } = await supabaseAdmin.auth.admin.createUser({
-          email,
-          email_confirm: true,
-        });
-        if (createErr) return NextResponse.json({ error: createErr.message }, { status: 400 });
-        userId = created.user?.id || null;
-        if (!userId) return NextResponse.json({ error: "No se pudo crear el usuario." }, { status: 500 });
-      }
-
-      // Upsert de profile con rol y metadatos
-      const { error: profErr } = await supabaseAdmin.from("profiles").upsert(
-        { id: userId, user_id: userId, email, role: targetRole, nombre, apellido, telefono },
-        { onConflict: "id" }
-      );
-      if (profErr) return NextResponse.json({ error: profErr.message }, { status: 400 });
-
-      // Generar action_link
-      const { data: linkData, error: linkErr } = await supabaseAdmin.auth.admin.generateLink({
-        type: "recovery",
-        email,
-      });
-      if (linkErr) return NextResponse.json({ error: linkErr.message }, { status: 400 });
-
-      const actionLink = (linkData as any)?.properties?.action_link ?? null;
-
-      return NextResponse.json(
-        {
-          ok: true,
-          mode: "recovery",
-          email,
-          role: targetRole,
-          action_link: actionLink,
-          message: "Envia el action_link al usuario para que fije su contraseña.",
-        },
-        { status: 200 }
-      );
-    }
-
-    // De lo contrario, crear/actualizar con password
-    if (!password || password.length < 6) {
-      return NextResponse.json(
-        { error: "Password requerido (mínimo 6 caracteres) o use generate_recovery_link:true." },
+        { error: "Password requerido (mínimo 6 caracteres) o marque 'enviar link de invitación'." },
         { status: 400 }
       );
     }
+    if (password && password.length < 6) {
+      return NextResponse.json({ error: "La contraseña debe tener al menos 6 caracteres." }, { status: 400 });
+    }
 
-    let userId = existing?.id || null;
+    let userId: string | null = null;
+    let inviteLink: string | null = null;
 
-    if (!userId) {
-      // Crear nuevo usuario
-      const { data: created, error: createErr } = await supabaseAdmin.auth.admin.createUser({
+    if (password) {
+      // Crear con contraseña
+      const { data: createRes, error: createErr } = await supabaseAdmin.auth.admin.createUser({
         email,
         password,
         email_confirm: true,
+        user_metadata: { role, nombre, apellido },
       });
       if (createErr) return NextResponse.json({ error: createErr.message }, { status: 400 });
-      userId = created.user?.id || null;
-      if (!userId) return NextResponse.json({ error: "No se pudo crear el usuario." }, { status: 500 });
+      userId = createRes.user?.id ?? null;
+
+      // Opcionalmente, también podríamos generar un recovery link si sendInvite=true
+      if (sendInvite && createRes.user) {
+        const { data: linkRes, error: linkErr } = await supabaseAdmin.auth.admin.generateLink({
+          type: "recovery",
+          email,
+        });
+        if (!linkErr) {
+          inviteLink =
+            (linkRes as any)?.properties?.action_link ||
+            (linkRes as any)?.action_link ||
+            null;
+        }
+      }
     } else {
-      // Actualizar password
-      const { error: updErr } = await supabaseAdmin.auth.admin.updateUserById(userId, { password });
-      if (updErr) return NextResponse.json({ error: updErr.message }, { status: 400 });
+      // Sin contraseña → generamos INVITE (esto crea el usuario y envía email si SMTP está configurado)
+      const { data: linkRes, error: linkErr } = await supabaseAdmin.auth.admin.generateLink({
+        type: "invite",
+        email,
+        options: {
+          data: { role, nombre, apellido },
+        },
+      });
+      if (linkErr) return NextResponse.json({ error: linkErr.message }, { status: 400 });
+
+      inviteLink =
+        (linkRes as any)?.properties?.action_link ||
+        (linkRes as any)?.action_link ||
+        null;
+
+      userId = linkRes?.user?.id ?? null;
+
+      // fallback: si no volvió user.id por alguna razón, intentamos localizarlo por email
+      if (!userId) {
+        // No hay endpoint directo para buscar, confiamos en linkRes.user; si no, igual upsert de profile con id=null no tiene sentido.
+      }
+    }
+
+    if (!userId) {
+      return NextResponse.json({ error: "No se obtuvo el ID de usuario tras la operación." }, { status: 400 });
     }
 
     // Upsert profile
-    const { error: profErr } = await supabaseAdmin.from("profiles").upsert(
-      { id: userId, user_id: userId, email, role: targetRole, nombre, apellido, telefono },
-      { onConflict: "id" }
-    );
-    if (profErr) return NextResponse.json({ error: profErr.message }, { status: 400 });
+    const upsert: any = {
+      id: userId,
+      user_id: userId,
+      email,
+      role,
+      nombre: nombre ?? null,
+      apellido: apellido ?? null,
+    };
+    const { error: profErr } = await supabaseAdmin.from("profiles").upsert(upsert, { onConflict: "id" });
+    if (profErr) {
+      // Si falla profile, borramos usuario recien creado para no dejarlo colgado
+      await supabaseAdmin.auth.admin.deleteUser(userId).catch(() => {});
+      return NextResponse.json({ error: profErr.message }, { status: 400 });
+    }
 
     return NextResponse.json(
-      {
-        ok: true,
-        mode: "password",
-        email,
-        role: targetRole,
-        user_id: userId,
-        message: "Admin asegurado correctamente.",
-      },
+      { ok: true, user_id: userId, invite_link: inviteLink },
       { status: 200 }
     );
   } catch (e: any) {
     return NextResponse.json(
-      { error: e?.message || "Error inesperado creando/asegurando admin." },
+      { error: e?.message || "Error inesperado creando admin." },
       { status: 500 }
     );
   }

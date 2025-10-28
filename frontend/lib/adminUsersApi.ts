@@ -93,10 +93,28 @@ export async function createAdmin(
 ): Promise<{ ok: true; user_id: string; invite_link?: string | null }> {
   const base = getBaseUrl();
   const url = `${base}/api/admin/admins`;
+
+  // 🔁 Mapear a lo que espera el backend:
+  // - password (si tiene ≥6)
+  // - generate_recovery_link (si sendInvite === true y no mandamos password)
+  const payload: Record<string, any> = {
+    email: input.email,
+    role: input.role,
+  };
+  if (input.nombre !== undefined) payload.nombre = input.nombre;
+  if (input.apellido !== undefined) payload.apellido = input.apellido;
+
+  const pwd = (input.password || "").trim();
+  if (pwd.length >= 6) {
+    payload.password = pwd;
+  } else if (input.sendInvite === true) {
+    payload.generate_recovery_link = true;
+  }
+
   const res = await fetch(url, {
     method: "POST",
     headers: { "content-type": "application/json", ...(opts.headers || {}) },
-    body: JSON.stringify(input),
+    body: JSON.stringify(payload),
     cache: "no-store",
   });
   if (!res.ok) {

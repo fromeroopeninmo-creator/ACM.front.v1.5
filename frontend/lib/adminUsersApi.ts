@@ -30,7 +30,7 @@ export type ListAdminsParams = {
 type FetchOpts = {
   headers?: Record<string, string>;
   cache?: RequestCache;
-  // usar 'any' para evitar dependencias de tipos internos de Next
+  // evitar dependencia de tipos internos de Next
   next?: any;
 };
 
@@ -121,6 +121,15 @@ export async function updateAdmin(
     throw new Error(`updateAdmin ${res.status} ${res.statusText} ${body}`.trim());
   }
   return res.json();
+}
+
+/* 👇 Wrapper para compatibilidad con la UI existente */
+export async function updateAdminIdentity(
+  id: string,
+  input: Partial<Pick<AdminRow, "email" | "nombre" | "apellido" | "role">>,
+  opts: FetchOpts = {}
+): Promise<{ ok: true }> {
+  return updateAdmin(id, input, opts);
 }
 
 export async function deleteAdmin(

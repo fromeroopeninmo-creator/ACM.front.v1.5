@@ -52,7 +52,7 @@ export async function POST(req: Request) {
     const body = await req.json().catch(() => null);
     const id = body?.id as number | undefined;
     const email = (body?.email as string | undefined)?.trim().toLowerCase();
-    const activo = body?.activo;
+    const activo = body?.activo as boolean | undefined;
 
     if (typeof activo !== "boolean") {
       return NextResponse.json(
@@ -67,7 +67,7 @@ export async function POST(req: Request) {
       );
     }
 
-    // 3) Actualizar estado
+    // 3) Actualizar estado en soporte
     if (id) {
       const { error: updErr } = await supabaseAdmin
         .from("soporte")
@@ -78,7 +78,6 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: updErr.message }, { status: 400 });
       }
     } else if (email) {
-      // Buscar por email para obtener id (opcional), pero actualizamos por email directamente
       const { error: updErr } = await supabaseAdmin
         .from("soporte")
         .update({ activo })

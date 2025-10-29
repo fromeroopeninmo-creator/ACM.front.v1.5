@@ -37,7 +37,10 @@ async function resolveUserRole(userId: string): Promise<Role | null> {
  * - Intenta crear (email_confirm = true).
  * - Si ya existe, recorre listUsers() (paginado) y retorna el id.
  */
-async function getOrCreateAuthUserIdByEmail(email: string, metadata?: Record<string, any>): Promise<string | null> {
+async function getOrCreateAuthUserIdByEmail(
+  email: string,
+  metadata?: Record<string, any>
+): Promise<string | null> {
   // 1) Intentar crear
   const createRes = await supabaseAdmin.auth.admin.createUser({
     email,
@@ -45,7 +48,7 @@ async function getOrCreateAuthUserIdByEmail(email: string, metadata?: Record<str
     user_metadata: metadata ?? {},
   });
 
-  // ✅ Supabase v2: la respuesta viene en createRes.data.user
+  // Supabase v2: user en createRes.data.user
   const createdUserId = (createRes as any)?.data?.user?.id as string | undefined;
   if (!createRes.error && createdUserId) {
     return createdUserId;
@@ -59,8 +62,11 @@ async function getOrCreateAuthUserIdByEmail(email: string, metadata?: Record<str
     const list = await supabaseAdmin.auth.admin.listUsers({ page, perPage: PER_PAGE });
     if (list.error) break;
 
-    const users = (list as any)?.data?.users as Array<{ id: string; email?: string }> | undefined;
-    const found = (users || []).find((u) => u.email?.toLowerCase() === email.toLowerCase());
+    const users =
+      (list as any)?.data?.users as Array<{ id: string; email?: string }> | undefined;
+    const found = (users || []).find(
+      (u) => u.email?.toLowerCase() === email.toLowerCase()
+    );
     if (found?.id) return found.id;
 
     if ((users?.length ?? 0) < PER_PAGE) break;
@@ -146,20 +152,18 @@ export async function POST(req: Request) {
     }
 
     // 2) Upsert en profiles (rol soporte). Usamos id = user_id = auth.users.id
-    const { error: profErr } = await supabaseAdmin
-      .from("profiles")
-      .upsert(
-        {
-          id: soporteUserId,
-          user_id: soporteUserId,
-          email,
-          role: "soporte",
-          nombre,
-          apellido,
-          empresa_id: null,
-        },
-        { onConflict: "id" }
-      );
+    const { error: profErr } = await supabaseAdmin.from("profiles").upsert(
+      {
+        id: soporteUserId,
+        user_id: soporteUserId,
+        email,
+        role: "soporte",
+        nombre,
+        apellido,
+        empresa_id: null,
+      },
+      { onConflict: "id" }
+    );
     if (profErr) {
       return NextResponse.json({ error: profErr.message }, { status: 400 });
     }

@@ -30,7 +30,7 @@ export default function SoporteClient({ initialItems }: Props) {
   const [apellido, setApellido] = useState("");
   const [creating, setCreating] = useState(false);
 
-  const activos = useMemo(() => items.filter(i => i.activo), [items]).length;
+  const activos = useMemo(() => items.filter(i => i.activo).length, [items]);
 
   const handleToggle = async (row: SoporteItem, next: boolean) => {
     setError(null);
@@ -84,7 +84,7 @@ export default function SoporteClient({ initialItems }: Props) {
         const now = new Date().toISOString();
         const maxId = prev.reduce((m, r) => Math.max(m, r.id || 0), 0);
         const newRow: SoporteItem = {
-          id: maxId + 1, // visual; el id real no viene en la respuesta del upsert
+          id: maxId + 1, // visual; el id real lo maneja la BD
           email: trimmedEmail,
           nombre: nombre || null,
           activo: true,

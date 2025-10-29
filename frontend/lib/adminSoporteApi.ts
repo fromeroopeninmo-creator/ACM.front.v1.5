@@ -1,80 +1,209 @@
-// frontend/lib/adminSoporteApi.ts
-// Cliente Admin Soporte (server/client-safe) con URL absoluta en SSR
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
-type FetchOpts = {
-  headers?: Record<string, string>;
-  cache?: RequestCache;
-  // evitar dependencia de tipos internos de Next
-  next?: any;
-};
+import { NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
+import { supabaseServer } from "#lib/supabaseServer";
 
-export type SoporteItem = {
-  id: number;
-  nombre: string | null;
-  email: string;
-  activo: boolean | null;
-  created_at: string | null;
-};
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE);
 
-function getBaseUrl() {
-  const envUrl =
-    process.env.NEXT_PUBLIC_SITE_URL ||
-    process.env.NEXT_PUBLIC_VERCEL_URL ||
-    process.env.VERCEL_URL;
+// ---- Helpers ----
+type Role = "empresa" | "asesor" | "soporte" | "super_admin" | "super_admin_root";
 
-  if (envUrl) return envUrl.startsWith("http") ? envUrl : `https://${envUrl}`;
-  return "http://localhost:3000";
+async function resolveUserRole(userId: string): Promise<Role | null> {
+  const { data: p1 } = await supabaseAdmin
+    .from("profiles")
+    .select("role")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (p1?.role) return p1.role as Role;
+
+  const { data: p2 } = await supabaseAdmin
+    .from("profiles")
+    .select("role")
+    .eq("id", userId)
+    .maybeSingle();
+
+  return (p2?.role as Role) ?? null;
 }
 
-export async function listSoporte(
-  opts: FetchOpts = {}
-): Promise<{ items: SoporteItem[] }> {
-  const base = getBaseUrl();
-  const res = await fetch(`${base}/api/admin/soporte`, {
-    method: "GET",
-    headers: { ...(opts.headers || {}) },
-    cache: opts.cache ?? "no-store",
-    next: opts.next,
+/**
+ * Buscar o crear usuario en Auth por email (idempotente).
+ * - Si llega password, se crea con password (email_confirm: true).
+ * - Si no, se crea sin password (solo email_confirm: true).
+ * - Si ya existe, retorna el id.
+ */
+async function getOrCreateAuthUserIdByEmail(
+  email: string,
+  metadata?: Record<string, any>,
+  password?: string
+): Promise<string | null> {
+  const createRes = await supabaseAdmin.auth.admin.createUser({
+    email,
+    email_confirm: true,
+    password: password || undefined,
+    user_metadata: metadata ?? {},
   });
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new Error(`listSoporte ${res.status} ${res.statusText} ${body}`.trim());
+
+  const createdUserId = (createRes as any)?.data?.user?.id as string | undefined;
+  if (!createRes.error && createdUserId) {
+    return createdUserId;
   }
-  return res.json();
+
+  // ya existe → buscar en listUsers()
+  const PER_PAGE = 200;
+  const MAX_PAGES = 5;
+
+  for (let page = 1; page <= MAX_PAGES; page++) {
+    const list = await supabaseAdmin.auth.admin.listUsers({ page, perPage: PER_PAGE });
+    if (list.error) break;
+
+    const users = (list as any)?.data?.users as Array<{ id: string; email?: string }> | undefined;
+    const found = (users || []).find((u) => u.email?.toLowerCase() === email.toLowerCase());
+    if (found?.id) return found.id;
+
+    if ((users?.length ?? 0) < PER_PAGE) break;
+  }
+
+  return null;
 }
 
-export async function upsertSoporte(
-  payload: { email: string; nombre?: string; apellido?: string },
-  opts: FetchOpts = {}
-): Promise<{ ok: true }> {
-  const base = getBaseUrl();
-  const res = await fetch(`${base}/api/admin/soporte`, {
-    method: "POST",
-    headers: { "content-type": "application/json", ...(opts.headers || {}) },
-    body: JSON.stringify(payload),
-    cache: "no-store",
-  });
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new Error(`upsertSoporte ${res.status} ${res.statusText} ${body}`.trim());
+// ---- GET: listar agentes de soporte ----
+export async function GET() {
+  try {
+    const server = supabaseServer();
+    const { data: auth } = await server.auth.getUser();
+    const userId = auth?.user?.id ?? null;
+
+    if (!userId) {
+      return NextResponse.json({ error: "No autenticado." }, { status: 401 });
+    }
+
+    const role = await resolveUserRole(userId);
+    const allowed = role === "super_admin" || role === "super_admin_root";
+    if (!allowed) {
+      return NextResponse.json({ error: "Acceso denegado." }, { status: 403 });
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from("soporte")
+      .select("id, nombre, email, activo, created_at")
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+
+    return NextResponse.json({ items: data ?? [] }, { status: 200 });
+  } catch (e: any) {
+    return NextResponse.json(
+      { error: e?.message || "Error inesperado" },
+      { status: 500 }
+    );
   }
-  return res.json();
 }
 
-export async function toggleSoporte(
-  payload: { id?: number; email?: string; activo: boolean },
-  opts: FetchOpts = {}
-): Promise<{ ok: true }> {
-  const base = getBaseUrl();
-  const res = await fetch(`${base}/api/admin/soporte/toggle`, {
-    method: "POST",
-    headers: { "content-type": "application/json", ...(opts.headers || {}) },
-    body: JSON.stringify(payload),
-    cache: "no-store",
-  });
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new Error(`toggleSoporte ${res.status} ${res.statusText} ${body}`.trim());
+// ---- POST: upsert agente de soporte ----
+// Body esperado: { email: string; nombre?: string; apellido?: string; password?: string }
+export async function POST(req: Request) {
+  try {
+    const server = supabaseServer();
+    const { data: auth } = await server.auth.getUser();
+    const userId = auth?.user?.id ?? null;
+
+    if (!userId) {
+      return NextResponse.json({ error: "No autenticado." }, { status: 401 });
+    }
+
+    const role = await resolveUserRole(userId);
+    const allowed = role === "super_admin" || role === "super_admin_root";
+    if (!allowed) {
+      return NextResponse.json({ error: "Acceso denegado." }, { status: 403 });
+    }
+
+    const body = await req.json().catch(() => null);
+    const email = String(body?.email || "").trim().toLowerCase();
+    const nombre = (body?.nombre ? String(body.nombre) : null) || null;
+    const apellido = (body?.apellido ? String(body.apellido) : null) || null;
+    const password = (body?.password ? String(body.password).trim() : "") || "";
+
+    if (!email) {
+      return NextResponse.json({ error: "Falta email." }, { status: 400 });
+    }
+    if (password && password.length < 6) {
+      return NextResponse.json({ error: "La contraseña debe tener al menos 6 caracteres." }, { status: 400 });
+    }
+
+    // 1) Buscar/crear usuario en Auth (idempotente)
+    const soporteUserId = await getOrCreateAuthUserIdByEmail(
+      email,
+      { role: "soporte", nombre, apellido },
+      password || undefined
+    );
+
+    if (!soporteUserId) {
+      return NextResponse.json(
+        { error: "No se pudo obtener/crear el usuario de soporte en Auth." },
+        { status: 500 }
+      );
+    }
+
+    // 2) Upsert en profiles (rol soporte)
+    const { error: profErr } = await supabaseAdmin
+      .from("profiles")
+      .upsert(
+        {
+          id: soporteUserId,
+          user_id: soporteUserId,
+          email,
+          role: "soporte",
+          nombre,
+          apellido,
+          empresa_id: null,
+        },
+        { onConflict: "id" }
+      );
+    if (profErr) {
+      return NextResponse.json({ error: profErr.message }, { status: 400 });
+    }
+
+    // 3) Upsert en soporte
+    const { data: existingSoporte } = await supabaseAdmin
+      .from("soporte")
+      .select("id")
+      .eq("email", email)
+      .maybeSingle();
+
+    if (existingSoporte?.id) {
+      const { error: updErr } = await supabaseAdmin
+        .from("soporte")
+        .update({
+          nombre: nombre ?? undefined,
+          activo: true,
+        })
+        .eq("id", existingSoporte.id);
+
+      if (updErr) {
+        return NextResponse.json({ error: updErr.message }, { status: 400 });
+      }
+    } else {
+      const { error: insErr } = await supabaseAdmin.from("soporte").insert({
+        nombre,
+        email,
+        activo: true,
+      });
+      if (insErr) {
+        return NextResponse.json({ error: insErr.message }, { status: 400 });
+      }
+    }
+
+    return NextResponse.json({ ok: true }, { status: 200 });
+  } catch (e: any) {
+    return NextResponse.json(
+      { error: e?.message || "Error inesperado" },
+      { status: 500 }
+    );
   }
-  return res.json();
 }

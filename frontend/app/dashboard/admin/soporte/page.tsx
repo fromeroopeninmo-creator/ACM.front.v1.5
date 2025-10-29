@@ -1,4 +1,4 @@
-// frontend/app/dashboard/admin/soporte/page.tsx
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { supabaseServer } from "#lib/supabaseServer";
 import SoporteClient from "./SoporteClient";
@@ -6,13 +6,15 @@ import type { SoporteItem } from "#lib/adminSoporteApi";
 
 export const dynamic = "force-dynamic";
 
-type SoporteRow = {
-  id: number;
-  nombre: string | null;
-  email: string;
-  activo: boolean | null;
-  created_at: string | null;
-};
+type Role = "empresa" | "asesor" | "soporte" | "super_admin" | "super_admin_root";
+
+/** Reenvía cookies al fetch SSR para que /api admin valide rol y use service-role internamente */
+function buildCookieHeader(): string {
+  const jar = cookies();
+  const all = jar.getAll();
+  if (!all?.length) return "";
+  return all.map((c) => `${c.name}=${c.value}`).join("; ");
+}
 
 function fmtDate(d?: string | null) {
   if (!d) return "—";
@@ -22,7 +24,7 @@ function fmtDate(d?: string | null) {
 }
 
 export default async function AdminSoportePage() {
-  // 1) Guard de sesión + rol
+  // 1) Guard de sesión + rol (misma lógica original)
   const supa = supabaseServer();
   const {
     data: { user },
@@ -32,14 +34,13 @@ export default async function AdminSoportePage() {
     redirect("/login");
   }
 
-  // role en profiles; fallback a user_metadata.role
   const { data: profile } = await supa
     .from("profiles")
     .select("id, role")
     .eq("id", user.id)
     .maybeSingle();
 
-  const role = profile?.role || (user.user_metadata as any)?.role || null;
+  const role = (profile?.role || (user.user_metadata as any)?.role || null) as Role | null;
   const isAdmin = role === "super_admin" || role === "super_admin_root";
 
   if (!isAdmin) {
@@ -55,30 +56,36 @@ export default async function AdminSoportePage() {
     }
   }
 
-  // 2) Fetch SSR del listado de soporte (solo lectura por ahora)
-  let soportes: SoporteRow[] = [];
+  // 2) SSR: obtener listado vía API interna (usa service-role con autorización por rol)
+  let initialItems: SoporteItem[] = [];
   let errorMsg: string | null = null;
 
   try {
-    const { data, error } = await supa
-      .from("soporte")
-      .select("id, nombre, email, activo, created_at")
-      .order("created_at", { ascending: false });
+    const base =
+      process.env.NEXT_PUBLIC_SITE_URL ||
+      process.env.NEXT_PUBLIC_VERCEL_URL ||
+      process.env.VERCEL_URL ||
+      "";
+    const origin = base.startsWith("http") ? base : `https://${base}`;
+    const res = await fetch(`${origin}/api/admin/soporte`, {
+      method: "GET",
+      headers: {
+        cookie: buildCookieHeader(),
+      },
+      cache: "no-store",
+      // @ts-ignore next hinting
+      next: { revalidate: 0 },
+    });
 
-    if (error) throw error;
-    soportes = (data || []) as SoporteRow[];
+    if (!res.ok) {
+      const txt = await res.text().catch(() => "");
+      throw new Error(`${res.status} ${res.statusText} ${txt}`.trim());
+    }
+    const data = (await res.json()) as { items: SoporteItem[] };
+    initialItems = data?.items ?? [];
   } catch (e: any) {
     errorMsg = e?.message || "Error al cargar agentes de soporte.";
   }
-
-  // Mapeo SSR -> shape del cliente
-  const initialItems: SoporteItem[] = (soportes || []).map((s) => ({
-    id: s.id,
-    nombre: s.nombre,
-    email: s.email,
-    activo: !!s.activo,
-    created_at: s.created_at,
-  }));
 
   // 3) Render
   return (
@@ -107,10 +114,10 @@ export default async function AdminSoportePage() {
         </section>
       ) : (
         <>
-          {/* ✅ UI cliente (ABM + toggle) */}
+          {/* ✅ UI cliente (ABM + toggle) con datos reales */}
           <SoporteClient initialItems={initialItems} />
 
-          {/* 🔒 Conservamos tu tabla SSR original como fallback (oculta para no duplicar UI) */}
+          {/* 🔒 Tabla SSR original, oculta como fallback (se conserva 1:1) */}
           <section className="rounded-2xl border p-0 overflow-hidden bg-white dark:bg-neutral-900 hidden">
             <div className="overflow-auto">
               <table className="min-w-full text-sm">
@@ -125,15 +132,15 @@ export default async function AdminSoportePage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {soportes.length === 0 ? (
+                  {initialItems.length === 0 ? (
                     <tr>
                       <td colSpan={6} className="px-3 py-6 text-center text-gray-500">
                         No hay agentes de soporte aún.
                       </td>
                     </tr>
                   ) : (
-                    soportes.map((s) => (
-                      <tr key={s.id} className="border-t">
+                    initialItems.map((s) => (
+                      <tr key={`${s.id}-${s.email}`} className="border-t">
                         <td className="px-3 py-2">{s.id}</td>
                         <td className="px-3 py-2">{s.nombre || "—"}</td>
                         <td className="px-3 py-2">{s.email}</td>
@@ -179,7 +186,7 @@ export default async function AdminSoportePage() {
         </>
       )}
 
-      {/* Roadmap de la sección */}
+      {/* Roadmap de la sección (1:1) */}
       <section className="rounded-2xl border p-4 bg-white dark:bg-neutral-900">
         <h2 className="text-base font-semibold mb-1">Próximos pasos</h2>
         <ul className="list-disc pl-5 text-sm text-gray-600 dark:text-gray-300 space-y-1">

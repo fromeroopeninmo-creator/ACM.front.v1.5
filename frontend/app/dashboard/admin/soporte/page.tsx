@@ -1,3 +1,4 @@
+// frontend/app/dashboard/admin/soporte/page.tsx
 import { redirect } from "next/navigation";
 import { supabaseServer } from "#lib/supabaseServer";
 import SoporteClient from "./SoporteClient";

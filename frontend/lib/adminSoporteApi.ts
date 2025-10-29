@@ -4,7 +4,8 @@
 type FetchOpts = {
   headers?: Record<string, string>;
   cache?: RequestCache;
-  next?: NextFetchRequestConfig;
+  // evitar dependencia de tipos internos de Next
+  next?: any;
 };
 
 export type SoporteItem = {

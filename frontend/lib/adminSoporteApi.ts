@@ -1,209 +1,230 @@
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
+// frontend/lib/adminSoporteApi.ts
+// Cliente Admin Soporte (server/client-safe) con URL absoluta en SSR
+// ⚠ Importante: no dependemos de tipos/objetos de Next (p.ej. NextFetchRequestConfig) para evitar
+// arrastrar módulos server-only a componentes cliente. Este archivo es 100% isomórfico.
 
-import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
-import { supabaseServer } from "#lib/supabaseServer";
+// ================================================================
+// Tipos
+// ================================================================
+export type SoporteItem = {
+  id: number;
+  nombre: string | null;
+  email: string;
+  activo: boolean | null;
+  created_at: string | null;
+};
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE);
+export type SoporteListResponse = {
+  items: SoporteItem[];
+};
 
-// ---- Helpers ----
-type Role = "empresa" | "asesor" | "soporte" | "super_admin" | "super_admin_root";
+export type SoporteUpsertInput = {
+  email: string;
+  nombre?: string;
+  apellido?: string;
+  // opcional: permitir alta directa con contraseña
+  password?: string;
+};
 
-async function resolveUserRole(userId: string): Promise<Role | null> {
-  const { data: p1 } = await supabaseAdmin
-    .from("profiles")
-    .select("role")
-    .eq("user_id", userId)
-    .maybeSingle();
-  if (p1?.role) return p1.role as Role;
+export type SoporteToggleInput = {
+  id?: number;
+  email?: string;
+  activo: boolean;
+};
 
-  const { data: p2 } = await supabaseAdmin
-    .from("profiles")
-    .select("role")
-    .eq("id", userId)
-    .maybeSingle();
+export type FetchOpts = {
+  headers?: Record<string, string>;
+  cache?: RequestCache;
+  // usamos any para no acoplar a Next (puede pasarse {revalidate:...} si estás en Server Components)
+  next?: any;
+};
 
-  return (p2?.role as Role) ?? null;
+// ================================================================
+// Helpers
+// ================================================================
+
+/**
+ * Devuelve la base URL absoluta (sirve en SSR y CSR).
+ * Usa NEXT_PUBLIC_SITE_URL / NEXT_PUBLIC_VERCEL_URL / VERCEL_URL y fallback a localhost.
+ */
+function getBaseUrl(): string {
+  const envUrl =
+    process.env.NEXT_PUBLIC_SITE_URL ||
+    process.env.NEXT_PUBLIC_VERCEL_URL ||
+    process.env.VERCEL_URL;
+
+  if (envUrl) return envUrl.startsWith("http") ? envUrl : `https://${envUrl}`;
+  return "http://localhost:3000";
 }
 
 /**
- * Buscar o crear usuario en Auth por email (idempotente).
- * - Si llega password, se crea con password (email_confirm: true).
- * - Si no, se crea sin password (solo email_confirm: true).
- * - Si ya existe, retorna el id.
+ * Serializa parámetros de consulta omitiendo vacíos.
  */
-async function getOrCreateAuthUserIdByEmail(
-  email: string,
-  metadata?: Record<string, any>,
-  password?: string
-): Promise<string | null> {
-  const createRes = await supabaseAdmin.auth.admin.createUser({
-    email,
-    email_confirm: true,
-    password: password || undefined,
-    user_metadata: metadata ?? {},
+function withQuery(url: string, params?: Record<string, unknown>): string {
+  if (!params) return url;
+  const usp = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v === undefined || v === null || v === "") continue;
+    usp.set(k, String(v));
+  }
+  const qs = usp.toString();
+  return qs ? `${url}?${qs}` : url;
+}
+
+/**
+ * Wrapper de fetch con manejo de errores consistente.
+ */
+async function jsonFetch<T = any>(
+  input: RequestInfo | URL,
+  init?: RequestInit
+): Promise<T> {
+  const res = await fetch(input, init);
+  if (!res.ok) {
+    // Intentamos devolver el cuerpo textual para facilitar debugging
+    const body = await res.text().catch(() => "");
+    const msg = `${res.status} ${res.statusText} ${body}`.trim();
+    throw new Error(msg);
+  }
+  // Puede devolver JSON o vacío
+  const text = await res.text();
+  if (!text) return {} as T;
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    // Si no es JSON válido, lo devolvemos como texto bajo una clave estándar
+    return { raw: text } as unknown as T;
+  }
+}
+
+// ================================================================
+// API: Soporte (Admin)
+// Endpoints disponibles en tu repo:
+//   - GET  /api/admin/soporte            → lista de agentes
+//   - POST /api/admin/soporte            → upsert (alta/edición básica)
+//   - POST /api/admin/soporte/toggle     → activar / desactivar
+// ================================================================
+
+/**
+ * Lista agentes de soporte.
+ * Actualmente el endpoint no recibe filtros; dejamos la firma preparada.
+ */
+export async function listSoporte(
+  opts: FetchOpts = {}
+): Promise<SoporteListResponse> {
+  const base = getBaseUrl();
+  const url = `${base}/api/admin/soporte`;
+  return jsonFetch<SoporteListResponse>(url, {
+    method: "GET",
+    headers: { ...(opts.headers || {}) },
+    cache: opts.cache ?? "no-store",
+    // @ts-ignore - compat opcional con Next (no importamos tipos)
+    next: opts.next,
   });
-
-  const createdUserId = (createRes as any)?.data?.user?.id as string | undefined;
-  if (!createRes.error && createdUserId) {
-    return createdUserId;
-  }
-
-  // ya existe → buscar en listUsers()
-  const PER_PAGE = 200;
-  const MAX_PAGES = 5;
-
-  for (let page = 1; page <= MAX_PAGES; page++) {
-    const list = await supabaseAdmin.auth.admin.listUsers({ page, perPage: PER_PAGE });
-    if (list.error) break;
-
-    const users = (list as any)?.data?.users as Array<{ id: string; email?: string }> | undefined;
-    const found = (users || []).find((u) => u.email?.toLowerCase() === email.toLowerCase());
-    if (found?.id) return found.id;
-
-    if ((users?.length ?? 0) < PER_PAGE) break;
-  }
-
-  return null;
 }
 
-// ---- GET: listar agentes de soporte ----
-export async function GET() {
+/**
+ * Alta/Upsert de agente de soporte (idempotente por email).
+ * Si se provee `password`, el API backend intentará crear el usuario en Auth con esa contraseña.
+ */
+export async function upsertSoporte(
+  payload: SoporteUpsertInput,
+  opts: FetchOpts = {}
+): Promise<{ ok: true }> {
+  const base = getBaseUrl();
+  const url = `${base}/api/admin/soporte`;
+  return jsonFetch<{ ok: true }>(url, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      ...(opts.headers || {}),
+    },
+    body: JSON.stringify(payload),
+    cache: "no-store",
+    // @ts-ignore
+    next: opts.next,
+  });
+}
+
+/**
+ * Activa/Desactiva un agente de soporte por id o por email.
+ */
+export async function toggleSoporte(
+  payload: SoporteToggleInput,
+  opts: FetchOpts = {}
+): Promise<{ ok: true }> {
+  const base = getBaseUrl();
+  const url = `${base}/api/admin/soporte/toggle`;
+  return jsonFetch<{ ok: true }>(url, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      ...(opts.headers || {}),
+    },
+    body: JSON.stringify(payload),
+    cache: "no-store",
+    // @ts-ignore
+    next: opts.next,
+  });
+}
+
+// ================================================================
+// Utilidades opcionales (no cambian la lógica, sólo ayudan en UI)
+// ================================================================
+
+/**
+ * Formatea fecha ISO (usado en vistas cliente).
+ */
+export function fmtDateISO(iso?: string | null): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
   try {
-    const server = supabaseServer();
-    const { data: auth } = await server.auth.getUser();
-    const userId = auth?.user?.id ?? null;
-
-    if (!userId) {
-      return NextResponse.json({ error: "No autenticado." }, { status: 401 });
-    }
-
-    const role = await resolveUserRole(userId);
-    const allowed = role === "super_admin" || role === "super_admin_root";
-    if (!allowed) {
-      return NextResponse.json({ error: "Acceso denegado." }, { status: 403 });
-    }
-
-    const { data, error } = await supabaseAdmin
-      .from("soporte")
-      .select("id, nombre, email, activo, created_at")
-      .order("created_at", { ascending: false });
-
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 400 });
-    }
-
-    return NextResponse.json({ items: data ?? [] }, { status: 200 });
-  } catch (e: any) {
-    return NextResponse.json(
-      { error: e?.message || "Error inesperado" },
-      { status: 500 }
-    );
+    return new Intl.DateTimeFormat("es-AR", {
+      dateStyle: "medium",
+      timeStyle: "short",
+    }).format(d);
+  } catch {
+    return d.toLocaleString();
   }
 }
 
-// ---- POST: upsert agente de soporte ----
-// Body esperado: { email: string; nombre?: string; apellido?: string; password?: string }
-export async function POST(req: Request) {
-  try {
-    const server = supabaseServer();
-    const { data: auth } = await server.auth.getUser();
-    const userId = auth?.user?.id ?? null;
+/**
+ * Normaliza email en minúsculas y trim.
+ */
+export function normEmail(email: string): string {
+  return (email || "").trim().toLowerCase();
+}
 
-    if (!userId) {
-      return NextResponse.json({ error: "No autenticado." }, { status: 401 });
-    }
+/**
+ * Devuelve contadores útiles para cabeceras (total, activos, inactivos).
+ */
+export function resumenSoporte(items: SoporteItem[]) {
+  const total = items.length;
+  const activos = items.filter((i) => !!i.activo).length;
+  const inactivos = total - activos;
+  return { total, activos, inactivos };
+}
 
-    const role = await resolveUserRole(userId);
-    const allowed = role === "super_admin" || role === "super_admin_root";
-    if (!allowed) {
-      return NextResponse.json({ error: "Acceso denegado." }, { status: 403 });
-    }
-
-    const body = await req.json().catch(() => null);
-    const email = String(body?.email || "").trim().toLowerCase();
-    const nombre = (body?.nombre ? String(body.nombre) : null) || null;
-    const apellido = (body?.apellido ? String(body.apellido) : null) || null;
-    const password = (body?.password ? String(body.password).trim() : "") || "";
-
-    if (!email) {
-      return NextResponse.json({ error: "Falta email." }, { status: 400 });
-    }
-    if (password && password.length < 6) {
-      return NextResponse.json({ error: "La contraseña debe tener al menos 6 caracteres." }, { status: 400 });
-    }
-
-    // 1) Buscar/crear usuario en Auth (idempotente)
-    const soporteUserId = await getOrCreateAuthUserIdByEmail(
-      email,
-      { role: "soporte", nombre, apellido },
-      password || undefined
-    );
-
-    if (!soporteUserId) {
-      return NextResponse.json(
-        { error: "No se pudo obtener/crear el usuario de soporte en Auth." },
-        { status: 500 }
-      );
-    }
-
-    // 2) Upsert en profiles (rol soporte)
-    const { error: profErr } = await supabaseAdmin
-      .from("profiles")
-      .upsert(
-        {
-          id: soporteUserId,
-          user_id: soporteUserId,
-          email,
-          role: "soporte",
-          nombre,
-          apellido,
-          empresa_id: null,
-        },
-        { onConflict: "id" }
-      );
-    if (profErr) {
-      return NextResponse.json({ error: profErr.message }, { status: 400 });
-    }
-
-    // 3) Upsert en soporte
-    const { data: existingSoporte } = await supabaseAdmin
-      .from("soporte")
-      .select("id")
-      .eq("email", email)
-      .maybeSingle();
-
-    if (existingSoporte?.id) {
-      const { error: updErr } = await supabaseAdmin
-        .from("soporte")
-        .update({
-          nombre: nombre ?? undefined,
-          activo: true,
-        })
-        .eq("id", existingSoporte.id);
-
-      if (updErr) {
-        return NextResponse.json({ error: updErr.message }, { status: 400 });
-      }
-    } else {
-      const { error: insErr } = await supabaseAdmin.from("soporte").insert({
-        nombre,
-        email,
-        activo: true,
-      });
-      if (insErr) {
-        return NextResponse.json({ error: insErr.message }, { status: 400 });
-      }
-    }
-
-    return NextResponse.json({ ok: true }, { status: 200 });
-  } catch (e: any) {
-    return NextResponse.json(
-      { error: e?.message || "Error inesperado" },
-      { status: 500 }
-    );
-  }
+/**
+ * Filtro in-memory (nombre/email + estado) para clientes React.
+ */
+export function filtrarSoporte(
+  items: SoporteItem[],
+  q: string,
+  estado: "" | "activos" | "inactivos"
+): SoporteItem[] {
+  const text = (q || "").trim().toLowerCase();
+  return items.filter((i) => {
+    const passText =
+      !text ||
+      (i.nombre || "").toLowerCase().includes(text) ||
+      i.email.toLowerCase().includes(text);
+    const passEstado =
+      estado === ""
+        ? true
+        : estado === "activos"
+        ? !!i.activo
+        : !i.activo;
+    return passText && passEstado;
+  });
 }

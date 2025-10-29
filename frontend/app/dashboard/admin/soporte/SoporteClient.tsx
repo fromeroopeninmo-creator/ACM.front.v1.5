@@ -60,7 +60,7 @@ export default function SoporteClient({ initialItems }: Props) {
     setItems(prev.map(r => (r.id === row.id ? { ...r, activo: next } : r)));
     try {
       await toggleSoporte({ id: row.id, activo: next });
-      // TODO: opcional auditar aquí llamando a /api/admin/auditoria
+      // TODO: auditoría /api/admin/auditoria
     } catch (e: any) {
       setError(e?.message || "No se pudo cambiar el estado.");
       setItems(prev); // rollback
@@ -79,14 +79,13 @@ export default function SoporteClient({ initialItems }: Props) {
       return;
     }
 
-    // password es opcional; si viene, el backend lo usará para crear el usuario con credencial
     setCreating(true);
     try {
       await upsertSoporte({
         email: trimmedEmail,
         nombre: nombre.trim() || undefined,
         apellido: apellido.trim() || undefined,
-        password: password.trim() || undefined,
+        password: password.trim() || undefined, // ⬅️ ahora el tipo lo acepta
       });
 
       setItems((prev) => {
@@ -94,11 +93,7 @@ export default function SoporteClient({ initialItems }: Props) {
         if (exists) {
           return prev.map((x) =>
             x.email.toLowerCase() === trimmedEmail
-              ? {
-                  ...x,
-                  nombre: nombre || x.nombre,
-                  activo: true,
-                }
+              ? { ...x, nombre: nombre || x.nombre, activo: true }
               : x
           );
         }
@@ -295,7 +290,7 @@ export default function SoporteClient({ initialItems }: Props) {
                           {loadingRow === s.id ? "Procesando…" : s.activo ? "Desactivar" : "Activar"}
                         </button>
 
-                        {/* Placeholders seguros (sin lógica aún) */}
+                        {/* Placeholders seguros */}
                         <button
                           className="rounded-lg border px-2 py-1 text-xs disabled:opacity-50"
                           disabled

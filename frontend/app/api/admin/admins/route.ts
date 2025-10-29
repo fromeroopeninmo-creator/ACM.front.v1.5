@@ -158,7 +158,7 @@ export async function GET(req: Request) {
      role: "super_admin" | "super_admin_root" (req),
      nombre?: string, apellido?: string,
      password?: string,        // opcional: si viene, se crea con contraseña
-     sendInvite?: boolean      // opcional: si true, genera link de invitación (signup)
+     sendInvite?: boolean      // opcional: si true, envía invitación y (opcional) genera link de recuperación
    }
    Reglas:
    - admin puede crear "super_admin"
@@ -216,9 +216,7 @@ export async function POST(req: Request) {
       });
 
       if (createErr) {
-        // Errores comunes: email ya registrado, formato inválido, etc.
         const msg = createErr?.message || "No se pudo crear el usuario (password).";
-        // Normalizamos el mensaje cuando es email duplicado
         if (msg.toLowerCase().includes("user already registered") || msg.toLowerCase().includes("already exists")) {
           return NextResponse.json({ error: "El email ya está registrado." }, { status: 400 });
         }
@@ -241,39 +239,41 @@ export async function POST(req: Request) {
         }
       }
     } else {
-      // SIN contraseña → generamos link de SIGNUP (válido)
-      const { data: linkRes, error: linkErr } = await supabaseAdmin.auth.admin.generateLink({
-        type: "signup",
-        email,
-        options: { data: { role, nombre, apellido } },
+      // SIN contraseña → invitación oficial (envía email y crea el usuario)
+      const { data: inviteRes, error: inviteErr } = await supabaseAdmin.auth.admin.inviteUserByEmail(email, {
+        data: { role, nombre, apellido },
       });
-      if (linkErr) {
-        const msg = linkErr?.message || "No se pudo generar el link de invitación.";
-        // Si ya existía un usuario con ese email, devolvemos mensaje claro
+      if (inviteErr) {
+        const msg = inviteErr?.message || "No se pudo invitar al usuario.";
         if (msg.toLowerCase().includes("already registered") || msg.toLowerCase().includes("already exists")) {
           return NextResponse.json({ error: "El email ya está registrado." }, { status: 400 });
         }
         return NextResponse.json({ error: msg }, { status: 400 });
       }
 
-      inviteLink =
-        (linkRes as any)?.properties?.action_link ||
-        (linkRes as any)?.action_link ||
-        null;
+      userId = inviteRes?.user?.id ?? null;
 
-      userId = linkRes?.user?.id ?? null;
-      // Nota: generateLink(type:"signup") típicamente retorna user.id creado.
-      // Si no, igual seguimos: se crea al completar el flujo de signup.
+      // Para mostrar un link manual en UI (opcional), generamos un recovery.
+      const { data: linkRes, error: linkErr } = await supabaseAdmin.auth.admin.generateLink({
+        type: "recovery",
+        email,
+      });
+      if (!linkErr) {
+        inviteLink =
+          (linkRes as any)?.properties?.action_link ||
+          (linkRes as any)?.action_link ||
+          null;
+      }
     }
 
-    // Si no tenemos userId (poco frecuente en signup), devolvemos el link y nota
+    // Si por alguna razón no hay userId (muy raro en invite), devolvemos igual el link (si existe)
     if (!userId) {
       return NextResponse.json(
         {
           ok: true,
           user_id: null,
           invite_link: inviteLink,
-          note: "El usuario terminará de crearse al completar el signup desde el link.",
+          note: "El usuario completará su alta desde el correo de invitación.",
         },
         { status: 200 }
       );
@@ -290,7 +290,7 @@ export async function POST(req: Request) {
     };
     const { error: profErr } = await supabaseAdmin.from("profiles").upsert(upsert, { onConflict: "id" });
     if (profErr) {
-      // Si falla profile, borramos usuario recién creado para no dejarlo colgado
+      // Rollback defensivo
       await supabaseAdmin.auth.admin.deleteUser(userId).catch(() => {});
       return NextResponse.json({ error: profErr.message }, { status: 400 });
     }

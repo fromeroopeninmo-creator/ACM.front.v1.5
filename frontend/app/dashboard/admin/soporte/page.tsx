@@ -97,15 +97,8 @@ export default async function AdminSoportePage() {
             Alta y gestión de agentes de soporte. En esta primera etapa, vista de solo lectura.
           </p>
         </div>
-
-        {/* Ancla al formulario del componente cliente */}
-        <a
-          href="#nuevo-agente"
-          className="rounded-lg border px-3 py-2 text-sm bg-blue-600 text-white hover:bg-blue-700"
-          title="Crear/actualizar agente"
-        >
-          + Nuevo agente
-        </a>
+        {/* ⛔️ Se quita el botón “+ Nuevo agente” como pediste */}
+        <div />
       </header>
 
       {errorMsg ? (

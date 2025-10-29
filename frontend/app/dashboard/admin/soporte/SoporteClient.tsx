@@ -1,4 +1,3 @@
-// frontend/app/dashboard/admin/soporte/SoporteClient.tsx
 "use client";
 
 import { useMemo, useState } from "react";
@@ -35,15 +34,13 @@ export default function SoporteClient({ initialItems }: Props) {
   const handleToggle = async (row: SoporteItem, next: boolean) => {
     setError(null);
     setLoadingRow(row.id);
-    // Optimista
     const prev = items;
     setItems(prev.map(r => (r.id === row.id ? { ...r, activo: next } : r)));
     try {
       await toggleSoporte({ id: row.id, activo: next });
     } catch (e: any) {
       setError(e?.message || "No se pudo cambiar el estado.");
-      // revertir
-      setItems(prev);
+      setItems(prev); // rollback
     } finally {
       setLoadingRow(null);
     }
@@ -67,7 +64,6 @@ export default function SoporteClient({ initialItems }: Props) {
         apellido: apellido.trim() || undefined,
       });
 
-      // Si ya existe, actualizamos sus datos; si no, lo agregamos con valores por defecto
       setItems((prev) => {
         const exists = prev.find((x) => x.email.toLowerCase() === trimmedEmail);
         if (exists) {
@@ -84,7 +80,7 @@ export default function SoporteClient({ initialItems }: Props) {
         const now = new Date().toISOString();
         const maxId = prev.reduce((m, r) => Math.max(m, r.id || 0), 0);
         const newRow: SoporteItem = {
-          id: maxId + 1, // visual; el id real lo maneja la BD
+          id: maxId + 1, // visual; el id real se refleja al recargar
           email: trimmedEmail,
           nombre: nombre || null,
           activo: true,
@@ -114,6 +110,7 @@ export default function SoporteClient({ initialItems }: Props) {
 
       {/* Alta / Upsert */}
       <form
+        id="nuevo-agente"
         onSubmit={handleCreate}
         className="rounded-2xl border p-4 bg-white dark:bg-neutral-900 space-y-3"
       >

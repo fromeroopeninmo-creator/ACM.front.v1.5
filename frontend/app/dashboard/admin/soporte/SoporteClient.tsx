@@ -23,13 +23,35 @@ export default function SoporteClient({ initialItems }: Props) {
   const [loadingRow, setLoadingRow] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Form alta/upsert
+  // Form alta
   const [email, setEmail] = useState("");
   const [nombre, setNombre] = useState("");
   const [apellido, setApellido] = useState("");
+  const [password, setPassword] = useState("");
   const [creating, setCreating] = useState(false);
 
+  // Filtros
+  const [q, setQ] = useState("");
+  const [estado, setEstado] = useState<"" | "activos" | "inactivos">("");
+
   const activos = useMemo(() => items.filter(i => i.activo).length, [items]);
+
+  const filtered = useMemo(() => {
+    const text = q.trim().toLowerCase();
+    return items.filter((i) => {
+      const passText =
+        !text ||
+        (i.nombre || "").toLowerCase().includes(text) ||
+        i.email.toLowerCase().includes(text);
+      const passEstado =
+        estado === ""
+          ? true
+          : estado === "activos"
+          ? !!i.activo
+          : !i.activo;
+      return passText && passEstado;
+    });
+  }, [items, q, estado]);
 
   const handleToggle = async (row: SoporteItem, next: boolean) => {
     setError(null);
@@ -38,6 +60,7 @@ export default function SoporteClient({ initialItems }: Props) {
     setItems(prev.map(r => (r.id === row.id ? { ...r, activo: next } : r)));
     try {
       await toggleSoporte({ id: row.id, activo: next });
+      // TODO: opcional auditar aquí llamando a /api/admin/auditoria
     } catch (e: any) {
       setError(e?.message || "No se pudo cambiar el estado.");
       setItems(prev); // rollback
@@ -56,12 +79,14 @@ export default function SoporteClient({ initialItems }: Props) {
       return;
     }
 
+    // password es opcional; si viene, el backend lo usará para crear el usuario con credencial
     setCreating(true);
     try {
       await upsertSoporte({
         email: trimmedEmail,
         nombre: nombre.trim() || undefined,
         apellido: apellido.trim() || undefined,
+        password: password.trim() || undefined,
       });
 
       setItems((prev) => {
@@ -92,6 +117,7 @@ export default function SoporteClient({ initialItems }: Props) {
       setEmail("");
       setNombre("");
       setApellido("");
+      setPassword("");
     } catch (e: any) {
       setError(e?.message || "No se pudo crear/actualizar el agente.");
     } finally {
@@ -101,21 +127,60 @@ export default function SoporteClient({ initialItems }: Props) {
 
   return (
     <section className="space-y-4">
-      {/* Resumen */}
-      <div className="rounded-2xl border p-4 bg-white dark:bg-neutral-900">
+      {/* Resumen + Filtros */}
+      <div className="rounded-2xl border p-4 bg-white dark:bg-neutral-900 space-y-3">
         <div className="text-sm text-gray-600 dark:text-gray-300">
           <b>{items.length}</b> agentes — <b>{activos}</b> activos
         </div>
+
+        <form
+          className="grid grid-cols-1 md:grid-cols-4 gap-3"
+          onSubmit={(e) => e.preventDefault()}
+        >
+          <div className="md:col-span-2">
+            <label className="block text-sm text-gray-600 mb-1">Buscar</label>
+            <input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              className="w-full rounded-xl border px-3 py-2 text-sm bg-white dark:bg-neutral-950"
+              placeholder="nombre o email"
+            />
+          </div>
+          <div>
+            <label className="block text-sm text-gray-600 mb-1">Estado</label>
+            <select
+              value={estado}
+              onChange={(e) => setEstado(e.target.value as any)}
+              className="w-full rounded-xl border px-3 py-2 text-sm bg-white dark:bg-neutral-950"
+            >
+              <option value="">Todos</option>
+              <option value="activos">Activos</option>
+              <option value="inactivos">Inactivos</option>
+            </select>
+          </div>
+          <div className="flex items-end">
+            <button
+              type="button"
+              onClick={() => {
+                setQ("");
+                setEstado("");
+              }}
+              className="rounded-xl border px-4 py-2 text-sm bg-gray-50 hover:bg-gray-100"
+            >
+              Limpiar
+            </button>
+          </div>
+        </form>
       </div>
 
-      {/* Alta / Upsert */}
+      {/* Alta Nuevo Agente */}
       <form
         id="nuevo-agente"
         onSubmit={handleCreate}
         className="rounded-2xl border p-4 bg-white dark:bg-neutral-900 space-y-3"
       >
-        <h2 className="text-base font-semibold">Nuevo agente / Upsert</h2>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+        <h2 className="text-base font-semibold">Alta Nuevo Agente</h2>
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
           <div className="md:col-span-2">
             <label className="block text-sm text-gray-600 mb-1">Email *</label>
             <input
@@ -145,6 +210,17 @@ export default function SoporteClient({ initialItems }: Props) {
               placeholder="Apellido"
             />
           </div>
+          <div>
+            <label className="block text-sm text-gray-600 mb-1">Contraseña (opcional)</label>
+            <input
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="w-full rounded-xl border px-3 py-2 text-sm bg-white dark:bg-neutral-950"
+              placeholder="Mínimo 6 caracteres"
+              type="password"
+              minLength={6}
+            />
+          </div>
         </div>
 
         <div className="flex items-center gap-3">
@@ -153,7 +229,7 @@ export default function SoporteClient({ initialItems }: Props) {
             disabled={creating}
             className="rounded-lg px-4 py-2 text-sm bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
           >
-            {creating ? "Guardando…" : "Guardar"}
+            {creating ? "Guardando…" : "Agregar"}
           </button>
           {error && <p className="text-sm text-red-600">{error}</p>}
         </div>
@@ -174,14 +250,14 @@ export default function SoporteClient({ initialItems }: Props) {
               </tr>
             </thead>
             <tbody>
-              {items.length === 0 ? (
+              {filtered.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="px-3 py-6 text-center text-gray-500">
                     No hay agentes de soporte aún.
                   </td>
                 </tr>
               ) : (
-                items.map((s) => (
+                filtered.map((s) => (
                   <tr key={`${s.id}-${s.email}`} className="border-t">
                     <td className="px-3 py-2">{s.id}</td>
                     <td className="px-3 py-2">{s.nombre || "—"}</td>
@@ -209,17 +285,30 @@ export default function SoporteClient({ initialItems }: Props) {
                         >
                           Ver registros
                         </a>
+
                         <button
                           className="rounded-lg border px-2 py-1 text-xs hover:bg-gray-50 disabled:opacity-50"
                           disabled={loadingRow === s.id}
                           onClick={() => handleToggle(s, !s.activo)}
                           title={s.activo ? "Desactivar" : "Activar"}
                         >
-                          {loadingRow === s.id
-                            ? "Procesando…"
-                            : s.activo
-                            ? "Desactivar"
-                            : "Activar"}
+                          {loadingRow === s.id ? "Procesando…" : s.activo ? "Desactivar" : "Activar"}
+                        </button>
+
+                        {/* Placeholders seguros (sin lógica aún) */}
+                        <button
+                          className="rounded-lg border px-2 py-1 text-xs disabled:opacity-50"
+                          disabled
+                          title="Editar perfil (próximo paso)"
+                        >
+                          Editar perfil
+                        </button>
+                        <button
+                          className="rounded-lg border px-2 py-1 text-xs text-red-600 disabled:opacity-50"
+                          disabled
+                          title="Eliminar (próximo paso)"
+                        >
+                          Eliminar
                         </button>
                       </div>
                     </td>

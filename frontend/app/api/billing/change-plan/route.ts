@@ -15,7 +15,7 @@ import {
 
 /**
  * POST /api/billing/change-plan
- * Body: { nuevo_plan_id: string, empresa_id?: string }
+ * Body: { nuevo_plan_id: string, empresa_id?: string, max_asesores_override?: number }
  *
  * - Upgrade: crea movimiento 'upgrade_prorrateo' (pending); el webhook de pago activará el plan.
  * - Downgrade: programa cambio al fin del ciclo (plan_proximo_id / cambio_programado_para).
@@ -25,6 +25,10 @@ export async function POST(req: Request) {
     const body = await req.json().catch(() => ({}));
     const nuevoPlanId: string | undefined = body?.nuevo_plan_id;
     const empresaIdParam: string | undefined = body?.empresa_id;
+    const maxAsesoresOverride: number | undefined =
+      typeof body?.max_asesores_override === "number"
+        ? body.max_asesores_override
+        : undefined;
 
     if (!nuevoPlanId) {
       return NextResponse.json({ error: "nuevo_plan_id es obligatorio" }, { status: 400 });
@@ -108,8 +112,8 @@ export async function POST(req: Request) {
         );
       }
 
-      // Crear movimiento pending (neto en BD; IVA/total quedan también en metadata para conciliación)
-      const metadata = {
+      // Crear movimiento pending (neto en BD; IVA/total también en metadata para conciliación)
+      const metadata: Record<string, any> = {
         tipo: "upgrade_prorrateo",
         plan_actual_id,
         nuevo_plan_id: nuevoPlanId,
@@ -121,6 +125,9 @@ export async function POST(req: Request) {
         iva: round2(sim.iva),
         total: round2(sim.total),
       };
+      if (typeof maxAsesoresOverride === "number") {
+        metadata.max_asesores_override = maxAsesoresOverride;
+      }
 
       const { data: ins, error: insErr } = await supabase
         .from("movimientos_financieros")

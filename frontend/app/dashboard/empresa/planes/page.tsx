@@ -58,23 +58,47 @@ export default function EmpresaPlanesPage() {
   const IVA_PCT = 0.21;
 
   // 🔎 Resolver empresas.id
-  useEffect(() => {
-    const fetchEmpresa = async () => {
-      if (!user?.id) return;
-      const { data: emp, error } = await supabase
+useEffect(() => {
+  const fetchEmpresa = async () => {
+    if (!user?.id) return;
+
+    try {
+      // 1) dueñ@ directo de empresa (empresas.user_id = user.id)
+      const { data: emp, error: errEmp } = await supabase
         .from("empresas")
         .select("id")
         .eq("user_id", user.id)
         .maybeSingle();
-      if (error) {
-        console.error("Error buscando empresa:", error);
-        setEmpresaId(null);
+
+      if (emp?.id) {
+        setEmpresaId(emp.id);
         return;
       }
-      setEmpresaId(emp?.id ?? null);
-    };
-    fetchEmpresa();
-  }, [user]);
+
+      // 2) fallback: perfil vinculado (profiles.user_id = user.id) → empresa_id
+      const { data: prof, error: errProf } = await supabase
+        .from("profiles")
+        .select("empresa_id")
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      if (prof?.empresa_id) {
+        setEmpresaId(prof.empresa_id as string);
+        return;
+      }
+
+      // 3) no se pudo resolver
+      console.warn("No se pudo resolver empresa_id para el usuario actual.");
+      setEmpresaId(null);
+    } catch (e) {
+      console.error("Error resolviendo empresa_id:", e);
+      setEmpresaId(null);
+    }
+  };
+
+  fetchEmpresa();
+}, [user]);
+
 
   // 📡 Plan actual + planes
   useEffect(() => {

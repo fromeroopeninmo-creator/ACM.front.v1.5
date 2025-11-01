@@ -115,6 +115,59 @@ async function cancelPlan(empresaId: string) {
     .eq("activo", true);
 }
 
+/**
+ * Marca como 'paid'/'failed' el movimiento de upgrade prorrateado pendiente.
+ * Empareja por empresa y (si se conoce) por nuevo_plan_id dentro de metadata.
+ */
+async function settleUpgradeMovimiento(params: {
+  empresaId: string;
+  nuevoPlanId?: string | null;
+  estado: "paid" | "failed";
+  referenciaPasarela?: string | null;
+  payload?: any;
+}) {
+  const { empresaId, nuevoPlanId, estado, referenciaPasarela, payload } = params;
+
+  // Intentamos matchear por metadata.nuevo_plan_id si está disponible
+  let query = supabaseAdmin
+    .from("movimientos_financieros")
+    .select("id, metadata")
+    .eq("empresa_id", empresaId)
+    .eq("tipo", "upgrade_prorrateo")
+    .eq("estado", "pending")
+    .order("fecha", { ascending: false })
+    .limit(1);
+
+  // Si conocemos el plan nuevo, filtramos por metadata
+  if (nuevoPlanId) {
+    // Supabase: .contains sobre JSONB
+    query = query.contains("metadata", { nuevo_plan_id: nuevoPlanId });
+  }
+
+  const { data: mov } = await query.maybeSingle();
+
+  if (!mov?.id) return null;
+
+  const newMeta = {
+    ...(mov.metadata ?? {}),
+    webhook_ref: referenciaPasarela ?? null,
+    webhook_payload: payload ?? null,
+    settled_at: nowISO(),
+  };
+
+  await supabaseAdmin
+    .from("movimientos_financieros")
+    .update({
+      estado,
+      referencia_pasarela: referenciaPasarela ?? null,
+      metadata: newMeta as any,
+      updated_at: nowISO(),
+    })
+    .eq("id", mov.id);
+
+  return mov.id as string;
+}
+
 export async function POST(req: Request) {
   try {
     const body = await req.json().catch(() => null as any);
@@ -140,7 +193,7 @@ export async function POST(req: Request) {
         .maybeSingle();
       if (exists?.id) {
         return NextResponse.json({ ok: true, idempotent: true }, { status: 200 });
-        }
+      }
     }
 
     // Registrar evento crudo
@@ -187,6 +240,17 @@ export async function POST(req: Request) {
       case "subscription_active":
       case "payment_succeeded":
       case "subscription_resumed": {
+        // 1) Marcar movimiento pendiente de upgrade como 'paid'
+        await settleUpgradeMovimiento({
+          empresaId,
+          nuevoPlanId: planId,
+          estado: "paid",
+          referenciaPasarela:
+            data?.externoPaymentId || data?.paymentId || data?.chargeId || null,
+          payload: data,
+        });
+
+        // 2) Activar plan en empresas_planes
         if (empresaId && planId) {
           await activatePlan(empresaId, planId);
         }
@@ -195,6 +259,16 @@ export async function POST(req: Request) {
       }
       case "subscription_paused":
       case "invoice_payment_failed": {
+        // Si hubo fallo, marcar (si existe) el movimiento como 'failed'
+        await settleUpgradeMovimiento({
+          empresaId,
+          nuevoPlanId: planId,
+          estado: "failed",
+          referenciaPasarela:
+            data?.externoPaymentId || data?.paymentId || data?.chargeId || null,
+          payload: data,
+        });
+
         if (empresaId) {
           await suspendPlan(empresaId);
         }
@@ -224,7 +298,11 @@ export async function POST(req: Request) {
     if (sus?.id && newEstado) {
       const patch: any = { estado: newEstado };
 
-      if (eventType === "subscription_active" || eventType === "payment_succeeded" || eventType === "subscription_resumed") {
+      if (
+        eventType === "subscription_active" ||
+        eventType === "payment_succeeded" ||
+        eventType === "subscription_resumed"
+      ) {
         patch.inicio = sus.inicio ?? nowISO();
         if (data?.externoCustomerId) patch.externo_customer_id = data.externoCustomerId;
         if (data?.externoSubscriptionId) patch.externo_subscription_id = data.externoSubscriptionId;

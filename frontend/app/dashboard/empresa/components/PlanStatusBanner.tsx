@@ -1,9 +1,38 @@
+// frontend/app/dashboard/empresa/components/PlanStatusBanner.tsx
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "#lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
 import { useRouter } from "next/navigation";
+
+type BillingEstado = {
+  plan: { id: string; nombre: string; precioNeto: number | null; totalConIVA: number | null } | null;
+  ciclo: { inicio: string | null; fin: string | null; proximoCobro: string | null };
+  suscripcion: { estado: "activa" | "suspendida" | "cancelada" | "pendiente"; externoCustomerId: string | null; externoSubscriptionId: string | null } | null;
+  proximoPlan?: { id: string; nombre: string | null } | null;
+  cambioProgramadoPara?: string | null;
+};
+
+/** Resuelve empresas.id para el usuario actual (dueño directo o perfil ligado) */
+async function resolveEmpresaIdForUser(userId: string): Promise<string | null> {
+  // 1) Empresa donde el usuario es dueño directo
+  const { data: emp } = await supabase
+    .from("empresas")
+    .select("id")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (emp?.id) return emp.id as string;
+
+  // 2) Perfil con empresa asociada
+  const { data: prof } = await supabase
+    .from("profiles")
+    .select("empresa_id")
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  return (prof?.empresa_id as string) ?? null;
+}
 
 export default function PlanStatusBanner() {
   const { user } = useAuth();
@@ -12,74 +41,82 @@ export default function PlanStatusBanner() {
   const [planNombre, setPlanNombre] = useState<string | null>(null);
   const [fechaFin, setFechaFin] = useState<Date | null>(null);
   const [diasRestantes, setDiasRestantes] = useState<number | null>(null);
-  const [activo, setActivo] = useState<boolean>(true);
   const [loading, setLoading] = useState(true);
 
+  const hoursLeftWithinGrace = useMemo(() => {
+    if (diasRestantes === null) return null;
+    const h = 48 + diasRestantes * 24; // si diasRestantes es negativo, quedan menos de 48h
+    return Math.max(0, h);
+  }, [diasRestantes]);
+
   useEffect(() => {
-    const fetchPlan = async () => {
+    const fetchEstado = async () => {
       if (!user?.id) return;
 
-      const { data: plan, error } = await supabase
-        .from("empresas_planes")
-        .select("fecha_fin, activo, planes(nombre)")
-        .eq("empresa_id", user.id)
-        .eq("activo", true)
-        .maybeSingle();
+      try {
+        // Resolución de empresa (por si en el futuro permitimos admin ver otra empresa)
+        const empresaId =
+          (user as any)?.empresa_id || (await resolveEmpresaIdForUser(user.id));
 
-      if (error || !plan) {
-        setLoading(false);
-        return;
-      }
-
-      const fin = new Date(plan.fecha_fin);
-      const hoy = new Date();
-      const diff = Math.ceil((fin.getTime() - hoy.getTime()) / (1000 * 60 * 60 * 24));
-
-      // 🩵 aseguramos el tipo correcto:
-      const planesData = (plan.planes as { nombre: string }[] | { nombre: string } | null) || null;
-      const planInfo =
-        Array.isArray(planesData) && planesData.length > 0
-          ? planesData[0]
-          : (planesData as { nombre: string } | null);
-
-      const nombrePlan = planInfo?.nombre ?? "Trial";
-
-      setFechaFin(fin);
-      setDiasRestantes(diff);
-      setPlanNombre(nombrePlan);
-      setLoading(false);
-
-      // 🚨 bloqueo si plan pago vencido +2 días
-      if (nombrePlan !== "Trial" && diff < -2) {
-        alert(
-          "Su suscripción ha superado el período de tolerancia. Redirigiendo al portal de pago..."
-        );
-        router.replace("/dashboard/empresa/suspendido");
-        return;
-      }
-
-      // ✅ si estaba suspendido y el plan vuelve a estar activo → redirigir al dashboard normal
-      if (nombrePlan !== "Trial" && diff >= -2 && plan.activo) {
-        if (window.location.pathname.includes("/suspendido")) {
-          router.replace("/dashboard/empresa");
+        // Llamamos al endpoint interno que ya aplica control de rol y arma el shape estable
+        const qs = empresaId ? `?empresaId=${encodeURIComponent(empresaId)}` : "";
+        const res = await fetch(`/api/billing/estado${qs}`, { cache: "no-store" });
+        if (!res.ok) {
+          setLoading(false);
+          return;
         }
+        const data: BillingEstado = await res.json();
+
+        const nombre = data?.plan?.nombre ?? null;
+        setPlanNombre(nombre);
+
+        const finIso = data?.ciclo?.fin ?? null;
+        const fin = finIso ? new Date(finIso) : null;
+        setFechaFin(fin);
+
+        if (fin) {
+          const hoy = new Date();
+          // Diferencia en días redondeando hacia arriba (como en el original)
+          const diff = Math.ceil((fin.getTime() - hoy.getTime()) / (1000 * 60 * 60 * 24));
+          setDiasRestantes(diff);
+
+          // 🚨 bloqueo si plan pago vencido +2 días
+          if (nombre && nombre !== "Trial" && diff < -2) {
+            if (!window.location.pathname.includes("/dashboard/empresa/suspendido")) {
+              router.replace("/dashboard/empresa/suspendido");
+              return;
+            }
+          }
+
+          // ✅ si estaba suspendido y vuelve a margen tolerado, redirigir al dashboard normal
+          if (nombre && nombre !== "Trial" && diff >= -2) {
+            if (window.location.pathname.includes("/dashboard/empresa/suspendido")) {
+              router.replace("/dashboard/empresa");
+              return;
+            }
+          }
+        } else {
+          setDiasRestantes(null);
+        }
+      } catch (err) {
+        console.error("Error obteniendo estado de billing:", err);
+      } finally {
+        setLoading(false);
       }
     };
 
-    // 🔄 primera carga
-    fetchPlan();
-
-    // ⏱ chequeo automático cada 60 segundos
-    const interval = setInterval(fetchPlan, 60000);
-
-    return () => clearInterval(interval);
+    // primera carga
+    fetchEstado();
+    // refresco cada 60s para captar cambios por webhook
+    const t = setInterval(fetchEstado, 60000);
+    return () => clearInterval(t);
   }, [user, router]);
 
   // 🧪 BYPASS TEMPORAL: permitir agregar asesores sin plan (modo development)
-  // ⚠️ Eliminar este bloque antes del lanzamiento a producción
+  // ⚠️ Mantener la lógica del archivo original
   if (process.env.NODE_ENV === "development") {
     console.warn("🚧 Bypass de verificación de plan activo habilitado (solo en desarrollo)");
-    return null; // No mostramos banner ni bloqueos en desarrollo
+    return null;
   }
 
   if (loading || !planNombre) return null;
@@ -93,12 +130,11 @@ export default function PlanStatusBanner() {
         }`}
       >
         🕒 Tu plan <strong>{planNombre}</strong> vence en{" "}
-        <strong>{diasRestantes} día{diasRestantes !== 1 ? "s" : ""}</strong> (
-        {fechaFin?.toLocaleDateString("es-AR")}).{" "}
-        <a
-          href="/dashboard/empresa/planes"
-          className="underline hover:text-blue-100 ml-1"
-        >
+        <strong>
+          {diasRestantes} día{diasRestantes !== 1 ? "s" : ""}
+        </strong>{" "}
+        ({fechaFin?.toLocaleDateString("es-AR")}).{" "}
+        <a href="/dashboard/empresa/planes" className="underline hover:text-blue-100 ml-1">
           Actualizá tu plan
         </a>
       </div>
@@ -119,14 +155,11 @@ export default function PlanStatusBanner() {
   if (planNombre !== "Trial" && diasRestantes !== null && diasRestantes < 0 && diasRestantes >= -2) {
     return (
       <div className="p-3 text-sm text-white bg-red-700 text-center font-medium">
-        ⚠️ Su plan <strong>{planNombre}</strong> se encuentra vencido.
-        Por favor regularice su pago dentro de las próximas{" "}
-        <strong>{48 + diasRestantes * 24} horas</strong> para evitar la suspensión
-        del servicio.{" "}
-        <a
-          href="/dashboard/empresa/planes"
-          className="underline hover:text-blue-100 ml-1"
-        >
+        ⚠️ Su plan <strong>{planNombre}</strong> se encuentra vencido. Por favor
+        regularice su pago dentro de las próximas{" "}
+        <strong>{hoursLeftWithinGrace ?? 0} horas</strong> para evitar la suspensión del
+        servicio.{" "}
+        <a href="/dashboard/empresa/planes" className="underline hover:text-blue-100 ml-1">
           Ir al portal de pago
         </a>
       </div>

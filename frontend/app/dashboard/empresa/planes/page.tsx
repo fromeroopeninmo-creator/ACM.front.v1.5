@@ -1,3 +1,4 @@
+// frontend/app/dashboard/empresa/planes/page.tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -21,6 +22,20 @@ interface Plan {
   precio_extra_por_asesor?: number | string | null; // Personalizado
 }
 
+type PreviewResult = {
+  tipo: "upgrade" | "downgrade" | "sin_cambio";
+  empresa_id: string;
+  plan_actual?: { id: string; nombre: string; precio_neto?: number | null } | null;
+  plan_nuevo?: { id: string; nombre: string; precio_neto?: number | null } | null;
+  dias_ciclo?: number | null;
+  dias_restantes?: number | null;
+  delta_neto?: number;
+  iva?: number;
+  total?: number;
+  aplicar_desde?: string | null; // para downgrade programado
+  nota?: string | null;
+};
+
 export default function EmpresaPlanesPage() {
   const { user } = useAuth();
 
@@ -32,6 +47,12 @@ export default function EmpresaPlanesPage() {
 
   // Estado UI para “Personalizado”
   const [personalCount, setPersonalCount] = useState<number>(21); // 21..50
+
+  // Preview prorrateo
+  const [preview, setPreview] = useState<PreviewResult | null>(null);
+  const [previewVisible, setPreviewVisible] = useState(false);
+  const [previewConfirmLoading, setPreviewConfirmLoading] = useState(false);
+  const [previewTarget, setPreviewTarget] = useState<{ planId: string; personalizadoCount?: number } | null>(null);
 
   // IVA
   const IVA_PCT = 0.21;
@@ -125,11 +146,50 @@ export default function EmpresaPlanesPage() {
     fetchPlanes();
   }, [empresaId]);
 
-  // 🚀 Upgrade
+  // 🚀 Upgrade/Downgrade → Primero PREVIEW, luego CONFIRM
   const handleUpgrade = async (planId: string, opts?: { personalizadoCount?: number }) => {
     if (!empresaId) return;
-    setMensaje("Aplicando nuevo plan...");
+    setMensaje("Calculando prorrateo...");
+    setPreview(null);
+    setPreviewTarget(null);
 
+    try {
+      // PREVIEW
+      const qs = new URLSearchParams();
+      qs.set("empresa_id", empresaId);
+      qs.set("nuevo_plan_id", planId);
+      if (typeof opts?.personalizadoCount === "number") {
+        qs.set("max_asesores_override", String(opts.personalizadoCount));
+      }
+
+      const res = await fetch(`/api/billing/preview-change?${qs.toString()}`, {
+        method: "GET",
+        headers: { "Content-Type": "application/json" },
+      });
+      const data: any = await res.json();
+
+      if (res.ok && data) {
+        setPreview(data as PreviewResult);
+        setPreviewTarget({ planId, personalizadoCount: opts?.personalizadoCount });
+        setPreviewVisible(true);
+        setMensaje(null);
+        return;
+      }
+
+      // Fallback: si aún no está el endpoint, usamos el flujo anterior (solicitud-upgrade)
+      console.warn("preview-change no disponible. Fallback a /api/solicitud-upgrade");
+      await legacyUpgrade(planId, opts);
+    } catch (err) {
+      console.error("Error en preview-change:", err);
+      // Fallback seguro
+      await legacyUpgrade(planId, opts);
+    } finally {
+      setTimeout(() => setMensaje(null), 2500);
+    }
+  };
+
+  // Fallback histórico (tu endpoint existente)
+  const legacyUpgrade = async (planId: string, opts?: { personalizadoCount?: number }) => {
     try {
       const body: any = { empresaId, planId };
       if (typeof opts?.personalizadoCount === "number") {
@@ -154,8 +214,54 @@ export default function EmpresaPlanesPage() {
     } catch (err) {
       console.error("Error de red:", err);
       setMensaje("❌ No se pudo conectar al servidor.");
+    } finally {
+      setTimeout(() => setMensaje(null), 3500);
     }
-    setTimeout(() => setMensaje(null), 3500);
+  };
+
+  const confirmPreview = async () => {
+    if (!empresaId || !previewTarget) return;
+    setPreviewConfirmLoading(true);
+    setMensaje("Aplicando cambio de plan...");
+
+    try {
+      const res = await fetch("/api/billing/change-plan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          empresa_id: empresaId,
+          nuevo_plan_id: previewTarget.planId,
+          max_asesores_override:
+            typeof previewTarget.personalizadoCount === "number"
+              ? previewTarget.personalizadoCount
+              : undefined,
+        }),
+      });
+      const data: any = await res.json();
+
+      if (!res.ok || data?.error) {
+        console.error("change-plan error:", data?.error || data);
+        setMensaje("❌ No se pudo confirmar el cambio.");
+        return;
+      }
+
+      // Caso upgrade → redirigir a checkout (sandbox por ahora)
+      if (data.checkoutUrl) {
+        window.location.href = data.checkoutUrl as string;
+        return;
+      }
+
+      // Caso downgrade programado (o sin cobro) → refrescar
+      setMensaje("✅ Cambio aplicado.");
+      setPreviewVisible(false);
+      setTimeout(() => window.location.reload(), 800);
+    } catch (err) {
+      console.error("Error en change-plan:", err);
+      setMensaje("❌ Error de red al confirmar cambio.");
+    } finally {
+      setPreviewConfirmLoading(false);
+      setTimeout(() => setMensaje(null), 3000);
+    }
   };
 
   // 💵 formato
@@ -415,6 +521,85 @@ export default function EmpresaPlanesPage() {
       {/* Mensaje temporal */}
       {mensaje && (
         <p className="text-center text-blue-600 font-medium">{mensaje}</p>
+      )}
+
+      {/* MODAL PREVIEW PRORRATEO */}
+      {previewVisible && preview && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg p-6">
+            <h3 className="text-lg font-semibold mb-2">Confirmar cambio de plan</h3>
+
+            <div className="text-sm text-gray-700 space-y-1 mb-3">
+              {preview.plan_actual?.nombre && preview.plan_nuevo?.nombre ? (
+                <p>
+                  {preview.plan_actual.nombre} → <strong>{preview.plan_nuevo.nombre}</strong>
+                </p>
+              ) : null}
+              {typeof preview.dias_restantes === "number" && typeof preview.dias_ciclo === "number" ? (
+                <p>
+                  Días restantes: <strong>{preview.dias_restantes}</strong> de {preview.dias_ciclo}
+                </p>
+              ) : null}
+            </div>
+
+            {preview.tipo === "upgrade" && (
+              <div className="border rounded-lg p-3 mb-3 bg-emerald-50 border-emerald-200">
+                <p className="text-sm">
+                  Delta neto: <strong>{fmtPrice(preview.delta_neto ?? 0)}</strong>
+                </p>
+                <p className="text-sm">
+                  IVA (21%): <strong>{fmtPrice(preview.iva ?? 0)}</strong>
+                </p>
+                <p className="text-sm">
+                  Total a pagar ahora: <strong>{fmtPrice(preview.total ?? 0)}</strong>
+                </p>
+              </div>
+            )}
+
+            {preview.tipo === "downgrade" && (
+              <div className="border rounded-lg p-3 mb-3 bg-amber-50 border-amber-200">
+                <p className="text-sm">
+                  El cambio se aplicará desde:{" "}
+                  <strong>
+                    {preview.aplicar_desde
+                      ? new Date(preview.aplicar_desde).toLocaleDateString("es-AR")
+                      : "próximo ciclo"}
+                  </strong>
+                </p>
+                <p className="text-xs text-gray-600">
+                  No se generan créditos ni reembolsos. Seguirás usando tu plan actual hasta esa fecha.
+                </p>
+              </div>
+            )}
+
+            {preview.nota && (
+              <p className="text-xs text-gray-500 mb-2">{preview.nota}</p>
+            )}
+
+            <div className="flex gap-3 justify-end pt-2">
+              <button
+                onClick={() => {
+                  setPreviewVisible(false);
+                  setPreview(null);
+                  setPreviewTarget(null);
+                }}
+                className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 text-sm hover:bg-gray-50"
+                disabled={previewConfirmLoading}
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={confirmPreview}
+                className={`px-4 py-2 rounded-lg text-sm text-white ${
+                  preview.tipo === "upgrade" ? "bg-blue-600 hover:bg-blue-700" : "bg-gray-700 hover:bg-gray-800"
+                } ${previewConfirmLoading ? "opacity-70 cursor-not-allowed" : ""}`}
+                disabled={previewConfirmLoading}
+              >
+                {previewConfirmLoading ? "Aplicando..." : preview.tipo === "upgrade" ? "Pagar diferencia" : "Confirmar cambio"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

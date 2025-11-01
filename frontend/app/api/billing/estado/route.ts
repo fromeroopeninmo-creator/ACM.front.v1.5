@@ -127,11 +127,22 @@ export async function GET(req: Request) {
 
     // Si no hay ningún registro en empresas_planes
     if (!planEP) {
+      // También consultamos estado de suscripción para "próximo plan" aunque no haya plan activo
+      const { data: vEstado } = await supabaseAdmin
+        .from("v_suscripcion_estado")
+        .select("plan_proximo_id, plan_proximo_nombre, cambio_programado_para")
+        .eq("empresa_id", empresaId)
+        .maybeSingle();
+
       return NextResponse.json(
         {
           plan: null,
           ciclo: { inicio: null, fin: null, proximoCobro: null },
           suscripcion: null,
+          proximoPlan: vEstado?.plan_proximo_id
+            ? { id: vEstado.plan_proximo_id, nombre: vEstado.plan_proximo_nombre ?? null }
+            : null,
+          cambioProgramadoPara: vEstado?.cambio_programado_para ?? null,
         },
         { status: 200 }
       );
@@ -163,8 +174,6 @@ export async function GET(req: Request) {
     // Calcular próximo cobro (si tuviéramos un inicio y duracion_dias)
     let proximoCobro: string | null = null;
     if (planEP.fecha_inicio && planRow?.duracion_dias) {
-      // Asumimos renovación simple cada duracion_dias desde fecha_inicio mientras la suscripción esté activa
-      // (esto es visual; el proveedor real manda la fecha exacta vía webhook cuando se integre)
       try {
         const base = new Date(planEP.fecha_inicio as string);
         const d = new Date(base.getTime());
@@ -175,15 +184,22 @@ export async function GET(req: Request) {
       }
     }
 
+    // NUEVO: leer "próximo plan" programado desde la vista (no rompe lo existente)
+    const { data: vEstado } = await supabaseAdmin
+      .from("v_suscripcion_estado")
+      .select("plan_proximo_id, plan_proximo_nombre, cambio_programado_para")
+      .eq("empresa_id", empresaId)
+      .maybeSingle();
+
     return NextResponse.json(
       {
         plan: planRow
           ? {
-            id: planRow.id,
-            nombre: planRow.nombre,
-            precioNeto,
-            totalConIVA,
-          }
+              id: planRow.id,
+              nombre: planRow.nombre,
+              precioNeto,
+              totalConIVA,
+            }
           : null,
         ciclo: {
           inicio: planEP.fecha_inicio,
@@ -192,18 +208,20 @@ export async function GET(req: Request) {
         },
         suscripcion: susRow
           ? {
-            estado: susRow.estado, // activa | suspendida | cancelada | pendiente
-            externoCustomerId: susRow.externo_customer_id ?? null,
-            externoSubscriptionId: susRow.externo_subscription_id ?? null,
-          }
+              estado: susRow.estado, // activa | suspendida | cancelada | pendiente
+              externoCustomerId: susRow.externo_customer_id ?? null,
+              externoSubscriptionId: susRow.externo_subscription_id ?? null,
+            }
           : null,
+        // NUEVOS CAMPOS (no obligatorios en UI; solo informativos)
+        proximoPlan: vEstado?.plan_proximo_id
+          ? { id: vEstado.plan_proximo_id, nombre: vEstado.plan_proximo_nombre ?? null }
+          : null,
+        cambioProgramadoPara: vEstado?.cambio_programado_para ?? null,
       },
       { status: 200 }
     );
   } catch (e: any) {
-    return NextResponse.json(
-      { error: e?.message || "Error inesperado" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: e?.message || "Error inesperado" }, { status: 500 });
   }
 }

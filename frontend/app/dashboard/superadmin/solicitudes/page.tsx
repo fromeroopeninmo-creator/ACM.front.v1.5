@@ -1,3 +1,4 @@
+// frontend/app/dashboard/superadmin/solicitudes/page.tsx
 "use client";
 
 import { useEffect, useState } from "react";
@@ -8,7 +9,7 @@ interface Solicitud {
   id: string;
   empresa_id: string;
   empresa_nombre: string;
-  plan_actual_id: string;
+  plan_actual_id: string | null;
   plan_solicitado_id: string;
   plan_actual: string;
   plan_solicitado: string;
@@ -49,11 +50,11 @@ export default function SolicitudesPlanesPage() {
       }
 
       const mapped = (data || []).map((item: any) => ({
-        id: item.id,
-        empresa_id: item.empresa_id,
-        estado: item.estado,
-        plan_actual_id: item.plan_actual_id,
-        plan_solicitado_id: item.plan_solicitado_id,
+        id: item.id as string,
+        empresa_id: item.empresa_id as string,
+        estado: item.estado as string,
+        plan_actual_id: (item.plan_actual_id as string) ?? null,
+        plan_solicitado_id: item.plan_solicitado_id as string,
         empresa_nombre: item.empresas?.razon_social || "—",
         plan_actual: item.plan_actual?.nombre || "—",
         plan_solicitado: item.plan_solicitado?.nombre || "—",
@@ -67,19 +68,47 @@ export default function SolicitudesPlanesPage() {
     fetchSolicitudes();
   }, []);
 
-  // ✅ Aprobar solicitud
+  // Utilidad para sumar días a YYYY-MM-DD
+  const addDaysISO = (dateISO: string, days: number) => {
+    const d = new Date(dateISO);
+    d.setUTCDate(d.getUTCDate() + days);
+    return d.toISOString().slice(0, 10); // YYYY-MM-DD
+  };
+
+  // ✅ Aprobar solicitud (versión segura, sin romper la lógica existente)
   const aprobarSolicitud = async (solicitudId: string) => {
     setMensaje("Procesando aprobación...");
 
     const solicitud = solicitudes.find((s) => s.id === solicitudId);
-    if (!solicitud) return;
+    if (!solicitud) {
+      setMensaje("Solicitud no encontrada.");
+      return;
+    }
 
+    // Traer duración del plan solicitado (si existe) para calcular fecha_fin
+    const { data: planRow, error: planErr } = await supabase
+      .from("planes")
+      .select("duracion_dias")
+      .eq("id", solicitud.plan_solicitado_id)
+      .maybeSingle();
+
+    if (planErr) {
+      console.error("Error leyendo plan destino:", planErr);
+      setMensaje("No se pudo leer el plan solicitado.");
+      return;
+    }
+
+    const hoy = new Date().toISOString().slice(0, 10);
+    const dur = Number(planRow?.duracion_dias) || 30;
+    const fecha_fin = addDaysISO(hoy, dur);
+
+    // 1) Marcar solicitud como aprobada
     const { error: updateError } = await supabase
       .from("solicitudes_planes")
       .update({
         estado: "aprobado",
         fecha_respuesta: new Date().toISOString(),
-        revisado_por: user?.id,
+        revisado_por: user?.id ?? null,
       })
       .eq("id", solicitudId);
 
@@ -89,24 +118,38 @@ export default function SolicitudesPlanesPage() {
       return;
     }
 
-    // 🔁 Desactivar plan anterior
-    const { error: planError } = await supabase
+    // 2) Desactivar plan anterior activo
+    const { error: deactivateErr } = await supabase
       .from("empresas_planes")
-      .update({ activo: false })
+      .update({ activo: false, updated_at: new Date().toISOString() })
       .eq("empresa_id", solicitud.empresa_id)
       .eq("activo", true);
 
-    if (!planError) {
-      // 🔁 Activar nuevo plan
-      await supabase.from("empresas_planes").insert([
+    if (deactivateErr) {
+      console.error("Error al desactivar plan previo:", deactivateErr);
+      setMensaje("Solicitud aprobada, pero no se pudo desactivar el plan anterior.");
+      return;
+    }
+
+    // 3) Activar nuevo plan
+    const { error: insertErr } = await supabase
+      .from("empresas_planes")
+      .insert([
         {
           empresa_id: solicitud.empresa_id,
           plan_id: solicitud.plan_solicitado_id,
-          fecha_inicio: new Date().toISOString(),
-          fecha_fin: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(), // 30 días
+          fecha_inicio: hoy,
+          fecha_fin,
           activo: true,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
         },
       ]);
+
+    if (insertErr) {
+      console.error("Error al activar nuevo plan:", insertErr);
+      setMensaje("Solicitud aprobada, pero no se pudo activar el nuevo plan.");
+      return;
     }
 
     setMensaje("Solicitud aprobada correctamente ✅");
@@ -120,20 +163,28 @@ export default function SolicitudesPlanesPage() {
 
   // ❌ Rechazar solicitud
   const rechazarSolicitud = async (solicitudId: string) => {
-    await supabase
+    const { error } = await supabase
       .from("solicitudes_planes")
       .update({
         estado: "rechazado",
         fecha_respuesta: new Date().toISOString(),
-        revisado_por: user?.id,
+        revisado_por: user?.id ?? null,
       })
       .eq("id", solicitudId);
+
+    if (error) {
+      console.error("Error al rechazar solicitud:", error);
+      setMensaje("Error al rechazar la solicitud.");
+      return;
+    }
 
     setSolicitudes((prev) =>
       prev.map((s) =>
         s.id === solicitudId ? { ...s, estado: "rechazado" } : s
       )
     );
+    setMensaje("Solicitud rechazada.");
+    setTimeout(() => setMensaje(null), 2000);
   };
 
   // 🕓 Cargando

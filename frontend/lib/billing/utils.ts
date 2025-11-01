@@ -1,23 +1,29 @@
 // #lib/billing/utils.ts
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-/** Redondeo a 2 decimales (half-up). */
-export const round2 = (n: number) => Math.round(n * 100) / 100;
+export type Role =
+  | "empresa"
+  | "asesor"
+  | "soporte"
+  | "super_admin"
+  | "super_admin_root"
+  | string;
 
 export type ActorCtx = {
   userId: string;
-  role?: "super_admin_root" | "super_admin" | "soporte" | "empresa" | "asesor" | string;
+  role?: Role;
   empresaId?: string | null;
 };
 
-/** Extrae user, role y empresa_id del contexto actual (RLS-friendly). */
+/** Redondeo a 2 decimales (half-up). */
+export const round2 = (n: number) => Math.round(n * 100) / 100;
+
+/** Lee user + profile (role, empresa_id). Lanza si no hay sesión. */
 export async function assertAuthAndGetContext(supabase: SupabaseClient): Promise<ActorCtx> {
-  const { data: authData, error: authErr } = await supabase.auth.getUser();
-  if (authErr || !authData?.user) throw new Error("No autenticado");
+  const { data: auth, error: authErr } = await supabase.auth.getUser();
+  if (authErr || !auth?.user?.id) throw new Error("No autenticado");
+  const userId = auth.user.id;
 
-  const userId = authData.user.id;
-
-  // Buscar profile → role + empresa_id
   const { data: profile, error: pErr } = await supabase
     .from("profiles")
     .select("role, empresa_id")
@@ -28,33 +34,29 @@ export async function assertAuthAndGetContext(supabase: SupabaseClient): Promise
 
   return {
     userId,
-    role: (profile?.role as ActorCtx["role"]) ?? undefined,
+    role: (profile?.role as Role) ?? undefined,
     empresaId: profile?.empresa_id ?? null,
   };
 }
 
-/**
- * Determina el empresa_id “target”:
- * - Si actor es admin/root y se provee empresaIdParam → usar ese.
- * - Si actor es empresa/asesor → usar actor.empresaId.
- */
+/** Determina empresa objetivo: admin/root pueden pasar empresaIdParam; empresa/asesor usa propia. */
 export async function getEmpresaIdForActor(params: {
   supabase: SupabaseClient;
   actor: ActorCtx;
   empresaIdParam?: string;
 }): Promise<string | null> {
   const { actor, empresaIdParam } = params;
-
   const isAdmin =
-    actor.role === "super_admin_root" || actor.role === "super_admin" || actor.role === "soporte";
+    actor.role === "super_admin_root" ||
+    actor.role === "super_admin" ||
+    actor.role === "soporte";
 
   if (isAdmin && empresaIdParam) return empresaIdParam;
   if (actor.empresaId) return actor.empresaId;
-
   return null;
 }
 
-/** Lee estado de suscripción desde la vista segura (SECURITY INVOKER). */
+/** Vista segura con SECURITY INVOKER: estado de suscripción/ciclo + planes actual/próximo. */
 export async function getSuscripcionEstado(supabase: SupabaseClient, empresaId: string) {
   const { data, error } = await supabase
     .from("v_suscripcion_estado")
@@ -64,14 +66,14 @@ export async function getSuscripcionEstado(supabase: SupabaseClient, empresaId: 
     .eq("empresa_id", empresaId)
     .maybeSingle();
 
-  if (error) throw new Error(`Error leyendo suscripción: ${error.message}`);
+  if (error) throw new Error(`Error leyendo v_suscripcion_estado: ${error.message}`);
   return data as
     | {
         empresa_id: string;
         ciclo_inicio: string;
         ciclo_fin: string;
-        estado: string;
-        moneda: string;
+        estado: string | null;
+        moneda: string | null;
         plan_actual_id: string | null;
         plan_actual_nombre: string | null;
         plan_proximo_id: string | null;
@@ -82,52 +84,49 @@ export async function getSuscripcionEstado(supabase: SupabaseClient, empresaId: 
 }
 
 /**
- * Precio neto preferido para un plan:
- * - Si el plan es el ACTUAL de la empresa y `empresas_planes.precio_neto_override` existe → usar override.
- * - En caso contrario, usar `planes.precio_neto_mensual`.
- *
- * Nota: Para el "nuevo plan", usualmente NO hay override en empresas_planes (porque guarda el actual),
- * por lo que se usa el precio de `planes`.
+ * Precio neto preferido:
+ * - Si el plan coincide con el plan ACTUAL de la empresa y existe override en empresas_planes → usarlo.
+ * - Caso contrario → usar planes.precio (neto).
+ * Nota: `planes.precio` es el nombre real en tu BD.
  */
 export async function getPlanPrecioNetoPreferido(
   supabase: SupabaseClient,
   planId: string,
   empresaId: string
 ): Promise<number | null> {
-  // 1) Precio base del plan
+  // Precio base del plan
   const { data: plan, error: planErr } = await supabase
     .from("planes")
-    .select("id, precio_neto_mensual, nombre")
+    .select("id, precio")
     .eq("id", planId)
     .maybeSingle();
-
   if (planErr) throw new Error(`Error leyendo plan: ${planErr.message}`);
   if (!plan) return null;
-  const base = Number(plan.precio_neto_mensual ?? 0);
 
-  // 2) ¿Override en empresas_planes para la empresa?
+  const base = Number((plan as any).precio ?? 0);
+
+  // Override si empresas_planes coincide con ese plan actual
   const { data: ep, error: epErr } = await supabase
     .from("empresas_planes")
     .select("empresa_id, plan_id, precio_neto_override")
     .eq("empresa_id", empresaId)
+    .eq("activo", true)
     .maybeSingle();
-
   if (epErr) throw new Error(`Error leyendo empresas_planes: ${epErr.message}`);
 
-  if (ep && ep.plan_id === planId && ep.precio_neto_override != null) {
-    return Number(ep.precio_neto_override);
+  if (ep && ep.plan_id === planId && (ep as any).precio_neto_override != null) {
+    return Number((ep as any).precio_neto_override);
   }
-
   return base;
 }
 
-/** Cálculo puro de prorrateo (upgrade). */
+/** Cálculo puro del prorrateo para upgrade (sin I/O). */
 export function calcularDeltaProrrateo(params: {
   cicloInicioISO: string;
   cicloFinISO: string;
   precioActualNeto: number;
   precioNuevoNeto: number;
-  alicuotaIVA: number; // p.ej. 0.21
+  alicuotaIVA: number; // ej. 0.21
 }) {
   const inicio = new Date(params.cicloInicioISO).getTime();
   const fin = new Date(params.cicloFinISO).getTime();
@@ -136,14 +135,12 @@ export function calcularDeltaProrrateo(params: {
   const msCiclo = Math.max(fin - inicio, 0);
   const msRest = Math.max(fin - ahora, 0);
 
-  const diasCiclo = Math.max(Math.ceil(msCiclo / (1000 * 60 * 60 * 24)), 0);
-  const diasRestantes = Math.max(Math.ceil(msRest / (1000 * 60 * 60 * 24)), 0);
-
+  const diasCiclo = Math.max(Math.ceil(msCiclo / 86400000), 0);
+  const diasRestantes = Math.max(Math.ceil(msRest / 86400000), 0);
   const factor = diasCiclo > 0 ? diasRestantes / diasCiclo : 0;
 
   const deltaBase = Math.max(params.precioNuevoNeto - params.precioActualNeto, 0);
   const deltaNeto = deltaBase * factor;
-
   const iva = deltaNeto * params.alicuotaIVA;
   const total = deltaNeto + iva;
 

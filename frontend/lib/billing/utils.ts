@@ -41,12 +41,36 @@ export async function assertAuthAndGetContext(
   };
 }
 
+/** Verifica que la empresa indicada pertenezca al actor (por profile o por ownership). */
+async function empresaPerteneceAlActor(
+  supabase: SupabaseClient,
+  actor: ActorCtx,
+  empresaId: string
+): Promise<boolean> {
+  // 1) Coincide con profiles.empresa_id del actor
+  if (actor.empresaId && actor.empresaId === empresaId) return true;
+
+  // 2) Es dueño directo (empresas.user_id = actor.userId y empresas.id = empresaId)
+  const { data: empByOwner, error: empErr } = await supabase
+    .from("empresas")
+    .select("id")
+    .eq("id", empresaId)
+    .eq("user_id", actor.userId)
+    .maybeSingle();
+
+  if (empErr) return false;
+  if (empByOwner?.id) return true;
+
+  return false;
+}
+
 /**
  * Determina empresa objetivo:
  * - admin/root/soporte pueden pasar empresaIdParam explícito.
- * - empresa/asesor usa su propia empresa:
- *    1) profiles.empresa_id
- *    2) fallback: empresas.id donde empresas.user_id = actor.userId
+ * - empresa/asesor:
+ *    a) si pasa empresaIdParam y le pertenece → usarlo,
+ *    b) sino usar profiles.empresa_id,
+ *    c) sino fallback a empresas.user_id = actor.userId.
  */
 export async function getEmpresaIdForActor(params: {
   supabase: SupabaseClient;
@@ -61,19 +85,23 @@ export async function getEmpresaIdForActor(params: {
 
   if (isAdmin && empresaIdParam) return empresaIdParam;
 
-  // 1) Si el perfil ya trae empresa_id, usarlo
+  // empresa/asesor: aceptar empresaIdParam si es suya
+  if (!isAdmin && empresaIdParam) {
+    const ok = await empresaPerteneceAlActor(supabase, actor, empresaIdParam);
+    if (ok) return empresaIdParam;
+    // si no le pertenece, seguimos con otras resoluciones
+  }
+
+  // 1) profiles.empresa_id
   if (actor.empresaId) return actor.empresaId;
 
-  // 2) Fallback: dueño directo de la empresa (empresas.user_id = actor.userId)
+  // 2) dueño directo (empresas.user_id = actor.userId)
   const { data: empByOwner, error: empErr } = await supabase
     .from("empresas")
     .select("id")
     .eq("user_id", actor.userId)
     .maybeSingle();
-  if (empErr) {
-    // No lanzamos para no romper; devolvemos null y que el caller maneje 403.
-    return null;
-  }
+  if (empErr) return null;
   return empByOwner?.id ?? null;
 }
 

@@ -1,10 +1,31 @@
+// frontend/app/dashboard/empresa/suspendido/page.tsx
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { useTheme } from "@/context/ThemeContext";
 import { supabase } from "#lib/supabaseClient";
+
+/** Resuelve empresas.id para el usuario actual (dueño directo o perfil ligado) */
+async function resolveEmpresaIdForUser(userId: string): Promise<string | null> {
+  // 1) Empresa donde el usuario es dueño directo
+  const { data: emp } = await supabase
+    .from("empresas")
+    .select("id")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (emp?.id) return emp.id as string;
+
+  // 2) Perfil con empresa asociada
+  const { data: prof } = await supabase
+    .from("profiles")
+    .select("empresa_id")
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  return (prof?.empresa_id as string) ?? null;
+}
 
 export default function CuentaSuspendidaPage() {
   const { user } = useAuth();
@@ -13,22 +34,39 @@ export default function CuentaSuspendidaPage() {
 
   const [checking, setChecking] = useState(true);
 
+  const brandColor = useMemo(() => primaryColor || "#1e40af", [primaryColor]);
+
+  // Si el usuario no está logueado → redirigir a login
+  useEffect(() => {
+    if (!user) router.replace("/auth/login");
+  }, [user, router]);
+
   // 🚦 Verificar si la empresa volvió a tener plan activo
   useEffect(() => {
     const checkPlan = async () => {
       if (!user?.id) return;
 
       try {
-        const { data, error } = await supabase
+        const empresaId =
+          (user as any)?.empresa_id ||
+          (await resolveEmpresaIdForUser(user.id));
+
+        if (!empresaId) {
+          setChecking(false);
+          return;
+        }
+
+        const { data: planActivo, error } = await supabase
           .from("empresas_planes")
           .select("id")
-          .eq("empresa_id", user.id)
+          .eq("empresa_id", empresaId)
           .eq("activo", true)
           .maybeSingle();
 
-        if (!error && data) {
+        if (!error && planActivo) {
           // ✅ Tiene plan activo → redirigir al dashboard empresa
           router.replace("/dashboard/empresa");
+          return;
         }
       } catch (err) {
         console.error("Error verificando plan activo:", err);
@@ -38,9 +76,13 @@ export default function CuentaSuspendidaPage() {
     };
 
     checkPlan();
+
+    // chequeo suave cada 45s por si el pago se acreditó y el webhook activó el plan
+    const t = setInterval(checkPlan, 45000);
+    return () => clearInterval(t);
   }, [user, router]);
 
-  // Si todavía está revisando el estado
+  // Cargando estado
   if (checking) {
     return (
       <div className="flex justify-center items-center h-screen text-gray-500">
@@ -49,21 +91,13 @@ export default function CuentaSuspendidaPage() {
     );
   }
 
-  // Si el usuario no está logueado → redirigir a login
-  useEffect(() => {
-    if (!user) router.replace("/auth/login");
-  }, [user, router]);
-
   return (
     <div className="flex flex-col justify-center items-center h-screen bg-gray-50 text-center px-6">
-      {/* Logo */}
+      {/* Logo / Marca */}
       {logoUrl ? (
         <img src={logoUrl} alt="Logo" className="h-14 mb-4" />
       ) : (
-        <h1
-          className="text-2xl font-bold mb-4"
-          style={{ color: primaryColor || "#1e40af" }}
-        >
+        <h1 className="text-2xl font-bold mb-4" style={{ color: brandColor }}>
           VAI | Valuador de Activos Inmobiliarios
         </h1>
       )}

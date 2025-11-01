@@ -140,7 +140,7 @@ export async function GET(req: Request) {
           ciclo: { inicio: null, fin: null, proximoCobro: null },
           suscripcion: null,
           proximoPlan: vEstado?.plan_proximo_id
-            ? { id: vEstado.plan_proximo_id, nombre: vEstado.plan_proximo_nombre ?? null }
+            ? { id: vEstado.plan_proximo_id, nombre: vEstado.plan_proximo_nombre ?? "" }
             : null,
           cambioProgramadoPara: vEstado?.cambio_programado_para ?? null,
         },
@@ -171,9 +171,11 @@ export async function GET(req: Request) {
       .limit(1)
       .maybeSingle();
 
-    // Calcular próximo cobro (si tuviéramos un inicio y duracion_dias)
+    // Calcular próximo cobro (MEJORA: prioriza fecha_fin si existe)
     let proximoCobro: string | null = null;
-    if (planEP.fecha_inicio && planRow?.duracion_dias) {
+    if (planEP.fecha_fin) {
+      proximoCobro = new Date(planEP.fecha_fin as string).toISOString();
+    } else if (planEP.fecha_inicio && planRow?.duracion_dias) {
       try {
         const base = new Date(planEP.fecha_inicio as string);
         const d = new Date(base.getTime());
@@ -184,7 +186,7 @@ export async function GET(req: Request) {
       }
     }
 
-    // NUEVO: leer "próximo plan" programado desde la vista (no rompe lo existente)
+    // Leer "próximo plan" programado desde la vista (no rompe lo existente)
     const { data: vEstado } = await supabaseAdmin
       .from("v_suscripcion_estado")
       .select("plan_proximo_id, plan_proximo_nombre, cambio_programado_para")
@@ -213,9 +215,9 @@ export async function GET(req: Request) {
               externoSubscriptionId: susRow.externo_subscription_id ?? null,
             }
           : null,
-        // NUEVOS CAMPOS (no obligatorios en UI; solo informativos)
+        // NUEVOS CAMPOS (informativos para UI)
         proximoPlan: vEstado?.plan_proximo_id
-          ? { id: vEstado.plan_proximo_id, nombre: vEstado.plan_proximo_nombre ?? null }
+          ? { id: vEstado.plan_proximo_id, nombre: vEstado.plan_proximo_nombre ?? "" }
           : null,
         cambioProgramadoPara: vEstado?.cambio_programado_para ?? null,
       },

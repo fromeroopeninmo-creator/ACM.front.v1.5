@@ -19,7 +19,9 @@ export type ActorCtx = {
 export const round2 = (n: number) => Math.round(n * 100) / 100;
 
 /** Lee user + profile (role, empresa_id). Lanza si no hay sesión. */
-export async function assertAuthAndGetContext(supabase: SupabaseClient): Promise<ActorCtx> {
+export async function assertAuthAndGetContext(
+  supabase: SupabaseClient
+): Promise<ActorCtx> {
   const { data: auth, error: authErr } = await supabase.auth.getUser();
   if (authErr || !auth?.user?.id) throw new Error("No autenticado");
   const userId = auth.user.id;
@@ -39,25 +41,47 @@ export async function assertAuthAndGetContext(supabase: SupabaseClient): Promise
   };
 }
 
-/** Determina empresa objetivo: admin/root pueden pasar empresaIdParam; empresa/asesor usa propia. */
+/**
+ * Determina empresa objetivo:
+ * - admin/root/soporte pueden pasar empresaIdParam explícito.
+ * - empresa/asesor usa su propia empresa:
+ *    1) profiles.empresa_id
+ *    2) fallback: empresas.id donde empresas.user_id = actor.userId
+ */
 export async function getEmpresaIdForActor(params: {
   supabase: SupabaseClient;
   actor: ActorCtx;
   empresaIdParam?: string;
 }): Promise<string | null> {
-  const { actor, empresaIdParam } = params;
+  const { supabase, actor, empresaIdParam } = params;
   const isAdmin =
     actor.role === "super_admin_root" ||
     actor.role === "super_admin" ||
     actor.role === "soporte";
 
   if (isAdmin && empresaIdParam) return empresaIdParam;
+
+  // 1) Si el perfil ya trae empresa_id, usarlo
   if (actor.empresaId) return actor.empresaId;
-  return null;
+
+  // 2) Fallback: dueño directo de la empresa (empresas.user_id = actor.userId)
+  const { data: empByOwner, error: empErr } = await supabase
+    .from("empresas")
+    .select("id")
+    .eq("user_id", actor.userId)
+    .maybeSingle();
+  if (empErr) {
+    // No lanzamos para no romper; devolvemos null y que el caller maneje 403.
+    return null;
+  }
+  return empByOwner?.id ?? null;
 }
 
 /** Vista segura con SECURITY INVOKER: estado de suscripción/ciclo + planes actual/próximo. */
-export async function getSuscripcionEstado(supabase: SupabaseClient, empresaId: string) {
+export async function getSuscripcionEstado(
+  supabase: SupabaseClient,
+  empresaId: string
+) {
   const { data, error } = await supabase
     .from("v_suscripcion_estado")
     .select(
@@ -66,7 +90,8 @@ export async function getSuscripcionEstado(supabase: SupabaseClient, empresaId: 
     .eq("empresa_id", empresaId)
     .maybeSingle();
 
-  if (error) throw new Error(`Error leyendo v_suscripcion_estado: ${error.message}`);
+  if (error)
+    throw new Error(`Error leyendo v_suscripcion_estado: ${error.message}`);
   return data as
     | {
         empresa_id: string;
@@ -85,7 +110,7 @@ export async function getSuscripcionEstado(supabase: SupabaseClient, empresaId: 
 
 /**
  * Precio neto preferido:
- * - Si el plan coincide con el plan ACTUAL de la empresa y existe override en empresas_planes → usarlo.
+ * - Si el plan coincide con el plan ACTUAL de la empresa y existe override en empresas_planes → usarlo (precio_neto_override).
  * - Caso contrario → usar planes.precio (neto).
  * Nota: `planes.precio` es el nombre real en tu BD.
  */
@@ -108,13 +133,17 @@ export async function getPlanPrecioNetoPreferido(
   // Override si empresas_planes coincide con ese plan actual
   const { data: ep, error: epErr } = await supabase
     .from("empresas_planes")
-    .select("empresa_id, plan_id, precio_neto_override")
+    .select("empresa_id, plan_id, precio_neto_override, activo")
     .eq("empresa_id", empresaId)
     .eq("activo", true)
     .maybeSingle();
   if (epErr) throw new Error(`Error leyendo empresas_planes: ${epErr.message}`);
 
-  if (ep && ep.plan_id === planId && (ep as any).precio_neto_override != null) {
+  if (
+    ep &&
+    ep.plan_id === planId &&
+    (ep as any).precio_neto_override != null
+  ) {
     return Number((ep as any).precio_neto_override);
   }
   return base;

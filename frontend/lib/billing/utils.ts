@@ -41,135 +41,148 @@ export async function assertAuthAndGetContext(
   };
 }
 
-/** Determina empresa objetivo: admin/root pueden pasar empresaIdParam; empresa/asesor usa propia. */
+/**
+ * Determina empresa objetivo:
+ * - super_admin / super_admin_root / soporte pueden pasar empresaIdParam.
+ * - empresa / asesor: usa empresa_id del profile si existe.
+ * - Fallback: busca empresas.id por empresas.user_id = actor.userId.
+ */
 export async function getEmpresaIdForActor(params: {
   supabase: SupabaseClient;
   actor: ActorCtx;
   empresaIdParam?: string;
 }): Promise<string | null> {
-  const { actor, empresaIdParam } = params;
+  const { supabase, actor, empresaIdParam } = params;
+
   const isAdmin =
     actor.role === "super_admin_root" ||
     actor.role === "super_admin" ||
     actor.role === "soporte";
 
+  // 1) Admin / soporte puede pasar empresaIdParam explícito
   if (isAdmin && empresaIdParam) return empresaIdParam;
+
+  // 2) Si el profile ya tiene empresa_id, usarlo
   if (actor.empresaId) return actor.empresaId;
+
+  // 3) Fallback: empresas.user_id = actor.userId
+  if (actor.userId) {
+    const { data: emp, error } = await supabase
+      .from("empresas")
+      .select("id")
+      .eq("user_id", actor.userId)
+      .maybeSingle();
+
+    if (error) {
+      console.warn(
+        "getEmpresaIdForActor: error buscando empresas por user_id:",
+        error.message
+      );
+      return null;
+    }
+
+    if (emp?.id) return emp.id as string;
+  }
+
+  // 4) No se pudo resolver
   return null;
 }
 
-/** Vista segura con SECURITY INVOKER: estado de suscripción/ciclo + planes actual/próximo. */
+/** Helper interno para sumar días a un ISO date. */
+function addDaysISO(dateISO: string, days: number): string {
+  const d = new Date(dateISO);
+  d.setDate(d.getDate() + days);
+  return d.toISOString();
+}
+
+/**
+ * Estado de suscripción/ciclo basado SOLO en empresas_planes + planes:
+ * - Busca el registro activo en empresas_planes.
+ * - Si no tiene fecha_fin, la calcula con planes.duracion_dias (o 30 días default).
+ */
 export async function getSuscripcionEstado(
   supabase: SupabaseClient,
   empresaId: string
 ) {
-  const { data, error } = await supabase
-    .from("v_suscripcion_estado")
-    .select(
-      "empresa_id, ciclo_inicio, ciclo_fin, estado, moneda, plan_actual_id, plan_actual_nombre, plan_proximo_id, plan_proximo_nombre, cambio_programado_para"
-    )
+  // 1) Plan activo
+  const { data: ep, error: epErr } = await supabase
+    .from("empresas_planes")
+    .select("empresa_id, plan_id, fecha_inicio, fecha_fin")
     .eq("empresa_id", empresaId)
+    .eq("activo", true)
     .maybeSingle();
 
-  if (error)
-    throw new Error(`Error leyendo v_suscripcion_estado: ${error.message}`);
-  return data as
-    | {
-        empresa_id: string;
-        ciclo_inicio: string;
-        ciclo_fin: string;
-        estado: string | null;
-        moneda: string | null;
-        plan_actual_id: string | null;
-        plan_actual_nombre: string | null;
-        plan_proximo_id: string | null;
-        plan_proximo_nombre: string | null;
-        cambio_programado_para: string | null;
-      }
-    | null;
+  if (epErr) {
+    throw new Error(`Error leyendo empresas_planes: ${epErr.message}`);
+  }
+
+  if (!ep) {
+    // No hay plan activo registrado
+    return null;
+  }
+
+  const empresa_id = (ep as any).empresa_id as string;
+  const plan_actual_id = (ep as any).plan_id as string | null;
+  const fecha_inicio = (ep as any).fecha_inicio as string;
+  let fecha_fin = (ep as any).fecha_fin as string | null;
+
+  // 2) Si no tenemos fecha_fin, calculamos desde planes.duracion_dias (o 30 días por defecto)
+  if (!fecha_fin && plan_actual_id) {
+    const { data: planRow, error: planErr } = await supabase
+      .from("planes")
+      .select("duracion_dias")
+      .eq("id", plan_actual_id)
+      .maybeSingle();
+
+    if (planErr) {
+      throw new Error(
+        `Error leyendo plan en getSuscripcionEstado: ${planErr.message}`
+      );
+    }
+
+    const dur =
+      typeof planRow?.duracion_dias === "number" && planRow.duracion_dias > 0
+        ? planRow.duracion_dias
+        : 30;
+
+    fecha_fin = addDaysISO(fecha_inicio, dur);
+  }
+
+  // 3) Devolvemos estructura compatible con lo que usan preview/change-plan
+  return {
+    empresa_id,
+    ciclo_inicio: fecha_inicio,
+    ciclo_fin: fecha_fin ?? fecha_inicio,
+    estado: "activa",
+    moneda: "ARS",
+    plan_actual_id,
+    plan_actual_nombre: null,
+    plan_proximo_id: null,
+    plan_proximo_nombre: null,
+    cambio_programado_para: null,
+  };
 }
 
 /**
  * Precio neto preferido:
- *
- * - Si el plan es "Personalizado":
- *   precio_efectivo = precio(Premium) + (cupo - 20) * precio_extra_por_asesor
- *   donde `cupo` = empresas_planes.max_asesores_override (o max_asesores del plan como fallback).
- *
- * - Para el resto:
- *   - Si el plan coincide con el plan ACTUAL de la empresa y existe override en empresas_planes → usarlo.
- *   - Caso contrario → usar planes.precio (neto).
- *
- * Nota: `planes.precio` es el nombre real en tu BD.
+ * - Ahora usamos SOLO planes.precio (neto).
+ * - No intentamos overrides porque no existen columnas de precio en empresas_planes.
  */
 export async function getPlanPrecioNetoPreferido(
   supabase: SupabaseClient,
   planId: string,
-  empresaId: string
+  empresaId: string // empresaId queda por compatibilidad, por si a futuro querés usar overrides
 ): Promise<number | null> {
-  // 1) Leer el plan (incluimos campos necesarios para "Personalizado")
   const { data: plan, error: planErr } = await supabase
     .from("planes")
-    .select("id, nombre, precio, precio_extra_por_asesor, max_asesores")
+    .select("id, precio")
     .eq("id", planId)
     .maybeSingle();
+
   if (planErr) throw new Error(`Error leyendo plan: ${planErr.message}`);
   if (!plan) return null;
 
-  const nombreLower = (plan.nombre || "").toLowerCase();
   const base = Number((plan as any).precio ?? 0);
-
-  // 2) Lógica especial para plan "Personalizado"
-  if (nombreLower === "personalizado") {
-    // cupo tomado del override de la empresa (si tiene), o del propio plan, o mínimo 21
-    const { data: ep, error: epErr } = await supabase
-      .from("empresas_planes")
-      .select("max_asesores_override")
-      .eq("empresa_id", empresaId)
-      .eq("plan_id", planId)
-      .eq("activo", true)
-      .maybeSingle();
-    if (epErr)
-      throw new Error(`Error leyendo empresas_planes: ${epErr.message}`);
-
-    const cupo =
-      (ep?.max_asesores_override as number | null) ??
-      (plan.max_asesores as number | null) ??
-      21;
-
-    const extraUnit = Number(plan.precio_extra_por_asesor ?? 0);
-
-    // precio base del plan Premium (asumimos que existe)
-    const { data: premium, error: premErr } = await supabase
-      .from("planes")
-      .select("precio")
-      .eq("nombre", "Premium")
-      .maybeSingle();
-    if (premErr)
-      throw new Error(`Error leyendo plan Premium: ${premErr.message}`);
-
-    const premiumBase = Number((premium as any)?.precio ?? 0);
-
-    const extraCount = Math.max(0, cupo - 20); // a partir de 21 asesores
-    const efectivo = premiumBase + extraCount * extraUnit;
-
-    return efectivo;
-  }
-
-  // 3) Resto de planes: respetar override de empresas_planes (si existe)
-  const { data: ep, error: epErr } = await supabase
-    .from("empresas_planes")
-    .select("empresa_id, plan_id, precio_neto_override")
-    .eq("empresa_id", empresaId)
-    .eq("activo", true)
-    .maybeSingle();
-  if (epErr) throw new Error(`Error leyendo empresas_planes: ${epErr.message}`);
-
-  if (ep && ep.plan_id === planId && (ep as any).precio_neto_override != null) {
-    return Number((ep as any).precio_neto_override);
-  }
-
-  // Sin override: usar precio base del plan
   return base;
 }
 

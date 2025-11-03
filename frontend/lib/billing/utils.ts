@@ -96,45 +96,15 @@ function addDaysISO(dateISO: string, days: number): string {
 }
 
 /**
- * Estado de suscripción/ciclo:
- * 1) Intenta leer de la vista v_suscripcion_estado (caso ideal).
- * 2) Si no hay fila en la vista, hace fallback a empresas_planes activo
- *    para obtener plan_actual + ciclo (fecha_inicio / fecha_fin).
+ * Estado de suscripción/ciclo basado SOLO en empresas_planes + planes:
+ * - Busca el registro activo en empresas_planes.
+ * - Si no tiene fecha_fin, la calcula con planes.duracion_dias (o 30 días default).
  */
 export async function getSuscripcionEstado(
   supabase: SupabaseClient,
   empresaId: string
 ) {
-  // 1) Intentar vista v_suscripcion_estado
-  const { data, error } = await supabase
-    .from("v_suscripcion_estado")
-    .select(
-      "empresa_id, ciclo_inicio, ciclo_fin, estado, moneda, plan_actual_id, plan_actual_nombre, plan_proximo_id, plan_proximo_nombre, cambio_programado_para"
-    )
-    .eq("empresa_id", empresaId)
-    .maybeSingle();
-
-  if (error) {
-    throw new Error(`Error leyendo v_suscripcion_estado: ${error.message}`);
-  }
-
-  if (data) {
-    // Ya viene con la forma correcta
-    return data as {
-      empresa_id: string;
-      ciclo_inicio: string;
-      ciclo_fin: string;
-      estado: string | null;
-      moneda: string | null;
-      plan_actual_id: string | null;
-      plan_actual_nombre: string | null;
-      plan_proximo_id: string | null;
-      plan_proximo_nombre: string | null;
-      cambio_programado_para: string | null;
-    };
-  }
-
-  // 2) Fallback → empresas_planes activo
+  // 1) Plan activo
   const { data: ep, error: epErr } = await supabase
     .from("empresas_planes")
     .select("empresa_id, plan_id, fecha_inicio, fecha_fin")
@@ -156,24 +126,29 @@ export async function getSuscripcionEstado(
   const fecha_inicio = (ep as any).fecha_inicio as string;
   let fecha_fin = (ep as any).fecha_fin as string | null;
 
-  // Si no tenemos fecha_fin, calculamos desde planes.duracion_dias (o 30 días por defecto)
+  // 2) Si no tenemos fecha_fin, calculamos desde planes.duracion_dias (o 30 días por defecto)
   if (!fecha_fin && plan_actual_id) {
     const { data: planRow, error: planErr } = await supabase
       .from("planes")
       .select("duracion_dias")
       .eq("id", plan_actual_id)
       .maybeSingle();
+
     if (planErr) {
-      throw new Error(`Error leyendo plan en fallback: ${planErr.message}`);
+      throw new Error(
+        `Error leyendo plan en getSuscripcionEstado: ${planErr.message}`
+      );
     }
+
     const dur =
       typeof planRow?.duracion_dias === "number" && planRow.duracion_dias > 0
         ? planRow.duracion_dias
         : 30;
+
     fecha_fin = addDaysISO(fecha_inicio, dur);
   }
 
-  // Fallback construye un estado "activa" por defecto
+  // 3) Devolvemos estructura compatible con lo que usan preview/change-plan
   return {
     empresa_id,
     ciclo_inicio: fecha_inicio,
@@ -190,38 +165,24 @@ export async function getSuscripcionEstado(
 
 /**
  * Precio neto preferido:
- * - Si el plan coincide con el plan ACTUAL de la empresa y existe override en empresas_planes → usarlo.
- * - Caso contrario → usar planes.precio (neto).
- * Nota: `planes.precio` es el nombre real en tu BD.
+ * - Ahora usamos SOLO planes.precio (neto).
+ * - No intentamos overrides porque no existen columnas de precio en empresas_planes.
  */
 export async function getPlanPrecioNetoPreferido(
   supabase: SupabaseClient,
   planId: string,
-  empresaId: string
+  empresaId: string // empresaId queda por compatibilidad, por si a futuro querés usar overrides
 ): Promise<number | null> {
-  // Precio base del plan
   const { data: plan, error: planErr } = await supabase
     .from("planes")
     .select("id, precio")
     .eq("id", planId)
     .maybeSingle();
+
   if (planErr) throw new Error(`Error leyendo plan: ${planErr.message}`);
   if (!plan) return null;
 
   const base = Number((plan as any).precio ?? 0);
-
-  // Override si empresas_planes coincide con ese plan actual
-  const { data: ep, error: epErr } = await supabase
-    .from("empresas_planes")
-    .select("empresa_id, plan_id, precio_neto_override")
-    .eq("empresa_id", empresaId)
-    .eq("activo", true)
-    .maybeSingle();
-  if (epErr) throw new Error(`Error leyendo empresas_planes: ${epErr.message}`);
-
-  if (ep && ep.plan_id === planId && (ep as any).precio_neto_override != null) {
-    return Number((ep as any).precio_neto_override);
-  }
   return base;
 }
 

@@ -80,7 +80,10 @@ export async function GET(req: Request) {
     if (role === "empresa" || role === "asesor") {
       empresaId = await resolveEmpresaIdForUser(userId, role);
       if (!empresaId) {
-        return NextResponse.json({ error: "No se pudo resolver la empresa del usuario." }, { status: 400 });
+        return NextResponse.json(
+          { error: "No se pudo resolver la empresa del usuario." },
+          { status: 400 }
+        );
       }
     } else if (role === "super_admin" || role === "super_admin_root") {
       empresaId = empresaIdParam || (await resolveEmpresaIdForUser(userId, role));
@@ -95,15 +98,26 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "Acceso denegado." }, { status: 403 });
     }
 
-    // Verificar que la empresa exista
+    // Verificar que la empresa exista (incluimos campos de suspensión)
     const { data: empRow, error: empErr } = await supabaseAdmin
       .from("empresas")
-      .select("id, nombre_comercial, razon_social")
+      .select(
+        "id, nombre_comercial, razon_social, suspendida, suspendida_at, suspension_motivo"
+      )
       .eq("id", empresaId)
       .maybeSingle();
 
     if (empErr) return NextResponse.json({ error: empErr.message }, { status: 400 });
     if (!empRow) return NextResponse.json({ error: "Empresa no encontrada." }, { status: 404 });
+
+    const empresaInfo = {
+      id: empRow.id as string,
+      nombreComercial: (empRow as any).nombre_comercial ?? null,
+      razonSocial: (empRow as any).razon_social ?? null,
+      suspendida: Boolean((empRow as any).suspendida),
+      suspendida_at: (empRow as any).suspendida_at ?? null,
+      suspension_motivo: (empRow as any).suspension_motivo ?? null,
+    };
 
     // Traer plan vigente (si hay activo; si no, el último por fecha_inicio)
     const { data: activo } = await supabaseAdmin
@@ -134,8 +148,10 @@ export async function GET(req: Request) {
         .eq("empresa_id", empresaId)
         .maybeSingle();
 
+      // Sin plan actual → no hay ciclo ni vencimiento
       return NextResponse.json(
         {
+          empresa: empresaInfo,
           plan: null,
           ciclo: { inicio: null, fin: null, proximoCobro: null },
           suscripcion: null,
@@ -143,6 +159,13 @@ export async function GET(req: Request) {
             ? { id: vEstado.plan_proximo_id, nombre: vEstado.plan_proximo_nombre ?? "" }
             : null,
           cambioProgramadoPara: vEstado?.cambio_programado_para ?? null,
+          estado: {
+            suspendida: empresaInfo.suspendida,
+            motivo: empresaInfo.suspension_motivo ?? null,
+            plan_vencido: false,
+            dias_desde_vencimiento: null,
+            en_periodo_gracia: false,
+          },
         },
         { status: 200 }
       );
@@ -186,6 +209,28 @@ export async function GET(req: Request) {
       }
     }
 
+    // Detectar vencimiento del plan (independiente de suspensión manual)
+    const now = new Date();
+    let plan_vencido = false;
+    let dias_desde_vencimiento: number | null = null;
+    let en_periodo_gracia = false;
+
+    let refFin: Date | null = null;
+    if (planEP.fecha_fin) {
+      refFin = new Date(planEP.fecha_fin as string);
+    } else if (proximoCobro) {
+      refFin = new Date(proximoCobro);
+    }
+
+    if (refFin && !Number.isNaN(refFin.getTime())) {
+      if (now > refFin) {
+        plan_vencido = true;
+        const diffMs = now.getTime() - refFin.getTime();
+        dias_desde_vencimiento = Math.floor(diffMs / 86400000);
+        en_periodo_gracia = dias_desde_vencimiento <= 2;
+      }
+    }
+
     // Leer "próximo plan" programado desde la vista (no rompe lo existente)
     const { data: vEstado } = await supabaseAdmin
       .from("v_suscripcion_estado")
@@ -195,6 +240,7 @@ export async function GET(req: Request) {
 
     return NextResponse.json(
       {
+        empresa: empresaInfo,
         plan: planRow
           ? {
               id: planRow.id,
@@ -215,15 +261,25 @@ export async function GET(req: Request) {
               externoSubscriptionId: susRow.externo_subscription_id ?? null,
             }
           : null,
-        // NUEVOS CAMPOS (informativos para UI)
         proximoPlan: vEstado?.plan_proximo_id
           ? { id: vEstado.plan_proximo_id, nombre: vEstado.plan_proximo_nombre ?? "" }
           : null,
         cambioProgramadoPara: vEstado?.cambio_programado_para ?? null,
+        // NUEVO BLOQUE de estado consolidado para guards de front
+        estado: {
+          suspendida: empresaInfo.suspendida,
+          motivo: empresaInfo.suspension_motivo ?? null,
+          plan_vencido,
+          dias_desde_vencimiento,
+          en_periodo_gracia,
+        },
       },
       { status: 200 }
     );
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message || "Error inesperado" }, { status: 500 });
+    return NextResponse.json(
+      { error: e?.message || "Error inesperado" },
+      { status: 500 }
+    );
   }
 }

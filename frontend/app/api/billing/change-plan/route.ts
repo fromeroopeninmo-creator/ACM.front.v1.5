@@ -18,7 +18,7 @@ const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE);
 
-// ⚙️ flag de simulación (podés cambiar a false cuando tengas pasarela real)
+// ⚙️ flag de simulación (podés apagarlo cuando tengas pasarela real)
 const SIMULAR_PAGO_OK =
   process.env.NEXT_PUBLIC_BILLING_SIMULATE === "true" || true;
 
@@ -253,12 +253,31 @@ export async function POST(req: Request) {
         );
       }
 
+      // ⚠️ Caso: ya hay un movimiento pending en este ciclo (primera prueba que hiciste)
       if (existing && existing.length > 0) {
-        // Reutilizamos el movimiento pending ya creado
+        const existingId = existing[0].id as string;
+
+        if (SIMULAR_PAGO_OK && existingId) {
+          const nowISO = new Date().toISOString();
+
+          // Marcar ese movimiento como paid
+          await supabaseAdmin
+            .from("movimientos_financieros")
+            .update({ estado: "paid", updated_at: nowISO })
+            .eq("id", existingId);
+
+          // Activar inmediatamente el nuevo plan
+          await simularActivarPlanInmediato(
+            empresaId,
+            nuevoPlanId,
+            maxAsesoresOverride
+          );
+        }
+
         return NextResponse.json(
           {
             accion: "upgrade",
-            movimiento_id: existing[0].id,
+            movimiento_id: existingId,
             checkoutUrl: null, // integrar gateway real más adelante
             delta: {
               neto: round2(sim.deltaNeto),
@@ -266,7 +285,9 @@ export async function POST(req: Request) {
               total: round2(sim.total),
               moneda: "ARS",
             },
-            nota: "Movimiento pendiente existente reutilizado.",
+            nota: SIMULAR_PAGO_OK
+              ? "Simulación: se reutilizó el movimiento pendiente existente, se marcó como 'paid' y el nuevo plan ya está activo."
+              : "Movimiento pendiente existente reutilizado.",
           },
           { status: 200 }
         );

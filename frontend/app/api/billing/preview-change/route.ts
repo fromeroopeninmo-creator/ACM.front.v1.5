@@ -15,14 +15,27 @@ import {
 
 /**
  * GET /api/billing/preview-change?nuevo_plan_id=...&empresa_id=...(opcional admin/root)
- * - Simula cambio de plan para la empresa.
- * - Upgrade: calcula delta prorrateado (neto/iva/total).
- * - Downgrade: delta 0 y se informa que aplica al próximo ciclo.
+ *
+ * Devuelve EXACTAMENTE el shape que espera el front:
+ *
+ * type PreviewResult = {
+ *   tipo: "upgrade" | "downgrade" | "sin_cambio";
+ *   empresa_id: string;
+ *   plan_actual?: { id: string; nombre: string; precio_neto?: number | null } | null;
+ *   plan_nuevo?: { id: string; nombre: string; precio_neto?: number | null } | null;
+ *   dias_ciclo?: number | null;
+ *   dias_restantes?: number | null;
+ *   delta_neto?: number;
+ *   iva?: number;
+ *   total?: number;
+ *   aplicar_desde?: string | null;
+ *   nota?: string | null;
+ * };
  */
 export async function GET(req: Request) {
   try {
     const url = new URL(req.url);
-    const nuevoPlanId = url.searchParams.get("nuevo_plan_id") ?? undefined;
+    const nuevoPlanId = url.searchParams.get("nuevo_plan_id");
     const empresaIdParam = url.searchParams.get("empresa_id") || undefined;
 
     if (!nuevoPlanId) {
@@ -55,9 +68,16 @@ export async function GET(req: Request) {
       );
     }
 
-    const { ciclo_inicio, ciclo_fin, plan_actual_id } = sus;
+    const {
+      ciclo_inicio,
+      ciclo_fin,
+      plan_actual_id,
+      plan_actual_nombre,
+      plan_proximo_id,
+      plan_proximo_nombre,
+    } = sus;
 
-    // Precios netos (ambos desde planes.precio)
+    // Precios netos actuales/nuevo plan (con override si aplica)
     const precioActual = await getPlanPrecioNetoPreferido(
       supabase,
       plan_actual_id,
@@ -71,25 +91,11 @@ export async function GET(req: Request) {
 
     if (precioActual == null || precioNuevo == null) {
       return NextResponse.json(
-        { error: "No se pudieron resolver los precios netos de los planes." },
+        { error: "No se pudieron resolver los precios netos (planes)." },
         { status: 409 }
       );
     }
 
-    // Nombres de los planes
-    const { data: planActualRow } = await supabase
-      .from("planes")
-      .select("id, nombre")
-      .eq("id", plan_actual_id)
-      .maybeSingle();
-
-    const { data: planNuevoRow } = await supabase
-      .from("planes")
-      .select("id, nombre")
-      .eq("id", nuevoPlanId)
-      .maybeSingle();
-
-    // Simulación prorrateo
     const sim = calcularDeltaProrrateo({
       cicloInicioISO: ciclo_inicio,
       cicloFinISO: ciclo_fin,
@@ -102,63 +108,56 @@ export async function GET(req: Request) {
     if (precioNuevo > precioActual) tipo = "upgrade";
     else if (precioNuevo < precioActual) tipo = "downgrade";
 
-    // Base de respuesta
-    const base = {
-      tipo,
-      empresa_id: empresaId,
-      plan_actual: {
-        id: plan_actual_id,
-        nombre: planActualRow?.nombre ?? "Plan actual",
-        precio_neto: round2(precioActual),
-      },
-      plan_nuevo: {
-        id: nuevoPlanId,
-        nombre: planNuevoRow?.nombre ?? "Nuevo plan",
-        precio_neto: round2(precioNuevo),
-      },
-      dias_ciclo: sim.diasCiclo,
-      dias_restantes: sim.diasRestantes,
-    } as any;
+    // Nota para el modal
+    let nota: string | null = null;
+    let aplicar_desde: string | null = null;
 
     if (tipo === "upgrade") {
-      return NextResponse.json(
-        {
-          ...base,
-          delta_neto: round2(sim.deltaNeto),
-          iva: round2(sim.iva),
-          total: round2(sim.total),
-          aplicar_desde: null,
-          nota:
-            "Al confirmar el pago se aplicará el nuevo plan en este ciclo de facturación.",
-        },
-        { status: 200 }
-      );
+      nota =
+        "Se cobrará solo la diferencia prorrateada por los días restantes del ciclo actual.";
+      aplicar_desde = ciclo_inicio; // el nuevo precio rige desde ahora (visual)
+    } else if (tipo === "downgrade") {
+      nota =
+        "El downgrade se aplicará desde el próximo ciclo; sin reembolsos ni créditos.";
+      aplicar_desde = ciclo_fin; // se aplica al fin del ciclo
     }
 
-    if (tipo === "downgrade") {
-      return NextResponse.json(
-        {
-          ...base,
-          delta_neto: 0,
-          iva: 0,
-          total: 0,
-          aplicar_desde: ciclo_fin,
-          nota:
-            "El downgrade se aplicará desde el próximo ciclo. No se generan reembolsos ni créditos.",
-        },
-        { status: 200 }
-      );
-    }
-
-    // Sin cambio de precio
     return NextResponse.json(
       {
-        ...base,
-        delta_neto: 0,
-        iva: 0,
-        total: 0,
-        aplicar_desde: null,
-        nota: "El nuevo plan tiene el mismo precio que el actual.",
+        tipo,
+        empresa_id: empresaId,
+
+        plan_actual: {
+          id: plan_actual_id,
+          nombre: plan_actual_nombre ?? "",
+          precio_neto: round2(precioActual),
+        },
+
+        plan_nuevo: {
+          id: nuevoPlanId,
+          nombre: "", // no es obligatorio para el cálculo; la UI puede mostrar solo el nombre del card
+          precio_neto: round2(precioNuevo),
+        },
+
+        dias_ciclo: sim.diasCiclo,
+        dias_restantes: sim.diasRestantes,
+
+        // Montos prorrateados
+        delta_neto: round2(sim.deltaNeto),
+        iva: round2(sim.iva),
+        total: round2(sim.total),
+
+        aplicar_desde,
+        nota,
+
+        // Info extra opcional que HOY la UI no usa, pero puede servir luego
+        proximo_programado: plan_proximo_id
+          ? {
+              id: plan_proximo_id,
+              nombre: plan_proximo_nombre ?? null,
+              aplica_desde: ciclo_fin,
+            }
+          : null,
       },
       { status: 200 }
     );

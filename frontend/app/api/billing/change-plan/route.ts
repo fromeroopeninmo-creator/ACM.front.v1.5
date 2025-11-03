@@ -18,6 +18,66 @@ const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE);
 
+// ⚙️ flag de simulación (podés cambiar a false cuando tengas pasarela real)
+const SIMULAR_PAGO_OK =
+  process.env.NEXT_PUBLIC_BILLING_SIMULATE === "true" || true;
+
+/** Helper para activar inmediatamente el nuevo plan (simulando que el pago fue OK). */
+async function simularActivarPlanInmediato(
+  empresaId: string,
+  nuevoPlanId: string,
+  maxAsesoresOverride?: number
+) {
+  const nowISO = new Date().toISOString();
+  const today = new Date().toISOString().slice(0, 10);
+
+  // 1) Desactivar el plan actual
+  await supabaseAdmin
+    .from("empresas_planes")
+    .update({ activo: false, updated_at: nowISO })
+    .eq("empresa_id", empresaId)
+    .eq("activo", true);
+
+  // 2) Ver si ya hay un registro para ese plan
+  const { data: existente } = await supabaseAdmin
+    .from("empresas_planes")
+    .select("id")
+    .eq("empresa_id", empresaId)
+    .eq("plan_id", nuevoPlanId)
+    .order("fecha_inicio", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (existente?.id) {
+    const patch: any = {
+      activo: true,
+      fecha_fin: null,
+      updated_at: nowISO,
+    };
+    if (typeof maxAsesoresOverride === "number") {
+      patch.max_asesores_override = maxAsesoresOverride;
+    }
+
+    await supabaseAdmin
+      .from("empresas_planes")
+      .update(patch)
+      .eq("id", existente.id);
+  } else {
+    const insert: any = {
+      empresa_id: empresaId,
+      plan_id: nuevoPlanId,
+      fecha_inicio: today,
+      activo: true,
+      updated_at: nowISO,
+    };
+    if (typeof maxAsesoresOverride === "number") {
+      insert.max_asesores_override = maxAsesoresOverride;
+    }
+
+    await supabaseAdmin.from("empresas_planes").insert(insert);
+  }
+}
+
 /**
  * POST /api/billing/change-plan
  * Body: {
@@ -27,8 +87,7 @@ const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE);
  * }
  *
  * - Upgrade: crea movimiento 'ajuste' con metadata.subtipo = 'upgrade_prorrateo' (pending).
- *   El proveedor de pago (cuando exista) debería marcarlo como paid vía webhook
- *   y ahí activar el nuevo plan.
+ *   En modo simulación también marca el movimiento como paid y activa el plan.
  *
  * - Downgrade: programa cambio al fin del ciclo en `suscripciones`
  *   (plan_proximo_id / cambio_programado_para).
@@ -260,6 +319,23 @@ export async function POST(req: Request) {
         );
       }
 
+      // 🔧 SIMULACIÓN DE PAGO OK: marcamos el movimiento como paid
+      // y activamos el nuevo plan inmediatamente.
+      if (SIMULAR_PAGO_OK && ins?.id) {
+        const nowISO = new Date().toISOString();
+
+        await supabaseAdmin
+          .from("movimientos_financieros")
+          .update({ estado: "paid", updated_at: nowISO })
+          .eq("id", ins.id);
+
+        await simularActivarPlanInmediato(
+          empresaId,
+          nuevoPlanId,
+          maxAsesoresOverride
+        );
+      }
+
       // Aquí iría la creación del intent/checkout del gateway (Stripe/MercadoPago)
       const checkoutUrl = null;
 
@@ -274,8 +350,9 @@ export async function POST(req: Request) {
             total: round2(sim.total),
             moneda: "ARS",
           },
-          nota:
-            "Al confirmar el pago vía pasarela se activará el nuevo plan en este ciclo.",
+          nota: SIMULAR_PAGO_OK
+            ? "Simulación: el pago se marcó como 'paid' y el nuevo plan ya está activo."
+            : "Al confirmar el pago vía pasarela se activará el nuevo plan en este ciclo.",
         },
         { status: 200 }
       );

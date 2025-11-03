@@ -14,7 +14,7 @@ import {
 } from "#lib/billing/utils";
 
 /**
- * GET /api/billing/preview-change?nuevo_plan_id=...&empresa_id=...(opcional admin/root)
+ * GET /api/billing/preview-change?nuevo_plan_id=...&empresa_id=...(opcional admin/root)&max_asesores_override=...(opcional)
  *
  * Devuelve EXACTAMENTE el shape que espera el front:
  *
@@ -37,6 +37,16 @@ export async function GET(req: Request) {
     const url = new URL(req.url);
     const nuevoPlanId = url.searchParams.get("nuevo_plan_id");
     const empresaIdParam = url.searchParams.get("empresa_id") || undefined;
+
+    // opcional, usado para plan "Personalizado"
+    const maxAsesoresOverrideParam = url.searchParams.get("max_asesores_override");
+    const parsedOverride = maxAsesoresOverrideParam
+      ? parseInt(maxAsesoresOverrideParam, 10)
+      : NaN;
+    const maxAsesoresOverride =
+      Number.isFinite(parsedOverride) && parsedOverride > 0
+        ? parsedOverride
+        : undefined;
 
     if (!nuevoPlanId) {
       return NextResponse.json(

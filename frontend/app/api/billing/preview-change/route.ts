@@ -48,16 +48,22 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "nuevo_plan_id es obligatorio" }, { status: 400 });
     }
 
-    const supabase = supabaseServer();
-    const ctx = await assertAuthAndGetContext(supabase);
-    const empresaId = await getEmpresaIdForActor({ supabase, actor: ctx, empresaIdParam });
+    // ...
+const supabase = supabaseServer();
+const ctx = await assertAuthAndGetContext(supabase);
 
-    if (!empresaId) {
-      return NextResponse.json(
-        { error: "No se pudo resolver empresa_id (ver permisos / profiles)." },
-        { status: 403 }
-      );
-    }
+// ✅ Tolerante: si viene empresa_id, úsalo; si no, resolvé como antes.
+const empresaId =
+  empresaIdParam ??
+  (await getEmpresaIdForActor({ supabase, actor: ctx, empresaIdParam: undefined }));
+
+if (!empresaId) {
+  return NextResponse.json(
+    { error: "No se pudo resolver empresa_id (ver permisos / profiles)." },
+    { status: 403 }
+  );
+}
+
 
     const sus = await getSuscripcionEstado(supabase, empresaId);
     if (!sus?.plan_actual_id) {

@@ -165,17 +165,23 @@ export async function getSuscripcionEstado(
 
 /**
  * Precio neto preferido:
- * - Ahora usamos SOLO planes.precio (neto).
- * - No intentamos overrides porque no existen columnas de precio en empresas_planes.
+ * - Para planes normales: usa planes.precio (neto).
+ * - Para plan "Personalizado":
+ *   - Si se pasa maxAsesoresOverride (4to parámetro), calcula:
+ *       precio = precio(Premium) + (maxAsesoresOverride - 20) * precio_extra_por_asesor
+ *   - Si no se pasa, intenta leer empresas_planes.max_asesores_override
+ *     para esa empresa y ese plan (cuando ya está activo).
+ *   - Si no hay datos, vuelve a usar planes.precio como fallback.
  */
 export async function getPlanPrecioNetoPreferido(
   supabase: SupabaseClient,
   planId: string,
-  empresaId: string // empresaId queda por compatibilidad, por si a futuro querés usar overrides
+  empresaId: string,
+  maxAsesoresOverride?: number
 ): Promise<number | null> {
   const { data: plan, error: planErr } = await supabase
     .from("planes")
-    .select("id, precio")
+    .select("id, nombre, precio, precio_extra_por_asesor")
     .eq("id", planId)
     .maybeSingle();
 
@@ -183,7 +189,75 @@ export async function getPlanPrecioNetoPreferido(
   if (!plan) return null;
 
   const base = Number((plan as any).precio ?? 0);
-  return base;
+  const nombre = ((plan as any).nombre ?? "").toLowerCase();
+
+  // Planes normales → usamos precio base
+  if (nombre !== "personalizado") {
+    return base;
+  }
+
+  // --- Caso especial: plan "Personalizado" ---
+
+  // 1) Resolver el cupo de asesores apuntado (override)
+  let targetCount: number | null = null;
+
+  // a) Si nos pasan override explícito (por ejemplo desde preview-change / change-plan)
+  if (
+    typeof maxAsesoresOverride === "number" &&
+    Number.isFinite(maxAsesoresOverride) &&
+    maxAsesoresOverride > 0
+  ) {
+    targetCount = maxAsesoresOverride;
+  } else {
+    // b) Si no viene por parámetro, intentamos leerlo desde empresas_planes
+    const { data: ep, error: epErr } = await supabase
+      .from("empresas_planes")
+      .select("max_asesores_override")
+      .eq("empresa_id", empresaId)
+      .eq("plan_id", planId)
+      .eq("activo", true)
+      .maybeSingle();
+
+    if (epErr) {
+      console.warn(
+        "getPlanPrecioNetoPreferido: error leyendo empresas_planes:",
+        epErr.message
+      );
+    }
+
+    if (ep?.max_asesores_override != null) {
+      targetCount = ep.max_asesores_override;
+    }
+  }
+
+  // Si no tenemos un número válido de asesores, devolvemos el base para no romper nada
+  if (!targetCount || targetCount <= 20) {
+    return base;
+  }
+
+  // 2) Buscamos el precio del plan Premium (igual que en el frontend)
+  const { data: premiumPlan, error: premiumErr } = await supabase
+    .from("planes")
+    .select("precio")
+    .eq("nombre", "Premium")
+    .maybeSingle();
+
+  if (premiumErr) {
+    console.warn(
+      "getPlanPrecioNetoPreferido: error leyendo plan Premium:",
+      premiumErr.message
+    );
+  }
+
+  const basePremium = premiumPlan
+    ? Number((premiumPlan as any).precio ?? 0)
+    : base; // fallback al base si no encontramos Premium
+
+  const unitExtra = Number((plan as any).precio_extra_por_asesor ?? 0);
+  const extra = Math.max(0, targetCount - 20);
+  const personalizadoPrecio = basePremium + extra * unitExtra;
+
+  return personalizadoPrecio;
 }
 
 /** Cálculo puro del prorrateo para upgrade (sin I/O). */
@@ -205,7 +279,10 @@ export function calcularDeltaProrrateo(params: {
   const diasRestantes = Math.max(Math.ceil(msRest / 86400000), 0);
   const factor = diasCiclo > 0 ? diasRestantes / diasCiclo : 0;
 
-  const deltaBase = Math.max(params.precioNuevoNeto - params.precioActualNeto, 0);
+  const deltaBase = Math.max(
+    params.precioNuevoNeto - params.precioActualNeto,
+    0
+  );
   const deltaNeto = deltaBase * factor;
   const iva = deltaNeto * params.alicuotaIVA;
   const total = deltaNeto + iva;

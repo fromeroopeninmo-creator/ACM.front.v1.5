@@ -22,40 +22,33 @@ interface Plan {
   precio_extra_por_asesor?: number | string | null; // Personalizado
 }
 
-// Shape alineado con /api/billing/preview-change
 type PreviewResult = {
-  accion: "upgrade" | "downgrade" | "sin_cambio";
+  tipo?: "upgrade" | "downgrade" | "sin_cambio";
+  accion?: "upgrade" | "downgrade" | "sin_cambio"; // compat viejo
   empresa_id: string;
-  ciclo: {
-    inicio: string;
-    fin: string;
-    dias_ciclo: number;
-    dias_restantes: number;
-    factor: number;
-  } | null;
-  actual: {
-    plan_id: string | null;
-    nombre: string | null;
-    precio_neto: number | null;
-  } | null;
-  nuevo: {
-    plan_id: string | null;
-    nombre: string | null;
-    precio_neto: number | null;
-  } | null;
-  delta: {
-    neto: number;
-    iva: number;
-    total: number;
-    moneda: string;
-  } | null;
-  politica_downgrade?: string | null;
-  proximo_programado?: {
-    plan_id: string;
-    nombre: string | null;
-    aplica_desde: string;
-  } | null;
+  plan_actual?: { id: string; nombre: string; precio_neto?: number | null } | null;
+  plan_nuevo?: { id: string; nombre: string; precio_neto?: number | null } | null;
+  dias_ciclo?: number | null;
+  dias_restantes?: number | null;
+  delta_neto?: number;
+  iva?: number;
+  total?: number;
+  aplicar_desde?: string | null; // para downgrade programado
   nota?: string | null;
+
+  // compat viejo (estructura anidada)
+  ciclo?: {
+    inicio?: string;
+    fin?: string;
+    dias_ciclo?: number | null;
+    dias_restantes?: number | null;
+  };
+  delta?: {
+    neto?: number;
+    iva?: number;
+    total?: number;
+    moneda?: string;
+  };
 };
 
 export default function EmpresaPlanesPage() {
@@ -82,7 +75,65 @@ export default function EmpresaPlanesPage() {
   // IVA
   const IVA_PCT = 0.21;
 
-  // 🔎 Resolver empresas.id (dueño directo)
+  // --- HELPERS PREVIEW NORMALIZADOS (para soportar backend viejo/nuevo) ---
+
+  const previewTipo = useMemo<"upgrade" | "downgrade" | "sin_cambio" | null>(() => {
+    if (!preview) return null;
+    const anyPrev = preview as any;
+    return anyPrev.tipo ?? anyPrev.accion ?? null;
+  }, [preview]);
+
+  const previewDiasCiclo = useMemo<number | null>(() => {
+    if (!preview) return null;
+    const anyPrev = preview as any;
+    return (
+      anyPrev.dias_ciclo ??
+      anyPrev.ciclo?.dias_ciclo ??
+      null
+    );
+  }, [preview]);
+
+  const previewDiasRestantes = useMemo<number | null>(() => {
+    if (!preview) return null;
+    const anyPrev = preview as any;
+    return (
+      anyPrev.dias_restantes ??
+      anyPrev.ciclo?.dias_restantes ??
+      null
+    );
+  }, [preview]);
+
+  const previewDeltaNeto = useMemo<number>(() => {
+    if (!preview) return 0;
+    const anyPrev = preview as any;
+    return (
+      anyPrev.delta_neto ??
+      anyPrev.delta?.neto ??
+      0
+    );
+  }, [preview]);
+
+  const previewIva = useMemo<number>(() => {
+    if (!preview) return 0;
+    const anyPrev = preview as any;
+    return (
+      anyPrev.iva ??
+      anyPrev.delta?.iva ??
+      0
+    );
+  }, [preview]);
+
+  const previewTotal = useMemo<number>(() => {
+    if (!preview) return 0;
+    const anyPrev = preview as any;
+    return (
+      anyPrev.total ??
+      anyPrev.delta?.total ??
+      0
+    );
+  }, [preview]);
+
+  // 🔎 Resolver empresas.id
   useEffect(() => {
     const fetchEmpresa = async () => {
       if (!user?.id) return;
@@ -129,11 +180,10 @@ export default function EmpresaPlanesPage() {
           console.error("Error obteniendo plan actual:", errorEmpresaPlan);
           setPlanActual(null);
         } else if (empresaPlan) {
-          const planDataRaw = empresaPlan.planes;
+          const planDataRaw = (empresaPlan as any).planes;
           const planData = Array.isArray(planDataRaw) ? planDataRaw[0] : planDataRaw;
           const baseMax = planData?.max_asesores ?? 0;
-          const override = (empresaPlan as any)
-            ?.max_asesores_override as number | null;
+          const override = (empresaPlan as any)?.max_asesores_override as number | null;
           setPlanActual({
             plan_nombre: planData?.nombre || "Sin plan",
             fecha_inicio: empresaPlan.fecha_inicio,
@@ -152,9 +202,7 @@ export default function EmpresaPlanesPage() {
         // Planes (ocultamos Trial y Desarrollo)
         const { data: planes, error: errorPlanes } = await supabase
           .from("planes")
-          .select(
-            "id, nombre, max_asesores, precio, duracion_dias, precio_extra_por_asesor"
-          )
+          .select("id, nombre, max_asesores, precio, duracion_dias, precio_extra_por_asesor")
           .neq("nombre", "Trial")
           .neq("nombre", "Desarrollo")
           .order("max_asesores", { ascending: true });
@@ -184,10 +232,8 @@ export default function EmpresaPlanesPage() {
     try {
       // PREVIEW
       const qs = new URLSearchParams();
+      qs.set("empresa_id", empresaId);
       qs.set("nuevo_plan_id", planId);
-      // empresa_id ahora lo resuelve el backend por el usuario autenticado,
-      // no hace falta mandarlo desde el front.
-
       if (typeof opts?.personalizadoCount === "number") {
         qs.set("max_asesores_override", String(opts.personalizadoCount));
       }
@@ -199,6 +245,8 @@ export default function EmpresaPlanesPage() {
       const data: any = await res.json();
 
       if (res.ok && data) {
+        // Log simple para ver shape en consola (te ayuda a debuggear si algo falla)
+        console.log("preview-change response:", data);
         setPreview(data as PreviewResult);
         setPreviewTarget({ planId, personalizadoCount: opts?.personalizadoCount });
         setPreviewVisible(true);
@@ -219,10 +267,7 @@ export default function EmpresaPlanesPage() {
   };
 
   // Fallback histórico (tu endpoint existente)
-  const legacyUpgrade = async (
-    planId: string,
-    opts?: { personalizadoCount?: number }
-  ) => {
+  const legacyUpgrade = async (planId: string, opts?: { personalizadoCount?: number }) => {
     try {
       const body: any = { empresaId, planId };
       if (typeof opts?.personalizadoCount === "number") {
@@ -253,7 +298,7 @@ export default function EmpresaPlanesPage() {
   };
 
   const confirmPreview = async () => {
-    if (!previewTarget) return;
+    if (!empresaId || !previewTarget) return;
     setPreviewConfirmLoading(true);
     setMensaje("Aplicando cambio de plan...");
 
@@ -262,9 +307,8 @@ export default function EmpresaPlanesPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          empresa_id: empresaId,
           nuevo_plan_id: previewTarget.planId,
-          // empresa_id la resuelve el backend con el usuario autenticado
-          // max_asesores_override lo podemos enviar si es personalizado
           max_asesores_override:
             typeof previewTarget.personalizadoCount === "number"
               ? previewTarget.personalizadoCount
@@ -279,7 +323,7 @@ export default function EmpresaPlanesPage() {
         return;
       }
 
-      // Caso upgrade → redirigir a checkout (sandbox por ahora)
+      // Caso upgrade → eventualmente redirigirá a checkout (cuando tengas pasarela real)
       if (data.checkoutUrl) {
         window.location.href = data.checkoutUrl as string;
         return;
@@ -409,8 +453,8 @@ export default function EmpresaPlanesPage() {
 
           {esTrial && (
             <p className="mt-4 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3">
-              🔸 Estás usando el plan <strong>Trial</strong> (prueba gratuita de
-              7 días). No podés agregar asesores con este plan. Realizá un{" "}
+              🔸 Estás usando el plan <strong>Trial</strong> (prueba gratuita
+              de 7 días). No podés agregar asesores con este plan. Realizá un{" "}
               <strong>upgrade</strong> para habilitar tus asesores.
             </p>
           )}
@@ -464,9 +508,7 @@ export default function EmpresaPlanesPage() {
                         {/* Debajo: total final */}
                         <div className="text-xs text-gray-600">
                           Total:{" "}
-                          {totalConIVA != null
-                            ? fmtPrice(totalConIVA)
-                            : "—"}
+                          {totalConIVA != null ? fmtPrice(totalConIVA) : "—"}
                         </div>
                       </div>
 
@@ -577,10 +619,12 @@ export default function EmpresaPlanesPage() {
                       })
                     }
                     disabled={
-                      isActive && planActual?.max_asesores === personalCount
+                      isActive &&
+                      planActual?.max_asesores === personalCount
                     }
                     className={`mt-auto w-full py-2.5 rounded-lg text-sm font-medium transition ${
-                      isActive && planActual?.max_asesores === personalCount
+                      isActive &&
+                      planActual?.max_asesores === personalCount
                         ? "bg-gray-300 text-gray-600 cursor-not-allowed"
                         : "bg-blue-600 hover:bg-blue-700 text-white"
                     }`}
@@ -612,67 +656,62 @@ export default function EmpresaPlanesPage() {
             </h3>
 
             <div className="text-sm text-gray-700 space-y-1 mb-3">
-              {preview.actual?.nombre && preview.nuevo?.nombre ? (
+              {preview.plan_actual?.nombre && preview.plan_nuevo?.nombre ? (
                 <p>
-                  {preview.actual.nombre} →{" "}
-                  <strong>{preview.nuevo.nombre}</strong>
+                  {preview.plan_actual.nombre} →{" "}
+                  <strong>{preview.plan_nuevo.nombre}</strong>
                 </p>
               ) : null}
-              {preview.ciclo &&
-              typeof preview.ciclo.dias_restantes === "number" &&
-              typeof preview.ciclo.dias_ciclo === "number" ? (
+              {previewDiasRestantes !== null &&
+              previewDiasCiclo !== null ? (
                 <p>
                   Días restantes:{" "}
-                  <strong>{preview.ciclo.dias_restantes}</strong> de{" "}
-                  {preview.ciclo.dias_ciclo}
+                  <strong>{previewDiasRestantes}</strong> de{" "}
+                  {previewDiasCiclo}
                 </p>
               ) : null}
             </div>
 
-            {preview.accion === "upgrade" && preview.delta && (
+            {previewTipo === "upgrade" && (
               <div className="border rounded-lg p-3 mb-3 bg-emerald-50 border-emerald-200">
                 <p className="text-sm">
                   Delta neto:{" "}
-                  <strong>{fmtPrice(preview.delta.neto ?? 0)}</strong>
+                  <strong>{fmtPrice(previewDeltaNeto)}</strong>
                 </p>
                 <p className="text-sm">
                   IVA (21%):{" "}
-                  <strong>{fmtPrice(preview.delta.iva ?? 0)}</strong>
+                  <strong>{fmtPrice(previewIva)}</strong>
                 </p>
                 <p className="text-sm">
                   Total a pagar ahora:{" "}
-                  <strong>{fmtPrice(preview.delta.total ?? 0)}</strong>
+                  <strong>{fmtPrice(previewTotal)}</strong>
                 </p>
               </div>
             )}
 
-            {preview.accion === "downgrade" && (
+            {previewTipo === "downgrade" && (
               <div className="border rounded-lg p-3 mb-3 bg-amber-50 border-amber-200">
                 <p className="text-sm">
                   El cambio se aplicará desde:{" "}
                   <strong>
-                    {preview.ciclo?.fin
-                      ? new Date(preview.ciclo.fin).toLocaleDateString(
-                          "es-AR"
-                        )
+                    {preview.aplicar_desde
+                      ? new Date(
+                          preview.aplicar_desde
+                        ).toLocaleDateString("es-AR")
                       : "próximo ciclo"}
                   </strong>
                 </p>
                 <p className="text-xs text-gray-600">
-                  No se generan créditos ni reembolsos. Seguirás usando tu plan
-                  actual hasta esa fecha.
+                  No se generan créditos ni reembolsos. Seguirás usando tu
+                  plan actual hasta esa fecha.
                 </p>
               </div>
             )}
 
-            {preview.politica_downgrade && (
-              <p className="text-xs text-gray-500 mb-2">
-                {preview.politica_downgrade}
-              </p>
-            )}
-
             {preview.nota && (
-              <p className="text-xs text-gray-500 mb-2">{preview.nota}</p>
+              <p className="text-xs text-gray-500 mb-2">
+                {preview.nota}
+              </p>
             )}
 
             <div className="flex gap-3 justify-end pt-2">
@@ -690,7 +729,7 @@ export default function EmpresaPlanesPage() {
               <button
                 onClick={confirmPreview}
                 className={`px-4 py-2 rounded-lg text-sm text-white ${
-                  preview.accion === "upgrade"
+                  previewTipo === "upgrade"
                     ? "bg-blue-600 hover:bg-blue-700"
                     : "bg-gray-700 hover:bg-gray-800"
                 } ${
@@ -702,7 +741,7 @@ export default function EmpresaPlanesPage() {
               >
                 {previewConfirmLoading
                   ? "Aplicando..."
-                  : preview.accion === "upgrade"
+                  : previewTipo === "upgrade"
                   ? "Pagar diferencia"
                   : "Confirmar cambio"}
               </button>

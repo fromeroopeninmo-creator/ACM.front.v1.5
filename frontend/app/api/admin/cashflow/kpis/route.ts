@@ -13,27 +13,57 @@ const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE);
 type Role = "empresa" | "asesor" | "soporte" | "super_admin" | "super_admin_root";
 
 // ===== Utils =====
-function pad2(n: number) { return String(n).padStart(2, "0"); }
+function pad2(n: number) {
+  return String(n).padStart(2, "0");
+}
 function ymdToDate(s: string | null): Date | null {
   if (!s) return null;
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
   if (!m) return null;
-  const d = new Date(Date.UTC(+m[1], +m[2]-1, +m[3]));
+  const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
   return isNaN(d.getTime()) ? null : d;
 }
 function dayStartISO(d: Date) {
-  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0,0,0,0)).toISOString();
+  return new Date(
+    Date.UTC(
+      d.getUTCFullYear(),
+      d.getUTCMonth(),
+      d.getUTCDate(),
+      0,
+      0,
+      0,
+      0
+    )
+  ).toISOString();
 }
 function dayEndISO(d: Date) {
-  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 23,59,59,999)).toISOString();
+  return new Date(
+    Date.UTC(
+      d.getUTCFullYear(),
+      d.getUTCMonth(),
+      d.getUTCDate(),
+      23,
+      59,
+      59,
+      999
+    )
+  ).toISOString();
 }
 function currentMonthRange() {
   const now = new Date();
-  const first = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
-  const last  = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth()+1, 0));
+  const first = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)
+  );
+  const last = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0)
+  );
   return {
-    desdeStr: `${first.getUTCFullYear()}-${pad2(first.getUTCMonth()+1)}-${pad2(first.getUTCDate())}`,
-    hastaStr: `${last.getUTCFullYear()}-${pad2(last.getUTCMonth()+1)}-${pad2(last.getUTCDate())}`,
+    desdeStr: `${first.getUTCFullYear()}-${pad2(
+      first.getUTCMonth() + 1
+    )}-${pad2(first.getUTCDate())}`,
+    hastaStr: `${last.getUTCFullYear()}-${pad2(
+      last.getUTCMonth() + 1
+    )}-${pad2(last.getUTCDate())}`,
     desdeISO: dayStartISO(first),
     hastaISO: dayEndISO(last),
   };
@@ -46,11 +76,17 @@ function toNum(x: any): number {
 
 async function resolveUserRole(userId: string): Promise<Role | null> {
   const { data: p1 } = await supabaseAdmin
-    .from("profiles").select("role").eq("user_id", userId).maybeSingle();
+    .from("profiles")
+    .select("role")
+    .eq("user_id", userId)
+    .maybeSingle();
   if (p1?.role) return p1.role as Role;
 
   const { data: p2 } = await supabaseAdmin
-    .from("profiles").select("role").eq("id", userId).maybeSingle();
+    .from("profiles")
+    .select("role")
+    .eq("id", userId)
+    .maybeSingle();
   return (p2?.role as Role) ?? null;
 }
 
@@ -61,32 +97,48 @@ export async function GET(req: Request) {
     const server = supabaseServer();
     const { data: auth } = await server.auth.getUser();
     const userId = auth?.user?.id ?? null;
-    if (!userId) return NextResponse.json({ error: "No autenticado." }, { status: 401 });
+    if (!userId)
+      return NextResponse.json(
+        { error: "No autenticado." },
+        { status: 401 }
+      );
 
     // 1) Rol
     const role = await resolveUserRole(userId);
-    if (!role || !["super_admin","super_admin_root"].includes(role)) {
-      return NextResponse.json({ error: "Acceso denegado." }, { status: 403 });
+    if (!role || !["super_admin", "super_admin_root"].includes(role)) {
+      return NextResponse.json(
+        { error: "Acceso denegado." },
+        { status: 403 }
+      );
     }
 
     // 2) Rango (YYYY-MM-DD), default mes actual
     const url = new URL(req.url);
     const d1 = ymdToDate(url.searchParams.get("desde"));
     const d2 = ymdToDate(url.searchParams.get("hasta"));
-    const rng = (d1 && d2 && d2 >= d1)
-      ? { desdeStr: url.searchParams.get("desde")!, hastaStr: url.searchParams.get("hasta")!, desdeISO: dayStartISO(d1), hastaISO: dayEndISO(d2) }
-      : currentMonthRange();
+    const rng =
+      d1 && d2 && d2 >= d1
+        ? {
+            desdeStr: url.searchParams.get("desde")!,
+            hastaStr: url.searchParams.get("hasta")!,
+            desdeISO: dayStartISO(d1),
+            hastaISO: dayEndISO(d2),
+          }
+        : currentMonthRange();
 
     // 3) Suscripciones activas para referencia dentro del rango:
     //    Plan activo si (fecha_inicio <= hasta) AND (fecha_fin IS NULL OR fecha_fin >= desde)
     const { data: epRows, error: epErr } = await supabaseAdmin
       .from("empresas_planes")
-      .select("empresa_id, plan_id, max_asesores_override, activo, fecha_inicio, fecha_fin")
+      .select(
+        "empresa_id, plan_id, max_asesores_override, activo, fecha_inicio, fecha_fin"
+      )
       .eq("activo", true)
       .lte("fecha_inicio", rng.hastaISO)
       .or(`fecha_fin.is.null,fecha_fin.gte.${rng.desdeISO}`);
 
-    if (epErr) return NextResponse.json({ error: epErr.message }, { status: 400 });
+    if (epErr)
+      return NextResponse.json({ error: epErr.message }, { status: 400 });
 
     const empresaIds = new Set<string>();
     const planIds: string[] = [];
@@ -96,16 +148,31 @@ export async function GET(req: Request) {
     }
     const empresas_activas = empresaIds.size;
 
-    // 4) Map de planes
+    // 4) Map de planes (incluyendo nombre para detectar "Personalizado")
     let planMap = new Map<string, any>();
+    let premiumPlan: any = null;
+
     if (planIds.length) {
       const uniq = Array.from(new Set(planIds));
       const { data: planes, error: pe } = await supabaseAdmin
         .from("planes")
-        .select("id, precio, max_asesores, precio_extra_por_asesor")
+        .select(
+          "id, nombre, precio, max_asesores, precio_extra_por_asesor"
+        )
         .in("id", uniq);
-      if (pe) return NextResponse.json({ error: pe.message }, { status: 400 });
-      planMap = new Map((planes ?? []).map((p: any) => [String(p.id), p]));
+      if (pe)
+        return NextResponse.json({ error: pe.message }, { status: 400 });
+
+      planMap = new Map(
+        (planes ?? []).map((p: any) => [String(p.id), p])
+      );
+
+      // Plan Premium para la fórmula de "Personalizado" (mismo criterio que en el frontend)
+      premiumPlan =
+        (planes ?? []).find(
+          (p: any) =>
+            (p.nombre || "").toString().toLowerCase() === "premium"
+        ) ?? null;
     }
 
     // 5) Asesores por empresa (snapshot, suficiente para visual — igual que tu /api/admin/kpis)
@@ -115,44 +182,92 @@ export async function GET(req: Request) {
         .from("v_empresas_detalle_soporte")
         .select("empresa_id, asesores_totales")
         .in("empresa_id", Array.from(empresaIds));
-      if (de) return NextResponse.json({ error: de.message }, { status: 400 });
-      asesMap = new Map((det ?? []).map((r: any) => [String(r.empresa_id), Number(r.asesores_totales) || 0]));
+      if (de)
+        return NextResponse.json({ error: de.message }, { status: 400 });
+      asesMap = new Map(
+        (det ?? []).map((r: any) => [
+          String(r.empresa_id),
+          Number(r.asesores_totales) || 0,
+        ])
+      );
     }
 
-    // 6) KPI MRR (neto) — misma lógica que el endpoint original:
+    // 6) KPI MRR (neto)
+    //    - Planes normales: precio_base + extra por asesores excedentes
+    //    - Plan "Personalizado": misma fórmula que en el frontend:
+    //        personalizado = precio(Premium) + (max_asesores_override - 20) * precio_extra_por_asesor
     let mrr_neto = 0;
+
     for (const row of epRows ?? []) {
       const plan = planMap.get(String(row.plan_id));
       if (!plan) continue;
+
+      const nombrePlan = (plan.nombre || "").toString().toLowerCase();
       const precioBase = toNum(plan.precio);
-      const cupoBase   = toNum(plan.max_asesores);
-      const override   = row.max_asesores_override;
-      const cupo       = (override === null || override === undefined) ? cupoBase : toNum(override);
-      const ases       = asesMap.get(String(row.empresa_id)) ?? 0;
-      const excedente  = Math.max(0, ases - cupo);
-      const extra      = excedente * toNum(plan.precio_extra_por_asesor);
+      const cupoBase = toNum(plan.max_asesores);
+      const override = row.max_asesores_override;
+      const cupo =
+        override === null || override === undefined
+          ? cupoBase
+          : toNum(override);
+      const ases = asesMap.get(String(row.empresa_id)) ?? 0;
+
+      // Caso especial: Plan Personalizado
+      if (nombrePlan === "personalizado") {
+        // Base = precio del plan Premium (si existe) o el propio precio del plan Personalizado como fallback
+        const basePremium = premiumPlan
+          ? toNum(premiumPlan.precio)
+          : precioBase;
+
+        const maxOverride =
+          override === null || override === undefined
+            ? cupoBase
+            : toNum(override);
+
+        // Según la UX, los primeros 20 asesores están cubiertos por Premium,
+        // y a partir de 21 hay extra_unitario.
+        const extraCount = Math.max(0, maxOverride - 20);
+        const unitExtra = toNum(plan.precio_extra_por_asesor);
+        const personalizadoNeto = basePremium + extraCount * unitExtra;
+
+        mrr_neto += personalizadoNeto;
+        continue;
+      }
+
+      // Caso general (planes que NO son "Personalizado"):
+      // mantenemos la lógica original: precio_base + extra por asesores excedentes
+      const excedente = Math.max(0, ases - cupo);
+      const extra = excedente * toNum(plan.precio_extra_por_asesor);
       mrr_neto += precioBase + extra;
     }
 
-    // 7) Ingresos del período (neto): como no hay ledger confiable aún, aproximamos a MRR
-    //    (visual). Cuando integres pasarela, reemplazamos por suma de movimientos 'paid'.
+    // 7) Ingresos del período (neto): por ahora se aproxima al MRR
+    //    Cuando integres pasarela real, esto se puede reemplazar por suma de movimientos 'paid'.
     const ingresos_neto_total = mrr_neto;
-    const ingresos_con_iva    = Math.round(ingresos_neto_total * 1.21);
-    const arpu_neto           = empresas_activas > 0 ? Math.round(ingresos_neto_total / empresas_activas) : 0;
+    const ingresos_con_iva = Math.round(ingresos_neto_total * 1.21);
+    const arpu_neto =
+      empresas_activas > 0
+        ? Math.round(ingresos_neto_total / empresas_activas)
+        : 0;
 
-    return NextResponse.json({
-      rango: { desde: rng.desdeStr, hasta: rng.hastaStr },
-      mrr_neto,
-      ingresos_neto_total,
-      ingresos_con_iva,
-      arpu_neto,
-      empresas_activas,
-      churn_empresas: 0,
-      upgrades: 0,
-      downgrades: 0,
-    }, { status: 200 });
-
+    return NextResponse.json(
+      {
+        rango: { desde: rng.desdeStr, hasta: rng.hastaStr },
+        mrr_neto,
+        ingresos_neto_total,
+        ingresos_con_iva,
+        arpu_neto,
+        empresas_activas,
+        churn_empresas: 0,
+        upgrades: 0,
+        downgrades: 0,
+      },
+      { status: 200 }
+    );
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message || "Error inesperado" }, { status: 500 });
+    return NextResponse.json(
+      { error: e?.message || "Error inesperado" },
+      { status: 500 }
+    );
   }
 }

@@ -1,9 +1,8 @@
-// app/api/billing/change-plan/route.ts
+// app/api/billing/change-plan/route.ts 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
 import { supabaseServer } from "#lib/supabaseServer";
 import {
   assertAuthAndGetContext,
@@ -14,15 +13,13 @@ import {
   round2,
 } from "#lib/billing/utils";
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-
-// Cliente ADMIN (bypassa RLS, solo usar en backend con checks propios)
-const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE);
-
 /**
  * POST /api/billing/change-plan
- * Body: { nuevo_plan_id: string, empresa_id?: string }
+ * Body: {
+ *   nuevo_plan_id: string,
+ *   empresa_id?: string,
+ *   max_asesores_override?: number   // usado para plan "Personalizado"
+ * }
  *
  * - Upgrade: crea movimiento 'ajuste' con metadata.subtipo = 'upgrade_prorrateo' (pending).
  *   El proveedor de pago (cuando exista) debería marcarlo como paid vía webhook
@@ -36,8 +33,11 @@ export async function POST(req: Request) {
     const body = await req.json().catch(() => ({}));
     const nuevoPlanId: string | undefined = body?.nuevo_plan_id;
     const empresaIdParam: string | undefined = body?.empresa_id;
-    // max_asesores_override podría venir en body, pero de momento
-    // no lo usamos aquí (queda para una iteración futura).
+    const maxAsesoresOverrideRaw = body?.max_asesores_override;
+    const maxAsesoresOverride =
+      maxAsesoresOverrideRaw != null && !Number.isNaN(Number(maxAsesoresOverrideRaw))
+        ? Number(maxAsesoresOverrideRaw)
+        : undefined;
 
     if (!nuevoPlanId) {
       return NextResponse.json(
@@ -46,13 +46,10 @@ export async function POST(req: Request) {
       );
     }
 
-    // 1) Autenticación con cliente "user" (respeta cookies / sesión)
-    const supabaseUser = supabaseServer();
-    const ctx = await assertAuthAndGetContext(supabaseUser);
-
-    // 2) Resolver empresa según rol (empresa/asesor vs admin/root)
+    const supabase = supabaseServer();
+    const ctx = await assertAuthAndGetContext(supabase);
     const empresaId = await getEmpresaIdForActor({
-      supabase: supabaseUser,
+      supabase,
       actor: ctx,
       empresaIdParam,
     });
@@ -64,8 +61,8 @@ export async function POST(req: Request) {
       );
     }
 
-    // 3) Leer estado de suscripción/ciclo usando cliente ADMIN
-    const sus = await getSuscripcionEstado(supabaseAdmin, empresaId);
+    // Estado actual (basado en empresas_planes + planes)
+    const sus = await getSuscripcionEstado(supabase, empresaId);
     if (!sus?.plan_actual_id) {
       return NextResponse.json(
         { error: "Empresa sin plan actual/ciclo vigente para cambiar." },
@@ -75,23 +72,83 @@ export async function POST(req: Request) {
 
     const { ciclo_inicio, ciclo_fin, plan_actual_id } = sus;
 
-    // 4) Precios netos de ambos planes (con overrides si aplica), usando ADMIN
+    // Precio neto actual (plan activo)
     const precioActual = await getPlanPrecioNetoPreferido(
-      supabaseAdmin,
+      supabase,
       plan_actual_id,
       empresaId
     );
-    const precioNuevo = await getPlanPrecioNetoPreferido(
-      supabaseAdmin,
+
+    if (precioActual == null) {
+      return NextResponse.json(
+        { error: "No se pudo resolver el precio neto del plan actual." },
+        { status: 409 }
+      );
+    }
+
+    // --------------------------
+    // Precio neto NUEVO, con caso especial para "Personalizado"
+    // --------------------------
+    // Base (lo que tengas en planes.precio o override actual si aplica)
+    let precioNuevo = await getPlanPrecioNetoPreferido(
+      supabase,
       nuevoPlanId,
       empresaId
     );
 
-    if (precioActual == null || precioNuevo == null) {
+    if (precioNuevo == null) {
       return NextResponse.json(
-        { error: "No se pudieron resolver los precios netos (planes)." },
+        { error: "No se pudo resolver el precio neto del nuevo plan." },
         { status: 409 }
       );
+    }
+
+    // Si viene override y el nuevo plan es "Personalizado", recalculamos precioNuevo
+    // usando la misma lógica que el frontend:
+    //   premiumPrecio + (maxAsesoresOverride - 20) * precio_extra_por_asesor
+    if (
+      typeof maxAsesoresOverride === "number" &&
+      Number.isFinite(maxAsesoresOverride)
+    ) {
+      // Primero vemos si el nuevo plan ES "Personalizado"
+      const { data: nuevoPlanRow, error: nuevoPlanErr } = await supabase
+        .from("planes")
+        .select("id, nombre, precio, precio_extra_por_asesor")
+        .eq("id", nuevoPlanId)
+        .maybeSingle();
+
+      if (nuevoPlanErr) {
+        console.error("Error leyendo nuevo plan:", nuevoPlanErr.message);
+      }
+
+      if (
+        nuevoPlanRow &&
+        (nuevoPlanRow.nombre || "").toLowerCase() === "personalizado"
+      ) {
+        // Buscamos el plan Premium para tomar su precio base (igual que en el frontend)
+        const { data: premiumPlan, error: premiumErr } = await supabase
+          .from("planes")
+          .select("id, precio")
+          .eq("nombre", "Premium")
+          .maybeSingle();
+
+        if (premiumErr) {
+          console.error("Error leyendo plan Premium:", premiumErr.message);
+        }
+
+        const basePremium = premiumPlan
+          ? Number(premiumPlan.precio ?? 0)
+          : Number(nuevoPlanRow.precio ?? 0); // fallback por las dudas
+
+        const unitExtra = Number(nuevoPlanRow.precio_extra_por_asesor ?? 0);
+        // Según tu UX, los primeros 20 asesores están cubiertos por Premium
+        const extra = Math.max(0, maxAsesoresOverride - 20);
+        const personalizadoPrecio = basePremium + extra * unitExtra;
+
+        if (personalizadoPrecio > 0) {
+          precioNuevo = personalizadoPrecio;
+        }
+      }
     }
 
     const isUpgrade = precioNuevo > precioActual;
@@ -110,7 +167,7 @@ export async function POST(req: Request) {
       });
 
       // Idempotencia: buscamos un movimiento pending del ciclo con este subtipo
-      const { data: existing, error: exErr } = await supabaseAdmin
+      const { data: existing, error: exErr } = await supabase
         .from("movimientos_financieros")
         .select("id, estado, metadata")
         .eq("empresa_id", empresaId)
@@ -149,8 +206,8 @@ export async function POST(req: Request) {
         );
       }
 
-      // Crear nuevo movimiento pending (ADMIN, sin RLS)
-      const metadata = {
+      // Crear nuevo movimiento pending
+      const metadata: any = {
         subtipo: "upgrade_prorrateo",
         plan_actual_id,
         nuevo_plan_id: nuevoPlanId,
@@ -163,7 +220,11 @@ export async function POST(req: Request) {
         total: round2(sim.total),
       };
 
-      const { data: ins, error: insErr } = await supabaseAdmin
+      if (typeof maxAsesoresOverride === "number") {
+        metadata.max_asesores_override = maxAsesoresOverride;
+      }
+
+      const { data: ins, error: insErr } = await supabase
         .from("movimientos_financieros")
         .insert([
           {
@@ -217,7 +278,7 @@ export async function POST(req: Request) {
     // DOWNGRADE → programar cambio al fin del ciclo
     // -------------------------
     if (isDowngrade) {
-      const { error: updErr } = await supabaseAdmin
+      const { error: updErr } = await supabase
         .from("suscripciones")
         .update({
           plan_proximo_id: nuevoPlanId,
@@ -227,7 +288,10 @@ export async function POST(req: Request) {
 
       if (updErr) {
         return NextResponse.json(
-          { error: "No se pudo programar el downgrade", detail: updErr.message },
+          {
+            error: "No se pudo programar el downgrade",
+            detail: updErr.message,
+          },
           { status: 500 }
         );
       }

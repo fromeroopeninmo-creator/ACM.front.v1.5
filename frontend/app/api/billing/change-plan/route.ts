@@ -3,6 +3,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
 import { supabaseServer } from "#lib/supabaseServer";
 import {
   assertAuthAndGetContext,
@@ -12,6 +13,12 @@ import {
   calcularDeltaProrrateo,
   round2,
 } from "#lib/billing/utils";
+
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+
+// Cliente ADMIN (bypassa RLS, solo usar en backend con checks propios)
+const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE);
 
 /**
  * POST /api/billing/change-plan
@@ -39,10 +46,13 @@ export async function POST(req: Request) {
       );
     }
 
-    const supabase = supabaseServer();
-    const ctx = await assertAuthAndGetContext(supabase);
+    // 1) Autenticación con cliente "user" (respeta cookies / sesión)
+    const supabaseUser = supabaseServer();
+    const ctx = await assertAuthAndGetContext(supabaseUser);
+
+    // 2) Resolver empresa según rol (empresa/asesor vs admin/root)
     const empresaId = await getEmpresaIdForActor({
-      supabase,
+      supabase: supabaseUser,
       actor: ctx,
       empresaIdParam,
     });
@@ -54,8 +64,8 @@ export async function POST(req: Request) {
       );
     }
 
-    // Estado actual (basado en empresas_planes + planes)
-    const sus = await getSuscripcionEstado(supabase, empresaId);
+    // 3) Leer estado de suscripción/ciclo usando cliente ADMIN
+    const sus = await getSuscripcionEstado(supabaseAdmin, empresaId);
     if (!sus?.plan_actual_id) {
       return NextResponse.json(
         { error: "Empresa sin plan actual/ciclo vigente para cambiar." },
@@ -65,14 +75,14 @@ export async function POST(req: Request) {
 
     const { ciclo_inicio, ciclo_fin, plan_actual_id } = sus;
 
-    // Precios netos de ambos planes
+    // 4) Precios netos de ambos planes (con overrides si aplica), usando ADMIN
     const precioActual = await getPlanPrecioNetoPreferido(
-      supabase,
+      supabaseAdmin,
       plan_actual_id,
       empresaId
     );
     const precioNuevo = await getPlanPrecioNetoPreferido(
-      supabase,
+      supabaseAdmin,
       nuevoPlanId,
       empresaId
     );
@@ -100,7 +110,7 @@ export async function POST(req: Request) {
       });
 
       // Idempotencia: buscamos un movimiento pending del ciclo con este subtipo
-      const { data: existing, error: exErr } = await supabase
+      const { data: existing, error: exErr } = await supabaseAdmin
         .from("movimientos_financieros")
         .select("id, estado, metadata")
         .eq("empresa_id", empresaId)
@@ -139,7 +149,7 @@ export async function POST(req: Request) {
         );
       }
 
-      // Crear nuevo movimiento pending
+      // Crear nuevo movimiento pending (ADMIN, sin RLS)
       const metadata = {
         subtipo: "upgrade_prorrateo",
         plan_actual_id,
@@ -153,7 +163,7 @@ export async function POST(req: Request) {
         total: round2(sim.total),
       };
 
-      const { data: ins, error: insErr } = await supabase
+      const { data: ins, error: insErr } = await supabaseAdmin
         .from("movimientos_financieros")
         .insert([
           {
@@ -207,7 +217,7 @@ export async function POST(req: Request) {
     // DOWNGRADE → programar cambio al fin del ciclo
     // -------------------------
     if (isDowngrade) {
-      const { error: updErr } = await supabase
+      const { error: updErr } = await supabaseAdmin
         .from("suscripciones")
         .update({
           plan_proximo_id: nuevoPlanId,

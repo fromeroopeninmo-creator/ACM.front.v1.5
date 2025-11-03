@@ -6,6 +6,7 @@ import {
   postCashflowSimularPeriodo,
   type CashflowKpisResponse,
 } from "#lib/adminCashflowApi";
+import { supabase } from "#lib/supabaseClient";
 
 /* ================= Helpers ================= */
 function pad2(n: number) {
@@ -80,6 +81,13 @@ type EmpresasPaged = {
   items: EmpresaResumen[];
 };
 
+type PlanInfo = {
+  id: string;
+  nombre: string;
+  precio: number;
+  precio_extra_por_asesor: number;
+};
+
 /* =================== Componente =================== */
 export default function CashflowClient() {
   // ======= Filtros / estado =======
@@ -103,7 +111,39 @@ export default function CashflowClient() {
   const [loading, setLoading] = useState(false);
   const [errMsg, setErrMsg] = useState<string | null>(null);
 
+  // planes (para corregir "Personalizado")
+  const [planes, setPlanes] = useState<PlanInfo[]>([]);
+
   const canQuery = useMemo(() => !!desde && !!hasta, [desde, hasta]);
+
+  /* ========= Fetch de planes (para cálculo Personalizado) ========= */
+  useEffect(() => {
+    const fetchPlanes = async () => {
+      try {
+        const { data, error } = await supabase
+          .from("planes")
+          .select("id, nombre, precio, precio_extra_por_asesor");
+
+        if (error) {
+          console.error("Error cargando planes (cashflow):", error);
+          return;
+        }
+
+        setPlanes(
+          (data || []).map((p: any) => ({
+            id: String(p.id),
+            nombre: String(p.nombre),
+            precio: Number(p.precio ?? 0),
+            precio_extra_por_asesor: Number(p.precio_extra_por_asesor ?? 0),
+          }))
+        );
+      } catch (err) {
+        console.error("Error cargando planes (cashflow):", err);
+      }
+    };
+
+    fetchPlanes();
+  }, []);
 
   /* ========= Fetch de KPIs + Empresas (índice) ========= */
   async function fetchAll() {
@@ -172,6 +212,44 @@ export default function CashflowClient() {
   function empresaDetalleHref(empresaId: string) {
     const usp = new URLSearchParams({ desde, hasta });
     return `/dashboard/admin/cashflow/${encodeURIComponent(empresaId)}?${usp.toString()}`;
+  }
+
+  // helper para calcular visualmente MRR/ingresos de un registro,
+  // corrigiendo el caso "Personalizado" sin romper lo que viene del backend
+  function computeRowAmounts(e: EmpresaResumen) {
+    let mrr = e.mrr_neto_actual;
+    let ingresosNeto = e.ingresos_neto_periodo;
+    let ingresosIVA = e.ingresos_con_iva_periodo;
+
+    const isPersonalizado = (e.plan_nombre || "").toLowerCase() === "personalizado";
+
+    if (isPersonalizado && planes.length > 0) {
+      const premium = planes.find((p) => p.nombre === "Premium");
+      const personalizado = planes.find((p) => p.nombre === "Personalizado");
+
+      if (premium && personalizado) {
+        const override = e.override ?? e.cupo_plan; // máx. asesores contratados
+        const overrideNum = Number(override ?? 0);
+
+        if (overrideNum > 0) {
+          const basePremium = Number(premium.precio ?? 0);
+          const unitExtra = Number(personalizado.precio_extra_por_asesor ?? 0);
+
+          // Igual que en el front de /planes: primeros 20 cubiertos por Premium
+          const extraUnits = Math.max(0, overrideNum - 20);
+          const personalizadoPrecio = basePremium + extraUnits * unitExtra;
+
+          if (personalizadoPrecio > 0) {
+            mrr = personalizadoPrecio;
+            // Para el resumen, usamos el mismo valor como ingreso del período (visual)
+            ingresosNeto = personalizadoPrecio;
+            ingresosIVA = Math.round(personalizadoPrecio * 1.21);
+          }
+        }
+      }
+    }
+
+    return { mrr, ingresosNeto, ingresosIVA };
   }
 
   /* =================== Render =================== */
@@ -373,50 +451,62 @@ export default function CashflowClient() {
                   </td>
                 </tr>
               ) : (
-                empresas!.items.map((e) => (
-                  <tr key={e.empresa_id} className="border-b last:border-0">
-                    <td className="px-4 py-3">
-                      <div className="font-medium">{e.empresa_nombre || "—"}</div>
-                      <div className="text-xs text-gray-500">{e.cuit || "—"}</div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <span>{e.plan_nombre || "—"}</span>
-                        <span
-                          className={
-                            e.plan_activo
-                              ? "inline-flex items-center rounded-full px-2 py-0.5 text-xs bg-green-100 text-green-700"
-                              : "inline-flex items-center rounded-full px-2 py-0.5 text-xs bg-amber-100 text-amber-700"
-                          }
+                empresas!.items.map((e) => {
+                  const { mrr, ingresosNeto, ingresosIVA } = computeRowAmounts(e);
+
+                  return (
+                    <tr key={e.empresa_id} className="border-b last:border-0">
+                      <td className="px-4 py-3">
+                        <div className="font-medium">{e.empresa_nombre || "—"}</div>
+                        <div className="text-xs text-gray-500">{e.cuit || "—"}</div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <span>{e.plan_nombre || "—"}</span>
+                          <span
+                            className={
+                              e.plan_activo
+                                ? "inline-flex items-center rounded-full px-2 py-0.5 text-xs bg-green-100 text-green-700"
+                                : "inline-flex items-center rounded-full px-2 py-0.5 text-xs bg-amber-100 text-amber-700"
+                            }
+                          >
+                            {e.plan_activo ? "Activo" : "Inactivo"}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div>
+                          {fmtDateISO(e.fecha_inicio)} → {fmtDateISO(e.fecha_fin)}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-right">{fmtMoney(mrr)}</td>
+                      <td className="px-4 py-3 text-right">{fmtMoney(ingresosNeto)}</td>
+                      <td className="px-4 py-3 text-right">{fmtMoney(ingresosIVA)}</td>
+                      <td className="px-4 py-3 text-right">{fmtNumber(e.movimientos_count)}</td>
+                      <td className="px-4 py-3">{fmtDateISO(e.ultimo_movimiento)}</td>
+                      <td className="px-4 py-3 text-right">{fmtNumber(e.asesores_usados)}</td>
+                      <td className="px-4 py-3 text-right">{fmtNumber(e.cupo_plan)}</td>
+                      <td className="px-4 py-3 text-right">{fmtNumber(e.override ?? 0)}</td>
+                      <td className="px-4 py-3 text-right">
+                        {e.exceso > 0 ? (
+                          <span className="text-red-600 font-medium">
+                            {fmtNumber(e.exceso)}
+                          </span>
+                        ) : (
+                          "—"
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        <a
+                          href={empresaDetalleHref(e.empresa_id)}
+                          className="text-blue-600 hover:underline"
                         >
-                          {e.plan_activo ? "Activo" : "Inactivo"}
-                        </span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div>{fmtDateISO(e.fecha_inicio)} → {fmtDateISO(e.fecha_fin)}</div>
-                    </td>
-                    <td className="px-4 py-3 text-right">{fmtMoney(e.mrr_neto_actual)}</td>
-                    <td className="px-4 py-3 text-right">{fmtMoney(e.ingresos_neto_periodo)}</td>
-                    <td className="px-4 py-3 text-right">{fmtMoney(e.ingresos_con_iva_periodo)}</td>
-                    <td className="px-4 py-3 text-right">{fmtNumber(e.movimientos_count)}</td>
-                    <td className="px-4 py-3">{fmtDateISO(e.ultimo_movimiento)}</td>
-                    <td className="px-4 py-3 text-right">{fmtNumber(e.asesores_usados)}</td>
-                    <td className="px-4 py-3 text-right">{fmtNumber(e.cupo_plan)}</td>
-                    <td className="px-4 py-3 text-right">{fmtNumber(e.override ?? 0)}</td>
-                    <td className="px-4 py-3 text-right">
-                      {e.exceso > 0 ? <span className="text-red-600 font-medium">{fmtNumber(e.exceso)}</span> : "—"}
-                    </td>
-                    <td className="px-4 py-3">
-                      <a
-                        href={empresaDetalleHref(e.empresa_id)}
-                        className="text-blue-600 hover:underline"
-                      >
-                        Ver detalle
-                      </a>
-                    </td>
-                  </tr>
-                ))
+                          Ver detalle
+                        </a>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
@@ -432,11 +522,15 @@ export default function CashflowClient() {
             >
               ← Anterior
             </button>
-            <span className="text-xs text-gray-600">Página {empPage} de {totalPages}</span>
+            <span className="text-xs text-gray-600">
+              Página {empPage} de {totalPages}
+            </span>
             <button
               className="rounded-md border px-3 py-1 disabled:opacity-50"
               onClick={() => setEmpPage((p) => Math.min(totalPages, p + 1))}
-              disabled={loading || (empresas?.items.length ?? 0) === 0 || empPage >= totalPages}
+              disabled={
+                loading || (empresas?.items.length ?? 0) === 0 || empPage >= totalPages
+              }
             >
               Siguiente →
             </button>

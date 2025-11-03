@@ -86,7 +86,8 @@ export async function GET(req: Request) {
     const precioNuevo = await getPlanPrecioNetoPreferido(
       supabase,
       nuevoPlanId,
-      empresaId
+      empresaId,
+      maxAsesoresOverride
     );
 
     if (precioActual == null || precioNuevo == null) {

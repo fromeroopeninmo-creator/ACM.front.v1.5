@@ -41,22 +41,50 @@ export async function assertAuthAndGetContext(
   };
 }
 
-/** Determina empresa objetivo: admin/root pueden pasar empresaIdParam; empresa/asesor usa propia. */
+/**
+ * Determina empresa objetivo:
+ * - super_admin / super_admin_root / soporte pueden pasar empresaIdParam.
+ * - empresa / asesor: usa empresa_id del profile si existe.
+ * - Fallback: busca empresas.id por empresas.user_id = actor.userId.
+ */
 export async function getEmpresaIdForActor(params: {
   supabase: SupabaseClient;
   actor: ActorCtx;
   empresaIdParam?: string;
 }): Promise<string | null> {
-  const { actor, empresaIdParam } = params;
+  const { supabase, actor, empresaIdParam } = params;
+
   const isAdmin =
     actor.role === "super_admin_root" ||
     actor.role === "super_admin" ||
     actor.role === "soporte";
 
-  // Admin / soporte puede pasar empresaIdParam
+  // 1) Admin / soporte puede pasar empresaIdParam explícito
   if (isAdmin && empresaIdParam) return empresaIdParam;
-  // Caso empresa/asesor → usamos la empresa del profile
+
+  // 2) Si el profile ya tiene empresa_id, usarlo
   if (actor.empresaId) return actor.empresaId;
+
+  // 3) Fallback: empresas.user_id = actor.userId
+  if (actor.userId) {
+    const { data: emp, error } = await supabase
+      .from("empresas")
+      .select("id")
+      .eq("user_id", actor.userId)
+      .maybeSingle();
+
+    if (error) {
+      console.warn(
+        "getEmpresaIdForActor: error buscando empresas por user_id:",
+        error.message
+      );
+      return null;
+    }
+
+    if (emp?.id) return emp.id as string;
+  }
+
+  // 4) No se pudo resolver
   return null;
 }
 

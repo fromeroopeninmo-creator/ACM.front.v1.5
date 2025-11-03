@@ -22,17 +22,39 @@ interface Plan {
   precio_extra_por_asesor?: number | string | null; // Personalizado
 }
 
+// Shape alineado con /api/billing/preview-change
 type PreviewResult = {
-  tipo: "upgrade" | "downgrade" | "sin_cambio";
+  accion: "upgrade" | "downgrade" | "sin_cambio";
   empresa_id: string;
-  plan_actual?: { id: string; nombre: string; precio_neto?: number | null } | null;
-  plan_nuevo?: { id: string; nombre: string; precio_neto?: number | null } | null;
-  dias_ciclo?: number | null;
-  dias_restantes?: number | null;
-  delta_neto?: number;
-  iva?: number;
-  total?: number;
-  aplicar_desde?: string | null; // para downgrade programado
+  ciclo: {
+    inicio: string;
+    fin: string;
+    dias_ciclo: number;
+    dias_restantes: number;
+    factor: number;
+  } | null;
+  actual: {
+    plan_id: string | null;
+    nombre: string | null;
+    precio_neto: number | null;
+  } | null;
+  nuevo: {
+    plan_id: string | null;
+    nombre: string | null;
+    precio_neto: number | null;
+  } | null;
+  delta: {
+    neto: number;
+    iva: number;
+    total: number;
+    moneda: string;
+  } | null;
+  politica_downgrade?: string | null;
+  proximo_programado?: {
+    plan_id: string;
+    nombre: string | null;
+    aplica_desde: string;
+  } | null;
   nota?: string | null;
 };
 
@@ -52,53 +74,32 @@ export default function EmpresaPlanesPage() {
   const [preview, setPreview] = useState<PreviewResult | null>(null);
   const [previewVisible, setPreviewVisible] = useState(false);
   const [previewConfirmLoading, setPreviewConfirmLoading] = useState(false);
-  const [previewTarget, setPreviewTarget] = useState<{ planId: string; personalizadoCount?: number } | null>(null);
+  const [previewTarget, setPreviewTarget] = useState<{
+    planId: string;
+    personalizadoCount?: number;
+  } | null>(null);
 
   // IVA
   const IVA_PCT = 0.21;
 
-  // 🔎 Resolver empresas.id
-useEffect(() => {
-  const fetchEmpresa = async () => {
-    if (!user?.id) return;
-
-    try {
-      // 1) dueñ@ directo de empresa (empresas.user_id = user.id)
-      const { data: emp, error: errEmp } = await supabase
+  // 🔎 Resolver empresas.id (dueño directo)
+  useEffect(() => {
+    const fetchEmpresa = async () => {
+      if (!user?.id) return;
+      const { data: emp, error } = await supabase
         .from("empresas")
         .select("id")
         .eq("user_id", user.id)
         .maybeSingle();
-
-      if (emp?.id) {
-        setEmpresaId(emp.id);
+      if (error) {
+        console.error("Error buscando empresa:", error);
+        setEmpresaId(null);
         return;
       }
-
-      // 2) fallback: perfil vinculado (profiles.user_id = user.id) → empresa_id
-      const { data: prof, error: errProf } = await supabase
-        .from("profiles")
-        .select("empresa_id")
-        .eq("user_id", user.id)
-        .maybeSingle();
-
-      if (prof?.empresa_id) {
-        setEmpresaId(prof.empresa_id as string);
-        return;
-      }
-
-      // 3) no se pudo resolver
-      console.warn("No se pudo resolver empresa_id para el usuario actual.");
-      setEmpresaId(null);
-    } catch (e) {
-      console.error("Error resolviendo empresa_id:", e);
-      setEmpresaId(null);
-    }
-  };
-
-  fetchEmpresa();
-}, [user]);
-
+      setEmpresaId(emp?.id ?? null);
+    };
+    fetchEmpresa();
+  }, [user]);
 
   // 📡 Plan actual + planes
   useEffect(() => {
@@ -131,7 +132,8 @@ useEffect(() => {
           const planDataRaw = empresaPlan.planes;
           const planData = Array.isArray(planDataRaw) ? planDataRaw[0] : planDataRaw;
           const baseMax = planData?.max_asesores ?? 0;
-          const override = (empresaPlan as any)?.max_asesores_override as number | null;
+          const override = (empresaPlan as any)
+            ?.max_asesores_override as number | null;
           setPlanActual({
             plan_nombre: planData?.nombre || "Sin plan",
             fecha_inicio: empresaPlan.fecha_inicio,
@@ -150,7 +152,9 @@ useEffect(() => {
         // Planes (ocultamos Trial y Desarrollo)
         const { data: planes, error: errorPlanes } = await supabase
           .from("planes")
-          .select("id, nombre, max_asesores, precio, duracion_dias, precio_extra_por_asesor")
+          .select(
+            "id, nombre, max_asesores, precio, duracion_dias, precio_extra_por_asesor"
+          )
           .neq("nombre", "Trial")
           .neq("nombre", "Desarrollo")
           .order("max_asesores", { ascending: true });
@@ -180,8 +184,10 @@ useEffect(() => {
     try {
       // PREVIEW
       const qs = new URLSearchParams();
-      qs.set("empresa_id", empresaId);
       qs.set("nuevo_plan_id", planId);
+      // empresa_id ahora lo resuelve el backend por el usuario autenticado,
+      // no hace falta mandarlo desde el front.
+
       if (typeof opts?.personalizadoCount === "number") {
         qs.set("max_asesores_override", String(opts.personalizadoCount));
       }
@@ -213,7 +219,10 @@ useEffect(() => {
   };
 
   // Fallback histórico (tu endpoint existente)
-  const legacyUpgrade = async (planId: string, opts?: { personalizadoCount?: number }) => {
+  const legacyUpgrade = async (
+    planId: string,
+    opts?: { personalizadoCount?: number }
+  ) => {
     try {
       const body: any = { empresaId, planId };
       if (typeof opts?.personalizadoCount === "number") {
@@ -244,7 +253,7 @@ useEffect(() => {
   };
 
   const confirmPreview = async () => {
-    if (!empresaId || !previewTarget) return;
+    if (!previewTarget) return;
     setPreviewConfirmLoading(true);
     setMensaje("Aplicando cambio de plan...");
 
@@ -253,8 +262,9 @@ useEffect(() => {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          empresa_id: empresaId,
           nuevo_plan_id: previewTarget.planId,
+          // empresa_id la resuelve el backend con el usuario autenticado
+          // max_asesores_override lo podemos enviar si es personalizado
           max_asesores_override:
             typeof previewTarget.personalizadoCount === "number"
               ? previewTarget.personalizadoCount
@@ -326,7 +336,10 @@ useEffect(() => {
     return premiumPrecio + extra * extraUnitPrice;
   }, [personalCount, premiumPrecio, extraUnitPrice]);
 
-  const personalizadoTotalConIVA = useMemo(() => withIVA(personalizadoNeto), [personalizadoNeto]);
+  const personalizadoTotalConIVA = useMemo(
+    () => withIVA(personalizadoNeto),
+    [personalizadoNeto]
+  );
 
   const planActualNombre = useMemo(
     () => (planActual?.plan_nombre ? planActual.plan_nombre : "Sin plan"),
@@ -355,7 +368,9 @@ useEffect(() => {
           Plan actual:{" "}
           <span className="font-semibold">{planActualNombre}</span>{" "}
           {planActual?.max_asesores ? (
-            <span className="text-gray-500">({planActual.max_asesores} asesores)</span>
+            <span className="text-gray-500">
+              ({planActual.max_asesores} asesores)
+            </span>
           ) : null}
         </p>
       </section>
@@ -369,18 +384,23 @@ useEffect(() => {
                 {planActual.plan_nombre}
               </h2>
               <p className="text-sm text-gray-600">
-                Asesores permitidos: <strong>{planActual.max_asesores}</strong>
+                Asesores permitidos:{" "}
+                <strong>{planActual.max_asesores}</strong>
               </p>
               <p className="text-sm text-gray-600">
-                Inicio: {new Date(planActual.fecha_inicio).toLocaleDateString("es-AR")}
+                Inicio:{" "}
+                {new Date(planActual.fecha_inicio).toLocaleDateString("es-AR")}
               </p>
               <p className="text-sm text-gray-600">
-                Vencimiento: {new Date(planActual.fecha_fin).toLocaleDateString("es-AR")}
+                Vencimiento:{" "}
+                {new Date(planActual.fecha_fin).toLocaleDateString("es-AR")}
               </p>
             </div>
             <span
               className={`text-xs px-2 py-1 rounded self-start ${
-                planActual.activo ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"
+                planActual.activo
+                  ? "bg-green-100 text-green-700"
+                  : "bg-red-100 text-red-700"
               }`}
             >
               {planActual.activo ? "Activo" : "Inactivo"}
@@ -389,8 +409,9 @@ useEffect(() => {
 
           {esTrial && (
             <p className="mt-4 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3">
-              🔸 Estás usando el plan <strong>Trial</strong> (prueba gratuita de 7 días).
-              No podés agregar asesores con este plan. Realizá un <strong>upgrade</strong> para habilitar tus asesores.
+              🔸 Estás usando el plan <strong>Trial</strong> (prueba gratuita de
+              7 días). No podés agregar asesores con este plan. Realizá un{" "}
+              <strong>upgrade</strong> para habilitar tus asesores.
             </p>
           )}
         </section>
@@ -424,7 +445,9 @@ useEffect(() => {
                       {displayPlanName(plan.nombre)}
                     </h3>
                     <span className="text-sm text-gray-500">
-                      {plan.duracion_dias ? `${plan.duracion_dias} días` : ""}
+                      {plan.duracion_dias
+                        ? `${plan.duracion_dias} días`
+                        : ""}
                     </span>
                   </div>
 
@@ -433,17 +456,27 @@ useEffect(() => {
                       {/* Precio grande: neto + IVA (literal) */}
                       <div className="mt-2">
                         <div className="text-2xl font-bold">
-                          {fmtPrice(neto)} <span className="text-base font-semibold">+ IVA</span>
+                          {fmtPrice(neto)}{" "}
+                          <span className="text-base font-semibold">
+                            + IVA
+                          </span>
                         </div>
                         {/* Debajo: total final */}
                         <div className="text-xs text-gray-600">
-                          Total: {totalConIVA != null ? fmtPrice(totalConIVA) : "—"}
+                          Total:{" "}
+                          {totalConIVA != null
+                            ? fmtPrice(totalConIVA)
+                            : "—"}
                         </div>
                       </div>
 
                       {/* Bullets visuales (incluye “Hasta X asesores”) */}
                       <ul className="mt-3 text-sm text-gray-700 space-y-1">
-                        <li><strong>• Hasta {plan.max_asesores} asesores</strong></li>
+                        <li>
+                          <strong>
+                            • Hasta {plan.max_asesores} asesores
+                          </strong>
+                        </li>
                         <li>• Sin límites de informes</li>
                         <li>• Guarda / Carga / Edita tus informes</li>
                         <li>• Informe descargable en PDF</li>
@@ -463,7 +496,11 @@ useEffect(() => {
                               min={21}
                               max={50}
                               value={personalCount}
-                              onChange={(e) => setPersonalCount(parseInt(e.target.value || "21", 10))}
+                              onChange={(e) =>
+                                setPersonalCount(
+                                  parseInt(e.target.value || "21", 10)
+                                )
+                              }
                               className="w-full"
                             />
                             <input
@@ -472,7 +509,13 @@ useEffect(() => {
                               max={50}
                               value={personalCount}
                               onChange={(e) => {
-                                const v = Math.max(21, Math.min(50, parseInt(e.target.value || "21", 10)));
+                                const v = Math.max(
+                                  21,
+                                  Math.min(
+                                    50,
+                                    parseInt(e.target.value || "21", 10)
+                                  )
+                                );
                                 setPersonalCount(v);
                               }}
                               className="w-20 border rounded-lg px-2 py-1"
@@ -487,16 +530,23 @@ useEffect(() => {
                         <div className="mt-3">
                           <div className="text-2xl font-bold">
                             Total: {fmtPrice(personalizadoNeto)}{" "}
-                            <span className="text-base font-semibold">+ IVA</span>
+                            <span className="text-base font-semibold">
+                              + IVA
+                            </span>
                           </div>
                           <div className="text-xs text-gray-600">
-                            Total: {fmtPrice(personalizadoTotalConIVA ?? 0)}
+                            Total:{" "}
+                            {fmtPrice(personalizadoTotalConIVA ?? 0)}
                           </div>
                         </div>
 
                         {/* Bullets */}
                         <ul className="mt-3 text-sm text-gray-700 space-y-1">
-                          <li><strong>• Hasta {personalCount} asesores</strong></li>
+                          <li>
+                            <strong>
+                              • Hasta {personalCount} asesores
+                            </strong>
+                          </li>
                           <li>• Sin límites de informes</li>
                           <li>• Guarda / Carga / Edita tus informes</li>
                           <li>• Informe descargable en PDF</li>
@@ -521,10 +571,16 @@ useEffect(() => {
                   </button>
                 ) : (
                   <button
-                    onClick={() => handleUpgrade(plan.id, { personalizadoCount: personalCount })}
-                    disabled={isActive && (planActual?.max_asesores === personalCount)}
+                    onClick={() =>
+                      handleUpgrade(plan.id, {
+                        personalizadoCount: personalCount,
+                      })
+                    }
+                    disabled={
+                      isActive && planActual?.max_asesores === personalCount
+                    }
                     className={`mt-auto w-full py-2.5 rounded-lg text-sm font-medium transition ${
-                      isActive && (planActual?.max_asesores === personalCount)
+                      isActive && planActual?.max_asesores === personalCount
                         ? "bg-gray-300 text-gray-600 cursor-not-allowed"
                         : "bg-blue-600 hover:bg-blue-700 text-white"
                     }`}
@@ -551,49 +607,68 @@ useEffect(() => {
       {previewVisible && preview && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-lg p-6">
-            <h3 className="text-lg font-semibold mb-2">Confirmar cambio de plan</h3>
+            <h3 className="text-lg font-semibold mb-2">
+              Confirmar cambio de plan
+            </h3>
 
             <div className="text-sm text-gray-700 space-y-1 mb-3">
-              {preview.plan_actual?.nombre && preview.plan_nuevo?.nombre ? (
+              {preview.actual?.nombre && preview.nuevo?.nombre ? (
                 <p>
-                  {preview.plan_actual.nombre} → <strong>{preview.plan_nuevo.nombre}</strong>
+                  {preview.actual.nombre} →{" "}
+                  <strong>{preview.nuevo.nombre}</strong>
                 </p>
               ) : null}
-              {typeof preview.dias_restantes === "number" && typeof preview.dias_ciclo === "number" ? (
+              {preview.ciclo &&
+              typeof preview.ciclo.dias_restantes === "number" &&
+              typeof preview.ciclo.dias_ciclo === "number" ? (
                 <p>
-                  Días restantes: <strong>{preview.dias_restantes}</strong> de {preview.dias_ciclo}
+                  Días restantes:{" "}
+                  <strong>{preview.ciclo.dias_restantes}</strong> de{" "}
+                  {preview.ciclo.dias_ciclo}
                 </p>
               ) : null}
             </div>
 
-            {preview.tipo === "upgrade" && (
+            {preview.accion === "upgrade" && preview.delta && (
               <div className="border rounded-lg p-3 mb-3 bg-emerald-50 border-emerald-200">
                 <p className="text-sm">
-                  Delta neto: <strong>{fmtPrice(preview.delta_neto ?? 0)}</strong>
+                  Delta neto:{" "}
+                  <strong>{fmtPrice(preview.delta.neto ?? 0)}</strong>
                 </p>
                 <p className="text-sm">
-                  IVA (21%): <strong>{fmtPrice(preview.iva ?? 0)}</strong>
+                  IVA (21%):{" "}
+                  <strong>{fmtPrice(preview.delta.iva ?? 0)}</strong>
                 </p>
                 <p className="text-sm">
-                  Total a pagar ahora: <strong>{fmtPrice(preview.total ?? 0)}</strong>
+                  Total a pagar ahora:{" "}
+                  <strong>{fmtPrice(preview.delta.total ?? 0)}</strong>
                 </p>
               </div>
             )}
 
-            {preview.tipo === "downgrade" && (
+            {preview.accion === "downgrade" && (
               <div className="border rounded-lg p-3 mb-3 bg-amber-50 border-amber-200">
                 <p className="text-sm">
                   El cambio se aplicará desde:{" "}
                   <strong>
-                    {preview.aplicar_desde
-                      ? new Date(preview.aplicar_desde).toLocaleDateString("es-AR")
+                    {preview.ciclo?.fin
+                      ? new Date(preview.ciclo.fin).toLocaleDateString(
+                          "es-AR"
+                        )
                       : "próximo ciclo"}
                   </strong>
                 </p>
                 <p className="text-xs text-gray-600">
-                  No se generan créditos ni reembolsos. Seguirás usando tu plan actual hasta esa fecha.
+                  No se generan créditos ni reembolsos. Seguirás usando tu plan
+                  actual hasta esa fecha.
                 </p>
               </div>
+            )}
+
+            {preview.politica_downgrade && (
+              <p className="text-xs text-gray-500 mb-2">
+                {preview.politica_downgrade}
+              </p>
             )}
 
             {preview.nota && (
@@ -615,11 +690,21 @@ useEffect(() => {
               <button
                 onClick={confirmPreview}
                 className={`px-4 py-2 rounded-lg text-sm text-white ${
-                  preview.tipo === "upgrade" ? "bg-blue-600 hover:bg-blue-700" : "bg-gray-700 hover:bg-gray-800"
-                } ${previewConfirmLoading ? "opacity-70 cursor-not-allowed" : ""}`}
+                  preview.accion === "upgrade"
+                    ? "bg-blue-600 hover:bg-blue-700"
+                    : "bg-gray-700 hover:bg-gray-800"
+                } ${
+                  previewConfirmLoading
+                    ? "opacity-70 cursor-not-allowed"
+                    : ""
+                }`}
                 disabled={previewConfirmLoading}
               >
-                {previewConfirmLoading ? "Aplicando..." : preview.tipo === "upgrade" ? "Pagar diferencia" : "Confirmar cambio"}
+                {previewConfirmLoading
+                  ? "Aplicando..."
+                  : preview.accion === "upgrade"
+                  ? "Pagar diferencia"
+                  : "Confirmar cambio"}
               </button>
             </div>
           </div>

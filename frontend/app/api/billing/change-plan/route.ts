@@ -4,6 +4,7 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 import { supabaseServer } from "#lib/supabaseServer";
+import { createClient } from "@supabase/supabase-js";
 import {
   assertAuthAndGetContext,
   getEmpresaIdForActor,
@@ -12,6 +13,10 @@ import {
   calcularDeltaProrrateo,
   round2,
 } from "#lib/billing/utils";
+
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE);
 
 /**
  * POST /api/billing/change-plan
@@ -46,6 +51,7 @@ export async function POST(req: Request) {
       );
     }
 
+    // Cliente con contexto del usuario (RLS ON) → auth + lecturas seguras
     const supabase = supabaseServer();
     const ctx = await assertAuthAndGetContext(supabase);
     const empresaId = await getEmpresaIdForActor({
@@ -167,7 +173,8 @@ export async function POST(req: Request) {
       });
 
       // Idempotencia: buscamos un movimiento pending del ciclo con este subtipo
-      const { data: existing, error: exErr } = await supabase
+      // ⚠️ Usamos supabaseAdmin para evitar RLS en movimientos_financieros
+      const { data: existing, error: exErr } = await supabaseAdmin
         .from("movimientos_financieros")
         .select("id, estado, metadata")
         .eq("empresa_id", empresaId)
@@ -224,7 +231,7 @@ export async function POST(req: Request) {
         metadata.max_asesores_override = maxAsesoresOverride;
       }
 
-      const { data: ins, error: insErr } = await supabase
+      const { data: ins, error: insErr } = await supabaseAdmin
         .from("movimientos_financieros")
         .insert([
           {
@@ -278,7 +285,8 @@ export async function POST(req: Request) {
     // DOWNGRADE → programar cambio al fin del ciclo
     // -------------------------
     if (isDowngrade) {
-      const { error: updErr } = await supabase
+      // ⚠️ Usamos supabaseAdmin para evitar RLS en suscripciones
+      const { error: updErr } = await supabaseAdmin
         .from("suscripciones")
         .update({
           plan_proximo_id: nuevoPlanId,

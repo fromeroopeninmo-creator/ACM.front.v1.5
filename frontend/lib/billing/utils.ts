@@ -41,75 +41,43 @@ export async function assertAuthAndGetContext(
   };
 }
 
-/** Verifica que la empresa indicada pertenezca al actor (por profile o por ownership). */
-async function empresaPerteneceAlActor(
-  supabase: SupabaseClient,
-  actor: ActorCtx,
-  empresaId: string
-): Promise<boolean> {
-  // 1) Coincide con profiles.empresa_id del actor
-  if (actor.empresaId && actor.empresaId === empresaId) return true;
-
-  // 2) Es dueño directo (empresas.user_id = actor.userId y empresas.id = empresaId)
-  const { data: empByOwner, error: empErr } = await supabase
-    .from("empresas")
-    .select("id")
-    .eq("id", empresaId)
-    .eq("user_id", actor.userId)
-    .maybeSingle();
-
-  if (empErr) return false;
-  if (empByOwner?.id) return true;
-
-  return false;
-}
-
-/**
- * Determina empresa objetivo:
- * - admin/root/soporte pueden pasar empresaIdParam explícito.
- * - empresa/asesor:
- *    a) si pasa empresaIdParam y le pertenece → usarlo,
- *    b) sino usar profiles.empresa_id,
- *    c) sino fallback a empresas.user_id = actor.userId.
- */
+/** Determina empresa objetivo: admin/root pueden pasar empresaIdParam; empresa/asesor usa propia. */
 export async function getEmpresaIdForActor(params: {
   supabase: SupabaseClient;
   actor: ActorCtx;
   empresaIdParam?: string;
 }): Promise<string | null> {
-  const { supabase, actor, empresaIdParam } = params;
+  const { actor, empresaIdParam } = params;
   const isAdmin =
     actor.role === "super_admin_root" ||
     actor.role === "super_admin" ||
     actor.role === "soporte";
 
+  // Admin / soporte puede pasar empresaIdParam
   if (isAdmin && empresaIdParam) return empresaIdParam;
-
-  // empresa/asesor: aceptar empresaIdParam si es suya
-  if (!isAdmin && empresaIdParam) {
-    const ok = await empresaPerteneceAlActor(supabase, actor, empresaIdParam);
-    if (ok) return empresaIdParam;
-    // si no le pertenece, seguimos con otras resoluciones
-  }
-
-  // 1) profiles.empresa_id
+  // Caso empresa/asesor → usamos la empresa del profile
   if (actor.empresaId) return actor.empresaId;
-
-  // 2) dueño directo (empresas.user_id = actor.userId)
-  const { data: empByOwner, error: empErr } = await supabase
-    .from("empresas")
-    .select("id")
-    .eq("user_id", actor.userId)
-    .maybeSingle();
-  if (empErr) return null;
-  return empByOwner?.id ?? null;
+  return null;
 }
 
-/** Vista segura con SECURITY INVOKER: estado de suscripción/ciclo + planes actual/próximo. */
+/** Helper interno para sumar días a un ISO date. */
+function addDaysISO(dateISO: string, days: number): string {
+  const d = new Date(dateISO);
+  d.setDate(d.getDate() + days);
+  return d.toISOString();
+}
+
+/**
+ * Estado de suscripción/ciclo:
+ * 1) Intenta leer de la vista v_suscripcion_estado (caso ideal).
+ * 2) Si no hay fila en la vista, hace fallback a empresas_planes activo
+ *    para obtener plan_actual + ciclo (fecha_inicio / fecha_fin).
+ */
 export async function getSuscripcionEstado(
   supabase: SupabaseClient,
   empresaId: string
 ) {
+  // 1) Intentar vista v_suscripcion_estado
   const { data, error } = await supabase
     .from("v_suscripcion_estado")
     .select(
@@ -118,27 +86,83 @@ export async function getSuscripcionEstado(
     .eq("empresa_id", empresaId)
     .maybeSingle();
 
-  if (error)
+  if (error) {
     throw new Error(`Error leyendo v_suscripcion_estado: ${error.message}`);
-  return data as
-    | {
-        empresa_id: string;
-        ciclo_inicio: string;
-        ciclo_fin: string;
-        estado: string | null;
-        moneda: string | null;
-        plan_actual_id: string | null;
-        plan_actual_nombre: string | null;
-        plan_proximo_id: string | null;
-        plan_proximo_nombre: string | null;
-        cambio_programado_para: string | null;
-      }
-    | null;
+  }
+
+  if (data) {
+    // Ya viene con la forma correcta
+    return data as {
+      empresa_id: string;
+      ciclo_inicio: string;
+      ciclo_fin: string;
+      estado: string | null;
+      moneda: string | null;
+      plan_actual_id: string | null;
+      plan_actual_nombre: string | null;
+      plan_proximo_id: string | null;
+      plan_proximo_nombre: string | null;
+      cambio_programado_para: string | null;
+    };
+  }
+
+  // 2) Fallback → empresas_planes activo
+  const { data: ep, error: epErr } = await supabase
+    .from("empresas_planes")
+    .select("empresa_id, plan_id, fecha_inicio, fecha_fin")
+    .eq("empresa_id", empresaId)
+    .eq("activo", true)
+    .maybeSingle();
+
+  if (epErr) {
+    throw new Error(`Error leyendo empresas_planes: ${epErr.message}`);
+  }
+
+  if (!ep) {
+    // No hay plan activo registrado
+    return null;
+  }
+
+  const empresa_id = (ep as any).empresa_id as string;
+  const plan_actual_id = (ep as any).plan_id as string | null;
+  const fecha_inicio = (ep as any).fecha_inicio as string;
+  let fecha_fin = (ep as any).fecha_fin as string | null;
+
+  // Si no tenemos fecha_fin, calculamos desde planes.duracion_dias (o 30 días por defecto)
+  if (!fecha_fin && plan_actual_id) {
+    const { data: planRow, error: planErr } = await supabase
+      .from("planes")
+      .select("duracion_dias")
+      .eq("id", plan_actual_id)
+      .maybeSingle();
+    if (planErr) {
+      throw new Error(`Error leyendo plan en fallback: ${planErr.message}`);
+    }
+    const dur =
+      typeof planRow?.duracion_dias === "number" && planRow.duracion_dias > 0
+        ? planRow.duracion_dias
+        : 30;
+    fecha_fin = addDaysISO(fecha_inicio, dur);
+  }
+
+  // Fallback construye un estado "activa" por defecto
+  return {
+    empresa_id,
+    ciclo_inicio: fecha_inicio,
+    ciclo_fin: fecha_fin ?? fecha_inicio,
+    estado: "activa",
+    moneda: "ARS",
+    plan_actual_id,
+    plan_actual_nombre: null,
+    plan_proximo_id: null,
+    plan_proximo_nombre: null,
+    cambio_programado_para: null,
+  };
 }
 
 /**
  * Precio neto preferido:
- * - Si el plan coincide con el plan ACTUAL de la empresa y existe override en empresas_planes → usarlo (precio_neto_override).
+ * - Si el plan coincide con el plan ACTUAL de la empresa y existe override en empresas_planes → usarlo.
  * - Caso contrario → usar planes.precio (neto).
  * Nota: `planes.precio` es el nombre real en tu BD.
  */
@@ -161,17 +185,13 @@ export async function getPlanPrecioNetoPreferido(
   // Override si empresas_planes coincide con ese plan actual
   const { data: ep, error: epErr } = await supabase
     .from("empresas_planes")
-    .select("empresa_id, plan_id, precio_neto_override, activo")
+    .select("empresa_id, plan_id, precio_neto_override")
     .eq("empresa_id", empresaId)
     .eq("activo", true)
     .maybeSingle();
   if (epErr) throw new Error(`Error leyendo empresas_planes: ${epErr.message}`);
 
-  if (
-    ep &&
-    ep.plan_id === planId &&
-    (ep as any).precio_neto_override != null
-  ) {
+  if (ep && ep.plan_id === planId && (ep as any).precio_neto_override != null) {
     return Number((ep as any).precio_neto_override);
   }
   return base;

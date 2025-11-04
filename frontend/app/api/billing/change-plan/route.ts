@@ -18,9 +18,18 @@ const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE);
 
-// ⚙️ flag de simulación (podés apagarlo cuando tengas pasarela real)
+// ⚙️ flag de simulación: si es "true", marcamos el pago como OK y activamos el plan sin pasar por MP
 const SIMULAR_PAGO_OK =
-  process.env.NEXT_PUBLIC_BILLING_SIMULATE === "true" || true;
+  process.env.NEXT_PUBLIC_BILLING_SIMULATE === "true";
+
+// Helper: base URL pública (para back_urls de Mercado Pago)
+function getBaseUrl(): string | null {
+  const envUrl =
+    process.env.NEXT_PUBLIC_SITE_URL ||
+    process.env.NEXT_PUBLIC_VERCEL_URL;
+  if (!envUrl) return null;
+  return envUrl.startsWith("http") ? envUrl : `https://${envUrl}`;
+}
 
 /** Helper para activar inmediatamente el nuevo plan (simulando que el pago fue OK). */
 async function simularActivarPlanInmediato(
@@ -78,6 +87,83 @@ async function simularActivarPlanInmediato(
   }
 }
 
+/** Helper para crear preferencia de Mercado Pago y devolver checkoutUrl. */
+async function crearPreferenciaMercadoPago(params: {
+  movimientoId: string;
+  empresaId: string;
+  totalConIVA: number;
+}): Promise<string | null> {
+  const mpAccessToken = process.env.MERCADOPAGO_ACCESS_TOKEN;
+  if (!mpAccessToken) {
+    console.warn(
+      "MERCADOPAGO_ACCESS_TOKEN no configurado; no se genera checkout de MP."
+    );
+    return null;
+  }
+
+  const baseUrl = getBaseUrl();
+  const amountTotal = round2(params.totalConIVA);
+
+  const prefBody = {
+    items: [
+      {
+        title: "Upgrade de plan VAI",
+        quantity: 1,
+        currency_id: "ARS",
+        unit_price: amountTotal,
+      },
+    ],
+    external_reference: params.movimientoId,
+    back_urls: baseUrl
+      ? {
+          success: `${baseUrl}/dashboard/empresa/planes?mp_status=success`,
+          failure: `${baseUrl}/dashboard/empresa/planes?mp_status=failure`,
+          pending: `${baseUrl}/dashboard/empresa/planes?mp_status=pending`,
+        }
+      : undefined,
+    auto_return: "approved",
+    metadata: {
+      movimiento_id: params.movimientoId,
+      empresa_id: params.empresaId,
+      tipo: "upgrade_plan",
+    },
+  };
+
+  try {
+    const mpRes = await fetch(
+      "https://api.mercadopago.com/checkout/preferences",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${mpAccessToken}`,
+        },
+        body: JSON.stringify(prefBody),
+      }
+    );
+
+    if (!mpRes.ok) {
+      const txt = await mpRes.text().catch(() => "");
+      console.error(
+        "Error creando preferencia de Mercado Pago:",
+        mpRes.status,
+        txt
+      );
+      return null;
+    }
+
+    const prefJson = (await mpRes.json()) as any;
+    const url =
+      prefJson.init_point ||
+      prefJson.sandbox_init_point ||
+      null;
+    return typeof url === "string" ? url : null;
+  } catch (err: any) {
+    console.error("Excepción creando preferencia de MP:", err?.message);
+    return null;
+  }
+}
+
 /**
  * POST /api/billing/change-plan
  * Body: {
@@ -88,6 +174,7 @@ async function simularActivarPlanInmediato(
  *
  * - Upgrade: crea movimiento 'ajuste' con metadata.subtipo = 'upgrade_prorrateo' (pending).
  *   En modo simulación también marca el movimiento como paid y activa el plan.
+ *   En modo real crea un checkout de Mercado Pago y NO activa el plan (lo hará el webhook).
  *
  * - Downgrade: programa cambio al fin del ciclo en `suscripciones`
  *   (plan_proximo_id / cambio_programado_para).
@@ -253,9 +340,10 @@ export async function POST(req: Request) {
         );
       }
 
-      // ⚠️ Caso: ya hay un movimiento pending en este ciclo (primera prueba que hiciste)
+      // ⚠️ Caso: ya hay un movimiento pending en este ciclo
       if (existing && existing.length > 0) {
         const existingId = existing[0].id as string;
+        let checkoutUrl: string | null = null;
 
         if (SIMULAR_PAGO_OK && existingId) {
           const nowISO = new Date().toISOString();
@@ -272,13 +360,20 @@ export async function POST(req: Request) {
             nuevoPlanId,
             maxAsesoresOverride
           );
+        } else if (existingId) {
+          // Modo REAL → crear preferencia de MP
+          checkoutUrl = await crearPreferenciaMercadoPago({
+            movimientoId: existingId,
+            empresaId,
+            totalConIVA: sim.total,
+          });
         }
 
         return NextResponse.json(
           {
             accion: "upgrade",
             movimiento_id: existingId,
-            checkoutUrl: null, // integrar gateway real más adelante
+            checkoutUrl,
             delta: {
               neto: round2(sim.deltaNeto),
               iva: round2(sim.iva),
@@ -287,7 +382,7 @@ export async function POST(req: Request) {
             },
             nota: SIMULAR_PAGO_OK
               ? "Simulación: se reutilizó el movimiento pendiente existente, se marcó como 'paid' y el nuevo plan ya está activo."
-              : "Movimiento pendiente existente reutilizado.",
+              : "Movimiento pendiente existente reutilizado. Tras el pago en Mercado Pago, el plan se activará vía webhook.",
           },
           { status: 200 }
         );
@@ -340,6 +435,8 @@ export async function POST(req: Request) {
         );
       }
 
+      let checkoutUrl: string | null = null;
+
       // 🔧 SIMULACIÓN DE PAGO OK: marcamos el movimiento como paid
       // y activamos el nuevo plan inmediatamente.
       if (SIMULAR_PAGO_OK && ins?.id) {
@@ -355,10 +452,14 @@ export async function POST(req: Request) {
           nuevoPlanId,
           maxAsesoresOverride
         );
+      } else if (ins?.id) {
+        // Modo REAL → crear preferencia de MP
+        checkoutUrl = await crearPreferenciaMercadoPago({
+          movimientoId: ins.id,
+          empresaId,
+          totalConIVA: sim.total,
+        });
       }
-
-      // Aquí iría la creación del intent/checkout del gateway (Stripe/MercadoPago)
-      const checkoutUrl = null;
 
       return NextResponse.json(
         {
@@ -373,7 +474,7 @@ export async function POST(req: Request) {
           },
           nota: SIMULAR_PAGO_OK
             ? "Simulación: el pago se marcó como 'paid' y el nuevo plan ya está activo."
-            : "Al confirmar el pago vía pasarela se activará el nuevo plan en este ciclo.",
+            : "Al completar el pago en Mercado Pago, el nuevo plan se activará vía webhook.",
         },
         { status: 200 }
       );

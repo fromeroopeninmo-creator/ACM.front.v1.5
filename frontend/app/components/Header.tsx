@@ -98,15 +98,15 @@ export default function Header() {
       <div className="flex w-full items-center justify-between md:hidden">
         {/* Izquierda: datos */}
         <div className="flex flex-col text-[11px] sm:text-sm font-semibold text-gray-700 leading-tight text-left">
-          {/* 👇 Cambio visual: Soporte/Admin muestran su etiqueta; el resto mantiene Matriculado/CPI/Asesor */}
+          {/* 👇 Cambio visual: Soporte/Admin muestran su etiqueta; el resto mantiene Profesional/Matricula N°/Asesor */}
           {isSoporte ? (
             <p>Soporte: {nombreCompleto}</p>
           ) : isAdmin ? (
             <p>Admin: {nombreCompleto}</p>
           ) : (
             <>
-              <p>Matriculado/a: {matriculado}</p>
-              <p>CPI: {cpi}</p>
+              <p>Profesional: {matriculado}</p>
+              <p>Matricula N°: {cpi}</p>
               <p>Asesor: {nombreAsesor}</p>
             </>
           )}
@@ -181,15 +181,15 @@ export default function Header() {
 
         {/* Derecha: datos alineados a la izquierda */}
         <div className="flex flex-col items-start gap-0.5 text-xs sm:text-sm font-semibold text-gray-700 leading-tight text-left">
-          {/* 👇 Cambio visual: Soporte/Admin muestran su etiqueta; el resto mantiene Matriculado/CPI/Asesor */}
+          {/* 👇 Cambio visual: Soporte/Admin muestran su etiqueta; el resto mantiene Profesional/Matricula N°/Asesor */}
           {isSoporte ? (
             <p>Soporte: {nombreCompleto}</p>
           ) : isAdmin ? (
             <p>Admin: {nombreCompleto}</p>
           ) : (
             <>
-              <p>Matriculado/a: {matriculado}</p>
-              <p>CPI: {cpi}</p>
+              <p>Profesional: {matriculado}</p>
+              <p>Matricula N°: {cpi}</p>
               <p>Asesor: {nombreAsesor}</p>
             </>
           )}

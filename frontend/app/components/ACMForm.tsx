@@ -776,8 +776,8 @@ if (isAsesor && (inmobiliaria === "—" || matriculado === "—" || cpi === "—
   doc.text(`Asesor: ${isAsesor ? asesorNombre : "—"}`, colLeftX, y + 15);
 
   // Columna derecha
-  doc.text(`Matriculado: ${matriculado}`, colRightX, y);
-  doc.text(`CPI: ${cpi}`, colRightX, y + 15);
+  doc.text(`Profesional: ${matriculado}`, colRightX, y);
+  doc.text(`Matricula N°: ${cpi}`, colRightX, y + 15);
   doc.text(`Fecha: ${new Date(formData.date).toLocaleDateString("es-AR")}`, colRightX, y + 30);
 
   // Logo centrado (si existe)
@@ -1068,7 +1068,7 @@ if (isAsesor && (inmobiliaria === "—" || matriculado === "—" || cpi === "—
   }
 
   // === Footer (usa los valores resueltos arriba) ===
-  const footerText = `${matriculado}  |  CPI: ${cpi}`;
+  const footerText = `${matriculado}  |  Matricula N°: ${cpi}`;
   doc.setFont("helvetica", "italic");
   doc.setFontSize(9);
   doc.text(footerText, pageW / 2, pageH - 30, { align: "center" });

@@ -217,10 +217,10 @@ export default function AsesorDashboardPage() {
               <strong>Empresa:</strong> {nombreEmpresa}
             </li>
             <li>
-              <strong>Matriculado:</strong> {matriculado}
+              <strong>Profesional:</strong> {matriculado}
             </li>
             <li>
-              <strong>CPI:</strong> {cpi}
+              <strong>Matricula N°:</strong> {cpi}
             </li>
           </ul>
         </div>

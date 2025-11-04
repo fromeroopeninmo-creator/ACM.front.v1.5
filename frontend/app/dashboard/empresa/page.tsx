@@ -228,10 +228,10 @@ export default function EmpresaDashboardPage() {
               <strong>Condición Fiscal:</strong> {condicionFiscal}
             </li>
             <li>
-              <strong>Matriculado:</strong> {matriculado}
+              <strong>Profesional:</strong> {matriculado}
             </li>
             <li>
-              <strong>CPI:</strong> {cpi}
+              <strong>Matricula N°:</strong> {cpi}
             </li>
             <li>
               <strong>Email:</strong> {email}

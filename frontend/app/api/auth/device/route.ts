@@ -1,4 +1,3 @@
-// frontend/app/api/auth/device/route.ts
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -8,122 +7,121 @@ import { supabaseServer } from "#lib/supabaseServer";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+
+// Cliente admin SIN RLS para escribir en user_devices
 const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE);
 
 /**
- * POST /api/auth/device
- * Body: { device_id: string, claim?: boolean }
+ * Tabla recomendada en la BD:
  *
- * - claim = true  → este dispositivo se convierte en el dueño de la sesión (último dispositivo gana).
- * - claim = false → solo chequea si este dispositivo sigue siendo válido (no cambia el dueño).
+ * CREATE TABLE public.user_devices (
+ *   id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+ *   user_id uuid NOT NULL,
+ *   device_id text NOT NULL,
+ *   last_seen timestamptz NOT NULL DEFAULT now(),
+ *   is_active boolean NOT NULL DEFAULT true
+ * );
  *
- * Respuesta:
- * { active: boolean; claimed: boolean }
+ * -- Opcional: índice
+ * CREATE INDEX user_devices_user_id_idx ON public.user_devices(user_id);
  */
+
 export async function POST(req: Request) {
   try {
     const body = await req.json().catch(() => ({}));
     const deviceId: string | undefined = body?.device_id;
-    const claim: boolean = Boolean(body?.claim);
+    const claim: boolean = !!body?.claim;
 
-    if (!deviceId || typeof deviceId !== "string") {
+    if (!deviceId) {
       return NextResponse.json(
-        { error: "device_id es obligatorio" },
+        { error: "device_id es obligatorio", active: false },
         { status: 400 }
       );
     }
 
-    // Usuario autenticado (via cookies)
-    const supabase = supabaseServer();
-    const { data: auth, error: authErr } = await supabase.auth.getUser();
+    // Usuario autenticado (RLS ON)
+    const server = supabaseServer();
+    const { data: auth, error: authErr } = await server.auth.getUser();
+
     if (authErr || !auth?.user?.id) {
       return NextResponse.json(
-        { error: "No autenticado" },
+        { error: "No autenticado.", active: false },
         { status: 401 }
       );
     }
-    const userId = auth.user.id;
 
-    // Perfil (cualquier rol: empresa, asesor, soporte, admin, etc.)
-    const { data: prof, error: profErr } = await supabaseAdmin
-      .from("profiles")
-      .select("id, user_id, session_device_id")
+    const userId = auth.user.id as string;
+    const now = new Date().toISOString();
+
+    // Si "claim" es true: este dispositivo reclama ser el activo
+    if (claim) {
+      // Upsert del dispositivo actual
+      const { error: upErr } = await supabaseAdmin
+        .from("user_devices")
+        .upsert(
+          {
+            user_id: userId,
+            device_id: deviceId,
+            last_seen: now,
+            is_active: true,
+          },
+          {
+            onConflict: "user_id,device_id",
+          }
+        );
+
+      if (upErr) {
+        console.error("user_devices upsert error:", upErr.message);
+        // En caso de duda, no bloqueamos la sesión
+        return NextResponse.json({ active: true }, { status: 200 });
+      }
+
+      // Marcar otros dispositivos del mismo user como inactivos
+      const { error: updErr } = await supabaseAdmin
+        .from("user_devices")
+        .update({ is_active: false, last_seen: now })
+        .eq("user_id", userId)
+        .neq("device_id", deviceId);
+
+      if (updErr) {
+        console.error("user_devices deactivate others error:", updErr.message);
+        // Igual seguimos dejando activo este
+      }
+
+      return NextResponse.json({ active: true }, { status: 200 });
+    }
+
+    // Si "claim" es false: solo heartbeat / verificación
+    const { data: row, error: selErr } = await supabaseAdmin
+      .from("user_devices")
+      .select("is_active")
       .eq("user_id", userId)
+      .eq("device_id", deviceId)
       .maybeSingle();
 
-    if (profErr) {
-      return NextResponse.json(
-        { error: `Error leyendo profile: ${profErr.message}` },
-        { status: 500 }
-      );
-    }
-    if (!prof) {
-      return NextResponse.json(
-        { error: "Perfil no encontrado para este usuario." },
-        { status: 404 }
-      );
+    if (selErr) {
+      console.error("user_devices select error:", selErr.message);
+      // No rompemos la app ni desconectamos al usuario
+      return NextResponse.json({ active: true }, { status: 200 });
     }
 
-    const nowISO = new Date().toISOString();
-    const stored = (prof as any).session_device_id as string | null;
-
-    // 🔐 MODO CLAIM → este dispositivo pasa a ser el “dueño”
-    if (claim) {
-      const { error: updErr } = await supabaseAdmin
-        .from("profiles")
-        .update({ session_device_id: deviceId, updated_at: nowISO })
-        .eq("id", prof.id);
-
-      if (updErr) {
-        return NextResponse.json(
-          { error: `Error actualizando device: ${updErr.message}` },
-          { status: 500 }
-        );
-      }
-
-      return NextResponse.json(
-        { active: true, claimed: true },
-        { status: 200 }
-      );
+    if (!row) {
+      // No hay registro para este device, asumimos que NO es el activo
+      return NextResponse.json({ active: false }, { status: 200 });
     }
 
-    // 🔎 MODO CHECK → no cambia el dueño, solo verifica
-    if (!stored) {
-      // No había ningún dueño todavía → este dispositivo reclama
-      const { error: updErr } = await supabaseAdmin
-        .from("profiles")
-        .update({ session_device_id: deviceId, updated_at: nowISO })
-        .eq("id", prof.id);
+    // Actualizamos last_seen
+    await supabaseAdmin
+      .from("user_devices")
+      .update({ last_seen: now })
+      .eq("user_id", userId)
+      .eq("device_id", deviceId);
 
-      if (updErr) {
-        return NextResponse.json(
-          { error: `Error inicializando device: ${updErr.message}` },
-          { status: 500 }
-        );
-      }
-
-      return NextResponse.json(
-        { active: true, claimed: true },
-        { status: 200 }
-      );
-    }
-
-    if (stored === deviceId) {
-      // Todo bien, este dispositivo sigue siendo el dueño
-      return NextResponse.json(
-        { active: true, claimed: false },
-        { status: 200 }
-      );
-    }
-
-    // Otro dispositivo tomó el control → esta sesión debe desloguearse
-    return NextResponse.json(
-      { active: false, claimed: false },
-      { status: 200 }
-    );
+    return NextResponse.json({ active: !!row.is_active }, { status: 200 });
   } catch (e: any) {
+    console.error("device route exception:", e?.message || e);
     return NextResponse.json(
-      { error: e?.message || "Error inesperado" },
+      { error: e?.message || "Error inesperado", active: true },
       { status: 500 }
     );
   }

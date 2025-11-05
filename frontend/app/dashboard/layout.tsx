@@ -8,7 +8,138 @@ import { supabase } from "#lib/supabaseClient";
 import DashboardHeader from "./components/DashboardHeader";
 import DashboardSidebar from "./components/DashboardSidebar";
 
-export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+/* =========================================================
+   Helper: ID de dispositivo (localStorage por navegador)
+========================================================= */
+function getOrCreateDeviceId(): string | null {
+  if (typeof window === "undefined") return null;
+
+  const STORAGE_KEY = "vai_device_id_v1";
+
+  try {
+    let existing = window.localStorage.getItem(STORAGE_KEY);
+    if (existing && typeof existing === "string") {
+      return existing;
+    }
+
+    let generated: string;
+    if (window.crypto && typeof window.crypto.randomUUID === "function") {
+      generated = window.crypto.randomUUID();
+    } else {
+      generated =
+        Math.random().toString(36).slice(2) +
+        "-" +
+        Date.now().toString(36);
+    }
+
+    window.localStorage.setItem(STORAGE_KEY, generated);
+    return generated;
+  } catch {
+    // Si localStorage está bloqueado o falla, no rompemos la app
+    return null;
+  }
+}
+
+/* =========================================================
+   Hook: controla que solo un dispositivo esté activo por usuario
+========================================================= */
+function useSingleDeviceSession(user: any, logout: () => void) {
+  const [checking, setChecking] = useState(true);
+  const [active, setActive] = useState(true);
+
+  useEffect(() => {
+    if (!user) {
+      setChecking(false);
+      setActive(false);
+      return;
+    }
+
+    let cancelled = false;
+    let intervalId: number | null = null;
+    let deviceId: string | null = null;
+
+    async function callDeviceApi(claim: boolean) {
+      try {
+        if (typeof window === "undefined") return { active: true };
+
+        if (!deviceId) {
+          deviceId = getOrCreateDeviceId();
+        }
+
+        if (!deviceId) {
+          // No pudimos generar ID → no aplicamos restricción, pero no rompemos nada
+          return { active: true };
+        }
+
+        const res = await fetch("/api/auth/device", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ device_id: deviceId, claim }),
+        });
+
+        if (!res.ok) {
+          // Si el endpoint falla, no cortamos la sesión del usuario
+          console.warn("device api error:", res.status, res.statusText);
+          return { active: true };
+        }
+
+        const json = (await res.json()) as { active?: boolean };
+        return { active: json.active !== false };
+      } catch (err) {
+        console.warn("device api exception:", err);
+        return { active: true };
+      }
+    }
+
+    async function init() {
+      // Primer llamada: este dispositivo reclama la sesión
+      const result = await callDeviceApi(true);
+      if (cancelled) return;
+
+      setActive(result.active);
+      setChecking(false);
+
+      if (!result.active) {
+        // Otro dispositivo ya tomó la sesión → deslogueamos
+        logout();
+        return;
+      }
+
+      // Heartbeat: cada 30s chequeamos si seguimos siendo el dispositivo activo
+      if (typeof window !== "undefined") {
+        intervalId = window.setInterval(async () => {
+          const checkResult = await callDeviceApi(false);
+          if (cancelled) return;
+
+          if (!checkResult.active) {
+            setActive(false);
+            logout();
+          }
+        }, 30000) as unknown as number;
+      }
+    }
+
+    init();
+
+    return () => {
+      cancelled = true;
+      if (intervalId !== null && typeof window !== "undefined") {
+        window.clearInterval(intervalId);
+      }
+    };
+  }, [user, logout]);
+
+  return { checking, active };
+}
+
+/* =========================================================
+   Layout principal de Dashboard
+========================================================= */
+export default function DashboardLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   const { user, loading, logout } = useAuth();
   const { primaryColor, hydrated } = useTheme();
   const router = useRouter();
@@ -20,6 +151,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [effectiveRole, setEffectiveRole] = useState<string | null>(null);
   const [roleLoading, setRoleLoading] = useState<boolean>(true);
 
+  /* ---------- Auth básica + redirect a login ---------- */
   useEffect(() => {
     if (!loading) setAuthChecked(true);
 
@@ -29,7 +161,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     }
   }, [user, loading, router, pathname]);
 
-  // Cargar rol efectivo: primero user.role, si no está, leer de profiles
+  /* ---------- Cargar rol efectivo ---------- */
   useEffect(() => {
     let mounted = true;
 
@@ -79,7 +211,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     };
   }, [user]);
 
-  // ✅ Esperar a que AuthContext y ThemeContext estén listos
+  /* ---------- Control de dispositivo único ---------- */
+  const { checking: deviceChecking, active: deviceActive } = useSingleDeviceSession(
+    user,
+    logout
+  );
+
+  /* ---------- Distintos estados de carga / errores ---------- */
+
+  // Esperando Auth / Theme
   if (loading || !authChecked || !hydrated) {
     return (
       <div className="flex justify-center items-center h-screen text-gray-500">
@@ -105,7 +245,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     );
   }
 
-  // 🧠 Si aún no sabemos el rol, no renderizamos Sidebar/Header para evitar caer en defaults (empresa)
+  // Rol todavía no cargado
   if (roleLoading || !effectiveRole) {
     return (
       <div className="flex justify-center items-center h-screen text-gray-500">
@@ -114,72 +254,36 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     );
   }
 
-  // 🧠 Solo los asesores y empresas heredan el color corporativo de su empresa
-  // Soporte/Admin: azul unificado #2563eb
+  // Verificando dispositivo activo
+  if (deviceChecking) {
+    return (
+      <div className="flex justify-center items-center h-screen text-gray-500">
+        Verificando tu sesión en este dispositivo...
+      </div>
+    );
+  }
+
+  // Este dispositivo ya NO es el activo → mostramos mensaje suave mientras se hace logout/redirección
+  if (!deviceActive) {
+    return (
+      <div className="flex justify-center items-center h-screen text-gray-500 text-center px-4">
+        <div>
+          <p className="mb-2">
+            Esta sesión se cerró porque iniciaste sesión en otro dispositivo.
+          </p>
+          <p className="text-sm text-gray-400">
+            Si necesitás volver a entrar desde aquí, iniciá sesión nuevamente.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  /* ---------- Layout normal ---------- */
+
+  // Solo asesores y empresas heredan el color de su empresa
   const isCliente = effectiveRole === "asesor" || effectiveRole === "empresa";
-  const sidebarColor = isCliente ? (primaryColor || "#2563eb") : "#2563eb";
-
-  /* 🔒 CONTROL DE UN SOLO DISPOSITIVO POR USUARIO (cualquier rol) */
-  useEffect(() => {
-    if (!user || !effectiveRole) return;
-    if (pathname?.startsWith("/auth/")) return;
-
-    let cancelled = false;
-
-    async function syncDevice() {
-      try {
-        if (typeof window === "undefined") return;
-
-        const STORAGE_KEY = "vaiprop_device_id";
-        let deviceId = window.localStorage.getItem(STORAGE_KEY);
-        let isNewDevice = false;
-
-        if (!deviceId) {
-          // Primera vez que este navegador usa la app → genera un id
-          if (window.crypto && "randomUUID" in window.crypto) {
-            deviceId = window.crypto.randomUUID();
-          } else {
-            deviceId = Math.random().toString(36).slice(2);
-          }
-          window.localStorage.setItem(STORAGE_KEY, deviceId);
-          isNewDevice = true;
-        }
-
-        const res = await fetch("/api/auth/device", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            device_id: deviceId,
-            // Si es un navegador nuevo → reclama la sesión
-            claim: isNewDevice,
-          }),
-        });
-
-        if (!res.ok) {
-          console.error("Error /api/auth/device:", await res.text());
-          return;
-        }
-
-        const data = await res.json();
-        if (!data.active && !cancelled) {
-          // Otro dispositivo tiene la sesión → deslogueamos acá
-          alert(
-            "Tu cuenta inició sesión en otro dispositivo. Te desconectamos en este equipo por seguridad."
-          );
-          logout();
-        }
-      } catch (err) {
-        console.error("Error verificando dispositivo activo:", err);
-      }
-    }
-
-    syncDevice();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [user, effectiveRole, pathname, logout]);
-  /* 🔒 FIN CONTROL UN DISPOSITIVO */
+  const sidebarColor = isCliente ? primaryColor || "#2563eb" : "#2563eb";
 
   return (
     <div className="flex min-h-screen bg-gray-50 text-gray-900">

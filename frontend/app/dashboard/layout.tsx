@@ -8,21 +8,6 @@ import { supabase } from "#lib/supabaseClient";
 import DashboardHeader from "./components/DashboardHeader";
 import DashboardSidebar from "./components/DashboardSidebar";
 
-/* =========================================================
-   🔕 Bloqueo multi-dispositivo DESACTIVADO
-   (hook reducido a no-op para volver al comportamiento anterior)
-========================================================= */
-function useSingleDeviceSession(_user: any, _logout: () => void) {
-  // No hacemos ningún chequeo de dispositivo.
-  // Siempre consideramos la sesión activa en este navegador.
-  const [checking] = useState(false);
-  const [active] = useState(true);
-  return { checking, active };
-}
-
-/* =========================================================
-   Layout principal de Dashboard
-========================================================= */
 export default function DashboardLayout({
   children,
 }: {
@@ -39,7 +24,6 @@ export default function DashboardLayout({
   const [effectiveRole, setEffectiveRole] = useState<string | null>(null);
   const [roleLoading, setRoleLoading] = useState<boolean>(true);
 
-  /* ---------- Auth básica + redirect a login ---------- */
   useEffect(() => {
     if (!loading) setAuthChecked(true);
 
@@ -49,7 +33,7 @@ export default function DashboardLayout({
     }
   }, [user, loading, router, pathname]);
 
-  /* ---------- Cargar rol efectivo ---------- */
+  // Cargar rol efectivo: primero user.role, si no está, leer de profiles
   useEffect(() => {
     let mounted = true;
 
@@ -99,15 +83,7 @@ export default function DashboardLayout({
     };
   }, [user]);
 
-  /* ---------- Control de dispositivo único (desactivado) ---------- */
-  const { checking: deviceChecking, active: deviceActive } = useSingleDeviceSession(
-    user,
-    logout
-  );
-
-  /* ---------- Distintos estados de carga / errores ---------- */
-
-  // Esperando Auth / Theme
+  // ✅ Esperar a que AuthContext y ThemeContext estén listos
   if (loading || !authChecked || !hydrated) {
     return (
       <div className="flex justify-center items-center h-screen text-gray-500">
@@ -133,7 +109,7 @@ export default function DashboardLayout({
     );
   }
 
-  // Rol todavía no cargado
+  // 🧠 Si aún no sabemos el rol, no renderizamos Sidebar/Header para evitar caer en defaults (empresa)
   if (roleLoading || !effectiveRole) {
     return (
       <div className="flex justify-center items-center h-screen text-gray-500">
@@ -142,35 +118,10 @@ export default function DashboardLayout({
     );
   }
 
-  // (deviceChecking / deviceActive quedan siempre en: false / true)
-  if (deviceChecking) {
-    return (
-      <div className="flex justify-center items-center h-screen text-gray-500">
-        Verificando tu sesión en este dispositivo...
-      </div>
-    );
-  }
-
-  if (!deviceActive) {
-    return (
-      <div className="flex justify-center items-center h-screen text-gray-500 text-center px-4">
-        <div>
-          <p className="mb-2">
-            Esta sesión se cerró porque iniciaste sesión en otro dispositivo.
-          </p>
-          <p className="text-sm text-gray-400">
-            Si necesitás volver a entrar desde aquí, iniciá sesión nuevamente.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  /* ---------- Layout normal ---------- */
-
-  // Solo asesores y empresas heredan el color de su empresa
+  // 🧠 Solo los asesores y empresas heredan el color corporativo de su empresa
+  // Soporte/Admin: azul unificado #2563eb
   const isCliente = effectiveRole === "asesor" || effectiveRole === "empresa";
-  const sidebarColor = isCliente ? primaryColor || "#2563eb" : "#2563eb";
+  const sidebarColor = isCliente ? (primaryColor || "#2563eb") : "#2563eb";
 
   return (
     <div className="flex min-h-screen bg-gray-50 text-gray-900">

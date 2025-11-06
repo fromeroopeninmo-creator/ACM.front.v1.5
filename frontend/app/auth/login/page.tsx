@@ -6,17 +6,24 @@ import { useRouter } from "next/navigation";
 import { supabase } from "#lib/supabaseClient";
 import AuthLayout from "@/auth/components/AuthLayout";
 
-// mismo key que en AuthContext
-const SESSION_STORAGE_KEY = "vai_active_session_id";
+const DEVICE_STORAGE_KEY = "vai_device_id";
 
-function getOrCreateClientSessionId(): string {
-  if (typeof window === "undefined") return "";
-  let current = window.localStorage.getItem(SESSION_STORAGE_KEY);
-  if (!current) {
-    current = crypto.randomUUID();
-    window.localStorage.setItem(SESSION_STORAGE_KEY, current);
+function getOrCreateDeviceId(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    let id = window.localStorage.getItem(DEVICE_STORAGE_KEY);
+    if (!id) {
+      if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+        id = crypto.randomUUID();
+      } else {
+        id = Math.random().toString(36).slice(2) + Date.now().toString(36);
+      }
+      window.localStorage.setItem(DEVICE_STORAGE_KEY, id);
+    }
+    return id;
+  } catch {
+    return null;
   }
-  return current;
 }
 
 export default function LoginPage() {
@@ -49,6 +56,7 @@ export default function LoginPage() {
       } = await supabase.auth.getSession();
 
       if (session?.user) {
+        // ✅ Dejar que /dashboard derive por rol (evita default "empresa")
         router.replace("/dashboard");
       }
     };
@@ -103,18 +111,23 @@ export default function LoginPage() {
       return;
     }
 
-    // 🔐 Single-session: marcar este dispositivo como sesión activa
-    try {
-      const clientId = getOrCreateClientSessionId();
-      await supabase
-        .from("profiles")
-        .update({ active_session_id: clientId })
-        .eq("id", data.user.id);
-    } catch (e) {
-      console.warn("⚠️ Error actualizando active_session_id:", e);
-      // No rompemos el login por esto, solo lo logueamos.
+    // 🔑 En este punto el login fue exitoso → este dispositivo reclama la sesión
+    if (typeof window !== "undefined") {
+      const deviceId = getOrCreateDeviceId();
+      if (deviceId) {
+        try {
+          await fetch("/api/auth/device", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ device_id: deviceId, claim: true }),
+          });
+        } catch {
+          // Si falla, no bloqueamos el login
+        }
+      }
     }
 
+    // ✅ Dejar que /dashboard derive por rol (evita default "empresa")
     router.push("/dashboard");
   };
 
@@ -137,9 +150,7 @@ export default function LoginPage() {
       if (error) {
         setResendMsg(`No se pudo reenviar el correo: ${error.message}`);
       } else {
-        setResendMsg(
-          "Te enviamos un nuevo correo de verificación. Revisá tu inbox."
-        );
+        setResendMsg("Te enviamos un nuevo correo de verificación. Revisá tu inbox.");
       }
     } catch (e: any) {
       setResendMsg(e?.message || "Error reenviando el correo.");
@@ -196,9 +207,7 @@ export default function LoginPage() {
                 disabled={resendLoading || !email}
                 className="px-3 py-2 rounded bg-blue-600 text-white text-sm hover:bg-blue-700 disabled:opacity-50"
               >
-                {resendLoading
-                  ? "Reenviando..."
-                  : "Reenviar correo de verificación"}
+                {resendLoading ? "Reenviando..." : "Reenviar correo de verificación"}
               </button>
               {resendMsg && (
                 <div className="text-xs text-gray-700 bg-blue-50 border border-blue-200 p-2 rounded">
@@ -283,12 +292,9 @@ export default function LoginPage() {
       {showResetModal && (
         <div className="fixed inset-0 bg-black/30 grid place-items-center z-50">
           <div className="bg-white rounded-xl shadow-lg p-5 w-[92%] max-w-md">
-            <h3 className="text-lg font-semibold mb-2">
-              Restablecer contraseña
-            </h3>
+            <h3 className="text-lg font-semibold mb-2">Restablecer contraseña</h3>
             <p className="text-sm text-gray-600 mb-3">
-              Ingresá tu correo y te enviaremos un enlace para restablecer tu
-              contraseña.
+              Ingresá tu correo y te enviaremos un enlace para restablecer tu contraseña.
             </p>
             <input
               type="email"

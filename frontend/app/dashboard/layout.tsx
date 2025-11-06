@@ -10,11 +10,12 @@ import DashboardSidebar from "./components/DashboardSidebar";
 
 /* =========================================================
    Helper: ID de dispositivo (localStorage por navegador)
+   (v2 para resetear cualquier basura vieja)
 ========================================================= */
 function getOrCreateDeviceId(): string | null {
   if (typeof window === "undefined") return null;
 
-  const STORAGE_KEY = "vai_device_id_v1";
+  const STORAGE_KEY = "vai_device_id_v2";
 
   try {
     let existing = window.localStorage.getItem(STORAGE_KEY);
@@ -27,7 +28,9 @@ function getOrCreateDeviceId(): string | null {
       generated = window.crypto.randomUUID();
     } else {
       generated =
-        Math.random().toString(36).slice(2) + "-" + Date.now().toString(36);
+        Math.random().toString(36).slice(2) +
+        "-" +
+        Date.now().toString(36);
     }
 
     window.localStorage.setItem(STORAGE_KEY, generated);
@@ -40,7 +43,6 @@ function getOrCreateDeviceId(): string | null {
 
 /* =========================================================
    Hook: controla que solo un dispositivo esté activo por usuario
-   (ajustado para no matar la sesión por errores de Supabase)
 ========================================================= */
 function useSingleDeviceSession(user: any, logout: () => void) {
   const [checking, setChecking] = useState(true);
@@ -57,11 +59,9 @@ function useSingleDeviceSession(user: any, logout: () => void) {
     let intervalId: number | null = null;
     let deviceId: string | null = null;
 
-    // Llamada al endpoint /api/auth/device
-    async function callDeviceApi(claim: boolean): Promise<{
-      active: boolean;
-      unauthenticated: boolean;
-    }> {
+    async function callDeviceApi(
+      claim: boolean
+    ): Promise<{ active: boolean; unauthenticated: boolean }> {
       try {
         if (typeof window === "undefined") {
           return { active: true, unauthenticated: false };
@@ -70,6 +70,7 @@ function useSingleDeviceSession(user: any, logout: () => void) {
         if (!deviceId) {
           deviceId = getOrCreateDeviceId();
         }
+
         if (!deviceId) {
           // No pudimos generar ID → no aplicamos restricción, pero no rompemos nada
           return { active: true, unauthenticated: false };
@@ -82,7 +83,6 @@ function useSingleDeviceSession(user: any, logout: () => void) {
         });
 
         if (!res.ok) {
-          // Si el endpoint falla (500, 429, etc.), no cortamos la sesión
           console.warn("device api error:", res.status, res.statusText);
           return { active: true, unauthenticated: false };
         }
@@ -93,13 +93,11 @@ function useSingleDeviceSession(user: any, logout: () => void) {
         };
 
         return {
-          // si el backend NO dice active:false, asumimos activo
           active: json.active !== false,
           unauthenticated: !!json.unauthenticated,
         };
       } catch (err) {
         console.warn("device api exception:", err);
-        // Cualquier error de red → no expulsamos al usuario
         return { active: true, unauthenticated: false };
       }
     }
@@ -109,8 +107,7 @@ function useSingleDeviceSession(user: any, logout: () => void) {
       const result = await callDeviceApi(true);
       if (cancelled) return;
 
-      // Caso raro: el backend dice que no está autenticado
-      // → dejamos que Supabase/AuthContext se encargue, no tratamos como "otro dispositivo"
+      // Si Supabase dice que no hay sesión, lo dejamos en manos del AuthContext
       if (result.unauthenticated) {
         setChecking(false);
         setActive(true);
@@ -132,8 +129,8 @@ function useSingleDeviceSession(user: any, logout: () => void) {
           const checkResult = await callDeviceApi(false);
           if (cancelled) return;
 
-          // Si el backend dice "unauthenticated", es porque ya no hay sesión válida
-          // De nuevo: dejamos que Supabase/AuthContext lo maneje, no lo contamos como otro dispositivo.
+          // Si el backend dice "unauthenticated", significa que ya no hay sesión válida,
+          // pero eso ya lo manejará Supabase/AuthContext.
           if (checkResult.unauthenticated) {
             return;
           }

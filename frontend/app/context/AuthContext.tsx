@@ -1,21 +1,8 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { supabase } from "#lib/supabaseClient";
-import type { Profile } from "@/types/acm.types";
-
-// 🔐 ID de sesión de cliente (para single-session por dispositivo)
-const SESSION_STORAGE_KEY = "vai_active_session_id";
-
-function getOrCreateClientSessionId(): string {
-  if (typeof window === "undefined") return "";
-  let current = window.localStorage.getItem(SESSION_STORAGE_KEY);
-  if (!current) {
-    current = crypto.randomUUID();
-    window.localStorage.setItem(SESSION_STORAGE_KEY, current);
-  }
-  return current;
-}
+import type { Profile } from "@/types/acm.types"; // <-- Unificamos el tipo Profile
 
 interface AuthContextType {
   user: Profile | null;
@@ -25,33 +12,74 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
+const DEVICE_STORAGE_KEY = "vai_device_id";
+
+// Helper para obtener / generar un device_id estable por navegador
+function getOrCreateDeviceId(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    let id = window.localStorage.getItem(DEVICE_STORAGE_KEY);
+    if (!id) {
+      if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+        id = crypto.randomUUID();
+      } else {
+        id = Math.random().toString(36).slice(2) + Date.now().toString(36);
+      }
+      window.localStorage.setItem(DEVICE_STORAGE_KEY, id);
+    }
+    return id;
+  } catch {
+    return null;
+  }
+}
+
+/** Llama al endpoint /api/auth/device en modo “heartbeat” (claim = false). */
+async function checkDeviceActive(deviceId: string): Promise<boolean> {
+  try {
+    const res = await fetch("/api/auth/device", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ device_id: deviceId, claim: false }),
+    });
+
+    if (!res.ok) {
+      // Si el backend falla o tira 401/500, NO rompemos la sesión
+      return true;
+    }
+
+    const data = await res.json().catch(() => null);
+    if (!data || typeof data.active !== "boolean") return true;
+    return data.active;
+  } catch {
+    // Si no podemos hablar con la API, asumimos activo
+    return true;
+  }
+}
+
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // ID de sesión local de este dispositivo
-  const [clientSessionId, setClientSessionId] = useState<string | null>(null);
+  // Para el control de 1 sola sesión por usuario
+  const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const alertShownRef = useRef(false);
 
   // =====================================================
   // 🔒 Logout seguro
   // =====================================================
   const logout = async () => {
     try {
+      // Cortamos heartbeat primero para evitar loops
+      if (heartbeatRef.current) {
+        clearInterval(heartbeatRef.current);
+        heartbeatRef.current = null;
+      }
+      alertShownRef.current = false;
+
       await supabase.auth.signOut();
-    } catch (e) {
-      console.warn("Error en signOut:", e);
-    }
-
-    try {
-      // limpimos canales realtime por las dudas
-      await supabase.removeAllChannels();
-    } catch (e) {
-      console.warn("Error limpiando canales realtime:", e);
-    }
-
-    setUser(null);
-
-    if (typeof window !== "undefined") {
+      setUser(null);
+      window.location.replace("/auth/login");
+    } catch {
       window.location.replace("/auth/login");
     }
   };
@@ -66,7 +94,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     const { data: profile, error: profileErr } = await supabase
       .from("profiles")
       .select(
-        "id, email, nombre, apellido, matriculado_nombre, cpi, inmobiliaria, role, empresa_id, telefono, active_session_id"
+        "id, email, nombre, apellido, matriculado_nombre, cpi, inmobiliaria, role, empresa_id, telefono"
       )
       .eq("id", supabaseUser.id)
       .maybeSingle();
@@ -93,11 +121,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       console.warn("⚠️ Error al buscar empresa:", empresaError.message);
     }
 
-    const empresaLimpia = empresaData
-      ? JSON.parse(JSON.stringify(empresaData))
-      : null;
+    const empresaLimpia = empresaData ? JSON.parse(JSON.stringify(empresaData)) : null;
 
     if (empresaLimpia) {
+      // ▶️ Inferimos "empresa" sólo si NO hay perfil
       return {
         id: supabaseUser.id,
         email: supabaseUser.email,
@@ -108,7 +135,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         role: "empresa",
         telefono: (empresaLimpia as any)?.telefono || undefined,
         empresa_id: empresaLimpia.id,
-      } as Profile;
+      };
     }
 
     // 3) Fallback: metadata (admins / soporte creados sin profile)
@@ -126,15 +153,11 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   // =====================================================
-  // ⚙️ Inicializar sesión y escuchar cambios básicos
+  // ⚙️ Inicializar sesión y escuchar cambios
   // =====================================================
   useEffect(() => {
     const init = async () => {
       setLoading(true);
-
-      // Aseguramos ID de sesión local
-      const clientId = getOrCreateClientSessionId();
-      setClientSessionId(clientId);
 
       const {
         data: { session },
@@ -151,89 +174,85 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (!session?.user) {
+      const sessionUser = session?.user ?? null;
+      if (!sessionUser) {
         setUser(null);
+        // Si no hay user, apagamos heartbeat y reseteamos el mensaje
+        if (heartbeatRef.current) {
+          clearInterval(heartbeatRef.current);
+          heartbeatRef.current = null;
+        }
+        alertShownRef.current = false;
       } else {
-        loadUserProfile(session.user).then(setUser);
+        loadUserProfile(sessionUser).then(setUser);
       }
     });
 
     return () => {
       subscription.unsubscribe();
+      if (heartbeatRef.current) {
+        clearInterval(heartbeatRef.current);
+        heartbeatRef.current = null;
+      }
     };
   }, []);
 
   // =====================================================
-  // 🔁 Single-session (única sesión por usuario)
-  //
-  // 👉 Lógica correcta:
-  //    - Este dispositivo se registra como dueño: actualiza active_session_id.
-  //    - Si *luego* otra sesión escribe otro active_session_id,
-  //      este dispositivo recibe el cambio por Realtime y se desloguea.
+  // 🔁 Heartbeat para ENFORZAR 1 solo dispositivo activo
+  //    (usa /api/auth/device; NO corre si no hay sesión)
   // =====================================================
   useEffect(() => {
-    if (!user) return;
-    if (!clientSessionId) return;
+    // Si no hay usuario autenticado → nada que hacer
+    if (!user) {
+      if (heartbeatRef.current) {
+        clearInterval(heartbeatRef.current);
+        heartbeatRef.current = null;
+      }
+      alertShownRef.current = false;
+      return;
+    }
 
-    let cancelled = false;
+    const deviceId = getOrCreateDeviceId();
+    if (!deviceId) {
+      // Si por alguna razón no podemos generar deviceId, no rompemos nada
+      return;
+    }
 
-    // 1) Registrar este dispositivo como sesión activa (último login gana)
-    const registerActiveSession = async () => {
-      try {
-        await supabase
-          .from("profiles")
-          .update({ active_session_id: clientSessionId })
-          .eq("id", user.id);
-      } catch (e) {
-        console.warn("⚠️ Error actualizando active_session_id:", e);
+    // Limpia cualquier intervalo previo
+    if (heartbeatRef.current) {
+      clearInterval(heartbeatRef.current);
+      heartbeatRef.current = null;
+    }
+
+    const runCheck = async () => {
+      const stillActive = await checkDeviceActive(deviceId);
+      if (!stillActive) {
+        // Solo mostramos el mensaje UNA vez
+        if (!alertShownRef.current) {
+          alertShownRef.current = true;
+          alert("Tu sesión se cerró porque iniciaste sesión en otro dispositivo.");
+        }
+        await supabase.auth.signOut();
+        setUser(null);
+        // Redirigimos directo al login
+        window.location.replace("/auth/login");
       }
     };
 
-    registerActiveSession();
+    // Primer chequeo inmediato
+    runCheck();
 
-    // 2) Suscripción Realtime: si alguien pisa nuestro active_session_id, nos deslogueamos
-    const channel = supabase
-      .channel("profile_active_session_" + user.id)
-      .on(
-        "postgres_changes",
-        {
-          event: "UPDATE",
-          schema: "public",
-          table: "profiles",
-          filter: `id=eq.${user.id}`,
-        },
-        (payload: any) => {
-          if (cancelled) return;
-
-          const newActive = (payload.new as any)?.active_session_id as
-            | string
-            | null;
-
-          if (!newActive) return;
-          if (newActive === clientSessionId) return; // seguimos siendo los dueños
-
-          // Otro dispositivo tomó el control → cerrar sesión acá
-          alert(
-            "Tu sesión se cerró porque iniciaste sesión en otro dispositivo."
-          );
-          supabase
-            .auth
-            .signOut()
-            .finally(() => {
-              setUser(null);
-              if (typeof window !== "undefined") {
-                window.location.replace("/auth/login?reason=other_device");
-              }
-            });
-        }
-      )
-      .subscribe();
+    // Luego, cada 15 segundos
+    const intervalId = setInterval(runCheck, 15000);
+    heartbeatRef.current = intervalId as any;
 
     return () => {
-      cancelled = true;
-      supabase.removeChannel(channel);
+      if (heartbeatRef.current) {
+        clearInterval(heartbeatRef.current);
+        heartbeatRef.current = null;
+      }
     };
-  }, [user, clientSessionId]);
+  }, [user]);
 
   // =====================================================
   // 🧩 Provider

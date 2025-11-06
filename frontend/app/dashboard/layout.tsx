@@ -9,150 +9,14 @@ import DashboardHeader from "./components/DashboardHeader";
 import DashboardSidebar from "./components/DashboardSidebar";
 
 /* =========================================================
-   Helper: ID de dispositivo (localStorage por navegador)
-   (v2 para resetear cualquier basura vieja)
+   🔕 Bloqueo multi-dispositivo DESACTIVADO
+   (hook reducido a no-op para volver al comportamiento anterior)
 ========================================================= */
-function getOrCreateDeviceId(): string | null {
-  if (typeof window === "undefined") return null;
-
-  const STORAGE_KEY = "vai_device_id_v2";
-
-  try {
-    let existing = window.localStorage.getItem(STORAGE_KEY);
-    if (existing && typeof existing === "string") {
-      return existing;
-    }
-
-    let generated: string;
-    if (window.crypto && typeof window.crypto.randomUUID === "function") {
-      generated = window.crypto.randomUUID();
-    } else {
-      generated =
-        Math.random().toString(36).slice(2) +
-        "-" +
-        Date.now().toString(36);
-    }
-
-    window.localStorage.setItem(STORAGE_KEY, generated);
-    return generated;
-  } catch {
-    // Si localStorage está bloqueado o falla, no rompemos la app
-    return null;
-  }
-}
-
-/* =========================================================
-   Hook: controla que solo un dispositivo esté activo por usuario
-========================================================= */
-function useSingleDeviceSession(user: any, logout: () => void) {
-  const [checking, setChecking] = useState(true);
-  const [active, setActive] = useState(true);
-
-  useEffect(() => {
-    if (!user) {
-      setChecking(false);
-      setActive(false);
-      return;
-    }
-
-    let cancelled = false;
-    let intervalId: number | null = null;
-    let deviceId: string | null = null;
-
-    async function callDeviceApi(
-      claim: boolean
-    ): Promise<{ active: boolean; unauthenticated: boolean }> {
-      try {
-        if (typeof window === "undefined") {
-          return { active: true, unauthenticated: false };
-        }
-
-        if (!deviceId) {
-          deviceId = getOrCreateDeviceId();
-        }
-
-        if (!deviceId) {
-          // No pudimos generar ID → no aplicamos restricción, pero no rompemos nada
-          return { active: true, unauthenticated: false };
-        }
-
-        const res = await fetch("/api/auth/device", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ device_id: deviceId, claim }),
-        });
-
-        if (!res.ok) {
-          console.warn("device api error:", res.status, res.statusText);
-          return { active: true, unauthenticated: false };
-        }
-
-        const json = (await res.json().catch(() => ({}))) as {
-          active?: boolean;
-          unauthenticated?: boolean;
-        };
-
-        return {
-          active: json.active !== false,
-          unauthenticated: !!json.unauthenticated,
-        };
-      } catch (err) {
-        console.warn("device api exception:", err);
-        return { active: true, unauthenticated: false };
-      }
-    }
-
-    async function init() {
-      // Primer llamada: este dispositivo reclama la sesión
-      const result = await callDeviceApi(true);
-      if (cancelled) return;
-
-      // Si Supabase dice que no hay sesión, lo dejamos en manos del AuthContext
-      if (result.unauthenticated) {
-        setChecking(false);
-        setActive(true);
-        return;
-      }
-
-      setActive(result.active);
-      setChecking(false);
-
-      if (!result.active) {
-        // Otro dispositivo ya tomó la sesión → deslogueamos
-        logout();
-        return;
-      }
-
-      // Heartbeat: cada 30s chequeamos si seguimos siendo el dispositivo activo
-      if (typeof window !== "undefined") {
-        intervalId = window.setInterval(async () => {
-          const checkResult = await callDeviceApi(false);
-          if (cancelled) return;
-
-          // Si el backend dice "unauthenticated", significa que ya no hay sesión válida,
-          // pero eso ya lo manejará Supabase/AuthContext.
-          if (checkResult.unauthenticated) {
-            return;
-          }
-
-          if (!checkResult.active) {
-            setActive(false);
-            logout();
-          }
-        }, 30000) as unknown as number;
-      }
-    }
-
-    init();
-
-    return () => {
-      cancelled = true;
-      if (intervalId !== null && typeof window !== "undefined") {
-        window.clearInterval(intervalId);
-      }
-    };
-  }, [user, logout]);
-
+function useSingleDeviceSession(_user: any, _logout: () => void) {
+  // No hacemos ningún chequeo de dispositivo.
+  // Siempre consideramos la sesión activa en este navegador.
+  const [checking] = useState(false);
+  const [active] = useState(true);
   return { checking, active };
 }
 
@@ -235,7 +99,7 @@ export default function DashboardLayout({
     };
   }, [user]);
 
-  /* ---------- Control de dispositivo único ---------- */
+  /* ---------- Control de dispositivo único (desactivado) ---------- */
   const { checking: deviceChecking, active: deviceActive } = useSingleDeviceSession(
     user,
     logout
@@ -278,7 +142,7 @@ export default function DashboardLayout({
     );
   }
 
-  // Verificando dispositivo activo
+  // (deviceChecking / deviceActive quedan siempre en: false / true)
   if (deviceChecking) {
     return (
       <div className="flex justify-center items-center h-screen text-gray-500">
@@ -287,7 +151,6 @@ export default function DashboardLayout({
     );
   }
 
-  // Este dispositivo ya NO es el activo → mensaje mientras se hace logout/redirección
   if (!deviceActive) {
     return (
       <div className="flex justify-center items-center h-screen text-gray-500 text-center px-4">

@@ -2,7 +2,20 @@
 
 import { createContext, useContext, useEffect, useState } from "react";
 import { supabase } from "#lib/supabaseClient";
-import type { Profile } from "@/types/acm.types"; // <-- Unificamos el tipo Profile
+import type { Profile } from "@/types/acm.types";
+
+// 🔐 ID de sesión de cliente (para single-session)
+const SESSION_STORAGE_KEY = "vai_active_session_id";
+
+function getOrCreateClientSessionId(): string {
+  if (typeof window === "undefined") return "";
+  let current = window.localStorage.getItem(SESSION_STORAGE_KEY);
+  if (!current) {
+    current = crypto.randomUUID();
+    window.localStorage.setItem(SESSION_STORAGE_KEY, current);
+  }
+  return current;
+}
 
 interface AuthContextType {
   user: Profile | null;
@@ -16,19 +29,26 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // ID de sesión local de este dispositivo
+  const [clientSessionId, setClientSessionId] = useState<string | null>(null);
+
   // =====================================================
   // 🔒 Logout seguro
   // =====================================================
   const logout = async () => {
-    await supabase.auth.signOut();
+    try {
+      await supabase.auth.signOut();
+    } catch (e) {
+      console.warn("Error en signOut:", e);
+    }
     setUser(null);
-    window.location.replace("/auth/login");
+    if (typeof window !== "undefined") {
+      window.location.replace("/auth/login");
+    }
   };
 
   // =====================================================
   // 📦 Cargar perfil extendido desde Supabase
-  //  FIX: primero leemos `profiles` (rol verdadero). Si no hay fila,
-  //       recién ahí inferimos EMPRESA mirando `empresas.user_id`.
   // =====================================================
   const loadUserProfile = async (supabaseUser: any): Promise<Profile | null> => {
     if (!supabaseUser) return null;
@@ -37,7 +57,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     const { data: profile, error: profileErr } = await supabase
       .from("profiles")
       .select(
-        "id, email, nombre, apellido, matriculado_nombre, cpi, inmobiliaria, role, empresa_id, telefono"
+        "id, email, nombre, apellido, matriculado_nombre, cpi, inmobiliaria, role, empresa_id, telefono, active_session_id"
       )
       .eq("id", supabaseUser.id)
       .maybeSingle();
@@ -47,7 +67,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
 
     if (profile) {
-      // ✅ Usar SIEMPRE el rol de profiles si existe
       const perfilLimpio = JSON.parse(JSON.stringify(profile)) as Profile;
       return perfilLimpio;
     }
@@ -65,10 +84,11 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       console.warn("⚠️ Error al buscar empresa:", empresaError.message);
     }
 
-    const empresaLimpia = empresaData ? JSON.parse(JSON.stringify(empresaData)) : null;
+    const empresaLimpia = empresaData
+      ? JSON.parse(JSON.stringify(empresaData))
+      : null;
 
     if (empresaLimpia) {
-      // ▶️ Inferimos "empresa" sólo si NO hay perfil
       return {
         id: supabaseUser.id,
         email: supabaseUser.email,
@@ -79,7 +99,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         role: "empresa",
         telefono: (empresaLimpia as any)?.telefono || undefined,
         empresa_id: empresaLimpia.id,
-      };
+      } as Profile;
     }
 
     // 3) Fallback: metadata (admins / soporte creados sin profile)
@@ -97,11 +117,15 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   // =====================================================
-  // ⚙️ Inicializar sesión y escuchar cambios
+  // ⚙️ Inicializar sesión y escuchar cambios básicos
   // =====================================================
   useEffect(() => {
     const init = async () => {
       setLoading(true);
+
+      // Aseguramos ID de sesión local
+      const clientId = getOrCreateClientSessionId();
+      setClientSessionId(clientId);
 
       const {
         data: { session },
@@ -125,8 +149,102 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       }
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      subscription.unsubscribe();
+    };
   }, []);
+
+  // =====================================================
+  // 🔁 Single-session: sincronizar y escuchar cambios en profiles.active_session_id
+  // =====================================================
+  useEffect(() => {
+    if (!user || !clientSessionId) return;
+
+    let cancelled = false;
+
+    // 1) Sincronizar estado al montar / cambio de usuario
+    const syncActiveSession = async () => {
+      try {
+        const { data, error } = await supabase
+          .from("profiles")
+          .select("active_session_id")
+          .eq("id", user.id)
+          .maybeSingle();
+
+        if (error) {
+          console.warn("⚠️ Error leyendo active_session_id:", error.message);
+          return;
+        }
+
+        const current = (data as any)?.active_session_id as string | null;
+
+        // Si no hay ninguna sesión registrada, tomamos este dispositivo como el activo
+        if (!current) {
+          await supabase
+            .from("profiles")
+            .update({ active_session_id: clientSessionId })
+            .eq("id", user.id);
+          return;
+        }
+
+        // Si el active_session_id NO coincide con el de este dispositivo,
+        // significa que alguien inició sesión en otro dispositivo más tarde.
+        if (current && current !== clientSessionId) {
+          if (cancelled) return;
+          alert(
+            "Tu sesión se cerró porque iniciaste sesión en otro dispositivo."
+          );
+          await supabase.auth.signOut();
+          setUser(null);
+          if (typeof window !== "undefined") {
+            window.location.replace("/auth/login?reason=other_device");
+          }
+        }
+      } catch (e) {
+        console.warn("⚠️ Error syncActiveSession:", e);
+      }
+    };
+
+    syncActiveSession();
+
+    // 2) Suscripción Realtime a cambios en profiles (single-session en tiempo real)
+    const channel = supabase
+      .channel("profile_active_session_" + user.id)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "profiles",
+          filter: `id=eq.${user.id}`,
+        },
+        (payload: any) => {
+          const newActive = (payload.new as any)?.active_session_id as
+            | string
+            | null;
+
+          if (!newActive) return;
+          if (newActive === clientSessionId) return;
+
+          // Otro dispositivo tomó control de la sesión
+          alert(
+            "Tu sesión se cerró porque iniciaste sesión en otro dispositivo."
+          );
+          supabase.auth.signOut().finally(() => {
+            setUser(null);
+            if (typeof window !== "undefined") {
+              window.location.replace("/auth/login?reason=other_device");
+            }
+          });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      cancelled = true;
+      supabase.removeChannel(channel);
+    };
+  }, [user, clientSessionId]);
 
   // =====================================================
   // 🧩 Provider

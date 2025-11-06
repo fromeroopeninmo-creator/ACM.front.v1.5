@@ -167,5 +167,6 @@ export type Profile = {
   role: 'empresa' | 'asesor' | 'soporte' | 'super_admin' | 'super_admin_root';
   user_id?: string;
   empresa_id?: string | null;
+  active_session_id?: string | null;
 };
 

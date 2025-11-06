@@ -4,7 +4,7 @@ import { createContext, useContext, useEffect, useState } from "react";
 import { supabase } from "#lib/supabaseClient";
 import type { Profile } from "@/types/acm.types";
 
-// 🔐 ID de sesión de cliente (para single-session)
+// 🔐 ID de sesión de cliente (para single-session por dispositivo)
 const SESSION_STORAGE_KEY = "vai_active_session_id";
 
 function getOrCreateClientSessionId(): string {
@@ -41,7 +41,16 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     } catch (e) {
       console.warn("Error en signOut:", e);
     }
+
+    try {
+      // limpimos canales realtime por las dudas
+      await supabase.removeAllChannels();
+    } catch (e) {
+      console.warn("Error limpiando canales realtime:", e);
+    }
+
     setUser(null);
+
     if (typeof window !== "undefined") {
       window.location.replace("/auth/login");
     }
@@ -155,59 +164,34 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   }, []);
 
   // =====================================================
-  // 🔁 Single-session: sincronizar y escuchar cambios en profiles.active_session_id
+  // 🔁 Single-session (única sesión por usuario)
+  //
+  // 👉 Lógica correcta:
+  //    - Este dispositivo se registra como dueño: actualiza active_session_id.
+  //    - Si *luego* otra sesión escribe otro active_session_id,
+  //      este dispositivo recibe el cambio por Realtime y se desloguea.
   // =====================================================
   useEffect(() => {
-    if (!user || !clientSessionId) return;
+    if (!user) return;
+    if (!clientSessionId) return;
 
     let cancelled = false;
 
-    // 1) Sincronizar estado al montar / cambio de usuario
-    const syncActiveSession = async () => {
+    // 1) Registrar este dispositivo como sesión activa (último login gana)
+    const registerActiveSession = async () => {
       try {
-        const { data, error } = await supabase
+        await supabase
           .from("profiles")
-          .select("active_session_id")
-          .eq("id", user.id)
-          .maybeSingle();
-
-        if (error) {
-          console.warn("⚠️ Error leyendo active_session_id:", error.message);
-          return;
-        }
-
-        const current = (data as any)?.active_session_id as string | null;
-
-        // Si no hay ninguna sesión registrada, tomamos este dispositivo como el activo
-        if (!current) {
-          await supabase
-            .from("profiles")
-            .update({ active_session_id: clientSessionId })
-            .eq("id", user.id);
-          return;
-        }
-
-        // Si el active_session_id NO coincide con el de este dispositivo,
-        // significa que alguien inició sesión en otro dispositivo más tarde.
-        if (current && current !== clientSessionId) {
-          if (cancelled) return;
-          alert(
-            "Tu sesión se cerró porque iniciaste sesión en otro dispositivo."
-          );
-          await supabase.auth.signOut();
-          setUser(null);
-          if (typeof window !== "undefined") {
-            window.location.replace("/auth/login?reason=other_device");
-          }
-        }
+          .update({ active_session_id: clientSessionId })
+          .eq("id", user.id);
       } catch (e) {
-        console.warn("⚠️ Error syncActiveSession:", e);
+        console.warn("⚠️ Error actualizando active_session_id:", e);
       }
     };
 
-    syncActiveSession();
+    registerActiveSession();
 
-    // 2) Suscripción Realtime a cambios en profiles (single-session en tiempo real)
+    // 2) Suscripción Realtime: si alguien pisa nuestro active_session_id, nos deslogueamos
     const channel = supabase
       .channel("profile_active_session_" + user.id)
       .on(
@@ -219,23 +203,28 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           filter: `id=eq.${user.id}`,
         },
         (payload: any) => {
+          if (cancelled) return;
+
           const newActive = (payload.new as any)?.active_session_id as
             | string
             | null;
 
           if (!newActive) return;
-          if (newActive === clientSessionId) return;
+          if (newActive === clientSessionId) return; // seguimos siendo los dueños
 
-          // Otro dispositivo tomó control de la sesión
+          // Otro dispositivo tomó el control → cerrar sesión acá
           alert(
             "Tu sesión se cerró porque iniciaste sesión en otro dispositivo."
           );
-          supabase.auth.signOut().finally(() => {
-            setUser(null);
-            if (typeof window !== "undefined") {
-              window.location.replace("/auth/login?reason=other_device");
-            }
-          });
+          supabase
+            .auth
+            .signOut()
+            .finally(() => {
+              setUser(null);
+              if (typeof window !== "undefined") {
+                window.location.replace("/auth/login?reason=other_device");
+              }
+            });
         }
       )
       .subscribe();

@@ -1,4 +1,3 @@
-// app/api/auth/device/route.ts
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -8,21 +7,25 @@ import { supabaseServer } from "#lib/supabaseServer";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+
+// Cliente admin SIN RLS para escribir en user_devices
 const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE);
 
 /**
- * Tabla recomendada:
+ * Tabla esperada:
  *
  * CREATE TABLE public.user_devices (
  *   id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
  *   user_id uuid NOT NULL,
  *   device_id text NOT NULL,
  *   last_seen timestamptz NOT NULL DEFAULT now(),
- *   is_active boolean NOT NULL DEFAULT true,
- *   UNIQUE (user_id, device_id)
+ *   is_active boolean NOT NULL DEFAULT true
  * );
  *
- * CREATE INDEX user_devices_user_id_idx ON public.user_devices(user_id);
+ * -- ÚNICO (necesario para on_conflict=user_id,device_id)
+ * ALTER TABLE public.user_devices
+ * ADD CONSTRAINT user_devices_user_device_unique
+ * UNIQUE (user_id, device_id);
  */
 
 export async function POST(req: Request) {
@@ -38,16 +41,15 @@ export async function POST(req: Request) {
       );
     }
 
-    // Usuario autenticado (RLS ON) – pero OJO:
-    // si falla, devolvemos 200 con una marca `unauthenticated: true`
+    // Usuario autenticado (RLS ON)
     const server = supabaseServer();
     const { data: auth, error: authErr } = await server.auth.getUser();
 
+    // 🧠 Si Supabase dice que NO hay usuario, devolvemos 200 pero marcamos unauthenticated,
+    //     para que el frontend NO lo trate como "otro dispositivo".
     if (authErr || !auth?.user?.id) {
-      // ⚠️ Muy importante: NO devolvemos 401 para que el front
-      // no lo trate como "otro dispositivo", sino como "no hay sesión".
       return NextResponse.json(
-        { error: "No autenticado.", active: false, unauthenticated: true },
+        { active: true, unauthenticated: true },
         { status: 200 }
       );
     }
@@ -55,9 +57,9 @@ export async function POST(req: Request) {
     const userId = auth.user.id as string;
     const now = new Date().toISOString();
 
-    // === MODO "CLAIM" → este dispositivo pasa a ser el activo ===
+    // 🟢 Si "claim" es true: este dispositivo reclama ser el ACTIVO
     if (claim) {
-      // Upsert de este device
+      // Upsert del dispositivo actual
       const { error: upErr } = await supabaseAdmin
         .from("user_devices")
         .upsert(
@@ -74,11 +76,14 @@ export async function POST(req: Request) {
 
       if (upErr) {
         console.error("user_devices upsert error:", upErr.message);
-        // No lo tratamos como expulsión; dejamos la sesión seguir.
-        return NextResponse.json({ active: true }, { status: 200 });
+        // No rompemos la sesión por errores internos
+        return NextResponse.json(
+          { active: true, unauthenticated: false },
+          { status: 200 }
+        );
       }
 
-      // Desactivar OTROS devices del mismo usuario
+      // Marcar otros dispositivos del mismo user como inactivos
       const { error: updErr } = await supabaseAdmin
         .from("user_devices")
         .update({ is_active: false, last_seen: now })
@@ -90,12 +95,16 @@ export async function POST(req: Request) {
           "user_devices deactivate others error:",
           updErr.message
         );
+        // Igual seguimos dejando activo este
       }
 
-      return NextResponse.json({ active: true }, { status: 200 });
+      return NextResponse.json(
+        { active: true, unauthenticated: false },
+        { status: 200 }
+      );
     }
 
-    // === HEARTBEAT / CHECK ===
+    // 🟡 Si "claim" es false: sólo heartbeat / verificación
     const { data: row, error: selErr } = await supabaseAdmin
       .from("user_devices")
       .select("is_active")
@@ -105,28 +114,37 @@ export async function POST(req: Request) {
 
     if (selErr) {
       console.error("user_devices select error:", selErr.message);
-      // En errores de DB, NO expulsamos la sesión.
-      return NextResponse.json({ active: true }, { status: 200 });
+      // No rompemos la sesión si hay errores
+      return NextResponse.json(
+        { active: true, unauthenticated: false },
+        { status: 200 }
+      );
     }
 
     if (!row) {
-      // No hay fila para este device → asumimos que NO es el activo
-      return NextResponse.json({ active: false }, { status: 200 });
+      // No hay registro para este device → NO es el activo
+      return NextResponse.json(
+        { active: false, unauthenticated: false },
+        { status: 200 }
+      );
     }
 
-    // Actualizar last_seen
+    // Actualizamos last_seen
     await supabaseAdmin
       .from("user_devices")
       .update({ last_seen: now })
       .eq("user_id", userId)
       .eq("device_id", deviceId);
 
-    return NextResponse.json({ active: !!row.is_active }, { status: 200 });
+    return NextResponse.json(
+      { active: !!row.is_active, unauthenticated: false },
+      { status: 200 }
+    );
   } catch (e: any) {
     console.error("device route exception:", e?.message || e);
-    // En caso de excepción, NO expulsamos al usuario.
     return NextResponse.json(
-      { error: e?.message || "Error inesperado", active: true },
+      // En cualquier error inesperado → mantenemos active=true para no expulsar al usuario
+      { error: e?.message || "Error inesperado", active: true, unauthenticated: false },
       { status: 200 }
     );
   }

@@ -22,8 +22,7 @@ const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE);
  *   is_active boolean NOT NULL DEFAULT true
  * );
  *
- * -- (Opcional) constraint para evitar duplicados manualmente
- * -- pero la API YA NO usa on_conflict, así que no es obligatorio:
+ * -- Opcional: UNIQUE si querés evitar duplicados (no es obligatorio para esta API):
  * -- ALTER TABLE public.user_devices
  * --   ADD CONSTRAINT user_devices_user_id_device_id_key UNIQUE (user_id, device_id);
  */
@@ -41,25 +40,32 @@ export async function POST(req: Request) {
       );
     }
 
-    // Usuario autenticado (RLS ON)
+    // ===========================
+    // 1) Intentar leer sesión
+    // ===========================
     const server = supabaseServer();
     const { data: auth, error: authErr } = await server.auth.getUser();
 
+    // ⚠️ CAMBIO IMPORTANTE:
+    // Si NO hay usuario (403 session_not_found, token viejo, etc.),
+    // NO devolvemos 401 ni matamos la sesión del front.
     if (authErr || !auth?.user?.id) {
-      return NextResponse.json(
-        { error: "No autenticado.", active: false },
-        { status: 401 }
+      console.warn(
+        "[user_devices] No autenticado en /api/auth/device:",
+        authErr?.message || "sin user"
       );
+      // Desde el punto de vista del front, no bloqueamos nada.
+      return NextResponse.json({ active: true }, { status: 200 });
     }
 
     const userId = auth.user.id as string;
     const now = new Date().toISOString();
 
     // =========================================================
-    // 1) MODO CLAIM: este dispositivo "reclama" ser el único activo
+    // 2) MODO CLAIM: este dispositivo "reclama" ser el único activo
     // =========================================================
     if (claim) {
-      // 🔍 Buscamos si ya existe un registro para (user_id, device_id)
+      // Buscar si ya existe (user_id, device_id)
       const { data: existing, error: selErr } = await supabaseAdmin
         .from("user_devices")
         .select("id")
@@ -69,12 +75,12 @@ export async function POST(req: Request) {
 
       if (selErr) {
         console.error("user_devices select (claim) error:", selErr.message);
-        // En caso de duda, no bloqueamos el login
+        // En caso de duda, no rompemos nada
         return NextResponse.json({ active: true }, { status: 200 });
       }
 
       if (existing?.id) {
-        // 🔁 Ya existe → lo marcamos activo y actualizamos last_seen
+        // Actualizar registro existente
         const { error: updErr } = await supabaseAdmin
           .from("user_devices")
           .update({ is_active: true, last_seen: now })
@@ -85,7 +91,7 @@ export async function POST(req: Request) {
           return NextResponse.json({ active: true }, { status: 200 });
         }
       } else {
-        // ➕ No existe → insertamos
+        // Insertar nuevo registro
         const { error: insErr } = await supabaseAdmin
           .from("user_devices")
           .insert({
@@ -101,7 +107,7 @@ export async function POST(req: Request) {
         }
       }
 
-      // 🔻 Desactivamos OTROS dispositivos del mismo usuario
+      // Desactivar otros dispositivos del usuario
       const { error: deactivateErr } = await supabaseAdmin
         .from("user_devices")
         .update({ is_active: false, last_seen: now })
@@ -113,14 +119,14 @@ export async function POST(req: Request) {
           "user_devices deactivate others error:",
           deactivateErr.message
         );
-        // Igual dejamos activo este
+        // No frenamos igual
       }
 
       return NextResponse.json({ active: true }, { status: 200 });
     }
 
     // =========================================================
-    // 2) MODO HEARTBEAT: sólo verificar si este device sigue activo
+    // 3) MODO HEARTBEAT: sólo verificar si este device sigue activo
     // =========================================================
     const { data: row, error: selErr } = await supabaseAdmin
       .from("user_devices")
@@ -131,19 +137,17 @@ export async function POST(req: Request) {
 
     if (selErr) {
       console.error("user_devices select (heartbeat) error:", selErr.message);
-      // No rompemos la app ni desconectamos al usuario
+      // No desconectamos por errores internos
       return NextResponse.json({ active: true }, { status: 200 });
     }
 
     if (!row) {
-      // 🔐 IMPORTANTE:
-      // Si aún no hay registro para este device (ej: primer login,
-      // o algo falló antes), NO lo marcamos como inactivo.
-      // De lo contrario entrarías en un loop de logout.
+      // Si aún no hay registro para este device, NO lo marcamos inactivo.
+      // Evita loop de logout cuando algo falló en el claim.
       return NextResponse.json({ active: true }, { status: 200 });
     }
 
-    // Actualizamos last_seen (no cambiamos is_active aquí)
+    // Actualizamos last_seen, pero no tocamos is_active
     await supabaseAdmin
       .from("user_devices")
       .update({ last_seen: now })
@@ -153,9 +157,10 @@ export async function POST(req: Request) {
     return NextResponse.json({ active: !!row.is_active }, { status: 200 });
   } catch (e: any) {
     console.error("device route exception:", e?.message || e);
+    // En caso de error inesperado, NO tiramos 401, dejamos la sesión viva
     return NextResponse.json(
       { error: e?.message || "Error inesperado", active: true },
-      { status: 500 }
+      { status: 200 }
     );
   }
 }

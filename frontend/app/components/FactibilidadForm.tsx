@@ -709,79 +709,74 @@ export default function FactibilidadForm() {
     }
   };
 
-  /* =========================
+    /* =========================
    *  PDF
    * ========================= */
 
   const handleDownloadPDF = async () => {
-    const { jsPDF } = await import('jspdf');
+    const { jsPDF } = await import("jspdf");
 
-    const doc = new jsPDF('p', 'pt', 'a4');
+    const doc = new jsPDF("p", "pt", "a4");
     const pageW = doc.internal.pageSize.getWidth();
     const pageH = doc.internal.pageSize.getHeight();
     const margin = 40;
     let y = margin;
 
-    // Datos desde Auth / Theme
-    let matriculado = (user as any)?.matriculado_nombre || '—';
-    let cpi = (user as any)?.cpi || '—';
-    let inmobiliaria =
-      themeCompanyName || (user as any)?.inmobiliaria || '—';
+    // 🔹 Datos desde Auth / Theme (misma lógica que ACMForm)
+    const anyUser = user as any;
+
+    let matriculado = anyUser?.matriculado_nombre || "—";
+    let cpi = anyUser?.cpi || "—";
+    let inmobiliaria = themeCompanyName || anyUser?.inmobiliaria || "—";
     const asesorNombre =
-      (user as any)?.nombre && (user as any)?.apellido
-        ? `${(user as any).nombre} ${(user as any).apellido}`
-        : '—';
+      anyUser?.nombre && anyUser?.apellido
+        ? `${anyUser.nombre} ${anyUser.apellido}`
+        : "—";
 
-    const role = ((user as any)?.role || '').toLowerCase();
-    const isAsesor = role === 'asesor';
+    const role = (anyUser?.role || "").toLowerCase();
+    const isAsesor = role === "asesor";
 
-    // Igual que en ACMForm: si asesor no tiene datos completos, traemos empresa
-    if (
-      isAsesor &&
-      (inmobiliaria === '—' || matriculado === '—' || cpi === '—')
-    ) {
+    // ⤵️ Igual que en ACMForm: si el asesor no tiene datos completos, traemos la empresa asociada
+    if (isAsesor && (inmobiliaria === "—" || matriculado === "—" || cpi === "—")) {
       try {
-        const { supabase } = await import('#lib/supabaseClient');
+        const { supabase } = await import("#lib/supabaseClient");
+
         let query = supabase
-          .from('empresas')
-          .select('id, nombre_comercial, matriculado, cpi, user_id')
+          .from("empresas")
+          .select("id, nombre_comercial, matriculado, cpi, user_id")
           .limit(1);
 
-        if ((user as any)?.empresa_id) {
-          query = query.eq('id', (user as any).empresa_id);
+        if (anyUser?.empresa_id) {
+          query = query.eq("id", anyUser.empresa_id);
         }
 
         const { data: empresaRow, error } = await query.maybeSingle();
         if (!error && empresaRow) {
-          if (inmobiliaria === '—' && empresaRow.nombre_comercial) {
+          if (inmobiliaria === "—" && empresaRow.nombre_comercial) {
             inmobiliaria = empresaRow.nombre_comercial;
           }
-          if (matriculado === '—' && empresaRow.matriculado) {
+          if (matriculado === "—" && empresaRow.matriculado) {
             matriculado = empresaRow.matriculado;
           }
-          if (cpi === '—' && empresaRow.cpi) {
+          if (cpi === "—" && empresaRow.cpi) {
             cpi = empresaRow.cpi;
           }
         }
       } catch (e) {
         console.warn(
-          'No se pudieron resolver datos de empresa para asesor (PDF Factibilidad):',
+          "No se pudieron resolver datos de empresa para asesor (PDF Factibilidad):",
           e
         );
       }
     }
 
+    // Logo y color como en ACMForm
     const themeLogo = themeLogoUrl || null;
 
     const hexToRgb = (hex: string) => {
-      const m = hex.replace('#', '');
+      const m = hex.replace("#", "");
       const int = parseInt(
-        m.length === 3
-          ? m
-              .split('')
-              .map((c) => c + c)
-              .join('')
-          : m,
+        m.length === 3 ? m.split("").map((c) => c + c).join("") : m,
         16
       );
       return {
@@ -793,47 +788,42 @@ export default function FactibilidadForm() {
 
     const pc = hexToRgb(effectivePrimaryColor);
 
-    // Título
-    doc.setFont('helvetica', 'bold');
+    // 🔹 Título principal
+    doc.setFont("helvetica", "bold");
     doc.setFontSize(16);
     doc.setTextColor(pc.r, pc.g, pc.b);
-    doc.text(
-      'VAI - Informe de Factibilidad Constructiva',
-      pageW / 2,
-      y,
-      {
-        align: 'center',
-      }
-    );
+    doc.text("Informe de Factibilidad Constructiva", pageW / 2, y, {
+      align: "center",
+    });
     doc.setTextColor(0, 0, 0);
     y += 30;
 
-    // Encabezado (datos empresa / profesional)
+    // 🔹 Encabezado (empresa / profesional / asesor)
     const colLeftX = margin;
     const colRightX = pageW - margin - 220;
 
     doc.setFontSize(11);
-    doc.setFont('helvetica', 'normal');
+    doc.setFont("helvetica", "normal");
 
-    // Izquierda
+    // Izquierda (igual criterio que ACMForm)
     doc.text(`Empresa: ${inmobiliaria}`, colLeftX, y);
-    doc.text(`Profesional a cargo: ${matriculado}`, colLeftX, y + 15);
-    doc.text(`Asesor: ${isAsesor ? asesorNombre : '—'}`, colLeftX, y + 30);
+    doc.text(`Profesional: ${matriculado}`, colLeftX, y + 15);
+    doc.text(`Asesor: ${isAsesor ? asesorNombre : "—"}`, colLeftX, y + 30);
 
     // Derecha
-    doc.text(`Matrícula N°: ${cpi}`, colRightX, y);
+    doc.text(`Matricula N°: ${cpi}`, colRightX, y);
     doc.text(
-      `Fecha: ${new Date(formData.date).toLocaleDateString('es-AR')}`,
+      `Fecha: ${new Date(formData.date).toLocaleDateString("es-AR")}`,
       colRightX,
       y + 15
     );
     doc.text(
-      `Proyecto: ${formData.nombreProyecto || '-'}`,
+      `Proyecto: ${formData.nombreProyecto || "-"}`,
       colRightX,
       y + 30
     );
 
-    // Logo centrado
+    // 🔹 Logo centrado (como en ACMForm)
     if (themeLogo) {
       try {
         const base64Img = await fetchToDataURL(themeLogo);
@@ -843,47 +833,47 @@ export default function FactibilidadForm() {
           const centerX = pageW / 2 - logoW / 2;
           doc.addImage(
             base64Img,
-            'PNG',
+            "PNG",
             centerX,
             y - 10,
             logoW,
             logoH,
             undefined,
-            'FAST'
+            "FAST"
           );
         }
       } catch (err) {
-        console.warn('No se pudo cargar el logo en PDF factibilidad', err);
+        console.warn("No se pudo cargar el logo en PDF factibilidad", err);
       }
     }
 
     y += 70;
 
-    // Separador
+    // 🔹 Separador
     doc.setDrawColor(pc.r, pc.g, pc.b);
     doc.setLineWidth(0.8);
     doc.line(margin, y, pageW - margin, y);
     y += 20;
 
     /* Bloque: Datos del lote */
-    doc.setFont('helvetica', 'bold');
+    doc.setFont("helvetica", "bold");
     doc.setFontSize(13);
     doc.setTextColor(pc.r, pc.g, pc.b);
-    doc.text('Datos del Lote', pageW / 2, y, { align: 'center' });
+    doc.text("Datos del Lote", pageW / 2, y, { align: "center" });
     doc.setTextColor(0, 0, 0);
     y += 18;
 
-    doc.setFont('helvetica', 'normal');
+    doc.setFont("helvetica", "normal");
     doc.setFontSize(10);
 
     const lh = 14;
     let yDatos = y;
 
     const linesIzq = [
-      `Dirección: ${formData.direccion || '-'}`,
-      `Localidad: ${formData.localidad || '-'}`,
-      `Barrio: ${formData.barrio || '-'}`,
-      `Zona / Distrito: ${formData.zona || '-'}`,
+      `Dirección: ${formData.direccion || "-"}`,
+      `Localidad: ${formData.localidad || "-"}`,
+      `Barrio: ${formData.barrio || "-"}`,
+      `Zona / Distrito: ${formData.zona || "-"}`,
       `Superficie lote: ${numero(formData.superficieLote)} m²`,
       `Frente: ${numero(formData.frente)} m`,
       `Fondo: ${numero(formData.fondo)} m`,
@@ -896,7 +886,7 @@ export default function FactibilidadForm() {
       yDatos += lh;
     });
 
-    // Foto lote
+    // 🔹 Foto del lote
     let fotoDataURL: string | null = null;
     if (formData.fotoLoteBase64) {
       fotoDataURL = formData.fotoLoteBase64;
@@ -910,17 +900,17 @@ export default function FactibilidadForm() {
         const imgH = 135;
         doc.addImage(
           fotoDataURL,
-          'JPEG',
+          "JPEG",
           pageW - margin - imgW,
           y,
           imgW,
           imgH,
           undefined,
-          'FAST'
+          "FAST"
         );
         yDatos = Math.max(yDatos, y + imgH + 10);
       } catch (err) {
-        console.warn('No se pudo agregar foto de lote al PDF', err);
+        console.warn("No se pudo agregar foto de lote al PDF", err);
       }
     }
 
@@ -930,21 +920,21 @@ export default function FactibilidadForm() {
       y = margin;
     }
 
-    // Bloque Normativa
+    // 🔹 Bloque Normativa
     doc.setDrawColor(pc.r, pc.g, pc.b);
     doc.line(margin, y, pageW - margin, y);
     y += 18;
 
-    doc.setFont('helvetica', 'bold');
+    doc.setFont("helvetica", "bold");
     doc.setFontSize(13);
     doc.setTextColor(pc.r, pc.g, pc.b);
-    doc.text('Normativa y Morfología', pageW / 2, y, {
-      align: 'center',
+    doc.text("Normativa y Morfología", pageW / 2, y, {
+      align: "center",
     });
     doc.setTextColor(0, 0, 0);
     y += 18;
 
-    doc.setFont('helvetica', 'normal');
+    doc.setFont("helvetica", "normal");
     doc.setFontSize(10);
 
     const normasIzq = [
@@ -959,21 +949,19 @@ export default function FactibilidadForm() {
 
     const normasDer = [
       `Requiere corazón de manzana: ${
-        formData.requiereCorazonManzana ? 'Sí' : 'No'
+        formData.requiereCorazonManzana ? "Sí" : "No"
       }`,
-      `Área libre / interior: ${numero(
-        formData.porcentajeLibreInterior
-      )} %`,
-      `Permite subsuelo: ${formData.permiteSubsuelo ? 'Sí' : 'No'}`,
+      `Área libre / interior: ${numero(formData.porcentajeLibreInterior)} %`,
+      `Permite subsuelo: ${formData.permiteSubsuelo ? "Sí" : "No"}`,
       `Niveles de subsuelo: ${numero(formData.nivelesSubsuelo)}`,
       `Tipo implantación: ${
-        formData.tipoImplantacion === 'entre_medianeras'
-          ? 'Entre medianeras'
-          : formData.tipoImplantacion === 'esquina'
-          ? 'Esquina'
-          : formData.tipoImplantacion === 'dos_frentes'
-          ? 'Dos frentes'
-          : 'Otro'
+        formData.tipoImplantacion === "entre_medianeras"
+          ? "Entre medianeras"
+          : formData.tipoImplantacion === "esquina"
+          ? "Esquina"
+          : formData.tipoImplantacion === "dos_frentes"
+          ? "Dos frentes"
+          : "Otro"
       }`,
     ];
 
@@ -995,27 +983,25 @@ export default function FactibilidadForm() {
       y = margin;
     }
 
-    // Bloque Superficies & Costos
+    // 🔹 Bloque Superficies & Costos
     doc.setDrawColor(pc.r, pc.g, pc.b);
     doc.line(margin, y, pageW - margin, y);
     y += 18;
 
-    doc.setFont('helvetica', 'bold');
+    doc.setFont("helvetica", "bold");
     doc.setFontSize(13);
     doc.setTextColor(pc.r, pc.g, pc.b);
-    doc.text('Superficies y Costos', pageW / 2, y, {
-      align: 'center',
+    doc.text("Superficies y Costos", pageW / 2, y, {
+      align: "center",
     });
     doc.setTextColor(0, 0, 0);
     y += 18;
 
-    doc.setFont('helvetica', 'normal');
+    doc.setFont("helvetica", "normal");
     doc.setFontSize(10);
 
     const supLines = [
-      `Superficie máx. por FOT: ${numero(
-        calculos.superficieMaxPorFOT
-      )} m²`,
+      `Superficie máx. por FOT: ${numero(calculos.superficieMaxPorFOT)} m²`,
       `Superficie máx. por altura/pisos: ${numero(
         calculos.superficieMaxPorAltura
       )} m²`,
@@ -1033,13 +1019,9 @@ export default function FactibilidadForm() {
 
     const costoLines = [
       `Costo construcción/m²: ${peso(formData.costoConstruccionM2 || 0)}`,
-      `Costo total construcción: ${peso(
-        calculos.costoConstruccionTotal || 0
-      )}`,
+      `Costo total construcción: ${peso(calculos.costoConstruccionTotal || 0)}`,
       `Costo demolición/m²: ${peso(formData.costoDemolicionM2 || 0)}`,
-      `Costo total demolición: ${peso(
-        calculos.costoDemolicionTotal || 0
-      )}`,
+      `Costo total demolición: ${peso(calculos.costoDemolicionTotal || 0)}`,
       `Otros costos (honorarios, permisos, imprevistos): ${peso(
         calculos.costoOtrosTotal || 0
       )}`,
@@ -1066,35 +1048,31 @@ export default function FactibilidadForm() {
       y = margin;
     }
 
-    // Bloque Incidencias
+    // 🔹 Bloque Incidencias
     doc.setDrawColor(pc.r, pc.g, pc.b);
     doc.line(margin, y, pageW - margin, y);
     y += 18;
 
-    doc.setFont('helvetica', 'bold');
+    doc.setFont("helvetica", "bold");
     doc.setFontSize(13);
     doc.setTextColor(pc.r, pc.g, pc.b);
-    doc.text('Incidencia y Precio sugerido del lote', pageW / 2, y, {
-      align: 'center',
+    doc.text("Incidencia y Precio sugerido del lote", pageW / 2, y, {
+      align: "center",
     });
     doc.setTextColor(0, 0, 0);
     y += 18;
 
-    doc.setFont('helvetica', 'normal');
+    doc.setFont("helvetica", "normal");
     doc.setFontSize(10);
 
     const incLines = [
       `Índice de incidencia zonal (proporción del costo total): ${
         formData.indiceIncidenciaZonal != null
           ? `${(formData.indiceIncidenciaZonal * 100).toFixed(2)} %`
-          : '-'
+          : "-"
       }`,
-      `Precio sugerido del lote: ${peso(
-        calculos.valorLoteSugerido || 0
-      )}`,
-      `Incidencia por m² de lote: ${peso(
-        calculos.incidenciaPorM2Lote || 0
-      )}`,
+      `Precio sugerido del lote: ${peso(calculos.valorLoteSugerido || 0)}`,
+      `Incidencia por m² de lote: ${peso(calculos.incidenciaPorM2Lote || 0)}`,
       `Incidencia por m² vendible: ${peso(
         calculos.incidenciaPorM2Vendible || 0
       )}`,
@@ -1108,16 +1086,11 @@ export default function FactibilidadForm() {
 
     y = yInc + 18;
 
-    doc.setFont('helvetica', 'bold');
+    doc.setFont("helvetica", "bold");
     doc.setFontSize(16);
-    doc.text(
-      peso(calculos.valorLoteSugerido || 0),
-      pageW / 2,
-      y,
-      {
-        align: 'center',
-      }
-    );
+    doc.text(peso(calculos.valorLoteSugerido || 0), pageW / 2, y, {
+      align: "center",
+    });
     y += 24;
 
     if (y > pageH - 160) {
@@ -1125,37 +1098,31 @@ export default function FactibilidadForm() {
       y = margin;
     }
 
-    // Bloque Comentarios
+    // 🔹 Bloque Comentarios
     doc.setDrawColor(pc.r, pc.g, pc.b);
     doc.line(margin, y, pageW - margin, y);
     y += 18;
 
-    doc.setFont('helvetica', 'bold');
+    doc.setFont("helvetica", "bold");
     doc.setFontSize(13);
     doc.setTextColor(pc.r, pc.g, pc.b);
-    doc.text('Comentarios y Observaciones', pageW / 2, y, {
-      align: 'center',
+    doc.text("Comentarios y Observaciones", pageW / 2, y, {
+      align: "center",
     });
     doc.setTextColor(0, 0, 0);
     y += 16;
 
     const block = (title: string, text: string) => {
-      doc.setFont('helvetica', 'bold');
+      doc.setFont("helvetica", "bold");
       doc.setFontSize(11);
       doc.text(title, margin, y);
       y += 12;
-      doc.setFont('helvetica', 'normal');
+      doc.setFont("helvetica", "normal");
       doc.setFontSize(10);
-      const lines = doc.splitTextToSize(
-        text || '-',
-        pageW - margin * 2
-      );
+      const lines = doc.splitTextToSize(text || "-", pageW - margin * 2);
       doc.text(lines as any, margin, y);
       y +=
-        (Array.isArray(lines)
-          ? (lines as string[]).length
-          : 1) *
-          14 +
+        (Array.isArray(lines) ? (lines as string[]).length : 1) * 14 +
         8;
       if (y > pageH - 80) {
         doc.addPage();
@@ -1163,21 +1130,20 @@ export default function FactibilidadForm() {
       }
     };
 
-    block('Observaciones', formData.observaciones);
-    block('Riesgos', formData.riesgos);
-    block('Oportunidades', formData.oportunidades);
-    block('Notas adicionales', formData.notasAdicionales);
+    block("Observaciones", formData.observaciones);
+    block("Riesgos", formData.riesgos);
+    block("Oportunidades", formData.oportunidades);
+    block("Notas adicionales", formData.notasAdicionales);
 
-    // Footer
-    const footerText = `${matriculado} | Matrícula N°: ${cpi}`;
-    doc.setFont('helvetica', 'italic');
+    // 🔹 Footer (igual criterio que ACMForm)
+    const footerText = `${matriculado}  |  Matricula N°: ${cpi}`;
+    doc.setFont("helvetica", "italic");
     doc.setFontSize(9);
-    doc.text(footerText, pageW / 2, pageH - 30, {
-      align: 'center',
-    });
+    doc.text(footerText, pageW / 2, pageH - 30, { align: "center" });
 
-    doc.save('VAI_Factibilidad.pdf');
+    doc.save("Informe_Factibilidad.pdf");
   };
+
 
   /* =========================
    *  Render

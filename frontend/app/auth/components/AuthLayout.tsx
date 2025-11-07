@@ -41,7 +41,7 @@ export default function AuthLayout({
           {/* 🔹 Logo arriba del formulario — visible en todas las resoluciones */}
           <div className="flex justify-center mb-6 sm:mb-4 overflow-hidden">
             <img
-              src="/logo-vai7.png"
+              src="/logo-vai8.png"
               alt="Logo VAI"
               className="
                 object-contain

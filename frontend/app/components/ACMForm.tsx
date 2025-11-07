@@ -702,48 +702,58 @@ const handleDownloadPDF = async () => {
   const margin = 40;
   let y = margin;
 
-// Datos (desde AuthContext / Theme)
-let matriculado = user?.matriculado_nombre || "—";
-let cpi = user?.cpi || "—";
-let inmobiliaria = themeCompanyName || user?.inmobiliaria || "—";
-const asesorNombre =
-  user?.nombre && user?.apellido ? `${user.nombre} ${user.apellido}` : "—";
+  // Datos (desde AuthContext / Theme)
+  const anyUser = user as any;
 
-const isAsesor = (user?.role || "").toLowerCase() === "asesor";
+  let matriculado = anyUser?.matriculado_nombre || "—";
+  let cpi = anyUser?.cpi || "—";
+  let inmobiliaria = themeCompanyName || anyUser?.inmobiliaria || "—";
+  const asesorNombre =
+    anyUser?.nombre && anyUser?.apellido
+      ? `${anyUser.nombre} ${anyUser.apellido}`
+      : "—";
 
-// ⤵️ Igual que el Header: si faltan datos en Asesor, traemos empresa asociada
-if (isAsesor && (inmobiliaria === "—" || matriculado === "—" || cpi === "—")) {
-  try {
-    const { supabase } = await import("#lib/supabaseClient");
+  const role = (anyUser?.role || "").toLowerCase();
+  const isAsesor = role === "asesor";
 
-    // armamos la query igual que en Header
-    let query = supabase
-      .from("empresas")
-      .select("id, nombre_comercial, matriculado, cpi, user_id")
-      .limit(1);
+  // ⤵️ Si faltan datos clave, los completamos desde la tabla empresas
+  if (inmobiliaria === "—" || matriculado === "—" || cpi === "—") {
+    try {
+      const { supabase } = await import("#lib/supabaseClient");
 
-    if ((user as any)?.empresa_id) {
-      query = query.eq("id", (user as any).empresa_id);
-    } else {
-      // en caso rarísimo de asesor sin empresa_id, no hacemos nada
+      let query = supabase
+        .from("empresas")
+        .select("id, nombre_comercial, matriculado, cpi, user_id")
+        .limit(1);
+
+      if (isAsesor && anyUser?.empresa_id) {
+        // Asesor → buscamos la empresa asociada por id
+        query = query.eq("id", anyUser.empresa_id);
+      } else if (anyUser?.id) {
+        // Empresa (owner) → buscamos por user_id
+        query = query.eq("user_id", anyUser.id);
+      }
+
+      const { data: empresaRow, error } = await query.maybeSingle();
+      if (!error && empresaRow) {
+        if (inmobiliaria === "—" && empresaRow.nombre_comercial) {
+          inmobiliaria = empresaRow.nombre_comercial;
+        }
+        if (matriculado === "—" && empresaRow.matriculado) {
+          matriculado = empresaRow.matriculado;
+        }
+        if (cpi === "—" && empresaRow.cpi) {
+          cpi = empresaRow.cpi;
+        }
+      }
+    } catch (e) {
+      console.warn(
+        "No se pudieron resolver datos de empresa para asesor/empresa (PDF):",
+        e
+      );
     }
-
-    const { data: empresaRow, error } = await query.maybeSingle();
-    if (!error && empresaRow) {
-      if (inmobiliaria === "—" && empresaRow.nombre_comercial) {
-        inmobiliaria = empresaRow.nombre_comercial;
-      }
-      if (matriculado === "—" && empresaRow.matriculado) {
-        matriculado = empresaRow.matriculado;
-      }
-      if (cpi === "—" && empresaRow.cpi) {
-        cpi = empresaRow.cpi;
-      }
-    }
-  } catch (e) {
-    console.warn("No se pudieron resolver datos de empresa para asesor (PDF):", e);
   }
-}
+
 
   // Logo desde Theme si existe
   const themeLogo = themeLogoUrl || null;

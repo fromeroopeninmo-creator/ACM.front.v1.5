@@ -95,7 +95,6 @@ export default function LoginPage() {
     router.push("/dashboard");
   };
 
-
   // 🔁 Reenviar correo de verificación
   const handleResend = async () => {
     setResendMsg(null);
@@ -115,7 +114,9 @@ export default function LoginPage() {
       if (error) {
         setResendMsg(`No se pudo reenviar el correo: ${error.message}`);
       } else {
-        setResendMsg("Te enviamos un nuevo correo de verificación. Revisá tu inbox.");
+        setResendMsg(
+          "Te enviamos un nuevo correo de verificación. Revisá tu inbox."
+        );
       }
     } catch (e: any) {
       setResendMsg(e?.message || "Error reenviando el correo.");
@@ -172,7 +173,9 @@ export default function LoginPage() {
                 disabled={resendLoading || !email}
                 className="px-3 py-2 rounded bg-blue-600 text-white text-sm hover:bg-blue-700 disabled:opacity-50"
               >
-                {resendLoading ? "Reenviando..." : "Reenviar correo de verificación"}
+                {resendLoading
+                  ? "Reenviando..."
+                  : "Reenviar correo de verificación"}
               </button>
               {resendMsg && (
                 <div className="text-xs text-gray-700 bg-blue-50 border border-blue-200 p-2 rounded">
@@ -257,9 +260,12 @@ export default function LoginPage() {
       {showResetModal && (
         <div className="fixed inset-0 bg-black/30 grid place-items-center z-50">
           <div className="bg-white rounded-xl shadow-lg p-5 w-[92%] max-w-md">
-            <h3 className="text-lg font-semibold mb-2">Restablecer contraseña</h3>
+            <h3 className="text-lg font-semibold mb-2">
+              Restablecer contraseña
+            </h3>
             <p className="text-sm text-gray-600 mb-3">
-              Ingresá tu correo y te enviaremos un enlace para restablecer tu contraseña.
+              Ingresá tu correo y te enviaremos un enlace para restablecer tu
+              contraseña.
             </p>
             <input
               type="email"

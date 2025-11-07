@@ -193,7 +193,7 @@ export default function EmpresaDashboardPage() {
           </Link>
 
           {/* 🟩 Acciones */}
-          <div className="flex gap-3">
+          <div className="flex flex-wrap gap-3">
             <Link
               href="/dashboard/empresa/asesores"
               className="px-5 py-2 bg-blue-600 text-white font-semibold rounded-lg shadow hover:bg-blue-700 transition"
@@ -206,6 +206,14 @@ export default function EmpresaDashboardPage() {
               className="px-5 py-2 bg-green-600 text-white font-semibold rounded-lg shadow hover:bg-green-700 transition"
             >
               💼 Ver Planes
+            </Link>
+
+            {/* 📐 Nuevo botón: Factibilidad Constructiva */}
+            <Link
+              href="/dashboard/empresa/factibilidad"
+              className="px-5 py-2 bg-purple-600 text-white font-semibold rounded-lg shadow hover:bg-purple-700 transition"
+            >
+              📐 Factibilidad Constructiva
             </Link>
           </div>
         </div>

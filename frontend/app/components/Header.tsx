@@ -8,7 +8,7 @@ import { useEffect, useState } from "react";
 
 export default function Header() {
   const { user } = useAuth(); // ⛔️ sacamos logout de acá (queda solo en DashboardHeader)
-  const { primaryColor } = useTheme(); // se mantiene por si lo usás en otros lugares
+  const { primaryColor } = useTheme(); // se mantiene por si lo usás en otros lados
   const router = useRouter();
 
   const [empresa, setEmpresa] = useState<any>(null);
@@ -19,9 +19,7 @@ export default function Header() {
 
     const fetchEmpresa = async () => {
       try {
-        // ⛑️ Cambios quirúrgicos:
         // Solo consultamos empresa si es "empresa" o si es "asesor" con empresa_id.
-        // Para soporte/admin NO buscamos empresa (evita mezclar datos).
         const role = (user as any).role;
         const empresaId = (user as any).empresa_id;
 
@@ -99,7 +97,6 @@ export default function Header() {
       <div className="flex w-full items-center justify-between md:hidden">
         {/* Izquierda: datos */}
         <div className="flex flex-col text-[11px] sm:text-sm font-semibold text-white leading-tight text-left">
-          {/* 👇 Cambio visual: Soporte/Admin muestran su etiqueta; el resto mantiene Profesional/Matricula N°/Asesor */}
           {isSoporte ? (
             <p>Soporte: {nombreCompleto}</p>
           ) : isAdmin ? (
@@ -129,16 +126,17 @@ export default function Header() {
         </div>
 
         {/* Derecha: logo */}
-        <div className="flex items-center justify-center flex-1">
+        <div className="flex items-center justify-center flex-1 h-14 sm:h-16">
           <img
             src="/logo-vai7.png"
             alt="Logo VAI"
             className="
-              object-contain h-10 sm:h-12 w-auto
+              object-contain
+              h-full w-auto
               transition-transform duration-300
             "
             style={{
-              maxHeight: "96px",
+              maxHeight: "64px",
               transformOrigin: "center center",
             }}
           />
@@ -174,17 +172,19 @@ export default function Header() {
             alt="Logo VAI"
             className="
               object-contain
-              h-10 sm:h-12 lg:h-14
+              h-14 sm:h-16 lg:h-20
               w-auto
               transition-transform duration-300
             "
-            style={{ maxWidth: "260px" }}
+            style={{
+              maxHeight: "80px",
+              transformOrigin: "center center",
+            }}
           />
         </div>
 
         {/* Derecha: datos alineados a la izquierda */}
         <div className="flex flex-col items-start gap-0.5 text-xs sm:text-sm font-semibold text-white leading-tight text-left">
-          {/* 👇 Cambio visual: Soporte/Admin muestran su etiqueta; el resto mantiene Profesional/Matricula N°/Asesor */}
           {isSoporte ? (
             <p>Soporte: {nombreCompleto}</p>
           ) : isAdmin ? (

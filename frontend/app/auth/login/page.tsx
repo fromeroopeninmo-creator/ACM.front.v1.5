@@ -6,26 +6,6 @@ import { useRouter } from "next/navigation";
 import { supabase } from "#lib/supabaseClient";
 import AuthLayout from "@/auth/components/AuthLayout";
 
-const DEVICE_STORAGE_KEY = "vai_device_id";
-
-function getOrCreateDeviceId(): string | null {
-  if (typeof window === "undefined") return null;
-  try {
-    let id = window.localStorage.getItem(DEVICE_STORAGE_KEY);
-    if (!id) {
-      if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
-        id = crypto.randomUUID();
-      } else {
-        id = Math.random().toString(36).slice(2) + Date.now().toString(36);
-      }
-      window.localStorage.setItem(DEVICE_STORAGE_KEY, id);
-    }
-    return id;
-  } catch {
-    return null;
-  }
-}
-
 export default function LoginPage() {
   const router = useRouter();
 
@@ -111,25 +91,10 @@ export default function LoginPage() {
       return;
     }
 
-    // 🔑 En este punto el login fue exitoso → este dispositivo reclama la sesión
-    if (typeof window !== "undefined") {
-      const deviceId = getOrCreateDeviceId();
-      if (deviceId) {
-        try {
-          await fetch("/api/auth/device", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ device_id: deviceId, claim: true }),
-          });
-        } catch {
-          // Si falla, no bloqueamos el login
-        }
-      }
-    }
-
     // ✅ Dejar que /dashboard derive por rol (evita default "empresa")
     router.push("/dashboard");
   };
+
 
   // 🔁 Reenviar correo de verificación
   const handleResend = async () => {

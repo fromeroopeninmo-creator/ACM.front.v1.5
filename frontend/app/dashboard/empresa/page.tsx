@@ -215,8 +215,8 @@ export default function EmpresaDashboardPage() {
             </Link>
           </div>
 
-          {/* 🟩 Acciones (lado derecho) */}
-          <div className="flex flex-wrap gap-3">
+          {/* 🟩 Acciones (lado derecho, también en columna) */}
+          <div className="flex flex-col gap-3">
             <Link
               href="/dashboard/empresa/asesores"
               className="px-5 py-2 bg-blue-600 text-white font-semibold rounded-lg shadow hover:bg-blue-700 transition"

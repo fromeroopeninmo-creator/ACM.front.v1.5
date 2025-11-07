@@ -8,7 +8,7 @@ import { useEffect, useState } from "react";
 
 export default function Header() {
   const { user } = useAuth(); // ⛔️ sacamos logout de acá (queda solo en DashboardHeader)
-  const { primaryColor } = useTheme();
+  const { primaryColor } = useTheme(); // se mantiene por si lo usás en otros lugares
   const router = useRouter();
 
   const [empresa, setEmpresa] = useState<any>(null);
@@ -64,7 +64,8 @@ export default function Header() {
       : "—";
 
   // Etiquetas para Soporte/Admin (solo visual)
-  const nombreCompleto = `${safeUser.nombre ?? ""} ${safeUser.apellido ?? ""}`.trim() || "—";
+  const nombreCompleto =
+    `${safeUser.nombre ?? ""} ${safeUser.apellido ?? ""}`.trim() || "—";
   const isSoporte = role === "soporte";
   const isAdmin = role === "super_admin" || role === "super_admin_root";
 
@@ -90,14 +91,14 @@ export default function Header() {
       className="
         flex flex-col md:flex-row justify-between items-center
         px-4 md:px-6 py-2 md:py-3
-        bg-gray-100 border-b shadow-sm sticky top-0 z-50
+        bg-black border-b border-gray-800 shadow-sm sticky top-0 z-50
         w-full transition-all duration-300
       "
     >
       {/* 🔹 MOBILE */}
       <div className="flex w-full items-center justify-between md:hidden">
         {/* Izquierda: datos */}
-        <div className="flex flex-col text-[11px] sm:text-sm font-semibold text-gray-700 leading-tight text-left">
+        <div className="flex flex-col text-[11px] sm:text-sm font-semibold text-white leading-tight text-left">
           {/* 👇 Cambio visual: Soporte/Admin muestran su etiqueta; el resto mantiene Profesional/Matricula N°/Asesor */}
           {isSoporte ? (
             <p>Soporte: {nombreCompleto}</p>
@@ -115,10 +116,11 @@ export default function Header() {
           <div className="flex gap-2 mt-2">
             <button
               onClick={() => router.push(getDashboardRoute())}
-              style={{ backgroundColor: primaryColor }}
               className="
-                px-3 py-1 text-[11px] sm:text-xs text-white font-medium
-                rounded border border-gray-200 shadow hover:opacity-90 transition
+                px-3 py-1 text-[11px] sm:text-xs font-medium
+                bg-white text-black
+                rounded border border-white/20 shadow
+                hover:bg-gray-100 transition
               "
             >
               ⬅️ Volver al Dashboard
@@ -132,11 +134,11 @@ export default function Header() {
             src="/logo-vai7.png"
             alt="Logo VAI"
             className="
-              object-contain h-[88px] sm:h-[96px] w-auto
+              object-contain h-10 sm:h-12 w-auto
               transition-transform duration-300
             "
             style={{
-              maxHeight: "104px",
+              maxHeight: "48px",
               transformOrigin: "center center",
             }}
           />
@@ -149,10 +151,11 @@ export default function Header() {
         <div className="flex gap-3">
           <button
             onClick={() => router.push(getDashboardRoute())}
-            style={{ backgroundColor: primaryColor }}
             className="
-              px-4 py-2 text-sm font-semibold text-white
-              border rounded-lg shadow hover:opacity-90 transition
+              px-4 py-2 text-sm font-semibold
+              bg-white text-black
+              border border-white/20 rounded-lg shadow
+              hover:bg-gray-100 transition
             "
           >
             ⬅️ Volver al Dashboard
@@ -171,16 +174,16 @@ export default function Header() {
             alt="Logo VAI"
             className="
               object-contain
-              h-full max-h-[72px] w-auto
-              scale-[1.8] sm:scale-[2] md:scale-[2.2]
+              h-10 sm:h-12 lg:h-14
+              w-auto
               transition-transform duration-300
             "
-            style={{ transformOrigin: "center center", maxWidth: "none" }}
+            style={{ maxWidth: "260px" }}
           />
         </div>
 
         {/* Derecha: datos alineados a la izquierda */}
-        <div className="flex flex-col items-start gap-0.5 text-xs sm:text-sm font-semibold text-gray-700 leading-tight text-left">
+        <div className="flex flex-col items-start gap-0.5 text-xs sm:text-sm font-semibold text-white leading-tight text-left">
           {/* 👇 Cambio visual: Soporte/Admin muestran su etiqueta; el resto mantiene Profesional/Matricula N°/Asesor */}
           {isSoporte ? (
             <p>Soporte: {nombreCompleto}</p>

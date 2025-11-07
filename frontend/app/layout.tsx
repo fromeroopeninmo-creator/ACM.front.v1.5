@@ -9,8 +9,8 @@ import AppWrapper from "./AppWrapper";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata = {
-  title: "VAI - Valuador de Activos Inmobiliarios",
-  description: "Generador de informes VAI",
+  title: "VAI PROP",
+  description: "Soluciones Digitales para el Real Estate",
 };
 
 interface LayoutProps {

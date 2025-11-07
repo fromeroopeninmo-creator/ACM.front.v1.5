@@ -722,7 +722,7 @@ export default function FactibilidadForm() {
     const margin = 40;
     let y = margin;
 
-    // 🔹 Datos desde Auth / Theme (misma lógica que ACMForm)
+       // 🔹 Datos desde Auth / Theme (misma lógica que ACMForm)
     const anyUser = user as any;
 
     let matriculado = anyUser?.matriculado_nombre || "—";
@@ -736,8 +736,8 @@ export default function FactibilidadForm() {
     const role = (anyUser?.role || "").toLowerCase();
     const isAsesor = role === "asesor";
 
-    // ⤵️ Igual que en ACMForm: si el asesor no tiene datos completos, traemos la empresa asociada
-    if (isAsesor && (inmobiliaria === "—" || matriculado === "—" || cpi === "—")) {
+    // ⤵️ Igual que en ACMForm: si faltan datos, los completamos desde la tabla empresas
+    if (inmobiliaria === "—" || matriculado === "—" || cpi === "—") {
       try {
         const { supabase } = await import("#lib/supabaseClient");
 
@@ -746,8 +746,12 @@ export default function FactibilidadForm() {
           .select("id, nombre_comercial, matriculado, cpi, user_id")
           .limit(1);
 
-        if (anyUser?.empresa_id) {
+        if (isAsesor && anyUser?.empresa_id) {
+          // Asesor → buscamos la empresa asociada por id
           query = query.eq("id", anyUser.empresa_id);
+        } else if (anyUser?.id) {
+          // Empresa (owner) → buscamos por user_id
+          query = query.eq("user_id", anyUser.id);
         }
 
         const { data: empresaRow, error } = await query.maybeSingle();
@@ -764,7 +768,7 @@ export default function FactibilidadForm() {
         }
       } catch (e) {
         console.warn(
-          "No se pudieron resolver datos de empresa para asesor (PDF Factibilidad):",
+          "No se pudieron resolver datos de empresa para asesor/empresa (PDF Factibilidad):",
           e
         );
       }

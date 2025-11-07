@@ -27,7 +27,7 @@ export default function AuthLayout({
         className="
           flex flex-1 items-center justify-center
           p-4 sm:p-6 lg:p-10
-          bg-gray-50
+          bg-slate-100
         "
       >
         <div
@@ -39,20 +39,23 @@ export default function AuthLayout({
           "
         >
           {/* 🔹 Logo arriba del formulario — visible en todas las resoluciones */}
-          <div className="flex justify-center mb-6 sm:mb-4 overflow-hidden">
+          <div
+            className="
+              flex items-center justify-center
+              mb-6 sm:mb-4
+              h-24 sm:h-28 md:h-32 lg:h-36
+              overflow-hidden
+            "
+          >
             <img
               src="/logo-vai7.png"
               alt="Logo VAI"
               className="
+                h-full w-auto
+                max-w-[220px] sm:max-w-[260px] md:max-w-[280px]
                 object-contain
-                h-24 sm:h-28 md:h-32 lg:h-36 xl:h-40
-                scale-[1.3] sm:scale-[1.5] md:scale-[1.6]
                 transition-transform duration-300
               "
-              style={{
-                transformOrigin: "center center",
-                maxWidth: "95%", // 🔒 evita overflow horizontal
-              }}
             />
           </div>
 

@@ -159,6 +159,8 @@ export default function LoginPage() {
       title="Iniciar sesión"
       subtitle="Bienvenido a VAI PROP – Ingresá tus credenciales"
       variant="narrow"
+      hideLogoOnMobile
+      showMobileBanner
     >
       {errorMsg && (
         <div

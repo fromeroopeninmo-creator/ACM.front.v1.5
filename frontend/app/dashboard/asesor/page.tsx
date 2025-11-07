@@ -183,7 +183,7 @@ export default function AsesorDashboardPage() {
       {/* ⚙️ Botón principal (sin logo arriba) */}
       <section className="bg-white shadow-sm rounded-xl p-6 flex items-center justify-between">
         <h1 className="text-xl md:text-2xl font-bold">
-          Bienvenido, {nombreAsesor}
+          Bienvenid@, {nombreAsesor}
         </h1>
 
         <Link

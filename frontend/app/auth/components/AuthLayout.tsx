@@ -10,11 +10,12 @@ export default function AuthLayout({
   subtitle: string;
 }) {
   return (
-    <div className="flex flex-col sm:flex-row min-h-screen w-full">
-      {/* 🖼️ Columna izquierda con banner — se oculta solo en mobile */}
+    <div className="flex flex-col sm:flex-row min-h-screen w-full bg-black">
+      {/* 🖼️ Columna izquierda con banner — más ancha en desktop */}
       <div
         className="
-          hidden sm:block sm:flex-1
+          hidden sm:block
+          sm:basis-3/5 lg:basis-2/3
           bg-cover bg-center
         "
         style={{
@@ -22,28 +23,31 @@ export default function AuthLayout({
         }}
       />
 
-      {/* 🧾 Columna derecha con formulario (logo visible SIEMPRE) */}
+      {/* 🧾 Columna derecha con formulario sobre fondo negro */}
       <div
         className="
-          flex flex-1 items-center justify-center
+          flex flex-1 sm:basis-2/5 lg:basis-1/3
+          items-center justify-center
           p-4 sm:p-6 lg:p-10
-          bg-slate-100
+          bg-black
         "
       >
         <div
           className="
-            w-full max-w-sm sm:max-w-md lg:max-w-lg
-            bg-white rounded-xl shadow-lg
-            p-6 sm:p-8 space-y-4
+            w-full
+            max-w-md sm:max-w-lg lg:max-w-xl
+            bg-white rounded-xl shadow-2xl
+            p-6 sm:p-8 lg:p-10
+            space-y-4
             transition-all duration-300
           "
         >
-          {/* 🔹 Logo arriba del formulario — visible en todas las resoluciones */}
+          {/* 🔹 Logo arriba del formulario */}
           <div
             className="
               flex items-center justify-center
               mb-6 sm:mb-4
-              h-24 sm:h-28 md:h-32 lg:h-36
+              h-24 sm:h-28 md:h-32 lg:h-40
               overflow-hidden
             "
           >
@@ -52,7 +56,7 @@ export default function AuthLayout({
               alt="Logo VAI"
               className="
                 h-full w-auto
-                max-w-[220px] sm:max-w-[260px] md:max-w-[280px]
+                max-w-[220px] sm:max-w-[260px] md:max-w-[320px]
                 object-contain
                 transition-transform duration-300
               "

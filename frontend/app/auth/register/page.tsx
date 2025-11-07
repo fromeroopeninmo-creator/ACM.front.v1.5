@@ -154,9 +154,7 @@ export default function RegisterPage() {
           router.push("/dashboard/empresa");
           return;
         } else {
-          setInfoMsg(
-            "Registro exitoso. Iniciá sesión para continuar."
-          );
+          setInfoMsg("Registro exitoso. Iniciá sesión para continuar.");
           router.push("/auth/login");
           return;
         }
@@ -212,209 +210,211 @@ export default function RegisterPage() {
       title="Registro de Empresa"
       subtitle="Completá tus datos para crear la cuenta de tu inmobiliaria"
     >
-      {errorMsg && <div style={alertError}>{errorMsg}</div>}
-      {infoMsg && <div style={alertInfo}>{infoMsg}</div>}
+      <div className="w-full max-h-[75vh] overflow-y-auto pr-1 space-y-3">
+        {errorMsg && <div style={alertError}>{errorMsg}</div>}
+        {infoMsg && <div style={alertInfo}>{infoMsg}</div>}
 
-      <form
-        onSubmit={handleRegister}
-        style={{ display: "grid", gap: "12px" }}
-        className="w-full text-sm sm:text-base"
-      >
-        {/* 🧍 Datos personales */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <form
+          onSubmit={handleRegister}
+          style={{ display: "grid", gap: "12px" }}
+          className="w-full text-sm sm:text-base"
+        >
+          {/* 🧍 Datos personales */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label style={labelStyle}>Nombre *</label>
+              <input
+                type="text"
+                value={nombre}
+                onChange={(e) => setNombre(e.target.value)}
+                style={inputStyle}
+                required
+              />
+            </div>
+            <div>
+              <label style={labelStyle}>Apellido *</label>
+              <input
+                type="text"
+                value={apellido}
+                onChange={(e) => setApellido(e.target.value)}
+                style={inputStyle}
+                required
+              />
+            </div>
+          </div>
+
+          {/* 📧 Email */}
           <div>
-            <label style={labelStyle}>Nombre *</label>
+            <label style={labelStyle}>Email *</label>
             <input
-              type="text"
-              value={nombre}
-              onChange={(e) => setNombre(e.target.value)}
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value.trim())}
               style={inputStyle}
               required
             />
           </div>
+
+          {/* 🔒 Contraseña */}
           <div>
-            <label style={labelStyle}>Apellido *</label>
+            <label style={labelStyle}>Contraseña *</label>
+            <div className="relative">
+              <input
+                type={showPassword ? "text" : "password"}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Mínimo 6 caracteres"
+                style={{ ...inputStyle, paddingRight: 40 }}
+                required
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                style={{
+                  position: "absolute",
+                  right: 10,
+                  top: "50%",
+                  transform: "translateY(-50%)",
+                  background: "none",
+                  border: "none",
+                  cursor: "pointer",
+                  fontSize: 13,
+                  color: "#555",
+                }}
+              >
+                {showPassword ? "Ocultar" : "Ver"}
+              </button>
+            </div>
+          </div>
+
+          {/* 🏢 Datos empresa */}
+          <div>
+            <label style={labelStyle}>Razón Social *</label>
             <input
               type="text"
-              value={apellido}
-              onChange={(e) => setApellido(e.target.value)}
+              value={razonSocial}
+              onChange={(e) => setRazonSocial(e.target.value)}
               style={inputStyle}
               required
             />
           </div>
-        </div>
 
-        {/* 📧 Email */}
-        <div>
-          <label style={labelStyle}>Email *</label>
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value.trim())}
-            style={inputStyle}
-            required
-          />
-        </div>
-
-        {/* 🔒 Contraseña */}
-        <div>
-          <label style={labelStyle}>Contraseña *</label>
-          <div className="relative">
-            <input
-              type={showPassword ? "text" : "password"}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="Mínimo 6 caracteres"
-              style={{ ...inputStyle, paddingRight: 40 }}
-              required
-            />
-            <button
-              type="button"
-              onClick={() => setShowPassword(!showPassword)}
-              style={{
-                position: "absolute",
-                right: 10,
-                top: "50%",
-                transform: "translateY(-50%)",
-                background: "none",
-                border: "none",
-                cursor: "pointer",
-                fontSize: 13,
-                color: "#555",
-              }}
-            >
-              {showPassword ? "Ocultar" : "Ver"}
-            </button>
-          </div>
-        </div>
-
-        {/* 🏢 Datos empresa */}
-        <div>
-          <label style={labelStyle}>Razón Social *</label>
-          <input
-            type="text"
-            value={razonSocial}
-            onChange={(e) => setRazonSocial(e.target.value)}
-            style={inputStyle}
-            required
-          />
-        </div>
-
-        <div>
-          <label style={labelStyle}>Nombre Comercial / Inmobiliaria *</label>
-          <input
-            type="text"
-            value={inmobiliaria}
-            onChange={(e) => setInmobiliaria(e.target.value)}
-            style={inputStyle}
-            required
-          />
-        </div>
-
-        <div>
-          <label style={labelStyle}>CUIT *</label>
-          <input
-            type="text"
-            value={cuit}
-            onChange={(e) => setCuit(e.target.value)}
-            placeholder="00-00000000-0"
-            style={inputStyle}
-            required
-          />
-        </div>
-
-        {/* 📞 Contacto */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
-            <label style={labelStyle}>Teléfono *</label>
+            <label style={labelStyle}>Nombre Comercial *</label>
             <input
               type="text"
-              value={telefono}
-              onChange={(e) => setTelefono(e.target.value)}
+              value={inmobiliaria}
+              onChange={(e) => setInmobiliaria(e.target.value)}
               style={inputStyle}
               required
             />
           </div>
-          <div>
-            <label style={labelStyle}>Dirección *</label>
-            <input
-              type="text"
-              value={direccion}
-              onChange={(e) => setDireccion(e.target.value)}
-              style={inputStyle}
-              required
-            />
-          </div>
-        </div>
 
-        {/* 📍 Ubicación */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
-            <label style={labelStyle}>Localidad *</label>
+            <label style={labelStyle}>CUIT *</label>
             <input
               type="text"
-              value={localidad}
-              onChange={(e) => setLocalidad(e.target.value)}
+              value={cuit}
+              onChange={(e) => setCuit(e.target.value)}
+              placeholder="00-00000000-0"
               style={inputStyle}
               required
             />
           </div>
+
+          {/* 📞 Contacto */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label style={labelStyle}>Teléfono *</label>
+              <input
+                type="text"
+                value={telefono}
+                onChange={(e) => setTelefono(e.target.value)}
+                style={inputStyle}
+                required
+              />
+            </div>
+            <div>
+              <label style={labelStyle}>Dirección *</label>
+              <input
+                type="text"
+                value={direccion}
+                onChange={(e) => setDireccion(e.target.value)}
+                style={inputStyle}
+                required
+              />
+            </div>
+          </div>
+
+          {/* 📍 Ubicación */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label style={labelStyle}>Localidad *</label>
+              <input
+                type="text"
+                value={localidad}
+                onChange={(e) => setLocalidad(e.target.value)}
+                style={inputStyle}
+                required
+              />
+            </div>
+            <div>
+              <label style={labelStyle}>Provincia *</label>
+              <select
+                value={provincia}
+                onChange={(e) => setProvincia(e.target.value)}
+                style={inputStyle}
+                required
+              >
+                <option value="">Seleccionar...</option>
+                {provincias.map((p) => (
+                  <option key={p} value={p}>
+                    {p}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* 💼 Condición fiscal */}
           <div>
-            <label style={labelStyle}>Provincia *</label>
+            <label style={labelStyle}>Condición Fiscal *</label>
             <select
-              value={provincia}
-              onChange={(e) => setProvincia(e.target.value)}
+              value={condicionFiscal}
+              onChange={(e) => setCondicionFiscal(e.target.value)}
               style={inputStyle}
               required
             >
-              <option value="">Seleccionar...</option>
-              {provincias.map((p) => (
-                <option key={p} value={p}>
-                  {p}
+            <option value="">Seleccionar...</option>
+              {condicionesFiscales.map((c) => (
+                <option key={c} value={c}>
+                  {c}
                 </option>
               ))}
             </select>
           </div>
-        </div>
 
-        {/* 💼 Condición fiscal */}
-        <div>
-          <label style={labelStyle}>Condición Fiscal *</label>
-          <select
-            value={condicionFiscal}
-            onChange={(e) => setCondicionFiscal(e.target.value)}
-            style={inputStyle}
-            required
+          {/* 🔘 Botón */}
+          <button
+            type="submit"
+            disabled={loading}
+            style={buttonStyle}
+            className="hover:opacity-90 transition-all disabled:opacity-50"
           >
-            <option value="">Seleccionar...</option>
-            {condicionesFiscales.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </select>
-        </div>
+            {loading ? "Creando cuenta..." : "Crear cuenta"}
+          </button>
 
-        {/* 🔘 Botón */}
-        <button
-          type="submit"
-          disabled={loading}
-          style={buttonStyle}
-          className="hover:opacity-90 transition-all disabled:opacity-50"
-        >
-          {loading ? "Creando cuenta..." : "Crear cuenta"}
-        </button>
-
-        <p style={{ fontSize: 14, textAlign: "center", marginTop: 6 }}>
-          ¿Ya tenés cuenta?{" "}
-          <a
-            href="/auth/login"
-            className="text-sky-600 font-semibold hover:underline"
-          >
-            Ingresá acá
-          </a>
-        </p>
-      </form>
+          <p style={{ fontSize: 14, textAlign: "center", marginTop: 6 }}>
+            ¿Ya tenés cuenta?{" "}
+            <a
+              href="/auth/login"
+              className="text-sky-600 font-semibold hover:underline"
+            >
+              Ingresá acá
+            </a>
+          </p>
+        </form>
+      </div>
     </AuthLayout>
   );
 }

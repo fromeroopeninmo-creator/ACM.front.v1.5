@@ -71,6 +71,7 @@ interface FactibilidadFormData {
   riesgos: string;
   oportunidades: string;
   notasAdicionales: string;
+  indiceIncidenciaZonal: number | null;
 }
 
 type InlineMsg = { type: 'success' | 'error'; text: string } | null;
@@ -256,6 +257,7 @@ const makeInitialData = (): FactibilidadFormData => ({
   riesgos: '',
   oportunidades: '',
   notasAdicionales: '',
+  indiceIncidenciaZonal: null,
 });
 
 /* =========================

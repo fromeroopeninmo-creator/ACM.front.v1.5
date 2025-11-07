@@ -13,10 +13,11 @@ export default function AuthLayout({
   subtitle,
   variant = "narrow",
 }: AuthLayoutProps) {
-  const cardWidthClasses =
-    variant === "wide"
-      ? "max-w-xl sm:max-w-2xl"
-      : "max-w-md sm:max-w-lg lg:max-w-xl";
+ const cardWidthClasses =
+  variant === "wide"
+    ? "max-w-xl sm:max-w-2xl"
+    : "max-w-sm sm:max-w-md lg:max-w-lg";
+
 
   return (
     <div className="flex flex-col sm:flex-row min-h-screen w-full bg-black">
@@ -24,7 +25,7 @@ export default function AuthLayout({
       <div
         className="
           hidden sm:block
-          sm:w-1/3 lg:w-2/5
+          sm:w-1/3 lg:w-1/3
           bg-cover bg-center
         "
         style={{

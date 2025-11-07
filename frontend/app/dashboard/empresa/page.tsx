@@ -165,10 +165,9 @@ export default function EmpresaDashboardPage() {
 
       {/* 🏢 Bienvenida */}
       <section className="bg-white shadow-sm rounded-xl p-6">
-        <h1 className="text-2xl font-bold mb-2">Bienvenido, {nombre}</h1>
+        <h1 className="text-2xl font-bold mb-2">Bienvenid@, {nombre}</h1>
         <p className="text-gray-600 mb-4">
-          Panel principal de tu inmobiliaria. Desde aquí podés gestionar tu
-          equipo, tus planes y toda la configuración de tu empresa.
+          Desde este Dashboard podes gestionar toda tu empresa.
         </p>
 
         {/* 🔹 Botones principales */}

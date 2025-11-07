@@ -24,7 +24,7 @@ export default function AuthLayout({
     <div className="flex flex-col sm:flex-row min-h-screen w-full bg-black">
       {/* 🖼️ Columna izquierda con banner — mismo tamaño para login y registro */}
       <div
-        className="hidden sm:block sm:w-1/3 lg:w-1/3 h-screen bg-cover bg-center"
+        className="hidden sm:block sm:w-1/3 lg:w-2/5 h-screen bg-cover bg-center"
         style={{
           backgroundImage: "url('/banner1.png')",
         }}

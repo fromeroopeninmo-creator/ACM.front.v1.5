@@ -8,11 +8,7 @@ import { supabase } from "#lib/supabaseClient";
 import DashboardHeader from "./components/DashboardHeader";
 import DashboardSidebar from "./components/DashboardSidebar";
 
-export default function DashboardLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { user, loading, logout } = useAuth();
   const { primaryColor, hydrated } = useTheme();
   const router = useRouter();
@@ -127,11 +123,7 @@ export default function DashboardLayout({
     <div className="flex min-h-screen bg-gray-50 text-gray-900">
       <DashboardSidebar role={effectiveRole} color={sidebarColor} />
       <div className="flex-1 flex flex-col">
-        <DashboardHeader
-          user={{ ...user, role: effectiveRole }}
-          logout={logout}
-          color={sidebarColor}
-        />
+        <DashboardHeader user={{ ...user, role: effectiveRole }} logout={logout} color={sidebarColor} />
         <main className="flex-1 p-6 overflow-y-auto">{children}</main>
       </div>
     </div>

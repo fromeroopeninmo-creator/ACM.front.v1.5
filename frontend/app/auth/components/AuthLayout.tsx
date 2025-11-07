@@ -31,7 +31,7 @@ export default function AuthLayout({
         <div
           className="
             block sm:hidden
-            w-full h-40
+            w-full h-56
             bg-cover bg-center
           "
           style={{
@@ -42,14 +42,23 @@ export default function AuthLayout({
 
       {/* 🖼️ Banner desktop (columna izquierda) */}
       <div
-        className="hidden sm:block sm:w-1/3 lg:w-2/5 h-screen bg-cover bg-center"
+        className="hidden sm:block sm:w-1/3 lg:w-1/3 h-screen bg-cover bg-center"
         style={{
           backgroundImage: "url('/banner1.png')",
         }}
       />
 
       {/* 🧾 Columna derecha con formulario sobre fondo negro */}
-      <div className="flex flex-1 items-center justify-center p-4 sm:p-8 lg:p-10 bg-black">
+      <div
+        className={`
+          flex flex-1
+          ${showMobileBanner
+            ? "items-start justify-center pt-4 sm:items-center sm:pt-0"
+            : "items-center justify-center"}
+          p-4 sm:p-8 lg:p-10
+          bg-black
+        `}
+      >
         <div
           className={`
             w-full

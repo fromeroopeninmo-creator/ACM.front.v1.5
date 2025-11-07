@@ -138,7 +138,7 @@ export default function Header() {
               transition-transform duration-300
             "
             style={{
-              maxHeight: "48px",
+              maxHeight: "96px",
               transformOrigin: "center center",
             }}
           />

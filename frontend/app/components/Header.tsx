@@ -126,7 +126,7 @@ export default function Header() {
         </div>
 
         {/* Derecha: logo */}
-        <div className="flex items-center justify-center flex-1 h-16 sm:h-18">
+        <div className="flex items-center justify-center flex-1 h-18 sm:h-20">
           <img
             src="/logo-vai7.png"
             alt="Logo VAI"
@@ -172,12 +172,12 @@ export default function Header() {
             alt="Logo VAI"
             className="
               object-contain
-              h-16 sm:h-18 lg:h-22
+              h-18 sm:h-20 lg:h-24
               w-auto
               transition-transform duration-300
             "
             style={{
-              maxHeight: "80px",
+              maxHeight: "96px",
               transformOrigin: "center center",
             }}
           />

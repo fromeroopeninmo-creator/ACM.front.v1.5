@@ -42,7 +42,7 @@ export default function AuthLayout({
 
       {/* 🖼️ Banner desktop (columna izquierda) */}
       <div
-        className="hidden sm:block sm:w-1/3 lg:w-1/3 h-screen bg-cover bg-center"
+        className="hidden sm:block sm:w-1/3 lg:w-2/5 h-screen bg-cover bg-center"
         style={{
           backgroundImage: "url('/banner1.png')",
         }}

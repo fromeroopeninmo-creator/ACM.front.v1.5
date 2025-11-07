@@ -140,7 +140,7 @@ export default function RegisterPage() {
 
       if (error) {
         // Falla actual (500 desde Supabase). Vamos al fallback admin (modo dev).
-        throw new Error(error.message || "signup-failed");
+      throw new Error(error.message || "signup-failed");
       }
 
       const userId = data.user?.id;
@@ -218,8 +218,9 @@ export default function RegisterPage() {
         style={{ display: "grid", gap: "12px" }}
         className="w-full text-sm sm:text-base"
       >
-        {/* 🧍 Datos personales */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {/* 🧩 Campos en 2 columnas (desktop) */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {/* 🧍 Datos personales */}
           <div>
             <label style={labelStyle}>Nombre *</label>
             <input
@@ -240,89 +241,87 @@ export default function RegisterPage() {
               required
             />
           </div>
-        </div>
 
-        {/* 📧 Email */}
-        <div>
-          <label style={labelStyle}>Email *</label>
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value.trim())}
-            style={inputStyle}
-            required
-          />
-        </div>
-
-        {/* 🔒 Contraseña */}
-        <div>
-          <label style={labelStyle}>Contraseña *</label>
-          <div className="relative">
+          {/* 📧 Email */}
+          <div>
+            <label style={labelStyle}>Email *</label>
             <input
-              type={showPassword ? "text" : "password"}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="Mínimo 6 caracteres"
-              style={{ ...inputStyle, paddingRight: 40 }}
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value.trim())}
+              style={inputStyle}
               required
             />
-            <button
-              type="button"
-              onClick={() => setShowPassword(!showPassword)}
-              style={{
-                position: "absolute",
-                right: 10,
-                top: "50%",
-                transform: "translateY(-50%)",
-                background: "none",
-                border: "none",
-                cursor: "pointer",
-                fontSize: 13,
-                color: "#555",
-              }}
-            >
-              {showPassword ? "Ocultar" : "Ver"}
-            </button>
           </div>
-        </div>
 
-        {/* 🏢 Datos empresa */}
-        <div>
-          <label style={labelStyle}>Razón Social *</label>
-          <input
-            type="text"
-            value={razonSocial}
-            onChange={(e) => setRazonSocial(e.target.value)}
-            style={inputStyle}
-            required
-          />
-        </div>
+          {/* 🔒 Contraseña */}
+          <div>
+            <label style={labelStyle}>Contraseña *</label>
+            <div className="relative">
+              <input
+                type={showPassword ? "text" : "password"}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Mínimo 6 caracteres"
+                style={{ ...inputStyle, paddingRight: 40 }}
+                required
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                style={{
+                  position: "absolute",
+                  right: 10,
+                  top: "50%",
+                  transform: "translateY(-50%)",
+                  background: "none",
+                  border: "none",
+                  cursor: "pointer",
+                  fontSize: 13,
+                  color: "#555",
+                }}
+              >
+                {showPassword ? "Ocultar" : "Ver"}
+              </button>
+            </div>
+          </div>
 
-        <div>
-          <label style={labelStyle}>Nombre Comercial *</label>
-          <input
-            type="text"
-            value={inmobiliaria}
-            onChange={(e) => setInmobiliaria(e.target.value)}
-            style={inputStyle}
-            required
-          />
-        </div>
+          {/* 🏢 Datos empresa */}
+          <div>
+            <label style={labelStyle}>Razón Social *</label>
+            <input
+              type="text"
+              value={razonSocial}
+              onChange={(e) => setRazonSocial(e.target.value)}
+              style={inputStyle}
+              required
+            />
+          </div>
 
-        <div>
-          <label style={labelStyle}>CUIT *</label>
-          <input
-            type="text"
-            value={cuit}
-            onChange={(e) => setCuit(e.target.value)}
-            placeholder="00-00000000-0"
-            style={inputStyle}
-            required
-          />
-        </div>
+          <div>
+            <label style={labelStyle}>Nombre Comercial *</label>
+            <input
+              type="text"
+              value={inmobiliaria}
+              onChange={(e) => setInmobiliaria(e.target.value)}
+              style={inputStyle}
+              required
+            />
+          </div>
 
-        {/* 📞 Contacto */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label style={labelStyle}>CUIT *</label>
+            <input
+              type="text"
+              value={cuit}
+              onChange={(e) => setCuit(e.target.value)}
+              placeholder="00-00000000-0"
+              style={inputStyle}
+              required
+            />
+          </div>
+
+          {/* 📞 Contacto */}
           <div>
             <label style={labelStyle}>Teléfono *</label>
             <input
@@ -333,6 +332,7 @@ export default function RegisterPage() {
               required
             />
           </div>
+
           <div>
             <label style={labelStyle}>Dirección *</label>
             <input
@@ -343,10 +343,8 @@ export default function RegisterPage() {
               required
             />
           </div>
-        </div>
 
-        {/* 📍 Ubicación */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {/* 📍 Ubicación */}
           <div>
             <label style={labelStyle}>Localidad *</label>
             <input
@@ -373,27 +371,27 @@ export default function RegisterPage() {
               ))}
             </select>
           </div>
+
+          {/* 💼 Condición fiscal */}
+          <div>
+            <label style={labelStyle}>Condición Fiscal *</label>
+            <select
+              value={condicionFiscal}
+              onChange={(e) => setCondicionFiscal(e.target.value)}
+              style={inputStyle}
+              required
+            >
+              <option value="">Seleccionar...</option>
+              {condicionesFiscales.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
 
-        {/* 💼 Condición fiscal */}
-        <div>
-          <label style={labelStyle}>Condición Fiscal *</label>
-          <select
-            value={condicionFiscal}
-            onChange={(e) => setCondicionFiscal(e.target.value)}
-            style={inputStyle}
-            required
-          >
-            <option value="">Seleccionar...</option>
-            {condicionesFiscales.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        {/* 🔘 Botón */}
+        {/* 🔘 Botón y link ocupan todo el ancho */}
         <button
           type="submit"
           disabled={loading}
@@ -447,7 +445,7 @@ const alertError: React.CSSProperties = {
 };
 const alertInfo: React.CSSProperties = {
   background: "#e6f4ff",
-  border: "1px solid #b3ddff",
+  border: "1px solid "#b3ddff",
   color: "#084c8d",
   padding: "8px 10px",
   borderRadius: 6,

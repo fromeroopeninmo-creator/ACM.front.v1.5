@@ -171,28 +171,51 @@ export default function EmpresaDashboardPage() {
         </p>
 
         {/* 🔹 Botones principales */}
-        <div className="flex justify-between flex-wrap gap-3">
-          {/* 🟦 Valuador (color corporativo) */}
-          <Link
-            href="/vai/acmforms"
-            className="px-5 py-2 text-white font-semibold rounded-lg shadow transition"
-            style={{
-              backgroundColor: primaryColor,
-              boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
-            }}
-            onMouseEnter={(e) => {
-              (e.currentTarget as HTMLAnchorElement).style.filter =
-                "brightness(1.1)";
-            }}
-            onMouseLeave={(e) => {
-              (e.currentTarget as HTMLAnchorElement).style.filter =
-                "brightness(1)";
-            }}
-          >
-            🏠 Valuador de Activos Inmobiliarios
-          </Link>
+        <div className="flex justify-between flex-wrap gap-4">
+          {/* 🧮 Herramientas (lado izquierdo, en columna) */}
+          <div className="flex flex-col gap-3">
+            {/* Valuador */}
+            <Link
+              href="/vai/acmforms"
+              className="px-5 py-2 text-white font-semibold rounded-lg shadow transition"
+              style={{
+                backgroundColor: primaryColor,
+                boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
+              }}
+              onMouseEnter={(e) => {
+                (e.currentTarget as HTMLAnchorElement).style.filter =
+                  "brightness(1.1)";
+              }}
+              onMouseLeave={(e) => {
+                (e.currentTarget as HTMLAnchorElement).style.filter =
+                  "brightness(1)";
+              }}
+            >
+              🏠 Valuador de Activos Inmobiliarios
+            </Link>
 
-          {/* 🟩 Acciones */}
+            {/* Factibilidad Constructiva (mismo estilo/color) */}
+            <Link
+              href="/dashboard/empresa/factibilidad"
+              className="px-5 py-2 text-white font-semibold rounded-lg shadow transition"
+              style={{
+                backgroundColor: primaryColor,
+                boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
+              }}
+              onMouseEnter={(e) => {
+                (e.currentTarget as HTMLAnchorElement).style.filter =
+                  "brightness(1.1)";
+              }}
+              onMouseLeave={(e) => {
+                (e.currentTarget as HTMLAnchorElement).style.filter =
+                  "brightness(1)";
+              }}
+            >
+              📐 Factibilidad Constructiva
+            </Link>
+          </div>
+
+          {/* 🟩 Acciones (lado derecho) */}
           <div className="flex flex-wrap gap-3">
             <Link
               href="/dashboard/empresa/asesores"
@@ -206,14 +229,6 @@ export default function EmpresaDashboardPage() {
               className="px-5 py-2 bg-green-600 text-white font-semibold rounded-lg shadow hover:bg-green-700 transition"
             >
               💼 Ver Planes
-            </Link>
-
-            {/* 📐 Nuevo botón: Factibilidad Constructiva */}
-            <Link
-              href="/dashboard/empresa/factibilidad"
-              className="px-5 py-2 bg-purple-600 text-white font-semibold rounded-lg shadow hover:bg-purple-700 transition"
-            >
-              📐 Factibilidad Constructiva
             </Link>
           </div>
         </div>

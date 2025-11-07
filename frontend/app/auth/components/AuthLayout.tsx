@@ -1,5 +1,7 @@
 "use client";
 
+import React from "react";
+
 interface AuthLayoutProps {
   children: React.ReactNode;
   title: string;
@@ -13,36 +15,23 @@ export default function AuthLayout({
   subtitle,
   variant = "narrow",
 }: AuthLayoutProps) {
- const cardWidthClasses =
-  variant === "wide"
-    ? "max-w-xl sm:max-w-2xl"
-    : "max-w-sm sm:max-w-md lg:max-w-lg";
-
+  const cardWidthClasses =
+    variant === "wide"
+      ? "max-w-xl sm:max-w-2xl"
+      : "max-w-sm sm:max-w-md lg:max-w-lg";
 
   return (
     <div className="flex flex-col sm:flex-row min-h-screen w-full bg-black">
       {/* 🖼️ Columna izquierda con banner — mismo tamaño para login y registro */}
       <div
-  className="
-    hidden sm:block
-    sm:w-1/3 lg:w-2/5
-    h-screen
-    bg-cover bg-center
-  "
-  style={{
-    backgroundImage: "url('/banner1.png')",
-  }}
->
+        className="hidden sm:block sm:w-1/3 lg:w-1/3 h-screen bg-cover bg-center"
+        style={{
+          backgroundImage: "url('/banner1.png')",
+        }}
+      />
 
       {/* 🧾 Columna derecha con formulario sobre fondo negro */}
-      <div
-        className="
-          flex flex-1
-          items-center justify-center
-          p-4 sm:p-8 lg:p-10
-          bg-black
-        "
-      >
+      <div className="flex flex-1 items-center justify-center p-4 sm:p-8 lg:p-10 bg-black">
         <div
           className={`
             w-full
@@ -54,14 +43,7 @@ export default function AuthLayout({
           `}
         >
           {/* 🔹 Logo arriba del formulario */}
-          <div
-            className="
-              flex items-center justify-center
-              mb-6 sm:mb-4
-              h-24 sm:h-28 md:h-32 lg:h-40
-              overflow-hidden
-            "
-          >
+          <div className="flex items-center justify-center mb-6 sm:mb-4 h-24 sm:h-28 md:h-32 lg:h-40 overflow-hidden">
             <img
               src="/logo-vai7.png"
               alt="Logo VAI"

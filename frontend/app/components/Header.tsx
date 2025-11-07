@@ -129,7 +129,7 @@ export default function Header() {
         {/* Derecha: logo */}
         <div className="flex items-center justify-center flex-1">
           <img
-            src="/logo-vai4.png"
+            src="/logo-vai5.png"
             alt="Logo VAI"
             className="
               object-contain h-[88px] sm:h-[96px] w-auto

@@ -772,7 +772,7 @@ if (isAsesor && (inmobiliaria === "—" || matriculado === "—" || cpi === "—
   doc.setFont("helvetica", "normal");
 
   // Columna izquierda
-  doc.text(`Inmobiliaria: ${inmobiliaria}`, colLeftX, y);
+  doc.text(`Empresa: ${inmobiliaria}`, colLeftX, y);
   doc.text(`Asesor: ${isAsesor ? asesorNombre : "—"}`, colLeftX, y + 15);
 
   // Columna derecha

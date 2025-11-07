@@ -140,7 +140,7 @@ export default function RegisterPage() {
 
       if (error) {
         // Falla actual (500 desde Supabase). Vamos al fallback admin (modo dev).
-      throw new Error(error.message || "signup-failed");
+        throw new Error(error.message || "signup-failed");
       }
 
       const userId = data.user?.id;
@@ -209,6 +209,7 @@ export default function RegisterPage() {
     <AuthLayout
       title="Registro de Empresa"
       subtitle="Completá tus datos para crear la cuenta de tu inmobiliaria"
+      variant="wide"
     >
       {errorMsg && <div style={alertError}>{errorMsg}</div>}
       {infoMsg && <div style={alertInfo}>{infoMsg}</div>}

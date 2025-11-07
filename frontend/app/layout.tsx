@@ -9,7 +9,7 @@ import AppWrapper from "./AppWrapper";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata = {
-  title: "VAI PROP",
+  title: "VAI PROP - Soluciones Digitales para el Real Estate",
   description: "Soluciones Digitales para el Real Estate",
 };
 

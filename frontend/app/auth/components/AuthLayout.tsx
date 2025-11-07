@@ -11,11 +11,11 @@ export default function AuthLayout({
 }) {
   return (
     <div className="flex flex-col sm:flex-row min-h-screen w-full bg-black">
-      {/* 🖼️ Columna izquierda con banner — más ancha en desktop */}
+      {/* 🖼️ Columna izquierda con banner — más chica en desktop */}
       <div
         className="
           hidden sm:block
-          sm:basis-3/5 lg:basis-2/3
+          sm:w-1/3 lg:w-2/5
           bg-cover bg-center
         "
         style={{
@@ -26,16 +26,16 @@ export default function AuthLayout({
       {/* 🧾 Columna derecha con formulario sobre fondo negro */}
       <div
         className="
-          flex flex-1 sm:basis-2/5 lg:basis-1/3
+          flex flex-1
           items-center justify-center
-          p-4 sm:p-6 lg:p-10
+          p-4 sm:p-8 lg:p-10
           bg-black
         "
       >
         <div
           className="
             w-full
-            max-w-md sm:max-w-lg lg:max-w-xl
+            max-w-xl sm:max-w-2xl
             bg-white rounded-xl shadow-2xl
             p-6 sm:p-8 lg:p-10
             space-y-4

@@ -158,6 +158,7 @@ export default function LoginPage() {
     <AuthLayout
       title="Iniciar sesión"
       subtitle="Bienvenido a VAI PROP – Ingresá tus credenciales"
+      variant="narrow"
     >
       {errorMsg && (
         <div

@@ -1,17 +1,26 @@
 "use client";
 
+interface AuthLayoutProps {
+  children: React.ReactNode;
+  title: string;
+  subtitle: string;
+  variant?: "narrow" | "wide";
+}
+
 export default function AuthLayout({
   children,
   title,
   subtitle,
-}: {
-  children: React.ReactNode;
-  title: string;
-  subtitle: string;
-}) {
+  variant = "narrow",
+}: AuthLayoutProps) {
+  const cardWidthClasses =
+    variant === "wide"
+      ? "max-w-xl sm:max-w-2xl"
+      : "max-w-md sm:max-w-lg lg:max-w-xl";
+
   return (
     <div className="flex flex-col sm:flex-row min-h-screen w-full bg-black">
-      {/* 🖼️ Columna izquierda con banner — más chica en desktop */}
+      {/* 🖼️ Columna izquierda con banner — mismo tamaño para login y registro */}
       <div
         className="
           hidden sm:block
@@ -33,14 +42,14 @@ export default function AuthLayout({
         "
       >
         <div
-          className="
+          className={`
             w-full
-            max-w-xl sm:max-w-2xl
+            ${cardWidthClasses}
             bg-white rounded-xl shadow-2xl
             p-6 sm:p-8 lg:p-10
             space-y-4
             transition-all duration-300
-          "
+          `}
         >
           {/* 🔹 Logo arriba del formulario */}
           <div
@@ -73,7 +82,7 @@ export default function AuthLayout({
             </p>
           </div>
 
-          {/* 🔹 Formulario */}
+          {/* 🔹 Contenido (formularios) */}
           <div className="mt-2">{children}</div>
         </div>
       </div>

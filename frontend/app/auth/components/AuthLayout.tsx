@@ -25,7 +25,7 @@ export default function AuthLayout({
       <div
         className="
           hidden sm:block
-          sm:w-1/3 lg:w-1/3
+          sm:w-1/3 lg:w-2/5
           bg-cover bg-center
         "
         style={{

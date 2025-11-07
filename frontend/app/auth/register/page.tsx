@@ -445,7 +445,7 @@ const alertError: React.CSSProperties = {
 };
 const alertInfo: React.CSSProperties = {
   background: "#e6f4ff",
-  border: "1px solid "#b3ddff",
+  border: "1px solid #b3ddff",
   color: "#084c8d",
   padding: "8px 10px",
   borderRadius: 6,

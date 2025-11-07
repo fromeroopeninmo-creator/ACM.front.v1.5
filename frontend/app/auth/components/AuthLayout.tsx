@@ -18,7 +18,7 @@ export default function AuthLayout({
           bg-cover bg-center
         "
         style={{
-          backgroundImage: "url('/banner.jpg')",
+          backgroundImage: "url('/banner1.png')",
         }}
       />
 
@@ -41,7 +41,7 @@ export default function AuthLayout({
           {/* 🔹 Logo arriba del formulario — visible en todas las resoluciones */}
           <div className="flex justify-center mb-6 sm:mb-4 overflow-hidden">
             <img
-              src="/logo-vai4.png"
+              src="/logo-vai5.png"
               alt="Logo VAI"
               className="
                 object-contain

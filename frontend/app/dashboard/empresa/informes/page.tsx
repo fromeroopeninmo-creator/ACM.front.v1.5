@@ -9,32 +9,28 @@ import {
 import { useRouter } from "next/navigation";
 
 type Estado = "borrador" | "final";
+type TipoInforme = "valuacion" | "factibilidad";
 
 type DatosJSON = {
   clientName?: string;
   propertyType?: string;
-  // otros campos que no usamos acá...
+  nombreProyecto?: string;
+  // otros campos posibles que no usamos acá...
 };
-
-type TipoInforme = "valuacion" | "factibilidad";
 
 type Informe = {
   id: string;
   titulo: string | null;
   estado: Estado;
+  tipo_informe: TipoInforme | null;
   created_at?: string | null;
 
-  // metadata que puede o no venir plana desde el API:
   autor_nombre?: string | null;
   asesor_email?: string | null;
   cliente?: string | null;
   tipologia?: string | null;
 
-  // fallback si el API no expone campos planos:
   datos_json?: DatosJSON | null;
-
-  // tipo de informe
-  tipo_informe?: TipoInforme | null;
 };
 
 export default function EmpresaInformesPage() {
@@ -47,12 +43,13 @@ export default function EmpresaInformesPage() {
 
   // filtros
   const [fAsesor, setFAsesor] = useState<string>("__ALL__");
-  const [fTipo, setFTipo] = useState<string>("valuacion"); // default: Valuaciones
+  // ahora este es el filtro de TIPO DE INFORME: valuacion / factibilidad
+  const [fTipo, setFTipo] = useState<string>("valuacion"); // por defecto Valuaciones
   const [fDesde, setFDesde] = useState<string>(""); // yyyy-mm-dd
   const [fHasta, setFHasta] = useState<string>("");
   const [q, setQ] = useState<string>(""); // búsqueda rápida
 
-  // deferred
+  // Para que escribir en filtros no congele la UI en listas grandes
   const dq = useDeferredValue(q);
   const dAsesor = useDeferredValue(fAsesor);
   const dTipo = useDeferredValue(fTipo);
@@ -67,61 +64,75 @@ export default function EmpresaInformesPage() {
     setLoading(true);
     setErr(null);
     try {
-      // 1) Valuaciones VAI (endpoint existente)
+      // 1) Informes de VALUACIÓN (VAI clásicos)
       const resV = await fetch(
         "/api/informes/list?scope=empresa&limit=100",
-        {
-          cache: "no-store",
-        }
+        { cache: "no-store" }
       );
       if (!resV.ok) {
         const j = await resV.json().catch(() => ({}));
-        throw new Error(j?.error || "Error cargando informes de valuación");
+        throw new Error(
+          j?.error || "Error cargando informes de valuación"
+        );
       }
       const jV = await resV.json();
-      const arrV: Informe[] = Array.isArray(jV?.informes)
+      const arrVRaw: any[] = Array.isArray(jV?.informes)
         ? jV.informes
         : [];
 
-      // nos aseguramos de marcar tipo_informe si no lo trae
-      const valuaciones = arrV.map((inf) => ({
-        ...inf,
-        tipo_informe:
-          inf.tipo_informe === "factibilidad"
-            ? "factibilidad"
-            : "valuacion",
+      const valuaciones: Informe[] = arrVRaw.map((inf: any): Informe => ({
+        id: inf.id,
+        titulo: inf.titulo ?? null,
+        estado: (inf.estado as Estado) ?? "final",
+        tipo_informe: "valuacion",
+        created_at: inf.created_at ?? null,
+        autor_nombre: inf.autor_nombre ?? null,
+        asesor_email: inf.asesor_email ?? null,
+        cliente: inf.cliente ?? null,
+        tipologia:
+          inf.tipologia ??
+          inf.datos_json?.propertyType ??
+          null,
+        datos_json: (inf.datos_json as DatosJSON) ?? null,
       }));
 
-      // 2) Informes de Factibilidad (nuevo endpoint)
+      // 2) Informes de FACTIBILIDAD
       const resF = await fetch(
         "/api/factibilidad/list?scope=empresa&limit=100",
-        {
-          cache: "no-store",
-        }
+        { cache: "no-store" }
       );
-      let factibilidades: Informe[] = [];
-      if (resF.ok) {
-        const jF = await resF.json();
-        const arrF: Informe[] = Array.isArray(jF?.informes)
-          ? jF.informes
-          : [];
-        factibilidades = arrF.map((inf) => ({
-          ...inf,
-          tipo_informe: "factibilidad" as const,
-        }));
-      } else {
-        // si falla, lo dejamos logueado pero no rompemos todo
-        const jF = await resF.json().catch(() => ({}));
-        console.warn(
-          "No se pudieron cargar informes de factibilidad:",
-          jF?.error || resF.statusText
+      if (!resF.ok) {
+        const j = await resF.json().catch(() => ({}));
+        throw new Error(
+          j?.error || "Error cargando informes de factibilidad"
         );
       }
+      const jF = await resF.json();
+      const arrFRaw: any[] = Array.isArray(jF?.informes)
+        ? jF.informes
+        : [];
+
+      const factibilidades: Informe[] = arrFRaw.map(
+        (inf: any): Informe => ({
+          id: inf.id,
+          titulo:
+            inf.titulo ??
+            "Informe de factibilidad constructiva",
+          estado: (inf.estado as Estado) ?? "final",
+          tipo_informe: "factibilidad",
+          created_at: inf.created_at ?? null,
+          autor_nombre: inf.autor_nombre ?? null,
+          asesor_email: inf.asesor_email ?? null,
+          cliente: inf.cliente ?? null,
+          tipologia: inf.tipologia ?? null,
+          datos_json: (inf.datos_json as DatosJSON) ?? null,
+        })
+      );
 
       // 3) Fusionar
       setItems([...valuaciones, ...factibilidades]);
     } catch (e: any) {
-      setErr(e.message || "Error desconocido");
+      setErr(e?.message || "Error desconocido");
     } finally {
       setLoading(false);
     }
@@ -134,8 +145,10 @@ export default function EmpresaInformesPage() {
 
   // ---------------- helpers de visualización ----------------
   const getCreadoPor = (inf: Informe) => {
-    if (inf.autor_nombre && inf.autor_nombre.trim()) return inf.autor_nombre;
-    if (inf.asesor_email && inf.asesor_email.trim()) return inf.asesor_email;
+    if (inf.autor_nombre && inf.autor_nombre.trim())
+      return inf.autor_nombre;
+    if (inf.asesor_email && inf.asesor_email.trim())
+      return inf.asesor_email;
     return "Empresa";
   };
 
@@ -144,9 +157,10 @@ export default function EmpresaInformesPage() {
     return inf.datos_json?.clientName || "—";
   };
 
-  const getTipologia = (inf: Informe) => {
-    if (inf.tipologia && inf.tipologia.trim()) return inf.tipologia;
-    return inf.datos_json?.propertyType || "—";
+  const getTipoEtiqueta = (inf: Informe) => {
+    if (inf.tipo_informe === "factibilidad")
+      return "Factibilidad";
+    return "Valuación VAI";
   };
 
   const getFechaISO = (inf: Informe) => {
@@ -154,24 +168,14 @@ export default function EmpresaInformesPage() {
     return new Date(inf.created_at);
   };
 
-  const getTipoInforme = (inf: Informe): TipoInforme => {
-    if (inf.tipo_informe === "factibilidad") return "factibilidad";
-    if (inf.tipo_informe === "valuacion") return "valuacion";
-
-    // fallback heurístico
-    const titulo = (inf.titulo || "").toLowerCase();
-    if (titulo.includes("factibilidad")) return "factibilidad";
-
-    const dj: any = inf.datos_json || {};
-    if (
-      dj.FOS !== undefined ||
-      dj.FOT !== undefined ||
-      dj.superficieLote !== undefined
-    ) {
-      return "factibilidad";
+  const getRutaVerEditar = (inf: Informe) => {
+    if (inf.tipo_informe === "factibilidad") {
+      return `/vai/factibilidad?id=${encodeURIComponent(
+        inf.id
+      )}`;
     }
-
-    return "valuacion";
+    // default: valuación
+    return `/vai/acmforms?id=${encodeURIComponent(inf.id)}`;
   };
 
   // ---------------- opciones de filtros dinámicas ----------------
@@ -181,15 +185,24 @@ export default function EmpresaInformesPage() {
       const name = getCreadoPor(inf);
       if (name) s.add(name);
     });
-    return ["__ALL__", ...Array.from(s).sort((a, b) => a.localeCompare(b))];
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items.length]);
+    return [
+      "__ALL__",
+      ...Array.from(s).sort((a, b) => a.localeCompare(b)),
+    ];
+  }, [items]);
 
-  // Tipos de informe fijos: Valuaciones / Factibilidad / Todos
-  const tiposOpts = useMemo(
-    () => ["__ALL__", "valuacion", "factibilidad"],
-    []
-  );
+  // Tipo de informe: fijo
+  const tiposOpts: string[] = [
+    "__ALL__",
+    "valuacion",
+    "factibilidad",
+  ];
+
+  const tipoLabel = (v: string) => {
+    if (v === "valuacion") return "Valuaciones";
+    if (v === "factibilidad") return "Factibilidad";
+    return "Todos";
+  };
 
   // ---------------- filtrado cliente ----------------
   const filtered = useMemo(() => {
@@ -202,14 +215,10 @@ export default function EmpresaInformesPage() {
       if (dAsesor !== "__ALL__") {
         if (getCreadoPor(inf) !== dAsesor) return false;
       }
-
       // tipo de informe
       if (dTipo !== "__ALL__") {
-        const tipoInf = getTipoInforme(inf);
-        if (dTipo === "valuacion" && tipoInf !== "valuacion") return false;
-        if (dTipo === "factibilidad" && tipoInf !== "factibilidad") return false;
+        if (inf.tipo_informe !== dTipo) return false;
       }
-
       // fechas
       if (desde || hasta) {
         const dt = getFechaISO(inf);
@@ -217,17 +226,22 @@ export default function EmpresaInformesPage() {
         if (desde && dt < desde) return false;
         if (hasta && dt > hasta) return false;
       }
-
       // búsqueda rápida
       if (qnorm) {
+        const tipoTxt = getTipoEtiqueta(inf).toLowerCase();
         const hay =
-          (getCreadoPor(inf) || "").toLowerCase().includes(qnorm) ||
-          (getCliente(inf) || "").toLowerCase().includes(qnorm) ||
-          (getTipologia(inf) || "").toLowerCase().includes(qnorm) ||
-          (inf.titulo || "").toLowerCase().includes(qnorm);
+          (getCreadoPor(inf) || "")
+            .toLowerCase()
+            .includes(qnorm) ||
+          (getCliente(inf) || "")
+            .toLowerCase()
+            .includes(qnorm) ||
+          tipoTxt.includes(qnorm) ||
+          (inf.titulo || "")
+            .toLowerCase()
+            .includes(qnorm);
         if (!hay) return false;
       }
-
       return true;
     });
   }, [items, dAsesor, dTipo, dDesde, dHasta, dq]);
@@ -243,18 +257,17 @@ export default function EmpresaInformesPage() {
 
   // ---------------- acciones ----------------
   const onDelete = async (inf: Informe) => {
-    if (!inf.id) return;
-
-    const tipo = getTipoInforme(inf);
-    const endpoint =
-      tipo === "factibilidad"
-        ? "/api/factibilidad/delete"
-        : "/api/informes/delete";
-
+    if (!inf?.id) return;
     const ok = confirm(
-      `¿Eliminar este informe de ${tipo === "factibilidad" ? "factibilidad" : "valuación"}? Esta acción no se puede deshacer.`
+      "¿Eliminar este informe? Esta acción no se puede deshacer."
     );
     if (!ok) return;
+
+    // endpoint según tipo
+    const endpoint =
+      inf.tipo_informe === "factibilidad"
+        ? "/api/factibilidad/delete"
+        : "/api/informes/delete";
 
     try {
       setDeletingId(inf.id);
@@ -276,23 +289,17 @@ export default function EmpresaInformesPage() {
     }
   };
 
-  const onView = (inf: Informe) => {
-    const tipo = getTipoInforme(inf);
-    if (tipo === "factibilidad") {
-      router.push(`/vai/factibilidad?id=${inf.id}`);
-    } else {
-      router.push(`/vai/acmforms?id=${inf.id}`);
-    }
-  };
-
   // ---------------- UI ----------------
   return (
     <div className="space-y-6">
       {/* Header */}
       <section className="bg-white shadow-sm rounded-xl p-6">
-        <h1 className="text-xl md:text-2xl font-bold">Informes</h1>
+        <h1 className="text-xl md:text-2xl font-bold">
+          Informes
+        </h1>
         <p className="text-gray-600">
-          Listado de informes cargados por tu empresa y sus asesores.
+          Listado de informes de Valuación VAI y Factibilidad
+          Constructiva cargados por tu empresa y sus asesores.
         </p>
       </section>
 
@@ -301,7 +308,9 @@ export default function EmpresaInformesPage() {
         <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
           {/* Asesor / Creado por */}
           <div className="flex flex-col">
-            <label className="text-sm text-gray-600 mb-1">Creado por</label>
+            <label className="text-sm text-gray-600 mb-1">
+              Creado por
+            </label>
             <select
               value={fAsesor}
               onChange={(e) => setFAsesor(e.target.value)}
@@ -317,7 +326,9 @@ export default function EmpresaInformesPage() {
 
           {/* Tipo de informe */}
           <div className="flex flex-col">
-            <label className="text-sm text-gray-600 mb-1">Tipo</label>
+            <label className="text-sm text-gray-600 mb-1">
+              Tipo
+            </label>
             <select
               value={fTipo}
               onChange={(e) => setFTipo(e.target.value)}
@@ -325,11 +336,7 @@ export default function EmpresaInformesPage() {
             >
               {tiposOpts.map((opt) => (
                 <option key={opt} value={opt}>
-                  {opt === "__ALL__"
-                    ? "Todos"
-                    : opt === "valuacion"
-                    ? "Valuaciones"
-                    : "Factibilidad"}
+                  {tipoLabel(opt)}
                 </option>
               ))}
             </select>
@@ -337,7 +344,9 @@ export default function EmpresaInformesPage() {
 
           {/* Desde */}
           <div className="flex flex-col">
-            <label className="text-sm text-gray-600 mb-1">Desde</label>
+            <label className="text-sm text-gray-600 mb-1">
+              Desde
+            </label>
             <input
               type="date"
               value={fDesde}
@@ -348,7 +357,9 @@ export default function EmpresaInformesPage() {
 
           {/* Hasta */}
           <div className="flex flex-col">
-            <label className="text-sm text-gray-600 mb-1">Hasta</label>
+            <label className="text-sm text-gray-600 mb-1">
+              Hasta
+            </label>
             <input
               type="date"
               value={fHasta}
@@ -359,10 +370,12 @@ export default function EmpresaInformesPage() {
 
           {/* Búsqueda rápida */}
           <div className="flex flex-col">
-            <label className="text-sm text-gray-600 mb-1">Buscar</label>
+            <label className="text-sm text-gray-600 mb-1">
+              Buscar
+            </label>
             <input
               type="text"
-              placeholder="Cliente, asesor, tipología, título…"
+              placeholder="Cliente, asesor, tipo, título…"
               value={q}
               onChange={(e) => setQ(e.target.value)}
               className="rounded-md border border-gray-300 px-3 py-2 text-sm"
@@ -388,7 +401,7 @@ export default function EmpresaInformesPage() {
                 <tr>
                   <th className="p-3 text-left">Creado por</th>
                   <th className="p-3 text-left">Cliente</th>
-                  <th className="p-3 text-left">Tipología</th>
+                  <th className="p-3 text-left">Tipo</th>
                   <th className="p-3 text-left">Fecha</th>
                   <th className="p-3 text-right">Acciones</th>
                 </tr>
@@ -397,29 +410,50 @@ export default function EmpresaInformesPage() {
                 {sorted.map((inf) => {
                   const creadoPor = getCreadoPor(inf);
                   const cliente = getCliente(inf);
-                  const tipologia = getTipologia(inf);
+                  const tipo = getTipoEtiqueta(inf);
                   const fechaTxt = inf.created_at
-                    ? new Date(inf.created_at).toLocaleString("es-AR")
+                    ? new Date(
+                        inf.created_at
+                      ).toLocaleString("es-AR")
                     : "—";
 
                   return (
-                    <tr key={inf.id} className="border-t">
-                      <td className="p-3">{creadoPor}</td>
-                      <td className="p-3">{cliente}</td>
-                      <td className="p-3">{tipologia}</td>
-                      <td className="p-3">{fechaTxt}</td>
+                    <tr
+                      key={inf.id}
+                      className="border-t"
+                    >
+                      <td className="p-3">
+                        {creadoPor}
+                      </td>
+                      <td className="p-3">
+                        {cliente}
+                      </td>
+                      <td className="p-3">
+                        {tipo}
+                      </td>
+                      <td className="p-3">
+                        {fechaTxt}
+                      </td>
                       <td className="p-3 text-right">
                         <div className="flex items-center gap-2 justify-end">
                           <button
-                            onClick={() => onView(inf)}
+                            onClick={() =>
+                              router.push(
+                                getRutaVerEditar(inf)
+                              )
+                            }
                             className="px-3 py-1 text-sm rounded bg-gray-100 text-gray-800 hover:bg-gray-200"
                           >
                             Ver/Editar
                           </button>
 
                           <button
-                            onClick={() => onDelete(inf)}
-                            disabled={deletingId === inf.id}
+                            onClick={() =>
+                              onDelete(inf)
+                            }
+                            disabled={
+                              deletingId === inf.id
+                            }
                             className="px-3 py-1 text-sm rounded bg-red-50 text-red-700 hover:bg-red-100 border border-red-200 disabled:opacity-60"
                             title="Eliminar"
                           >
@@ -434,6 +468,7 @@ export default function EmpresaInformesPage() {
                 })}
               </tbody>
             </table>
+            {/* <div className="text-xs text-gray-500 mt-2">Mostrando {sorted.length} informes</div> */}
           </div>
         )}
       </section>

@@ -1,14 +1,18 @@
 // app/api/factibilidad/update/route.ts
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-// Opcional: evitá IAD1 si hay incidentes
 export const preferredRegion = ["gru1", "sfo1"];
 
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { supabaseServer } from "#lib/supabaseServer";
 
-type Role = "empresa" | "asesor" | "soporte" | "super_admin" | "super_admin_root";
+type Role =
+  | "empresa"
+  | "asesor"
+  | "soporte"
+  | "super_admin"
+  | "super_admin_root";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -19,14 +23,14 @@ const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE, {
 // Helpers
 function sanitizeDatos(datos: any) {
   const clone = JSON.parse(JSON.stringify(datos || {}));
-  // Nunca guardes base64 en la BD
+  // No guardar base64 en datos_json
   if (clone?.fotoLoteBase64) clone.fotoLoteBase64 = undefined;
   return clone;
 }
 
 export async function POST(req: Request) {
   try {
-    // 0) Auth del usuario (desde cookies) para autorizar
+    // 0) Auth desde cookies
     const server = supabaseServer();
     const {
       data: { user },
@@ -46,27 +50,30 @@ export async function POST(req: Request) {
     // 1) Body
     const body = await req.json().catch(() => null as any);
     const { id, datos, titulo } = body || {};
-    if (!id)
+    if (!id) {
       return NextResponse.json({ error: "Falta 'id'." }, { status: 400 });
+    }
 
-    // 2) Traer informe de factibilidad (ADMIN, sin RLS) y validar ownership
+    // 2) Traer informe (ADMIN, select("*") – evita error por columnas faltantes)
     const { data: existing, error: getErr } = await supabaseAdmin
       .from("informes_factibilidad")
-      .select("id, empresa_id, autor_id")
+      .select("*")
       .eq("id", id)
       .maybeSingle();
 
-    if (getErr)
+    if (getErr) {
       return NextResponse.json({ error: getErr.message }, { status: 400 });
-    if (!existing)
+    }
+    if (!existing) {
       return NextResponse.json(
-        { error: "Informe no encontrado." },
+        { error: "Informe de factibilidad no encontrado." },
         { status: 404 }
       );
+    }
 
-    // 3) Resolver rol y empresa del usuario (SERVER, respeta RLS)
+    // 3) Resolver rol y empresa del usuario
     let role: Role =
-      ((user.user_metadata as any)?.role as Role) || ("empresa" as Role);
+      ((user.user_metadata as any)?.role as Role) || "empresa";
 
     if (
       ![
@@ -97,16 +104,25 @@ export async function POST(req: Request) {
       empresaId = prof?.empresa_id ?? null;
     }
 
-    // 4) Autorización
+    const existingEmpresaId = (existing as any).empresa_id as
+      | string
+      | null
+      | undefined;
+    const existingAutorId = (existing as any).autor_id as
+      | string
+      | null
+      | undefined;
+
+    // 4) Autorización (si las columnas existen)
     if (role === "empresa") {
-      if (!empresaId || existing.empresa_id !== empresaId) {
+      if (empresaId && existingEmpresaId && existingEmpresaId !== empresaId) {
         return NextResponse.json(
           { error: "Acceso denegado." },
           { status: 403 }
         );
       }
     } else if (role === "asesor") {
-      if (existing.autor_id !== user.id) {
+      if (existingAutorId && existingAutorId !== user.id) {
         return NextResponse.json(
           { error: "Acceso denegado." },
           { status: 403 }
@@ -115,17 +131,14 @@ export async function POST(req: Request) {
     }
     // soporte / super_admin / super_admin_root → OK
 
-    // 5) Limpiar datos_json (nada de base64)
+    // 5) Limpiar datos_json (sacar base64)
     const datosLimpios = sanitizeDatos(datos);
 
-    // Nota: NO tocamos columnas de imágenes aquí.
-    // /api/factibilidad/upload ya actualiza foto_lote_url.
-    // Acá solo persistimos el JSON (incluyendo fotoLoteUrl si ya la tenés en el front).
-
+    // 6) Update
     const { data: updated, error: updErr } = await supabaseAdmin
       .from("informes_factibilidad")
       .update({
-        titulo: titulo ?? "Informe de Factibilidad Constructiva",
+        titulo: titulo ?? "Informe de Factibilidad",
         datos_json: datosLimpios,
         updated_at: new Date().toISOString(),
       })
@@ -139,7 +152,6 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ ok: true, informe: updated }, { status: 200 });
   } catch (e: any) {
-    console.error("factibilidad/update error:", e);
     return NextResponse.json(
       { error: e?.message || "Error inesperado" },
       { status: 500 }

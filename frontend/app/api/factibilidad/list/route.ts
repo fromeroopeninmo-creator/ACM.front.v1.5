@@ -1,86 +1,217 @@
+// app/api/factibilidad/list/route.ts
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 import { NextResponse } from "next/server";
 import { supabaseServer } from "#lib/supabaseServer";
+import { createClient } from "@supabase/supabase-js";
 
-export const dynamic = "force-dynamic";
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE);
+
+type Scope = "empresa" | "asesor";
+type Role = "empresa" | "asesor" | "soporte" | "super_admin" | "super_admin_root";
 
 export async function GET(req: Request) {
   try {
-    const supabase = supabaseServer();
-
-    // ✅ Verificamos sesión
-    const {
-      data: { session },
-      error: sessionError,
-    } = await supabase.auth.getSession();
-
-    if (sessionError) {
-      console.error("factibilidad/list sessionError:", sessionError);
+    const server = supabaseServer();
+    const { data: auth } = await server.auth.getUser();
+    const userId = auth?.user?.id ?? null;
+    if (!userId) {
       return NextResponse.json(
-        { error: "No se pudo obtener la sesión actual" },
-        { status: 500 }
-      );
-    }
-
-    if (!session?.user) {
-      return NextResponse.json(
-        { error: "No autenticado" },
+        { ok: false, error: "No autenticado" },
         { status: 401 }
       );
     }
 
     const { searchParams } = new URL(req.url);
+    const scope = (searchParams.get("scope") as Scope) || null;
     const limitParam = searchParams.get("limit");
-    const scope = searchParams.get("scope") || "empresa";
-
     const limit = Number.isFinite(Number(limitParam))
       ? Number(limitParam)
       : 100;
 
-    // 👇 Por ahora no complicamos con joins ni empresa_id.
-    // Devolvemos todos los informes visibles para este usuario.
-    // Si tenés RLS configurado, eso se encarga de que sólo vea lo que debe.
-    // Más adelante, si querés que la empresa vea también informes de asesores,
-    // ajustamos esto con un join a empresas/perfiles.
+    // ---------------- Resolver role + empresa_id ----------------
+    let role: Role = "empresa";
+    let empresaId: string | null = null;
 
-    let query = supabase
+    // ¿Es empresa dueña?
+    const { data: emp } = await supabaseAdmin
+      .from("empresas")
+      .select("id, user_id")
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    if (emp?.id) {
+      role = "empresa";
+      empresaId = emp.id;
+    } else {
+      // ¿Perfil (asesor/soporte/admin)?
+      const { data: prof } = await supabaseAdmin
+        .from("profiles")
+        .select("id, role, empresa_id")
+        .eq("id", userId)
+        .maybeSingle();
+
+      if (prof?.role) role = prof.role as Role;
+      if (prof?.empresa_id) empresaId = prof.empresa_id;
+    }
+
+    // ---------------- Construir query base ----------------
+    let query = supabaseAdmin
       .from("informes_factibilidad")
-      .select(
-        `
-        id,
-        titulo,
-        estado,
-        created_at,
-        datos_json
-      `
-      )
+      .select("*", { count: "exact" })
       .order("created_at", { ascending: false })
       .limit(limit);
 
-    // Si quisieras filtrar distinto por scope más adelante:
-    // if (scope === "asesor") { ... } etc.
-    // Por ahora, dejamos que las políticas RLS manden.
+    if (scope === "empresa") {
+      if (!empresaId) {
+        return NextResponse.json(
+          { ok: true, items: [], informes: [], total: 0 },
+          { status: 200 }
+        );
+      }
+      query = query.eq("empresa_id", empresaId);
+    } else if (scope === "asesor") {
+      // Igual que ACM: listar por autor_id (usuario que lo creó)
+      query = query.eq("autor_id", userId);
+    } else {
+      // default: si sos empresa, por empresa; si sos asesor, por autor_id
+      if (role === "empresa" && empresaId) {
+        query = query.eq("empresa_id", empresaId);
+      } else {
+        query = query.eq("autor_id", userId);
+      }
+    }
 
-    const { data, error } = await query;
-
+    const { data, count, error } = await query;
     if (error) {
-      console.error("factibilidad/list supabase error:", error);
+      console.error("factibilidad/list error:", error);
       return NextResponse.json(
-        { error: "Error consultando informes de factibilidad" },
-        { status: 500 }
+        { ok: false, error: error.message || "Error consultando informes de factibilidad" },
+        { status: 400 }
       );
     }
+
+    const informes = (data ?? []) as any[];
+
+    if (informes.length === 0) {
+      return NextResponse.json(
+        { ok: true, items: [], informes: [], total: 0 },
+        { status: 200 }
+      );
+    }
+
+    // ---------------- Enriquecer con datos del asesor ----------------
+    const asesorIds = Array.from(
+      new Set(
+        informes
+          .map((r) => r.asesor_id)
+          .filter((v: string | null | undefined) => !!v)
+      )
+    ) as string[];
+
+    let asesoresMap = new Map<string, { email: string | null }>();
+    let perfilesMap = new Map<string, { nombre: string | null; apellido: string | null }>();
+
+    if (asesorIds.length > 0) {
+      // a) Emails de asesores
+      const { data: asesores, error: asesErr } = await supabaseAdmin
+        .from("asesores")
+        .select("id, email")
+        .in("id", asesorIds);
+
+      if (!asesErr && Array.isArray(asesores)) {
+        asesores.forEach((a: any) => {
+          asesoresMap.set(a.id, { email: a.email || null });
+        });
+      }
+
+      // b) Nombre/Apellido en profiles
+      const { data: perfiles, error: perfErr } = await supabaseAdmin
+        .from("profiles")
+        .select("id, nombre, apellido")
+        .in("id", asesorIds);
+
+      if (!perfErr && Array.isArray(perfiles)) {
+        perfiles.forEach((p: any) => {
+          perfilesMap.set(p.id, {
+            nombre: p.nombre || null,
+            apellido: p.apellido || null,
+          });
+        });
+      }
+    }
+
+    // ---------------- Normalización para el front ----------------
+    const enrich = (inf: any) => {
+      const asesorId: string | null = inf.asesor_id ?? null;
+
+      const email = asesorId ? asesoresMap.get(asesorId)?.email ?? null : null;
+      const nombre = asesorId ? perfilesMap.get(asesorId)?.nombre ?? null : null;
+      const apellido = asesorId ? perfilesMap.get(asesorId)?.apellido ?? null : null;
+
+      const autor_nombre =
+        (nombre && apellido ? `${nombre} ${apellido}`.trim() : null) || email || null;
+
+      // Fallbacks visuales
+      const datos = inf?.datos_json ?? {};
+
+      const cliente =
+        datos.clientName ??
+        datos.cliente ??
+        datos.nombreProyecto ??
+        null;
+
+      const tipologia =
+        datos.propertyType ??
+        datos.tipologia ??
+        null;
+
+      return {
+        ...inf,
+        autor_nombre,
+        asesor_email: email,
+        cliente,
+        tipologia,
+      };
+    };
+
+    const informesEnriquecidos = informes.map(enrich);
+
+    // Items planos para compatibilidad
+    const items = informesEnriquecidos.map((inf: any) => ({
+      id: inf.id,
+      titulo: inf.titulo,
+      // marcamos explícitamente el tipo factibilidad (por si lo querés usar después)
+      tipo: inf.tipo ?? "factibilidad",
+      empresa_id: inf.empresa_id,
+      autor_id: inf.autor_id,
+      estado: inf.estado,
+      created_at: inf.created_at ?? inf.fecha_creacion ?? null,
+      updated_at: inf.updated_at ?? null,
+
+      autor_nombre: inf.autor_nombre ?? null,
+      asesor_email: inf.asesor_email ?? null,
+      datos_json: inf.datos_json ?? null,
+      cliente: inf.cliente ?? null,
+      tipologia: inf.tipologia ?? null,
+    }));
 
     return NextResponse.json(
       {
         ok: true,
-        informes: data ?? [],
+        items,
+        informes: informesEnriquecidos,
+        total: count ?? items.length,
       },
       { status: 200 }
     );
   } catch (e: any) {
-    console.error("factibilidad/list unexpected error:", e);
+    console.error("factibilidad/list unexpected:", e);
     return NextResponse.json(
-      { error: "Error consultando informes de factibilidad" },
+      { ok: false, error: e?.message || "Error inesperado" },
       { status: 500 }
     );
   }

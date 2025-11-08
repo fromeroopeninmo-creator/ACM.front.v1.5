@@ -18,13 +18,16 @@ type Informe = {
   created_at?: string | null;
 
   // metadata que puede o no venir plana desde el API:
-  autor_nombre?: string | null;   // ideal si el API lo envía
-  asesor_email?: string | null;   // fallback
-  cliente?: string | null;        // si lo expone el API
-  tipologia?: string | null;      // si lo expone el API
+  autor_nombre?: string | null; // ideal si el API lo envía
+  asesor_email?: string | null; // fallback
+  cliente?: string | null; // si lo expone el API
+  tipologia?: string | null; // si lo expone el API
 
   // fallback si el API no expone campos planos:
   datos_json?: DatosJSON | null;
+
+  // NUEVO: tipo de informe si el backend lo envía
+  tipo_informe?: "valuacion" | "factibilidad" | null;
 };
 
 export default function EmpresaInformesPage() {
@@ -37,7 +40,8 @@ export default function EmpresaInformesPage() {
 
   // filtros
   const [fAsesor, setFAsesor] = useState<string>("__ALL__");
-  const [fTipo, setFTipo] = useState<string>("__ALL__");
+  // 🔹 ahora este filtro es "Tipo de informe"
+  const [fTipo, setFTipo] = useState<string>("valuacion"); // default: Valuaciones
   const [fDesde, setFDesde] = useState<string>(""); // yyyy-mm-dd
   const [fHasta, setFHasta] = useState<string>("");
   const [q, setQ] = useState<string>(""); // búsqueda rápida
@@ -101,6 +105,29 @@ export default function EmpresaInformesPage() {
     return new Date(inf.created_at);
   };
 
+  // 🔹 NUEVO: tipo de informe (valuación vs factibilidad)
+  const getTipoInforme = (inf: Informe): "valuacion" | "factibilidad" => {
+    if (inf.tipo_informe === "factibilidad") return "factibilidad";
+    if (inf.tipo_informe === "valuacion") return "valuacion";
+
+    // fallback heurístico por título
+    const titulo = (inf.titulo || "").toLowerCase();
+    if (titulo.includes("factibilidad")) return "factibilidad";
+
+    // fallback por estructura de datos_json (si el API no mandara tipo_informe)
+    const dj: any = inf.datos_json || {};
+    if (
+      dj.FOS !== undefined ||
+      dj.FOT !== undefined ||
+      dj.superficieLote !== undefined
+    ) {
+      return "factibilidad";
+    }
+
+    // por defecto, lo tratamos como valuación
+    return "valuacion";
+  };
+
   // ---------------- opciones de filtros dinámicas ----------------
   const asesoresOpts = useMemo(() => {
     const s = new Set<string>();
@@ -112,15 +139,11 @@ export default function EmpresaInformesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items.length]);
 
-  const tiposOpts = useMemo(() => {
-    const s = new Set<string>();
-    items.forEach((inf) => {
-      const t = getTipologia(inf);
-      if (t && t !== "—") s.add(t);
-    });
-    return ["__ALL__", ...Array.from(s).sort((a, b) => a.localeCompare(b))];
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items.length]);
+  // 🔹 Tipos de informe: fijo (Valuaciones / Factibilidad / Todos)
+  const tiposOpts = useMemo(
+    () => ["__ALL__", "valuacion", "factibilidad"],
+    []
+  );
 
   // ---------------- filtrado cliente ----------------
   const filtered = useMemo(() => {
@@ -133,10 +156,14 @@ export default function EmpresaInformesPage() {
       if (dAsesor !== "__ALL__") {
         if (getCreadoPor(inf) !== dAsesor) return false;
       }
-      // tipo
+
+      // tipo de informe (valuación / factibilidad)
       if (dTipo !== "__ALL__") {
-        if (getTipologia(inf) !== dTipo) return false;
+        const tipoInf = getTipoInforme(inf);
+        if (dTipo === "valuacion" && tipoInf !== "valuacion") return false;
+        if (dTipo === "factibilidad" && tipoInf !== "factibilidad") return false;
       }
+
       // fechas
       if (desde || hasta) {
         const dt = getFechaISO(inf);
@@ -144,6 +171,7 @@ export default function EmpresaInformesPage() {
         if (desde && dt < desde) return false;
         if (hasta && dt > hasta) return false;
       }
+
       // búsqueda rápida
       if (qnorm) {
         const hay =
@@ -189,12 +217,22 @@ export default function EmpresaInformesPage() {
     }
   };
 
+  // 🔹 Ver/Editar según tipo de informe
+  const onView = (inf: Informe) => {
+    const tipo = getTipoInforme(inf);
+    if (tipo === "factibilidad") {
+      router.push(`/vai/factibilidad?id=${inf.id}`);
+    } else {
+      router.push(`/vai/acmforms?id=${inf.id}`);
+    }
+  };
+
   // ---------------- UI ----------------
   return (
     <div className="space-y-6">
       {/* Header */}
       <section className="bg-white shadow-sm rounded-xl p-6">
-        <h1 className="text-xl md:text-2xl font-bold">Informes VAI</h1>
+        <h1 className="text-xl md:text-2xl font-bold">Informes</h1>
         <p className="text-gray-600">
           Listado de informes cargados por tu empresa y sus asesores.
         </p>
@@ -219,9 +257,9 @@ export default function EmpresaInformesPage() {
             </select>
           </div>
 
-          {/* Tipología */}
+          {/* Tipo de informe (Valuaciones / Factibilidad) */}
           <div className="flex flex-col">
-            <label className="text-sm text-gray-600 mb-1">Tipología</label>
+            <label className="text-sm text-gray-600 mb-1">Tipo</label>
             <select
               value={fTipo}
               onChange={(e) => setFTipo(e.target.value)}
@@ -229,7 +267,11 @@ export default function EmpresaInformesPage() {
             >
               {tiposOpts.map((opt) => (
                 <option key={opt} value={opt}>
-                  {opt === "__ALL__" ? "Todas" : opt}
+                  {opt === "__ALL__"
+                    ? "Todos"
+                    : opt === "valuacion"
+                    ? "Valuaciones"
+                    : "Factibilidad"}
                 </option>
               ))}
             </select>
@@ -278,7 +320,9 @@ export default function EmpresaInformesPage() {
         ) : err ? (
           <p className="text-red-600">❌ {err}</p>
         ) : sorted.length === 0 ? (
-          <p className="text-gray-600">No hay informes con los filtros seleccionados.</p>
+          <p className="text-gray-600">
+            No hay informes con los filtros seleccionados.
+          </p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full border border-gray-200 rounded-lg">
@@ -309,7 +353,7 @@ export default function EmpresaInformesPage() {
                       <td className="p-3 text-right">
                         <div className="flex items-center gap-2 justify-end">
                           <button
-                            onClick={() => router.push(`/vai/acmforms?id=${inf.id}`)}
+                            onClick={() => onView(inf)}
                             className="px-3 py-1 text-sm rounded bg-gray-100 text-gray-800 hover:bg-gray-200"
                           >
                             Ver/Editar
@@ -321,7 +365,9 @@ export default function EmpresaInformesPage() {
                             className="px-3 py-1 text-sm rounded bg-red-50 text-red-700 hover:bg-red-100 border border-red-200 disabled:opacity-60"
                             title="Eliminar"
                           >
-                            {deletingId === inf.id ? "Eliminando..." : "Eliminar"}
+                            {deletingId === inf.id
+                              ? "Eliminando..."
+                              : "Eliminar"}
                           </button>
                         </div>
                       </td>

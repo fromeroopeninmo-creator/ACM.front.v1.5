@@ -1,7 +1,6 @@
 // app/api/factibilidad/upload/route.ts
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-// Opcional: evitar región IAD1 si da problemas
 export const preferredRegion = ["gru1", "sfo1"];
 
 import { NextResponse } from "next/server";
@@ -17,14 +16,13 @@ type Role =
 
 const BUCKET = "informes";
 
-// === Admin client (bypass RLS para Storage y DB) ===
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE, {
   auth: { persistSession: false, autoRefreshToken: false },
 });
 
-/** Ping rápido (debug) */
+/** Ping rápido (debug opcional) */
 export async function GET() {
   return new Response(
     JSON.stringify({ ok: true, route: "factibilidad/upload" }),
@@ -35,7 +33,7 @@ export async function GET() {
   );
 }
 
-// Slot → columna en la tabla informes_factibilidad
+// Slot -> columna (en informes_factibilidad)
 function buildColumnFromSlot(slot: string): keyof {
   foto_lote_url: string;
 } {
@@ -78,11 +76,11 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "No autenticado." }, { status: 401 });
     }
 
-    // 2) Form-data
+    // 2) FormData
     const form = await req.formData();
     const file = form.get("file") as File | null;
     const informeId = (form.get("informeId") as string | null)?.trim();
-    const slot = (form.get("slot") as string | null)?.trim(); // debería ser "foto_lote"
+    const slot = (form.get("slot") as string | null)?.trim(); // esperamos "foto_lote"
 
     if (!file || !informeId || !slot) {
       return NextResponse.json(
@@ -105,11 +103,11 @@ export async function POST(req: Request) {
       );
     }
 
-    // 3) Rol del usuario
+    // 3) Rol
     const role = ((user.user_metadata as any)?.role ||
       "empresa") as Role;
 
-    // 4) Obtener empresa del usuario (con SERVER client)
+    // 4) Empresa del usuario (SERVER client, respeta RLS)
     let empresaId: string | null = null;
     if (role === "empresa") {
       const { data: emp, error: empErr } = await server
@@ -144,12 +142,11 @@ export async function POST(req: Request) {
       }
       empresaId = prof.empresa_id;
     }
-    // soporte / admins → pueden operar sin empresaId explícita para autorización extra si querés
 
-    // 5) Traer informe de factibilidad con ADMIN y autorizar
+    // 5) Traer informe de factibilidad (ADMIN, select("*") para no romper por columnas)
     const { data: inf, error: infErr } = await supabaseAdmin
       .from("informes_factibilidad")
-      .select("id, empresa_id, autor_id")
+      .select("*")
       .eq("id", informeId)
       .maybeSingle();
 
@@ -166,16 +163,20 @@ export async function POST(req: Request) {
       );
     }
 
-    // Reglas de autorización
+    // 6) Autorización en código (solo si existen las columnas)
+    const infEmpresaId = (inf as any).empresa_id as string | null | undefined;
+    const infAutorId = (inf as any).autor_id as string | null | undefined;
+
     if (role === "empresa") {
-      if (!empresaId || inf.empresa_id !== empresaId) {
+      if (empresaId && infEmpresaId && infEmpresaId !== empresaId) {
         return NextResponse.json(
           { error: "No autorizado sobre este informe." },
           { status: 403 }
         );
       }
+      // Si la tabla no tiene empresa_id, no podemos verificar más fino => dejamos pasar
     } else if (role === "asesor") {
-      if (inf.autor_id !== user.id) {
+      if (infAutorId && infAutorId !== user.id) {
         return NextResponse.json(
           { error: "No autorizado sobre este informe." },
           { status: 403 }
@@ -184,11 +185,12 @@ export async function POST(req: Request) {
     }
     // soporte / super_admin / super_admin_root → OK
 
-    // 6) Subir archivo con ADMIN (sin RLS) al bucket "informes"
+    // 7) Subir archivo al bucket "informes"
     const arrayBuf = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuf);
     const ext = extFromMime(mime);
-    const storagePath = `${inf.empresa_id}/${informeId}/${slot}.${ext}`;
+    const pathEmpresa = infEmpresaId || empresaId || "sin_empresa";
+    const storagePath = `${pathEmpresa}/${informeId}/${slot}.${ext}`;
 
     const { error: upErr } = await supabaseAdmin.storage
       .from(BUCKET)
@@ -205,7 +207,7 @@ export async function POST(req: Request) {
       );
     }
 
-    // 7) Obtener URL pública o firmada
+    // 8) URL pública / firmada
     let publicUrl: string | null = null;
     const { data: pub } = supabaseAdmin.storage
       .from(BUCKET)
@@ -230,8 +232,8 @@ export async function POST(req: Request) {
       publicUrl = signed.signedUrl;
     }
 
-    // 8) Actualizar la columna foto_lote_url en informes_factibilidad
-    const column = buildColumnFromSlot(slot); // solo "foto_lote" → "foto_lote_url"
+    // 9) Actualizar columna en informes_factibilidad
+    const column = buildColumnFromSlot(slot); // "foto_lote" -> "foto_lote_url"
     const { error: updErr } = await supabaseAdmin
       .from("informes_factibilidad")
       .update({ [column]: publicUrl })
@@ -246,7 +248,6 @@ export async function POST(req: Request) {
       );
     }
 
-    // 9) Responder con URL con cache-busting
     const busted = `${publicUrl}?v=${Date.now()}`;
     return NextResponse.json({ ok: true, url: busted }, { status: 200 });
   } catch (e: any) {

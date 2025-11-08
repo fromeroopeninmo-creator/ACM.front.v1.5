@@ -1,6 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState, useDeferredValue } from "react";
+import {
+  useEffect,
+  useMemo,
+  useState,
+  useDeferredValue,
+} from "react";
 import { useRouter } from "next/navigation";
 
 type Estado = "borrador" | "final";
@@ -11,6 +16,8 @@ type DatosJSON = {
   // otros campos que no usamos acá...
 };
 
+type TipoInforme = "valuacion" | "factibilidad";
+
 type Informe = {
   id: string;
   titulo: string | null;
@@ -18,16 +25,16 @@ type Informe = {
   created_at?: string | null;
 
   // metadata que puede o no venir plana desde el API:
-  autor_nombre?: string | null; // ideal si el API lo envía
-  asesor_email?: string | null; // fallback
-  cliente?: string | null; // si lo expone el API
-  tipologia?: string | null; // si lo expone el API
+  autor_nombre?: string | null;
+  asesor_email?: string | null;
+  cliente?: string | null;
+  tipologia?: string | null;
 
   // fallback si el API no expone campos planos:
   datos_json?: DatosJSON | null;
 
-  // NUEVO: tipo de informe si el backend lo envía
-  tipo_informe?: "valuacion" | "factibilidad" | null;
+  // tipo de informe
+  tipo_informe?: TipoInforme | null;
 };
 
 export default function EmpresaInformesPage() {
@@ -40,13 +47,12 @@ export default function EmpresaInformesPage() {
 
   // filtros
   const [fAsesor, setFAsesor] = useState<string>("__ALL__");
-  // 🔹 ahora este filtro es "Tipo de informe"
   const [fTipo, setFTipo] = useState<string>("valuacion"); // default: Valuaciones
   const [fDesde, setFDesde] = useState<string>(""); // yyyy-mm-dd
   const [fHasta, setFHasta] = useState<string>("");
   const [q, setQ] = useState<string>(""); // búsqueda rápida
 
-  // Para que escribir en filtros no congele la UI en listas grandes
+  // deferred
   const dq = useDeferredValue(q);
   const dAsesor = useDeferredValue(fAsesor);
   const dTipo = useDeferredValue(fTipo);
@@ -61,16 +67,59 @@ export default function EmpresaInformesPage() {
     setLoading(true);
     setErr(null);
     try {
-      const res = await fetch("/api/informes/list?scope=empresa&limit=100", {
-        cache: "no-store",
-      });
-      if (!res.ok) {
-        const j = await res.json().catch(() => ({}));
-        throw new Error(j?.error || "Error cargando informes");
+      // 1) Valuaciones VAI (endpoint existente)
+      const resV = await fetch(
+        "/api/informes/list?scope=empresa&limit=100",
+        {
+          cache: "no-store",
+        }
+      );
+      if (!resV.ok) {
+        const j = await resV.json().catch(() => ({}));
+        throw new Error(j?.error || "Error cargando informes de valuación");
       }
-      const j = await res.json();
-      const arr: Informe[] = Array.isArray(j?.informes) ? j.informes : [];
-      setItems(arr);
+      const jV = await resV.json();
+      const arrV: Informe[] = Array.isArray(jV?.informes)
+        ? jV.informes
+        : [];
+
+      // nos aseguramos de marcar tipo_informe si no lo trae
+      const valuaciones = arrV.map((inf) => ({
+        ...inf,
+        tipo_informe:
+          inf.tipo_informe === "factibilidad"
+            ? "factibilidad"
+            : "valuacion",
+      }));
+
+      // 2) Informes de Factibilidad (nuevo endpoint)
+      const resF = await fetch(
+        "/api/factibilidad/list?scope=empresa&limit=100",
+        {
+          cache: "no-store",
+        }
+      );
+      let factibilidades: Informe[] = [];
+      if (resF.ok) {
+        const jF = await resF.json();
+        const arrF: Informe[] = Array.isArray(jF?.informes)
+          ? jF.informes
+          : [];
+        factibilidades = arrF.map((inf) => ({
+          ...inf,
+          tipo_informe: "factibilidad" as const,
+        }));
+      } else {
+        // si falla, lo dejamos logueado pero no rompemos todo
+        const jF = await resF.json().catch(() => ({}));
+        console.warn(
+          "No se pudieron cargar informes de factibilidad:",
+          jF?.error || resF.statusText
+        );
+      }
+
+      // 3) Fusionar
+      setItems([...valuaciones, ...factibilidades]);
     } catch (e: any) {
       setErr(e.message || "Error desconocido");
     } finally {
@@ -105,16 +154,14 @@ export default function EmpresaInformesPage() {
     return new Date(inf.created_at);
   };
 
-  // 🔹 NUEVO: tipo de informe (valuación vs factibilidad)
-  const getTipoInforme = (inf: Informe): "valuacion" | "factibilidad" => {
+  const getTipoInforme = (inf: Informe): TipoInforme => {
     if (inf.tipo_informe === "factibilidad") return "factibilidad";
     if (inf.tipo_informe === "valuacion") return "valuacion";
 
-    // fallback heurístico por título
+    // fallback heurístico
     const titulo = (inf.titulo || "").toLowerCase();
     if (titulo.includes("factibilidad")) return "factibilidad";
 
-    // fallback por estructura de datos_json (si el API no mandara tipo_informe)
     const dj: any = inf.datos_json || {};
     if (
       dj.FOS !== undefined ||
@@ -124,7 +171,6 @@ export default function EmpresaInformesPage() {
       return "factibilidad";
     }
 
-    // por defecto, lo tratamos como valuación
     return "valuacion";
   };
 
@@ -139,7 +185,7 @@ export default function EmpresaInformesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items.length]);
 
-  // 🔹 Tipos de informe: fijo (Valuaciones / Factibilidad / Todos)
+  // Tipos de informe fijos: Valuaciones / Factibilidad / Todos
   const tiposOpts = useMemo(
     () => ["__ALL__", "valuacion", "factibilidad"],
     []
@@ -157,7 +203,7 @@ export default function EmpresaInformesPage() {
         if (getCreadoPor(inf) !== dAsesor) return false;
       }
 
-      // tipo de informe (valuación / factibilidad)
+      // tipo de informe
       if (dTipo !== "__ALL__") {
         const tipoInf = getTipoInforme(inf);
         if (dTipo === "valuacion" && tipoInf !== "valuacion") return false;
@@ -181,6 +227,7 @@ export default function EmpresaInformesPage() {
           (inf.titulo || "").toLowerCase().includes(qnorm);
         if (!hay) return false;
       }
+
       return true;
     });
   }, [items, dAsesor, dTipo, dDesde, dHasta, dq]);
@@ -195,16 +242,28 @@ export default function EmpresaInformesPage() {
   }, [filtered]);
 
   // ---------------- acciones ----------------
-  const onDelete = async (id: string) => {
-    if (!id) return;
-    const ok = confirm("¿Eliminar este informe? Esta acción no se puede deshacer.");
+  const onDelete = async (inf: Informe) => {
+    if (!inf.id) return;
+
+    const tipo = getTipoInforme(inf);
+    const endpoint =
+      tipo === "factibilidad"
+        ? "/api/factibilidad/delete"
+        : "/api/informes/delete";
+
+    const ok = confirm(
+      `¿Eliminar este informe de ${tipo === "factibilidad" ? "factibilidad" : "valuación"}? Esta acción no se puede deshacer.`
+    );
     if (!ok) return;
 
     try {
-      setDeletingId(id);
-      const res = await fetch(`/api/informes/delete?id=${encodeURIComponent(id)}`, {
-        method: "DELETE",
-      });
+      setDeletingId(inf.id);
+      const res = await fetch(
+        `${endpoint}?id=${encodeURIComponent(inf.id)}`,
+        {
+          method: "DELETE",
+        }
+      );
       if (!res.ok) {
         const j = await res.json().catch(() => ({}));
         throw new Error(j?.error || "No se pudo eliminar");
@@ -217,7 +276,6 @@ export default function EmpresaInformesPage() {
     }
   };
 
-  // 🔹 Ver/Editar según tipo de informe
   const onView = (inf: Informe) => {
     const tipo = getTipoInforme(inf);
     if (tipo === "factibilidad") {
@@ -257,7 +315,7 @@ export default function EmpresaInformesPage() {
             </select>
           </div>
 
-          {/* Tipo de informe (Valuaciones / Factibilidad) */}
+          {/* Tipo de informe */}
           <div className="flex flex-col">
             <label className="text-sm text-gray-600 mb-1">Tipo</label>
             <select
@@ -360,7 +418,7 @@ export default function EmpresaInformesPage() {
                           </button>
 
                           <button
-                            onClick={() => onDelete(inf.id)}
+                            onClick={() => onDelete(inf)}
                             disabled={deletingId === inf.id}
                             className="px-3 py-1 text-sm rounded bg-red-50 text-red-700 hover:bg-red-100 border border-red-200 disabled:opacity-60"
                             title="Eliminar"
@@ -376,7 +434,6 @@ export default function EmpresaInformesPage() {
                 })}
               </tbody>
             </table>
-            {/* <div className="text-xs text-gray-500 mt-2">Mostrando {sorted.length} informes</div> */}
           </div>
         )}
       </section>

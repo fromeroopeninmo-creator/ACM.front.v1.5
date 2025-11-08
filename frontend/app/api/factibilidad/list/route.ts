@@ -1,70 +1,86 @@
 import { NextResponse } from "next/server";
 import { supabaseServer } from "#lib/supabaseServer";
 
+export const dynamic = "force-dynamic";
+
 export async function GET(req: Request) {
   try {
-    const { searchParams } = new URL(req.url);
-    const limitRaw = searchParams.get("limit") ?? "100";
-    const limit = Number.isNaN(Number(limitRaw)) ? 100 : parseInt(limitRaw, 10);
-
     const supabase = supabaseServer();
 
+    // ✅ Verificamos sesión
     const {
       data: { session },
       error: sessionError,
     } = await supabase.auth.getSession();
 
     if (sessionError) {
-      console.error("Error obteniendo sesión en factibilidad/list:", sessionError);
+      console.error("factibilidad/list sessionError:", sessionError);
       return NextResponse.json(
-        { error: "Error de autenticación" },
+        { error: "No se pudo obtener la sesión actual" },
         { status: 500 }
       );
     }
 
     if (!session?.user) {
-      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+      return NextResponse.json(
+        { error: "No autenticado" },
+        { status: 401 }
+      );
     }
 
-    // 💡 Confiamos en las políticas de RLS de informes_factibilidad:
-    // - Empresas ven sus informes + los de sus asesores
-    // - Asesores sólo sus propios informes
-    const { data, error } = await supabase
+    const { searchParams } = new URL(req.url);
+    const limitParam = searchParams.get("limit");
+    const scope = searchParams.get("scope") || "empresa";
+
+    const limit = Number.isFinite(Number(limitParam))
+      ? Number(limitParam)
+      : 100;
+
+    // 👇 Por ahora no complicamos con joins ni empresa_id.
+    // Devolvemos todos los informes visibles para este usuario.
+    // Si tenés RLS configurado, eso se encarga de que sólo vea lo que debe.
+    // Más adelante, si querés que la empresa vea también informes de asesores,
+    // ajustamos esto con un join a empresas/perfiles.
+
+    let query = supabase
       .from("informes_factibilidad")
       .select(
         `
-          id,
-          titulo,
-          estado,
-          created_at,
-          datos_json,
-          autor_nombre,
-          asesor_email,
-          tipologia
-        `
+        id,
+        titulo,
+        estado,
+        created_at,
+        datos_json
+      `
       )
       .order("created_at", { ascending: false })
       .limit(limit);
 
+    // Si quisieras filtrar distinto por scope más adelante:
+    // if (scope === "asesor") { ... } etc.
+    // Por ahora, dejamos que las políticas RLS manden.
+
+    const { data, error } = await query;
+
     if (error) {
-      console.error("Error consultando informes_factibilidad:", error);
+      console.error("factibilidad/list supabase error:", error);
       return NextResponse.json(
         { error: "Error consultando informes de factibilidad" },
         { status: 500 }
       );
     }
 
-    const informes =
-      (data ?? []).map((row) => ({
-        ...row,
-        tipo_informe: "factibilidad" as const,
-      })) ?? [];
-
-    return NextResponse.json({ informes });
-  } catch (e: any) {
-    console.error("Error inesperado en factibilidad/list:", e);
     return NextResponse.json(
-      { error: e?.message || "Error inesperado" },
+      {
+        ok: true,
+        informes: data ?? [],
+      },
+      { status: 200 }
+    );
+  } catch (e: any) {
+    console.error("factibilidad/list unexpected error:", e);
+    return NextResponse.json(
+      { error: "Error consultando informes de factibilidad" },
       { status: 500 }
     );
   }

@@ -180,13 +180,18 @@ export default function AsesorDashboardPage() {
 
   return (
     <div className="space-y-6">
-      {/* ⚙️ Botones principales de herramientas */}
-      <section className="bg-white shadow-sm rounded-xl p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+      {/* 1) Bienvenida */}
+      <section className="bg-white shadow-sm rounded-xl p-6">
         <h1 className="text-xl md:text-2xl font-bold">
           Bienvenid@, {nombreAsesor}
         </h1>
+      </section>
 
-        <div className="flex flex-col sm:flex-row gap-3">
+      {/* 2) Herramientas */}
+      <section className="bg-white shadow-sm rounded-xl p-6">
+        <h2 className="text-lg md:text-xl font-semibold mb-4">Herramientas</h2>
+
+        <div className="flex flex-col gap-3 items-start">
           <Link
             href="/vai/acmforms"
             className="px-6 py-3 text-white font-semibold rounded-lg shadow transition text-center"
@@ -199,19 +204,19 @@ export default function AsesorDashboardPage() {
           </Link>
 
           <Link
-            href="/vai/factibilidad"
+            href="/dashboard/empresa/factibilidad"
             className="px-6 py-3 text-white font-semibold rounded-lg shadow transition text-center"
             style={{
               backgroundColor: primaryColor,
               boxShadow: "0 3px 8px rgba(0,0,0,0.15)",
             }}
           >
-            🏗️ Herramienta de Factibilidad
+            🧮 Factibilidad Constructiva
           </Link>
         </div>
       </section>
 
-      {/* 🧾 Datos del Asesor (con logo y datos de la empresa) */}
+      {/* 3) Datos del Asesor (con logo y datos de la empresa) */}
       <section className="bg-white shadow-sm rounded-xl p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
         {/* 📋 Datos en el orden solicitado */}
         <div className="flex-1">

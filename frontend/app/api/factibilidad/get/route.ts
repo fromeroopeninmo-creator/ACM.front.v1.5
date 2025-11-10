@@ -38,6 +38,7 @@ export async function GET(req: Request) {
       data: { user },
       error: authErr,
     } = await server.auth.getUser();
+
     if (authErr) {
       console.warn("Auth error:", authErr.message);
     }
@@ -48,7 +49,7 @@ export async function GET(req: Request) {
       );
     }
 
-    // 2) Traer el informe con SERVICE_ROLE (evita 404 por RLS)
+    // 2) Traer el informe de factibilidad con SERVICE_ROLE (evita RLS)
     const { data: informe, error: infErr } = await supabaseAdmin
       .from("informes_factibilidad")
       .select("*")
@@ -56,25 +57,23 @@ export async function GET(req: Request) {
       .maybeSingle();
 
     if (infErr) {
-      console.error(
-        "GET factibilidad (admin) error:",
-        infErr.message
-      );
+      console.error("GET factibilidad (admin) error:", infErr.message);
       return NextResponse.json(
-        { ok: false, error: "Error al obtener informe" },
+        { ok: false, error: "Error al obtener informe de factibilidad" },
         { status: 500 }
       );
     }
     if (!informe) {
       return NextResponse.json(
-        { ok: false, error: "Informe no encontrado" },
+        { ok: false, error: "Informe de factibilidad no encontrado" },
         { status: 404 }
       );
     }
 
-    // 3) Resolver rol del usuario
+    // 3) Resolver rol del usuario (desde user_metadata)
     let role: Role =
-      ((user.user_metadata as any)?.role as Role) || ("empresa" as Role);
+      ((user.user_metadata as any)?.role as Role) || "empresa";
+
     if (
       ![
         "empresa",
@@ -99,6 +98,8 @@ export async function GET(req: Request) {
       if (empErr) console.warn("Empresas lookup:", empErr.message);
       empresaId = emp?.id ?? null;
     } else if (role === "asesor") {
+      // Podés usar "asesores" o "profiles", según cómo lo tengas definido.
+      // Uso "asesores" porque ya lo venimos usando en otros endpoints.
       const { data: as, error: asErr } = await server
         .from("asesores")
         .select("empresa_id")
@@ -107,11 +108,12 @@ export async function GET(req: Request) {
       if (asErr) console.warn("Asesores lookup:", asErr.message);
       empresaId = as?.empresa_id ?? null;
     } else {
-      // soporte/super_admin/super_admin_root → tendrán acceso full
+      // soporte/super_admin/super_admin_root → acceso global
       empresaId = null;
     }
 
     // 5) Autorización (en código)
+    // Tabla informes_factibilidad tiene: empresa_id, user_id, asesor_id, etc.
     if (role === "empresa") {
       if (!empresaId || informe.empresa_id !== empresaId) {
         return NextResponse.json(
@@ -120,14 +122,15 @@ export async function GET(req: Request) {
         );
       }
     } else if (role === "asesor") {
-      if (informe.autor_id !== user.id) {
+      // Asesor: solo puede ver sus propios informes (creados por él)
+      if (informe.user_id !== user.id) {
         return NextResponse.json(
           { ok: false, error: "Acceso denegado" },
           { status: 403 }
         );
       }
     }
-    // soporte/super_admin/super_admin_root → OK
+    // soporte / super_admin / super_admin_root → OK
 
     // 6) Respuesta
     return NextResponse.json(
@@ -135,13 +138,15 @@ export async function GET(req: Request) {
       {
         status: 200,
         headers: {
-          // Evitar cacheo de un informe que puede editarse
           "Cache-Control": "no-store",
         },
       }
     );
   } catch (err: any) {
-    console.error("GET /api/factibilidad/get", err?.message || err);
+    console.error(
+      "GET /api/factibilidad/get",
+      err?.message || err
+    );
     return NextResponse.json(
       { ok: false, error: "Error inesperado" },
       { status: 500 }

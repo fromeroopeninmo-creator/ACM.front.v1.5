@@ -33,6 +33,28 @@ export default function EmpresaDashboardPage() {
     mutate,
   } = useSWR(user ? ["empresa", user.id] : null, () => fetchEmpresa(user!.id));
 
+  // 🛠 Asegurar que exista la fila de empresa para este usuario (fix usuarios "fantasma")
+  useEffect(() => {
+    if (!user) return;
+
+    (async () => {
+      try {
+        const res = await fetch("/api/empresa/ensure", {
+          method: "POST",
+        });
+        if (!res.ok) return;
+
+        const j = await res.json().catch(() => null as any);
+        if (j?.ok && j.empresa) {
+          // Actualizamos SWR con la empresa recién creada / encontrada
+          mutate(j.empresa, false);
+        }
+      } catch (e) {
+        console.warn("Error en /api/empresa/ensure:", e);
+      }
+    })();
+  }, [user, mutate]);
+
   // 🧭 Escucha en tiempo real para actualizar sin recargar
   useEffect(() => {
     if (!user) return;

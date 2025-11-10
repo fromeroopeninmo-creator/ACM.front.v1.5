@@ -261,7 +261,7 @@ export default function AsesorInformesPage() {
 
   const goToEdit = (inf: Informe) => {
     if (inf.tipo_informe === "FACT") {
-      router.push(`/vai/factibilidad?id=${inf.id}`);
+      router.push(`/dashboard/asesor/factibilidad?id=${inf.id}`);
     } else {
       router.push(`/vai/acmforms?id=${inf.id}`);
     }

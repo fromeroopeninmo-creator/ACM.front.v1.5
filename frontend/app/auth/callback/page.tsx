@@ -1,3 +1,4 @@
+// app/auth/callback/page.tsx
 "use client";
 export const dynamic = "force-dynamic";
 
@@ -5,13 +6,15 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "#lib/supabaseClient";
 
+type Status = "idle" | "checking" | "bootstrapping" | "done" | "error";
+
 export default function AuthCallbackPage() {
   const router = useRouter();
 
-  const [status, setStatus] = useState<"idle" | "checking" | "bootstrapping" | "done" | "error">("idle");
+  const [status, setStatus] = useState<Status>("idle");
   const [msg, setMsg] = useState<string>("Procesando verificación…");
 
-  // Pequeño helper para leer params del redirect
+  // Leer posible error en el querystring del redirect de Supabase
   const getErrorFromQS = () => {
     try {
       const qs = new URLSearchParams(window.location.search);
@@ -29,7 +32,7 @@ export default function AuthCallbackPage() {
       setStatus("checking");
       setMsg("Verificando sesión…");
 
-      // 0) Si Supabase nos trae error en el redirect, lo mostramos de una
+      // 0) Si Supabase nos envía un error en la URL, lo mostramos
       const qsError = getErrorFromQS();
       if (qsError) {
         setStatus("error");
@@ -37,9 +40,13 @@ export default function AuthCallbackPage() {
         return;
       }
 
-      // 1) Esperar a que aparezca la sesion (a veces tarda ~1s tras el redirect)
+      // 1) Esperar a que aparezca la sesión (puede tardar un poco tras el redirect)
       let tries = 0;
-      let session = null as Awaited<ReturnType<typeof supabase.auth.getSession>>["data"]["session"];
+      let session:
+        | Awaited<
+            ReturnType<typeof supabase.auth.getSession>
+          >["data"]["session"]
+        | null = null;
 
       while (!session && tries < 6) {
         const { data } = await supabase.auth.getSession();
@@ -54,30 +61,33 @@ export default function AuthCallbackPage() {
 
       if (!session) {
         setStatus("error");
-        setMsg("No pudimos obtener tu sesión luego del correo de verificación. Probá iniciar sesión manualmente.");
+        setMsg(
+          "No pudimos obtener tu sesión luego del correo de verificación. Probá iniciar sesión manualmente."
+        );
         return;
       }
 
-      // 2) Bootstrap en el backend (crear empresa + plan Trial si no existen)
+      // 2) Llamar al backend para bootstrap (crear empresa + plan Trial si no existen)
       try {
         setStatus("bootstrapping");
         setMsg("Creando tu empresa y asignando plan de prueba…");
 
         const res = await fetch("/api/empresa/bootstrap", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          // el backend puede leer al usuario desde la cookie (auth) o desde el body si lo necesitás
-          body: JSON.stringify({}), 
+          // no hace falta body: el backend lee el usuario desde la cookie
+          cache: "no-store",
         });
 
         if (!res.ok) {
           const j = await res.json().catch(() => ({}));
-          throw new Error(j?.error || `Error ${res.status} inicializando tu cuenta`);
+          throw new Error(
+            j?.error || `Error ${res.status} inicializando tu cuenta`
+          );
         }
 
         setStatus("done");
         setMsg("¡Listo! Redirigiendo a tu panel…");
-        // 3) Redirigir al panel SEGÚN ROL (deja que /dashboard derive)
+        // 3) Redirigir al panel genérico; ahí tu lógica decide empresa/asesor
         router.replace("/dashboard");
       } catch (e: any) {
         setStatus("error");
@@ -86,12 +96,14 @@ export default function AuthCallbackPage() {
     };
 
     run();
+
     return () => {
       cancelled = true;
     };
   }, [router]);
 
-  const isLoading = status === "idle" || status === "checking" || status === "bootstrapping";
+  const isLoading =
+    status === "idle" || status === "checking" || status === "bootstrapping";
 
   return (
     <div className="min-h-[60vh] flex items-center justify-center p-6">
@@ -111,7 +123,9 @@ export default function AuthCallbackPage() {
         ) : (
           <>
             <div className="text-2xl mb-2">⚠️</div>
-            <h1 className="text-lg font-semibold">No pudimos completar el proceso</h1>
+            <h1 className="text-lg font-semibold">
+              No pudimos completar el proceso
+            </h1>
             <p className="text-gray-600 mt-2">{msg}</p>
             <button
               onClick={() => router.push("/auth/login")}

@@ -91,37 +91,18 @@ export default function RegisterPage() {
 
     setLoading(true);
 
-    // --- helper para insertar empresa desde el cliente cuando signUp retorna user ---
-    const createEmpresa = async (userId: string) => {
-      const { error: empresaError } = await supabase.from("empresas").insert([
-        {
-          user_id: userId,
-          nombre_comercial: clean(inmobiliaria),
-          razon_social: clean(razonSocial),
-          cuit: clean(cuit),
-          matriculado: `${clean(nombre)} ${clean(apellido)}`,
-          telefono: clean(telefono),
-          direccion: clean(direccion),
-          localidad: clean(localidad),
-          provincia: clean(provincia),
-          condicion_fiscal: clean(condicionFiscal),
-          color: "#E6A930",
-          logo_url: "",
-        },
-      ]);
-      if (empresaError) {
-        throw new Error(`Error creando empresa: ${empresaError.message}`);
-      }
-    };
-
     try {
-      // 1) Intento normal (signUp). Si tenés confirmación OFF, a veces devuelve session o no.
+      // URL de redirect para el mail de confirmación
+      const redirectTo =
+        typeof window !== "undefined"
+          ? `${window.location.origin}/auth/callback`
+          : undefined;
+
       const { data, error } = await supabase.auth.signUp({
         email: clean(email),
         password: clean(password),
         options: {
-          // si tenés confirmación OFF, esto no debería importar, pero lo dejamos limpio
-          emailRedirectTo: undefined,
+          emailRedirectTo: redirectTo,
           data: {
             nombre: clean(nombre),
             apellido: clean(apellido),
@@ -139,67 +120,44 @@ export default function RegisterPage() {
       });
 
       if (error) {
-        // Falla actual (500 desde Supabase). Vamos al fallback admin (modo dev).
-        throw new Error(error.message || "signup-failed");
+        let msg = error.message || "No se pudo registrar.";
+
+        // Mapear el caso clásico de email ya usado
+        if (
+          /email/i.test(error.message || "") &&
+          /(exists|registered|taken|used)/i.test(error.message || "")
+        ) {
+          msg = "El email ya fue registrado.";
+        }
+        if (/User already registered/i.test(error.message || "")) {
+          msg = "El email ya fue registrado.";
+        }
+
+        setErrorMsg(msg);
+        return;
       }
 
-      const userId = data.user?.id;
-
-      if (userId) {
-        // Creamos la empresa desde el cliente (política RLS debe permitir al user actual)
-        await createEmpresa(userId);
-
-        // Si hay sesión activa, vamos directo; si no, informamos y vamos a login.
-        if (data.session?.access_token) {
-          router.push("/dashboard/empresa");
-          return;
-        } else {
-          setInfoMsg("Registro exitoso. Iniciá sesión para continuar.");
-          router.push("/auth/login");
-          return;
-        }
-      } else {
-        // Sin userId (p.ej. con confirmación de email ON)
+      // Con confirmación de email activa, Supabase normalmente NO devuelve session
+      // y simplemente envía el mail con el link a /auth/callback.
+      if (!data.user) {
+        // Por si acaso, pero en general data.user suele venir igual.
         setInfoMsg(
           "Registro exitoso. Revisá tu email para confirmar la cuenta."
         );
         return;
       }
-    } catch {
-      // 2) Fallback – modo dev: creamos el user confirmadísimo desde el backend
-      try {
-        const res = await fetch("/api/auth/dev-signup", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            email: clean(email),
-            password: clean(password),
-            nombre: clean(nombre),
-            apellido: clean(apellido),
-            telefono: clean(telefono),
-            direccion: clean(direccion),
-            localidad: clean(localidad),
-            provincia: clean(provincia),
-            razonSocial: clean(razonSocial),
-            inmobiliaria: clean(inmobiliaria),
-            condicionFiscal: clean(condicionFiscal),
-            cuit: clean(cuit),
-          }),
-        });
 
-        const j = await res.json();
-        if (!res.ok) {
-          throw new Error(j?.error || "No se pudo registrar (fallback).");
-        }
+      // Caso estándar con confirmación:
+      setInfoMsg(
+        "Registro exitoso. Revisá tu email para confirmar la cuenta."
+      );
+      // Podés, si querés, redirigir al login luego de unos segundos:
+      // setTimeout(() => router.push("/auth/login"), 3000);
 
-        // Con fallback no emitimos sesión: redirigimos a login para que entre normal.
-        setInfoMsg("Cuenta creada. Ingresá con tu email y contraseña.");
-        router.push("/auth/login");
-        return;
-      } catch (e: any) {
-        setErrorMsg(e?.message || "No se pudo registrar.");
-        return;
-      }
+      return;
+    } catch (e: any) {
+      setErrorMsg(e?.message || "No se pudo registrar.");
+      return;
     } finally {
       setLoading(false);
     }

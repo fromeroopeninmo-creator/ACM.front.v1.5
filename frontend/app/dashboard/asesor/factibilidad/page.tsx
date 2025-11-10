@@ -2,7 +2,7 @@
 
 import FactibilidadForm from "@/components/FactibilidadForm";
 
-export default function EmpresaFactibilidadPage() {
+export default function AsesorFactibilidadPage() {
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-4">
       <div>

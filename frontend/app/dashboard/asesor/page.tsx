@@ -180,22 +180,35 @@ export default function AsesorDashboardPage() {
 
   return (
     <div className="space-y-6">
-      {/* ⚙️ Botón principal (sin logo arriba) */}
-      <section className="bg-white shadow-sm rounded-xl p-6 flex items-center justify-between">
+      {/* ⚙️ Botones principales de herramientas */}
+      <section className="bg-white shadow-sm rounded-xl p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <h1 className="text-xl md:text-2xl font-bold">
           Bienvenid@, {nombreAsesor}
         </h1>
 
-        <Link
-          href="/vai/acmforms"
-          className="px-6 py-3 text-white font-semibold rounded-lg shadow transition text-center"
-          style={{
-            backgroundColor: primaryColor,
-            boxShadow: "0 3px 8px rgba(0,0,0,0.15)",
-          }}
-        >
-          🧾 Valuador de Activos Inmobiliarios
-        </Link>
+        <div className="flex flex-col sm:flex-row gap-3">
+          <Link
+            href="/vai/acmforms"
+            className="px-6 py-3 text-white font-semibold rounded-lg shadow transition text-center"
+            style={{
+              backgroundColor: primaryColor,
+              boxShadow: "0 3px 8px rgba(0,0,0,0.15)",
+            }}
+          >
+            🧾 Valuador de Activos Inmobiliarios
+          </Link>
+
+          <Link
+            href="/vai/factibilidad"
+            className="px-6 py-3 text-white font-semibold rounded-lg shadow transition text-center"
+            style={{
+              backgroundColor: primaryColor,
+              boxShadow: "0 3px 8px rgba(0,0,0,0.15)",
+            }}
+          >
+            🏗️ Herramienta de Factibilidad
+          </Link>
+        </div>
       </section>
 
       {/* 🧾 Datos del Asesor (con logo y datos de la empresa) */}

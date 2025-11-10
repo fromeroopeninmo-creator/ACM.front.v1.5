@@ -1233,7 +1233,7 @@ return (
 
             {/* m² Cubiertos */}
             <div className="space-y-1">
-              <label className="block text-sm font-medium text-gray-700">m² Cubiertos</label>
+              <label className="block text-sm font-medium text-gray-700">m² a Valuar (si es Lote repetir campor anterior)</label>
               <input
                 name="builtArea"
                 type="number"
@@ -1630,7 +1630,7 @@ return (
 
                     {/* m² Cubiertos */}
                     <div className="space-y-1">
-                      <label className="block text-sm font-medium text-gray-700">m² Cubiertos</label>
+                      <label className="block text-sm font-medium text-gray-700">m² a Valuar</label>
                       <input
                         type="number"
                         inputMode="decimal"

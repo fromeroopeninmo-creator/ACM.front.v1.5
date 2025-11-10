@@ -5,11 +5,12 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 type Estado = "borrador" | "final";
+type TipoInforme = "VAI" | "FACT";
 
 type DatosJSON = {
   clientName?: string;
   propertyType?: string;
-  // otros campos no usados acá…
+  // en factibilidad podrías tener otros campos, pero no los usamos acá
 };
 
 type Informe = {
@@ -18,12 +19,15 @@ type Informe = {
   estado: Estado;
   created_at?: string | null;
 
-  // fallback si el API no expone campos planos:
+  // JSON embebido
   datos_json?: DatosJSON | null;
 
-  // (opcionalmente podrías tener campos planos como cliente/tipologia)
+  // metadatos planos opcionales
   cliente?: string | null;
   tipologia?: string | null;
+
+  // tipo de informe: VAI (valuación) o FACT (factibilidad)
+  tipo_informe?: TipoInforme | null;
 };
 
 export default function AsesorInformesPage() {
@@ -34,15 +38,16 @@ export default function AsesorInformesPage() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
 
-  // filtros (igual que Empresa, pero sin “Creado por”)
-  const [fTipo, setFTipo] = useState<string>("__ALL__");
+  // filtros
+  // 🔹 Tipo global: Valuaciones / Factibilidad / Todos
+  const [fTipoInforme, setFTipoInforme] = useState<string>("VAI"); // por defecto VAI
   const [fDesde, setFDesde] = useState<string>(""); // yyyy-mm-dd
   const [fHasta, setFHasta] = useState<string>("");
   const [q, setQ] = useState<string>(""); // búsqueda rápida
 
   // para que escribir en filtros no congele en listas grandes
   const dq = useDeferredValue(q);
-  const dTipo = useDeferredValue(fTipo);
+  const dTipoInforme = useDeferredValue(fTipoInforme);
   const dDesde = useDeferredValue(fDesde);
   const dHasta = useDeferredValue(fHasta);
 
@@ -54,17 +59,77 @@ export default function AsesorInformesPage() {
     setLoading(true);
     setErr(null);
     try {
-      // Asesor: solo los propios
-      const res = await fetch("/api/informes/list?scope=asesor&limit=100", {
+      // 1) Valuaciones (VAI)
+      const resV = await fetch("/api/informes/list?scope=asesor&limit=100", {
         cache: "no-store",
       });
-      if (!res.ok) {
-        const j = await res.json().catch(() => ({}));
-        throw new Error(j?.error || "Error cargando informes");
+      if (!resV.ok) {
+        const j = await resV.json().catch(() => ({}));
+        throw new Error(j?.error || "Error cargando informes de valuación");
       }
-      const j = await res.json();
-      const arr: Informe[] = Array.isArray(j?.informes) ? j.informes : (j?.items || []);
-      setItems(arr);
+      const jV = await resV.json();
+      const arrVRaw: any[] = Array.isArray(jV?.informes)
+        ? jV.informes
+        : jV?.items || [];
+
+      const valuaciones: Informe[] = arrVRaw.map((inf: any) => ({
+        id: inf.id,
+        titulo: inf.titulo ?? "Informe VAI",
+        estado: (inf.estado as Estado) || "borrador",
+        created_at: inf.created_at ?? inf.fecha_creacion ?? null,
+        datos_json: inf.datos_json ?? null,
+        cliente:
+          inf.cliente ??
+          inf.datos_json?.clientName ??
+          inf.datos_json?.cliente ??
+          null,
+        tipologia:
+          inf.tipologia ??
+          inf.datos_json?.propertyType ??
+          inf.datos_json?.tipologia ??
+          null,
+        tipo_informe: "VAI",
+      }));
+
+      // 2) Factibilidades (FACT)
+      let factibilidades: Informe[] = [];
+      try {
+        const resF = await fetch(
+          "/api/factibilidad/list?scope=asesor&limit=100",
+          { cache: "no-store" }
+        );
+        if (resF.ok) {
+          const jF = await resF.json();
+          const arrFRaw: any[] = Array.isArray(jF?.informes)
+            ? jF.informes
+            : [];
+
+          factibilidades = arrFRaw.map((f: any) => {
+            const dj = f.datos_json ?? null;
+
+            return {
+              id: f.id,
+              titulo:
+                f.titulo ||
+                dj?.titulo ||
+                "Informe de Factibilidad Constructiva",
+              estado: "borrador" as Estado, // no tenemos columna estado en factibilidad
+              created_at: f.created_at ?? null,
+              datos_json: dj,
+              // por ahora no tenemos cliente directo, lo dejamos en "—" en UI
+              cliente: null,
+              // usamos zona como pseudo tipología, si querés mostrar algo
+              tipologia: dj?.zona ?? f.zona ?? null,
+              tipo_informe: "FACT",
+            };
+          });
+        }
+      } catch (e) {
+        console.warn("No se pudieron cargar factibilidades:", e);
+      }
+
+      // 3) Fusionar
+      setItems([...valuaciones, ...factibilidades]);
     } catch (e: any) {
       setErr(e.message || "Error desconocido");
     } finally {
@@ -77,7 +142,7 @@ export default function AsesorInformesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ---------- helpers de visualización (igual que Empresa) ----------
+  // ---------- helpers de visualización ----------
   const getCliente = (inf: Informe) => {
     if (inf.cliente && inf.cliente.trim()) return inf.cliente;
     return inf.datos_json?.clientName || "—";
@@ -93,18 +158,7 @@ export default function AsesorInformesPage() {
     return new Date(inf.created_at);
   };
 
-  // ---------- opciones de filtros dinámicas ----------
-  const tiposOpts = useMemo(() => {
-    const s = new Set<string>();
-    items.forEach((inf) => {
-      const t = getTipologia(inf);
-      if (t && t !== "—") s.add(t);
-    });
-    return ["__ALL__", ...Array.from(s).sort((a, b) => a.localeCompare(b))];
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items.length]);
-
-  // ---------- filtrado cliente (igual que Empresa) ----------
+  // ---------- filtrado ----------
   const filtered = useMemo(() => {
     const desde = dDesde ? new Date(`${dDesde}T00:00:00`) : null;
     const hasta = dHasta ? new Date(`${dHasta}T23:59:59`) : null;
@@ -112,10 +166,12 @@ export default function AsesorInformesPage() {
     const qnorm = dq.trim().toLowerCase();
 
     return items.filter((inf) => {
-      // tipología
-      if (dTipo !== "__ALL__") {
-        if (getTipologia(inf) !== dTipo) return false;
+      // Tipo global: Valuaciones / Factibilidad / Todos
+      if (dTipoInforme !== "__ALL__") {
+        const t: string = inf.tipo_informe || "VAI";
+        if (t !== dTipoInforme) return false;
       }
+
       // fechas
       if (desde || hasta) {
         const dt = getFechaISO(inf);
@@ -123,6 +179,7 @@ export default function AsesorInformesPage() {
         if (desde && dt < desde) return false;
         if (hasta && dt > hasta) return false;
       }
+
       // búsqueda rápida
       if (qnorm) {
         const hay =
@@ -133,7 +190,7 @@ export default function AsesorInformesPage() {
       }
       return true;
     });
-  }, [items, dTipo, dDesde, dHasta, dq]);
+  }, [items, dTipoInforme, dDesde, dHasta, dq]);
 
   // orden por fecha desc
   const sorted = useMemo(() => {
@@ -145,14 +202,20 @@ export default function AsesorInformesPage() {
   }, [filtered]);
 
   // ---------- acciones ----------
-  const onDelete = async (id: string) => {
-    if (!id) return;
+  const onDelete = async (inf: Informe) => {
+    if (!inf.id) return;
     const ok = confirm("¿Eliminar este informe? Esta acción no se puede deshacer.");
     if (!ok) return;
 
     try {
-      setDeletingId(id);
-      const res = await fetch(`/api/informes/delete?id=${encodeURIComponent(id)}`, {
+      setDeletingId(inf.id);
+
+      const isFact = inf.tipo_informe === "FACT";
+      const url = isFact
+        ? `/api/factibilidad/delete?id=${encodeURIComponent(inf.id)}`
+        : `/api/informes/delete?id=${encodeURIComponent(inf.id)}`;
+
+      const res = await fetch(url, {
         method: "DELETE",
       });
       if (!res.ok) {
@@ -167,36 +230,42 @@ export default function AsesorInformesPage() {
     }
   };
 
+  const goToEdit = (inf: Informe) => {
+    if (inf.tipo_informe === "FACT") {
+      router.push(`/vai/factibilidad?id=${inf.id}`);
+    } else {
+      router.push(`/vai/acmforms?id=${inf.id}`);
+    }
+  };
+
   // ---------- UI ----------
   return (
     <div className="space-y-6">
       {/* Header + CTA */}
       <section className="bg-white shadow-sm rounded-xl p-6 flex items-center justify-between">
-        <h1 className="text-xl md:text-2xl font-bold">Mis Informes</h1>
+        <h1 className="text-xl md:text-2xl font-bold">Informes</h1>
         <Link
           href="/vai/acmforms"
           className="px-6 py-3 text-white font-semibold rounded-lg shadow transition text-center bg-blue-600 hover:bg-blue-700"
         >
-          ➕ Nuevo Informe
+          ➕ Nuevo Informe de Valuación
         </Link>
       </section>
 
-      {/* Filtros (mismos que Empresa, sin “Creado por”) */}
+      {/* Filtros */}
       <section className="bg-white shadow-sm rounded-xl p-4 md:p-6">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-          {/* Tipología */}
+          {/* Tipo de informe */}
           <div className="flex flex-col">
-            <label className="text-sm text-gray-600 mb-1">Tipología</label>
+            <label className="text-sm text-gray-600 mb-1">Tipo</label>
             <select
-              value={fTipo}
-              onChange={(e) => setFTipo(e.target.value)}
+              value={fTipoInforme}
+              onChange={(e) => setFTipoInforme(e.target.value)}
               className="rounded-md border border-gray-300 px-3 py-2 text-sm bg-white"
             >
-              {tiposOpts.map((opt) => (
-                <option key={opt} value={opt}>
-                  {opt === "__ALL__" ? "Todas" : opt}
-                </option>
-              ))}
+              <option value="VAI">Valuaciones</option>
+              <option value="FACT">Factibilidad</option>
+              <option value="__ALL__">Todos</option>
             </select>
           </div>
 
@@ -236,14 +305,16 @@ export default function AsesorInformesPage() {
         </div>
       </section>
 
-      {/* Tabla (como Empresa pero sin columna “Creado por”) */}
+      {/* Tabla */}
       <section className="bg-white shadow-sm rounded-xl p-4 md:p-6">
         {loading ? (
           <p className="text-gray-500">Cargando…</p>
         ) : err ? (
           <p className="text-red-600">❌ {err}</p>
         ) : sorted.length === 0 ? (
-          <p className="text-gray-600">No hay informes con los filtros seleccionados.</p>
+          <p className="text-gray-600">
+            No hay informes con los filtros seleccionados.
+          </p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full border border-gray-200 rounded-lg">
@@ -252,6 +323,7 @@ export default function AsesorInformesPage() {
                   <th className="p-3 text-left">Cliente</th>
                   <th className="p-3 text-left">Tipología</th>
                   <th className="p-3 text-left">Fecha</th>
+                  <th className="p-3 text-left">Tipo</th>
                   <th className="p-3 text-right">Acciones</th>
                 </tr>
               </thead>
@@ -262,23 +334,26 @@ export default function AsesorInformesPage() {
                   const fechaTxt = inf.created_at
                     ? new Date(inf.created_at).toLocaleString("es-AR")
                     : "—";
+                  const tipoLabel =
+                    inf.tipo_informe === "FACT" ? "Factibilidad" : "Valuación";
 
                   return (
                     <tr key={inf.id} className="border-t">
                       <td className="p-3">{cliente}</td>
                       <td className="p-3">{tipologia}</td>
                       <td className="p-3">{fechaTxt}</td>
+                      <td className="p-3">{tipoLabel}</td>
                       <td className="p-3 text-right">
                         <div className="flex items-center gap-2 justify-end">
                           <button
-                            onClick={() => router.push(`/vai/acmforms?id=${inf.id}`)}
+                            onClick={() => goToEdit(inf)}
                             className="px-3 py-1 text-sm rounded bg-gray-100 text-gray-800 hover:bg-gray-200"
                           >
                             Ver/Editar
                           </button>
 
                           <button
-                            onClick={() => onDelete(inf.id)}
+                            onClick={() => onDelete(inf)}
                             disabled={deletingId === inf.id}
                             className="px-3 py-1 text-sm rounded bg-red-50 text-red-700 hover:bg-red-100 border border-red-200 disabled:opacity-60"
                             title="Eliminar"

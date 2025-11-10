@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState, useDeferredValue } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useAuth } from "@/context/AuthContext";
 
 type Estado = "borrador" | "final";
 type TipoInforme = "VAI" | "FACT";
@@ -29,16 +28,10 @@ type Informe = {
 
   // tipo de informe: VAI (valuación) o FACT (factibilidad)
   tipo_informe?: TipoInforme | null;
-
-  // para poder filtrar en frontend (sobre todo factibilidad)
-  user_id?: string | null;
-  asesor_id?: string | null;
 };
 
 export default function AsesorInformesPage() {
   const router = useRouter();
-  const { user } = useAuth();
-  const userId = (user as any)?.id || null;
 
   // ---------- state ----------
   const [items, setItems] = useState<Informe[]>([]);
@@ -63,17 +56,10 @@ export default function AsesorInformesPage() {
 
   // ---------- fetch ----------
   const fetchInformes = async () => {
-    if (!userId) {
-      setItems([]);
-      setLoading(false);
-      setErr("No se pudo resolver el usuario actual.");
-      return;
-    }
-
     setLoading(true);
     setErr(null);
     try {
-      // 1) Valuaciones (VAI) - solo propios (scope=asesor ya hace el filtro)
+      // 1) Valuaciones (VAI)
       const resV = await fetch("/api/informes/list?scope=asesor&limit=100", {
         cache: "no-store",
       });
@@ -103,17 +89,13 @@ export default function AsesorInformesPage() {
           inf.datos_json?.tipologia ??
           null,
         tipo_informe: "VAI",
-        user_id: inf.autor_id ?? null,
-        asesor_id: inf.asesor_id ?? null,
       }));
 
       // 2) Factibilidades (FACT)
-      // 👉 Truco: pedimos como empresa (scope=empresa) y filtramos en frontend
-      // para quedarnos solo con las creadas por ESTE asesor.
       let factibilidades: Informe[] = [];
       try {
         const resF = await fetch(
-          "/api/factibilidad/list?scope=empresa&limit=100",
+          "/api/factibilidad/list?scope=asesor&limit=100",
           { cache: "no-store" }
         );
         if (resF.ok) {
@@ -122,36 +104,25 @@ export default function AsesorInformesPage() {
             ? jF.informes
             : [];
 
-          // Mapeo + filtro por usuario actual
-          factibilidades = arrFRaw
-            .map((f: any) => {
-              const dj = f.datos_json ?? null;
+          factibilidades = arrFRaw.map((f: any) => {
+            const dj = f.datos_json ?? null;
 
-              return {
-                id: f.id,
-                titulo:
-                  f.titulo ||
-                  dj?.titulo ||
-                  "Informe de Factibilidad Constructiva",
-                estado: "borrador" as Estado, // no tenemos columna estado en factibilidad
-                created_at: f.created_at ?? null,
-                datos_json: dj,
-                // por ahora no tenemos cliente directo, lo dejamos en "—" en UI
-                cliente: null,
-                // usamos zona como pseudo tipología
-                tipologia: dj?.zona ?? f.zona ?? null,
-                tipo_informe: "FACT",
-                user_id: f.user_id ?? null,
-                asesor_id: f.asesor_id ?? null,
-              } as Informe;
-            })
-            .filter((f: Informe) => {
-              // Solo informes creados por este asesor
-              // Dependiendo de cómo estés guardando:
-              // - user_id = id del usuario que creó (asesor)
-              // - asesor_id = id del asesor (si lo usás)
-              return f.user_id === userId || f.asesor_id === userId;
-            });
+            return {
+              id: f.id,
+              titulo:
+                f.titulo ||
+                dj?.titulo ||
+                "Informe de Factibilidad Constructiva",
+              estado: "borrador" as Estado, // no tenemos columna estado en factibilidad
+              created_at: f.created_at ?? null,
+              datos_json: dj,
+              // por ahora no tenemos cliente directo, lo dejamos en "—" en UI
+              cliente: null,
+              // usamos zona como pseudo tipología, si querés mostrar algo
+              tipologia: dj?.zona ?? f.zona ?? null,
+              tipo_informe: "FACT",
+            };
+          });
         }
       } catch (e) {
         console.warn("No se pudieron cargar factibilidades:", e);
@@ -169,7 +140,7 @@ export default function AsesorInformesPage() {
   useEffect(() => {
     fetchInformes();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId]);
+  }, []);
 
   // ---------- helpers de visualización ----------
   const getCliente = (inf: Informe) => {
@@ -261,7 +232,8 @@ export default function AsesorInformesPage() {
 
   const goToEdit = (inf: Informe) => {
     if (inf.tipo_informe === "FACT") {
-      router.push(`/vai/factibilidad?id=${inf.id}`);
+      // 👇 cambiamos a la ruta de factibilidad del asesor
+      router.push(`/dashboard/asesor/factibilidad?id=${inf.id}`);
     } else {
       router.push(`/vai/acmforms?id=${inf.id}`);
     }

@@ -105,29 +105,35 @@ async function crearPreferenciaMercadoPago(params: {
   const amountTotal = round2(params.totalConIVA);
 
   const prefBody = {
-    items: [
-      {
-        title: "Upgrade de plan VAI",
-        quantity: 1,
-        currency_id: "ARS",
-        unit_price: amountTotal,
-      },
-    ],
-    external_reference: params.movimientoId,
-    back_urls: baseUrl
-      ? {
-          success: `${baseUrl}/dashboard/empresa/planes?mp_status=success`,
-          failure: `${baseUrl}/dashboard/empresa/planes?mp_status=failure`,
-          pending: `${baseUrl}/dashboard/empresa/planes?mp_status=pending`,
-        }
-      : undefined,
-    auto_return: "approved",
-    metadata: {
-      movimiento_id: params.movimientoId,
-      empresa_id: params.empresaId,
-      tipo: "upgrade_plan",
+  items: [
+    {
+      title: "Upgrade de plan VAI",
+      quantity: 1,
+      currency_id: "ARS",
+      unit_price: amountTotal,
     },
-  };
+  ],
+  external_reference: params.movimientoId,
+  back_urls: baseUrl
+    ? {
+        success: `${baseUrl}/dashboard/empresa/planes?mp_status=success`,
+        failure: `${baseUrl}/dashboard/empresa/planes?mp_status=failure`,
+        pending: `${baseUrl}/dashboard/empresa/planes?mp_status=pending`,
+      }
+    : undefined,
+  auto_return: "approved",
+
+  // 👇 ESTO ES LO NUEVO
+  payment_methods: {
+    installments: 1, // máximo 1 cuota
+  },
+
+  metadata: {
+    movimiento_id: params.movimientoId,
+    empresa_id: params.empresaId,
+    tipo: "upgrade_plan",
+  },
+};
 
   try {
     const mpRes = await fetch(

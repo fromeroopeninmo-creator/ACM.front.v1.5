@@ -29,6 +29,9 @@ function nowISO() {
   return new Date().toISOString();
 }
 
+// -----------------------------
+// Helpers de suscripciones (por si en el futuro tenés suscripciones reales)
+// -----------------------------
 async function findSuscripcion(data: any): Promise<SuscripcionRow | null> {
   // 1) Por id propio
   if (data?.suscripcionId) {
@@ -40,7 +43,6 @@ async function findSuscripcion(data: any): Promise<SuscripcionRow | null> {
     if (row) return row as SuscripcionRow;
   }
 
-  // (alias por si en algún momento llega como suscripcion_id)
   if (data?.suscripcion_id) {
     const { data: row } = await supabaseAdmin
       .from("suscripciones")
@@ -62,7 +64,7 @@ async function findSuscripcion(data: any): Promise<SuscripcionRow | null> {
     if (row) return row as SuscripcionRow;
   }
 
-  // 3) Fallback: por empresaId + planId (última)
+  // 3) Fallback: por empresaId + planId
   if (data?.empresaId && data?.planId) {
     const { data: row } = await supabaseAdmin
       .from("suscripciones")
@@ -78,18 +80,28 @@ async function findSuscripcion(data: any): Promise<SuscripcionRow | null> {
   return null;
 }
 
-async function activatePlan(empresaId: string, planId: string) {
+// -----------------------------
+// Helpers de planes en empresas_planes
+// -----------------------------
+async function activatePlan(
+  empresaId: string,
+  planId: string,
+  maxAsesoresOverride?: number
+) {
+  const nowIso = nowISO();
+  const today = nowIso.slice(0, 10);
+
   // 1) Desactivar cualquier plan activo actual
   await supabaseAdmin
     .from("empresas_planes")
-    .update({ activo: false, updated_at: nowISO() })
+    .update({ activo: false, updated_at: nowIso })
     .eq("empresa_id", empresaId)
     .eq("activo", true);
 
   // 2) Reactivar si ya existía ese plan
   const { data: existente } = await supabaseAdmin
     .from("empresas_planes")
-    .select("id, fecha_inicio")
+    .select("id")
     .eq("empresa_id", empresaId)
     .eq("plan_id", planId)
     .order("fecha_inicio", { ascending: false })
@@ -97,21 +109,35 @@ async function activatePlan(empresaId: string, planId: string) {
     .maybeSingle();
 
   if (existente?.id) {
+    const patch: any = {
+      activo: true,
+      fecha_fin: null,
+      updated_at: nowIso,
+    };
+    if (typeof maxAsesoresOverride === "number") {
+      patch.max_asesores_override = maxAsesoresOverride;
+    }
+
     await supabaseAdmin
       .from("empresas_planes")
-      .update({ activo: true, fecha_fin: null, updated_at: nowISO() })
+      .update(patch)
       .eq("id", existente.id);
     return existente.id as string;
   } else {
-    // 3) Insertar nuevo plan activo
+    const insert: any = {
+      empresa_id: empresaId,
+      plan_id: planId,
+      fecha_inicio: today,
+      activo: true,
+      updated_at: nowIso,
+    };
+    if (typeof maxAsesoresOverride === "number") {
+      insert.max_asesores_override = maxAsesoresOverride;
+    }
+
     const { data: inserted } = await supabaseAdmin
       .from("empresas_planes")
-      .insert({
-        empresa_id: empresaId,
-        plan_id: planId,
-        fecha_inicio: new Date().toISOString().slice(0, 10),
-        activo: true,
-      })
+      .insert(insert)
       .select("id")
       .maybeSingle();
     return inserted?.id ?? null;
@@ -130,14 +156,23 @@ async function cancelPlan(empresaId: string) {
   const today = new Date().toISOString().slice(0, 10);
   await supabaseAdmin
     .from("empresas_planes")
-    .update({ activo: false, fecha_fin: today, updated_at: nowISO() })
+    .update({
+      activo: false,
+      fecha_fin: today,
+      updated_at: nowISO(),
+    })
     .eq("empresa_id", empresaId)
     .eq("activo", true);
 }
 
+// -----------------------------
+// Movimientos financieros
+// -----------------------------
+
 /**
- * Marca como 'paid'/'failed' el movimiento de upgrade prorrateado pendiente.
- * Empareja por empresa y (si se conoce) por nuevo_plan_id dentro de metadata.
+ * Marca como 'paid' o 'failed' un movimiento de upgrade_prorrateo,
+ * ubicándolo por empresa + (opcional) nuevo_plan_id.
+ * (Esto lo dejamos como helper genérico por si en el futuro lo usás así).
  */
 async function settleUpgradeMovimiento(params: {
   empresaId: string;
@@ -149,23 +184,21 @@ async function settleUpgradeMovimiento(params: {
   const { empresaId, nuevoPlanId, estado, referenciaPasarela, payload } =
     params;
 
-  // Intentamos matchear por metadata.nuevo_plan_id si está disponible
   let query = supabaseAdmin
     .from("movimientos_financieros")
     .select("id, metadata")
     .eq("empresa_id", empresaId)
-    .eq("tipo", "upgrade_prorrateo")
+    .eq("tipo", "ajuste")
     .eq("estado", "pending")
+    .contains("metadata", { subtipo: "upgrade_prorrateo" })
     .order("fecha", { ascending: false })
     .limit(1);
 
-  // Si conocemos el plan nuevo, filtramos por metadata
   if (nuevoPlanId) {
     query = query.contains("metadata", { nuevo_plan_id: nuevoPlanId });
   }
 
   const { data: mov } = await query.maybeSingle();
-
   if (!mov?.id) return null;
 
   const newMeta = {
@@ -189,13 +222,68 @@ async function settleUpgradeMovimiento(params: {
 }
 
 /**
+ * Caso principal para tu flujo actual:
+ * tenés movimiento_id en payment.metadata.movimiento_id (o external_reference).
+ * Lo buscamos, marcamos paid/failed y activamos el plan nuevo.
+ */
+async function settleMovimientoPorIdYActivarPlan(params: {
+  movimientoId: string;
+  estado: "paid" | "failed";
+  referenciaPasarela?: string | null;
+  payload?: any;
+}) {
+  const { movimientoId, estado, referenciaPasarela, payload } = params;
+
+  const { data: mov } = await supabaseAdmin
+    .from("movimientos_financieros")
+    .select("id, empresa_id, estado, metadata")
+    .eq("id", movimientoId)
+    .maybeSingle();
+
+  if (!mov?.id) {
+    console.warn("Movimiento no encontrado para webhook:", movimientoId);
+    return null;
+  }
+
+  const empresaId = mov.empresa_id as string | undefined;
+  const meta = (mov.metadata || {}) as any;
+  const nuevoPlanId: string | undefined = meta.nuevo_plan_id;
+  const maxAsesoresOverride: number | undefined = meta.max_asesores_override;
+
+  const newMeta = {
+    ...meta,
+    webhook_ref: referenciaPasarela ?? null,
+    webhook_payload: payload ?? null,
+    settled_at: nowISO(),
+  };
+
+  await supabaseAdmin
+    .from("movimientos_financieros")
+    .update({
+      estado,
+      referencia_pasarela: referenciaPasarela ?? null,
+      metadata: newMeta as any,
+      updated_at: nowISO(),
+    })
+    .eq("id", mov.id);
+
+  if (estado === "paid" && empresaId && nuevoPlanId) {
+    await activatePlan(empresaId, nuevoPlanId, maxAsesoresOverride);
+  }
+
+  return mov.id as string;
+}
+
+// -----------------------------
+// Normalizador Mercado Pago
+// -----------------------------
+
+/**
  * Dado un body “nativo” de Mercado Pago (webhook v1),
  * si corresponde a un pago, va a buscar el pago completo
  * y lo traduce a nuestro formato interno:
  *
  *  { provider, externalEventId, eventType, data }
- *
- * Si no reconoce el evento como de MP o no hay token, devuelve null.
  */
 async function normalizeMercadoPagoEvent(
   body: any
@@ -217,7 +305,6 @@ async function normalizeMercadoPagoEvent(
     body?.id ??
     null;
 
-  // Distintos formatos que manda MP para pagos
   const isPaymentEvent =
     mpType === "payment" ||
     (typeof mpAction === "string" &&
@@ -241,7 +328,7 @@ async function normalizeMercadoPagoEvent(
 
   if (!paymentRes.ok) {
     const txt = await paymentRes.text().catch(() => "");
-    console.error("Error obteniendo pago de MP:", txt);
+    console.error("Error obteniendo pago de MP:", paymentRes.status, txt);
     return null;
   }
 
@@ -256,31 +343,29 @@ async function normalizeMercadoPagoEvent(
   } else if (status === "rejected" || status === "cancelled") {
     eventType = "invoice_payment_failed";
   } else {
-    // podés ajustar si querés tratar pending como otro tipo
+    // Podés diferenciar pending si querés
     eventType = "invoice_payment_failed";
   }
 
   // Metadata (forma preferida)
   let empresaId =
-    payment?.metadata?.empresaId ||
     payment?.metadata?.empresa_id ||
+    payment?.metadata?.empresaId ||
     null;
   let planId =
-    payment?.metadata?.planId || payment?.metadata?.plan_id || null;
+    payment?.metadata?.plan_id || payment?.metadata?.planId || null;
   let suscripcionId =
-    payment?.metadata?.suscripcionId ||
     payment?.metadata?.suscripcion_id ||
+    payment?.metadata?.suscripcionId ||
+    null;
+  let movimientoId =
+    payment?.metadata?.movimiento_id ||
+    payment?.metadata?.movimientoId ||
     null;
 
-  // Fallback: external_reference "empresaId:planId:suscripcionId"
-  if (
-    (!empresaId || !planId) &&
-    typeof payment.external_reference === "string"
-  ) {
-    const parts = payment.external_reference.split(":");
-    if (!empresaId && parts[0]) empresaId = parts[0];
-    if (!planId && parts[1]) planId = parts[1];
-    if (!suscripcionId && parts[2]) suscripcionId = parts[2];
+  // Fallback: external_reference (en tu caso es el movimiento_id)
+  if (!movimientoId && typeof payment.external_reference === "string") {
+    movimientoId = payment.external_reference;
   }
 
   return {
@@ -291,6 +376,7 @@ async function normalizeMercadoPagoEvent(
       empresaId,
       planId,
       suscripcionId,
+      movimientoId,
       paymentStatus: payment.status,
       paymentStatusDetail: payment.status_detail,
       externoPaymentId: payment.id,
@@ -299,9 +385,11 @@ async function normalizeMercadoPagoEvent(
   };
 }
 
+// -----------------------------
+// Handler principal
+// -----------------------------
 export async function POST(req: Request) {
   try {
-    // Leemos body una sola vez
     const rawBody = await req.json().catch(() => null as any);
 
     let provider: string | undefined = rawBody?.provider;
@@ -309,7 +397,7 @@ export async function POST(req: Request) {
     let eventType: string | undefined = rawBody?.eventType;
     let data: any = rawBody?.data ?? {};
 
-    // 1) Si NO viene en formato normalizado, intentamos reconocerlo como MP nativo
+    // Si no viene en formato “normalizado”, intentamos Mercado Pago nativo
     const isNormalized =
       !!provider && !!externalEventId && !!eventType;
 
@@ -323,7 +411,6 @@ export async function POST(req: Request) {
       }
     }
 
-    // Si todavía no tenemos la info básica → request mal formado
     if (!provider || !externalEventId || !eventType) {
       return NextResponse.json(
         {
@@ -334,9 +421,7 @@ export async function POST(req: Request) {
       );
     }
 
-    // =====================
     // Idempotencia
-    // =====================
     {
       const { data: exists } = await supabaseAdmin
         .from("webhook_events")
@@ -352,7 +437,7 @@ export async function POST(req: Request) {
       }
     }
 
-    // Registrar evento crudo (payload = data “procesada”)
+    // Registrar evento (guardamos data procesada como payload)
     const { data: whInserted, error: whErr } = await supabaseAdmin
       .from("webhook_events")
       .insert({
@@ -379,23 +464,13 @@ export async function POST(req: Request) {
       );
     }
 
-    // Localizar suscripción
-    const sus = await findSuscripcion(data);
+    // -------------------
+    // Lógica principal según tipo de evento
+    // -------------------
 
-    // Si no hay suscripción ni empresa/plan, no hacemos nada “de negocio”
-    if (!sus && !(data?.empresaId && data?.planId)) {
-      await supabaseAdmin
-        .from("webhook_events")
-        .update({ processed_at: nowISO() })
-        .eq("id", whInserted?.id ?? "");
-      return NextResponse.json(
-        { ok: true, note: "Evento registrado (sin suscripción vinculada)." },
-        { status: 200 }
-      );
-    }
-
-    const empresaId: string = sus?.empresa_id ?? data.empresaId;
-    const planId: string = sus?.plan_id ?? data.planId;
+    const empresaId: string | undefined = data?.empresaId ?? undefined;
+    const planId: string | undefined = data?.planId ?? undefined;
+    const movimientoId: string | undefined = data?.movimientoId ?? undefined;
 
     let newEstado: SuscripcionEstado | null = null;
 
@@ -403,47 +478,76 @@ export async function POST(req: Request) {
       case "subscription_active":
       case "payment_succeeded":
       case "subscription_resumed": {
-        // 1) Marcar movimiento pendiente de upgrade como 'paid'
-        await settleUpgradeMovimiento({
-          empresaId,
-          nuevoPlanId: planId,
-          estado: "paid",
-          referenciaPasarela:
-            data?.externoPaymentId ||
-            data?.paymentId ||
-            data?.chargeId ||
-            null,
-          payload: data,
-        });
+        // 1) Caso principal: tenemos movimiento_id → liquidamos movimiento y activamos plan
+        if (movimientoId) {
+          await settleMovimientoPorIdYActivarPlan({
+            movimientoId,
+            estado: "paid",
+            referenciaPasarela:
+              data?.externoPaymentId ||
+              data?.paymentId ||
+              data?.chargeId ||
+              null,
+            payload: data,
+          });
+        } else if (empresaId) {
+          // 2) Fallback por empresa/plan (si existiera suscripciones clásicas)
+          await settleUpgradeMovimiento({
+            empresaId,
+            nuevoPlanId: planId,
+            estado: "paid",
+            referenciaPasarela:
+              data?.externoPaymentId ||
+              data?.paymentId ||
+              data?.chargeId ||
+              null,
+            payload: data,
+          });
 
-        // 2) Activar plan en empresas_planes
-        if (empresaId && planId) {
-          await activatePlan(empresaId, planId);
+          if (empresaId && planId) {
+            await activatePlan(empresaId, planId);
+          }
         }
+
         newEstado = "activa";
         break;
       }
+
       case "subscription_paused":
       case "invoice_payment_failed": {
-        // Si hubo fallo, marcar (si existe) el movimiento como 'failed'
-        await settleUpgradeMovimiento({
-          empresaId,
-          nuevoPlanId: planId,
-          estado: "failed",
-          referenciaPasarela:
-            data?.externoPaymentId ||
-            data?.paymentId ||
-            data?.chargeId ||
-            null,
-          payload: data,
-        });
+        if (movimientoId) {
+          await settleMovimientoPorIdYActivarPlan({
+            movimientoId,
+            estado: "failed",
+            referenciaPasarela:
+              data?.externoPaymentId ||
+              data?.paymentId ||
+              data?.chargeId ||
+              null,
+            payload: data,
+          });
+        } else if (empresaId) {
+          await settleUpgradeMovimiento({
+            empresaId,
+            nuevoPlanId: planId,
+            estado: "failed",
+            referenciaPasarela:
+              data?.externoPaymentId ||
+              data?.paymentId ||
+              data?.chargeId ||
+              null,
+            payload: data,
+          });
 
-        if (empresaId) {
-          await suspendPlan(empresaId);
+          if (empresaId) {
+            await suspendPlan(empresaId);
+          }
         }
+
         newEstado = "suspendida";
         break;
       }
+
       case "subscription_canceled": {
         if (empresaId) {
           await cancelPlan(empresaId);
@@ -451,6 +555,7 @@ export async function POST(req: Request) {
         newEstado = "cancelada";
         break;
       }
+
       default: {
         await supabaseAdmin
           .from("webhook_events")
@@ -466,30 +571,35 @@ export async function POST(req: Request) {
       }
     }
 
-    // Actualizar suscripción si la tenemos
-    if (sus?.id && newEstado) {
-      const patch: any = { estado: newEstado };
+    // -------------------
+    // Actualizar suscripciones si es que se usaran
+    // -------------------
+    if (newEstado) {
+      const sus = await findSuscripcion(data);
+      if (sus?.id) {
+        const patch: any = { estado: newEstado };
 
-      if (
-        eventType === "subscription_active" ||
-        eventType === "payment_succeeded" ||
-        eventType === "subscription_resumed"
-      ) {
-        patch.inicio = sus.inicio ?? nowISO();
-        if (data?.externoCustomerId)
-          patch.externo_customer_id = data.externoCustomerId;
-        if (data?.externoSubscriptionId)
-          patch.externo_subscription_id = data.externoSubscriptionId;
-        patch.fin = null;
-      }
-      if (eventType === "subscription_canceled") {
-        patch.fin = nowISO();
-      }
+        if (
+          eventType === "subscription_active" ||
+          eventType === "payment_succeeded" ||
+          eventType === "subscription_resumed"
+        ) {
+          patch.inicio = sus.inicio ?? nowISO();
+          if (data?.externoCustomerId)
+            patch.externo_customer_id = data.externoCustomerId;
+          if (data?.externoSubscriptionId)
+            patch.externo_subscription_id = data.externoSubscriptionId;
+          patch.fin = null;
+        }
+        if (eventType === "subscription_canceled") {
+          patch.fin = nowISO();
+        }
 
-      await supabaseAdmin
-        .from("suscripciones")
-        .update(patch)
-        .eq("id", sus.id);
+        await supabaseAdmin
+          .from("suscripciones")
+          .update(patch)
+          .eq("id", sus.id);
+      }
     }
 
     await supabaseAdmin

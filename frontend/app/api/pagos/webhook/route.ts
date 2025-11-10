@@ -9,7 +9,14 @@ const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE);
 
+// Token de Mercado Pago (backend)
+const MP_ACCESS_TOKEN =
+  process.env.MERCADOPAGO_ACCESS_TOKEN ||
+  process.env.MP_ACCESS_TOKEN ||
+  "";
+
 type SuscripcionEstado = "activa" | "suspendida" | "cancelada" | "pendiente";
+
 type SuscripcionRow = {
   id: string;
   empresa_id: string;
@@ -29,6 +36,16 @@ async function findSuscripcion(data: any): Promise<SuscripcionRow | null> {
       .from("suscripciones")
       .select("id, empresa_id, plan_id, estado, inicio")
       .eq("id", data.suscripcionId)
+      .maybeSingle();
+    if (row) return row as SuscripcionRow;
+  }
+
+  // (alias por si en algún momento llega como suscripcion_id)
+  if (data?.suscripcion_id) {
+    const { data: row } = await supabaseAdmin
+      .from("suscripciones")
+      .select("id, empresa_id, plan_id, estado, inicio")
+      .eq("id", data.suscripcion_id)
       .maybeSingle();
     if (row) return row as SuscripcionRow;
   }
@@ -62,12 +79,14 @@ async function findSuscripcion(data: any): Promise<SuscripcionRow | null> {
 }
 
 async function activatePlan(empresaId: string, planId: string) {
+  // 1) Desactivar cualquier plan activo actual
   await supabaseAdmin
     .from("empresas_planes")
     .update({ activo: false, updated_at: nowISO() })
     .eq("empresa_id", empresaId)
     .eq("activo", true);
 
+  // 2) Reactivar si ya existía ese plan
   const { data: existente } = await supabaseAdmin
     .from("empresas_planes")
     .select("id, fecha_inicio")
@@ -84,6 +103,7 @@ async function activatePlan(empresaId: string, planId: string) {
       .eq("id", existente.id);
     return existente.id as string;
   } else {
+    // 3) Insertar nuevo plan activo
     const { data: inserted } = await supabaseAdmin
       .from("empresas_planes")
       .insert({
@@ -126,7 +146,8 @@ async function settleUpgradeMovimiento(params: {
   referenciaPasarela?: string | null;
   payload?: any;
 }) {
-  const { empresaId, nuevoPlanId, estado, referenciaPasarela, payload } = params;
+  const { empresaId, nuevoPlanId, estado, referenciaPasarela, payload } =
+    params;
 
   // Intentamos matchear por metadata.nuevo_plan_id si está disponible
   let query = supabaseAdmin
@@ -140,7 +161,6 @@ async function settleUpgradeMovimiento(params: {
 
   // Si conocemos el plan nuevo, filtramos por metadata
   if (nuevoPlanId) {
-    // Supabase: .contains sobre JSONB
     query = query.contains("metadata", { nuevo_plan_id: nuevoPlanId });
   }
 
@@ -168,22 +188,155 @@ async function settleUpgradeMovimiento(params: {
   return mov.id as string;
 }
 
+/**
+ * Dado un body “nativo” de Mercado Pago (webhook v1),
+ * si corresponde a un pago, va a buscar el pago completo
+ * y lo traduce a nuestro formato interno:
+ *
+ *  { provider, externalEventId, eventType, data }
+ *
+ * Si no reconoce el evento como de MP o no hay token, devuelve null.
+ */
+async function normalizeMercadoPagoEvent(
+  body: any
+): Promise<{
+  provider: string;
+  externalEventId: string;
+  eventType: string;
+  data: any;
+} | null> {
+  if (!MP_ACCESS_TOKEN) return null;
+  if (!body) return null;
+
+  const mpType = body?.type;
+  const mpAction = body?.action;
+  const topic = body?.topic;
+  const mpDataId =
+    body?.data?.id ??
+    body?.data?.payment?.id ??
+    body?.id ??
+    null;
+
+  // Distintos formatos que manda MP para pagos
+  const isPaymentEvent =
+    mpType === "payment" ||
+    (typeof mpAction === "string" &&
+      mpAction.toLowerCase().startsWith("payment.")) ||
+    topic === "payment";
+
+  if (!isPaymentEvent || !mpDataId) {
+    return null;
+  }
+
+  // Traer info completa del pago
+  const paymentRes = await fetch(
+    `https://api.mercadopago.com/v1/payments/${mpDataId}`,
+    {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${MP_ACCESS_TOKEN}`,
+      },
+    }
+  );
+
+  if (!paymentRes.ok) {
+    const txt = await paymentRes.text().catch(() => "");
+    console.error("Error obteniendo pago de MP:", txt);
+    return null;
+  }
+
+  const payment = (await paymentRes.json().catch(() => null)) as any;
+  if (!payment) return null;
+
+  const status = payment.status as string | undefined;
+  let eventType: string;
+
+  if (status === "approved") {
+    eventType = "payment_succeeded";
+  } else if (status === "rejected" || status === "cancelled") {
+    eventType = "invoice_payment_failed";
+  } else {
+    // podés ajustar si querés tratar pending como otro tipo
+    eventType = "invoice_payment_failed";
+  }
+
+  // Metadata (forma preferida)
+  let empresaId =
+    payment?.metadata?.empresaId ||
+    payment?.metadata?.empresa_id ||
+    null;
+  let planId =
+    payment?.metadata?.planId || payment?.metadata?.plan_id || null;
+  let suscripcionId =
+    payment?.metadata?.suscripcionId ||
+    payment?.metadata?.suscripcion_id ||
+    null;
+
+  // Fallback: external_reference "empresaId:planId:suscripcionId"
+  if (
+    (!empresaId || !planId) &&
+    typeof payment.external_reference === "string"
+  ) {
+    const parts = payment.external_reference.split(":");
+    if (!empresaId && parts[0]) empresaId = parts[0];
+    if (!planId && parts[1]) planId = parts[1];
+    if (!suscripcionId && parts[2]) suscripcionId = parts[2];
+  }
+
+  return {
+    provider: "mercadopago",
+    externalEventId: String(payment.id),
+    eventType,
+    data: {
+      empresaId,
+      planId,
+      suscripcionId,
+      paymentStatus: payment.status,
+      paymentStatusDetail: payment.status_detail,
+      externoPaymentId: payment.id,
+      raw_payment: payment,
+    },
+  };
+}
+
 export async function POST(req: Request) {
   try {
-    const body = await req.json().catch(() => null as any);
-    const provider = body?.provider as string | undefined;
-    const externalEventId = body?.externalEventId as string | undefined;
-    const eventType = body?.eventType as string | undefined;
-    const data = body?.data ?? {};
+    // Leemos body una sola vez
+    const rawBody = await req.json().catch(() => null as any);
 
+    let provider: string | undefined = rawBody?.provider;
+    let externalEventId: string | undefined = rawBody?.externalEventId;
+    let eventType: string | undefined = rawBody?.eventType;
+    let data: any = rawBody?.data ?? {};
+
+    // 1) Si NO viene en formato normalizado, intentamos reconocerlo como MP nativo
+    const isNormalized =
+      !!provider && !!externalEventId && !!eventType;
+
+    if (!isNormalized) {
+      const mpNormalized = await normalizeMercadoPagoEvent(rawBody);
+      if (mpNormalized) {
+        provider = mpNormalized.provider;
+        externalEventId = mpNormalized.externalEventId;
+        eventType = mpNormalized.eventType;
+        data = mpNormalized.data;
+      }
+    }
+
+    // Si todavía no tenemos la info básica → request mal formado
     if (!provider || !externalEventId || !eventType) {
       return NextResponse.json(
-        { error: "Faltan campos obligatorios: provider, externalEventId, eventType." },
+        {
+          error:
+            "Faltan campos obligatorios: provider, externalEventId, eventType.",
+        },
         { status: 400 }
       );
     }
 
+    // =====================
     // Idempotencia
+    // =====================
     {
       const { data: exists } = await supabaseAdmin
         .from("webhook_events")
@@ -192,11 +345,14 @@ export async function POST(req: Request) {
         .eq("external_event_id", externalEventId)
         .maybeSingle();
       if (exists?.id) {
-        return NextResponse.json({ ok: true, idempotent: true }, { status: 200 });
+        return NextResponse.json(
+          { ok: true, idempotent: true },
+          { status: 200 }
+        );
       }
     }
 
-    // Registrar evento crudo
+    // Registrar evento crudo (payload = data “procesada”)
     const { data: whInserted, error: whErr } = await supabaseAdmin
       .from("webhook_events")
       .insert({
@@ -212,14 +368,21 @@ export async function POST(req: Request) {
     if (whErr) {
       const msg = whErr.message?.toLowerCase() ?? "";
       if (msg.includes("duplicate") || msg.includes("unique")) {
-        return NextResponse.json({ ok: true, idempotent: true }, { status: 200 });
+        return NextResponse.json(
+          { ok: true, idempotent: true },
+          { status: 200 }
+        );
       }
-      return NextResponse.json({ error: whErr.message }, { status: 400 });
+      return NextResponse.json(
+        { error: whErr.message },
+        { status: 400 }
+      );
     }
 
     // Localizar suscripción
     const sus = await findSuscripcion(data);
 
+    // Si no hay suscripción ni empresa/plan, no hacemos nada “de negocio”
     if (!sus && !(data?.empresaId && data?.planId)) {
       await supabaseAdmin
         .from("webhook_events")
@@ -246,7 +409,10 @@ export async function POST(req: Request) {
           nuevoPlanId: planId,
           estado: "paid",
           referenciaPasarela:
-            data?.externoPaymentId || data?.paymentId || data?.chargeId || null,
+            data?.externoPaymentId ||
+            data?.paymentId ||
+            data?.chargeId ||
+            null,
           payload: data,
         });
 
@@ -265,7 +431,10 @@ export async function POST(req: Request) {
           nuevoPlanId: planId,
           estado: "failed",
           referenciaPasarela:
-            data?.externoPaymentId || data?.paymentId || data?.chargeId || null,
+            data?.externoPaymentId ||
+            data?.paymentId ||
+            data?.chargeId ||
+            null,
           payload: data,
         });
 
@@ -288,7 +457,10 @@ export async function POST(req: Request) {
           .update({ processed_at: nowISO() })
           .eq("id", whInserted?.id ?? "");
         return NextResponse.json(
-          { ok: true, note: `Evento ${eventType} registrado (sin efectos).` },
+          {
+            ok: true,
+            note: `Evento ${eventType} registrado (sin efectos).`,
+          },
           { status: 200 }
         );
       }
@@ -304,15 +476,20 @@ export async function POST(req: Request) {
         eventType === "subscription_resumed"
       ) {
         patch.inicio = sus.inicio ?? nowISO();
-        if (data?.externoCustomerId) patch.externo_customer_id = data.externoCustomerId;
-        if (data?.externoSubscriptionId) patch.externo_subscription_id = data.externoSubscriptionId;
+        if (data?.externoCustomerId)
+          patch.externo_customer_id = data.externoCustomerId;
+        if (data?.externoSubscriptionId)
+          patch.externo_subscription_id = data.externoSubscriptionId;
         patch.fin = null;
       }
       if (eventType === "subscription_canceled") {
         patch.fin = nowISO();
       }
 
-      await supabaseAdmin.from("suscripciones").update(patch).eq("id", sus.id);
+      await supabaseAdmin
+        .from("suscripciones")
+        .update(patch)
+        .eq("id", sus.id);
     }
 
     await supabaseAdmin
@@ -322,6 +499,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ ok: true }, { status: 200 });
   } catch (e: any) {
+    console.error("Error en /api/pagos/webhook:", e?.message || e);
     return NextResponse.json(
       { error: e?.message || "Error inesperado" },
       { status: 500 }

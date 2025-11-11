@@ -285,6 +285,7 @@ export default function EmpresaCuentaPage() {
             ["nombre_comercial", "Nombre Comercial"],
             ["razon_social", "Razón Social"],
             ["cuit", "CUIT"],
+            ["condicion_fiscal", "Condición Fiscal"],
             ["matriculado", "Profesional"],
             ["cpi", "Matricula N°"],
             ["telefono", "Teléfono"],

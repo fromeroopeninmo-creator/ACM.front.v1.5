@@ -217,7 +217,7 @@ export default function LandingPage() {
                 {/* Mini badges sobre la tarjeta */}
                 <div className="pointer-events-none absolute -left-3 -bottom-4 hidden w-48 rounded-2xl border border-[rgba(230,169,48,0.25)] bg-black/90 px-3 py-2 text-xs text-neutral-200 shadow-[0_18px_40px_rgba(0,0,0,0.9)] sm:block">
                   <div className="text-[11px] uppercase tracking-[0.18em] text-[rgba(230,169,48,0.9)]">
-                    Informes ACM
+                    Informes VAI
                   </div>
                   <div className="mt-1 text-[13px] text-neutral-100">
                     Comparables, fotos y mapa listos para enviar a tu cliente.
@@ -254,7 +254,7 @@ export default function LandingPage() {
                   Valuador de Activos Inmobiliarios
                 </div>
                 <h3 className="text-sm font-semibold text-neutral-50">
-                  Informes ACM claros y listos para enviar
+                  Informes VAI claros y listos para enviar
                 </h3>
                 <p className="mt-2 text-xs leading-relaxed text-neutral-300">
                   Cargá datos del inmueble, comparables, fotos y notas. Generá un
@@ -262,7 +262,7 @@ export default function LandingPage() {
                 </p>
                 <div className="mt-4 h-28 overflow-hidden rounded-xl border border-neutral-800 bg-black/60">
                   <Image
-                    src="/landing/images/acm-preview.webp"
+                    src="/landing/images/vai_propiedad_principal.svg"
                     alt="Valuador de activos inmobiliarios"
                     width={600}
                     height={400}
@@ -286,7 +286,7 @@ export default function LandingPage() {
                 </p>
                 <div className="mt-4 h-28 overflow-hidden rounded-xl border border-neutral-800 bg-black/60">
                   <Image
-                    src="/landing/images/factibilidad-preview.webp"
+                    src="/landing/images/sugerido_venta.svg"
                     alt="Informe de factibilidad constructiva"
                     width={600}
                     height={400}
@@ -297,7 +297,7 @@ export default function LandingPage() {
 
               {/* Card Asesores */}
               <div className="flex flex-col rounded-2xl border border-neutral-800 bg-neutral-950/70 p-5 shadow-[0_18px_45px_rgba(0,0,0,0.85)]">
-                <div className="mb-3 inline-flex rounded-full border border-neutral-800 bg-black px-3 py-1 text-xs font-medium text-neutral-200">
+                <div className="mb-3 inline-flex rounded-full border border-[rgba(230,169,48,0.35)] bg-[rgba(230,169,48,0.12)] px-3 py-1 text-xs font-medium text-[rgba(230,169,48,0.97)]">
                   Gestión de asesores
                 </div>
                 <h3 className="text-sm font-semibold text-neutral-50">
@@ -310,7 +310,7 @@ export default function LandingPage() {
                 </p>
                 <div className="mt-4 h-28 overflow-hidden rounded-xl border border-neutral-800 bg-black/60">
                   <Image
-                    src="/landing/images/team-preview.webp"
+                    src="/landing/images/asesores.svg"
                     alt="Panel de gestión de asesores"
                     width={600}
                     height={400}
@@ -496,7 +496,7 @@ export default function LandingPage() {
                   Tracker de trabajo
                 </h3>
                 <p className="mt-2 text-xs text-neutral-300">
-                  Seguimiento simple de tareas, visitas, llamadas y avances de
+                  Seguimiento diario de tareas, visitas, llamadas y avances de
                   cada propiedad, para que nada quede perdido en chats.
                 </p>
               </div>

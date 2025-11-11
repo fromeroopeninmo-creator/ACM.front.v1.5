@@ -619,27 +619,6 @@ export default function LandingPage() {
           </div>
         </section>
       </main>
-
-      {/* FOOTER */}
-      <footer className="border-t border-neutral-900 bg-black">
-        <div className="mx-auto flex max-w-6xl flex-col gap-3 px-4 py-5 text-xs text-neutral-500 md:flex-row md:items-center md:justify-between">
-          <div className="flex items-center gap-2">
-            <span>© {new Date().getFullYear()} VAI Prop.</span>
-            <span className="hidden sm:inline">Todos los derechos reservados.</span>
-          </div>
-          <div className="flex flex-wrap gap-4">
-            <Link href="/legales/terminos" className="hover:text-neutral-300">
-              Términos y Condiciones
-            </Link>
-            <Link href="/legales/privacidad" className="hover:text-neutral-300">
-              Política de Privacidad
-            </Link>
-            <Link href="/legales/disclaimer" className="hover:text-neutral-300">
-              Disclaimer
-            </Link>
-          </div>
-        </div>
-      </footer>
     </div>
   );
 }

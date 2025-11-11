@@ -480,7 +480,6 @@ export default function FaqsPage() {
           </div>
         </section>
       </main>
- <SiteFooter />
     </div>
   );
 }

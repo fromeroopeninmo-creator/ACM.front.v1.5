@@ -17,25 +17,25 @@ export default function SiteFooter() {
           </div>
           <div className="flex flex-wrap gap-4">
             <Link
-              href="/legales#terminos"
+              href="/landing/legales"
               className="hover:text-neutral-300 transition"
             >
               Términos y Condiciones
             </Link>
             <Link
-              href="/legales#privacidad"
+              href="/landing/legales"
               className="hover:text-neutral-300 transition"
             >
               Política de Privacidad
             </Link>
             <Link
-              href="/legales#faqs"
+              href="/landing/legales"
               className="hover:text-neutral-300 transition"
             >
               Preguntas frecuentes
             </Link>
             <Link
-              href="/legales#disclaimer"
+              href="/landing/legales"
               className="hover:text-neutral-300 transition"
             >
               Disclaimer

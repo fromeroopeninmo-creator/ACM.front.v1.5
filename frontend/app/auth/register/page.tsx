@@ -63,6 +63,7 @@ export default function RegisterPage() {
   const [infoMsg, setInfoMsg] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -70,6 +71,14 @@ export default function RegisterPage() {
     setInfoMsg(null);
 
     const clean = (val: string) => val.trim();
+
+    // ✅ Primero, obligamos a aceptar TyC
+    if (!acceptedTerms) {
+      setErrorMsg(
+        "Debés aceptar los Términos y Condiciones para continuar."
+      );
+      return;
+    }
 
     if (
       !nombre ||
@@ -140,7 +149,6 @@ export default function RegisterPage() {
       // Con confirmación de email activa, Supabase normalmente NO devuelve session
       // y simplemente envía el mail con el link a /auth/callback.
       if (!data.user) {
-        // Por si acaso, pero en general data.user suele venir igual.
         setInfoMsg(
           "Registro exitoso. Revisá tu email para confirmar la cuenta."
         );
@@ -151,9 +159,6 @@ export default function RegisterPage() {
       setInfoMsg(
         "Registro exitoso. Revisá tu email para confirmar la cuenta."
       );
-      // Podés, si querés, redirigir al login luego de unos segundos:
-      // setTimeout(() => router.push("/auth/login"), 3000);
-
       return;
     } catch (e: any) {
       setErrorMsg(e?.message || "No se pudo registrar.");
@@ -350,10 +355,40 @@ export default function RegisterPage() {
           </div>
         </div>
 
+        {/* ✅ Aceptación de Términos y Condiciones */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "flex-start",
+            gap: 8,
+            fontSize: 13,
+            marginTop: 4,
+          }}
+        >
+          <input
+            type="checkbox"
+            id="acepto-tyc"
+            checked={acceptedTerms}
+            onChange={(e) => setAcceptedTerms(e.target.checked)}
+            style={{ marginTop: 3, cursor: "pointer" }}
+          />
+          <label htmlFor="acepto-tyc" style={{ cursor: "pointer" }}>
+            Acepto los{" "}
+            <a
+              href="/landing/legales"
+              target="_blank"
+              className="text-sky-600 font-semibold hover:underline"
+            >
+              Términos y Condiciones
+            </a>{" "}
+            y la Política de Privacidad.
+          </label>
+        </div>
+
         {/* 🔘 Botón y link ocupan todo el ancho */}
         <button
           type="submit"
-          disabled={loading}
+          disabled={loading || !acceptedTerms}
           style={buttonStyle}
           className="hover:opacity-90 transition-all disabled:opacity-50"
         >

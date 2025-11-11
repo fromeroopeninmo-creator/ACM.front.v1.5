@@ -268,150 +268,176 @@ export default function EmpresaCuentaPage() {
     }
   };
 
-  // =====================================================
-  // 🧱 Render principal
-  // =====================================================
-  return (
-    <div className="p-6 max-w-5xl mx-auto bg-white rounded-xl shadow-sm border border-gray-200 space-y-10">
-      {/* DATOS EMPRESA */}
-      <section>
-        <h1 className="text-2xl font-bold mb-6">Datos de la Empresa</h1>
+ // =====================================================
+// 🧱 Render principal
+// =====================================================
+return (
+  <div className="p-6 max-w-5xl mx-auto bg-white rounded-xl shadow-sm border border-gray-200 space-y-10">
+    {/* DATOS EMPRESA */}
+    <section>
+      <h1 className="text-2xl font-bold mb-6">Datos de la Empresa</h1>
 
-        <form
-          onSubmit={handleSave}
-          className="grid grid-cols-1 md:grid-cols-2 gap-6"
-        >
-          {[
-            ["nombre_comercial", "Nombre Comercial"],
-            ["razon_social", "Razón Social"],
-            ["cuit", "CUIT"],
-            ["condicion_fiscal", "Condición Fiscal"],
-            ["matriculado", "Profesional"],
-            ["cpi", "Matricula N°"],
-            ["telefono", "Teléfono"],
-            ["direccion", "Dirección"],
-            ["localidad", "Localidad"],
-          ].map(([key, label]) => (
-            <div key={key}>
-              <label className="block text-sm font-medium text-gray-700">
-                {label}
-              </label>
-              <input
-                type="text"
-                name={key}
-                value={(formData as Record<string, any>)[key] || ""}
-                onChange={handleChange}
-                className="mt-1 w-full border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-sky-400"
-              />
-            </div>
-          ))}
-
-          <div>
+      <form
+        onSubmit={handleSave}
+        className="grid grid-cols-1 md:grid-cols-2 gap-6"
+      >
+        {[
+          ["nombre_comercial", "Nombre Comercial"],
+          ["razon_social", "Razón Social"],
+          ["cuit", "CUIT"],
+          // 👇 sacamos condicion_fiscal de este map, va como <select> aparte
+          ["matriculado", "Profesional"],
+          ["cpi", "Matricula N°"],
+          ["telefono", "Teléfono"],
+          ["direccion", "Dirección"],
+          ["localidad", "Localidad"],
+        ].map(([key, label]) => (
+          <div key={key}>
             <label className="block text-sm font-medium text-gray-700">
-              Provincia
+              {label}
             </label>
-            <select
-              name="provincia"
-              value={(formData as Record<string, any>).provincia || ""}
+            <input
+              type="text"
+              name={key}
+              value={(formData as Record<string, any>)[key] || ""}
               onChange={handleChange}
               className="mt-1 w-full border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-sky-400"
-            >
-              <option value="">Seleccionar provincia...</option>
-              {[
-                "CABA",
-                "Buenos Aires",
-                "Córdoba",
-                "Santa Fe",
-                "Mendoza",
-                "Tucumán",
-                "Salta",
-                "Entre Ríos",
-                "Corrientes",
-                "Misiones",
-                "Chaco",
-                "San Luis",
-                "San Juan",
-                "Neuquén",
-                "Río Negro",
-                "Chubut",
-                "Santa Cruz",
-                "La Pampa",
-                "La Rioja",
-                "Catamarca",
-                "Formosa",
-                "Santiago del Estero",
-                "Jujuy",
-                "Tierra del Fuego",
-              ].map((prov) => (
-                <option key={prov} value={prov}>
-                  {prov}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Color Corporativo
-            </label>
-            <input
-              type="color"
-              name="color"
-              value={(formData as Record<string, any>).color || "#2563eb"}
-              onChange={handleChange}
-              className="w-20 h-10 border rounded cursor-pointer"
             />
           </div>
+        ))}
 
-          <div className="flex flex-col gap-2">
-            <label className="block text-sm font-medium text-gray-700">
-              Logo de la empresa
-            </label>
-            {(formData as Record<string, any>).logo_url ? (
-              <img
-                src={`${
-                  (formData as Record<string, any>).logo_url
-                }${(formData as Record<string, any>).logo_url.includes("?") ? "" : `?v=${logoBust}`}`}
-                alt="Logo actual"
-                className="h-16 object-contain border rounded"
-              />
-            ) : (
-              <p className="text-gray-400 text-sm">No hay logo cargado</p>
-            )}
-            <input
-              type="file"
-              accept="image/*"
-              onChange={handleLogoUpload}
-              disabled={uploading}
-              className="text-sm text-gray-600"
-            />
-          </div>
-
-          <div className="md:col-span-2 flex justify-center mt-2">
-            <button
-              type="submit"
-              disabled={saving}
-              className="bg-sky-600 text-white font-semibold px-6 py-2 rounded-md hover:bg-sky-700 transition disabled:opacity-50"
-            >
-              {saving ? "Guardando..." : "Guardar cambios"}
-            </button>
-          </div>
-        </form>
-
-        {message && (
-          <p
-            className={`mt-3 text-center text-sm ${
-              message.startsWith("✅")
-                ? "text-green-600"
-                : message.startsWith("⚠️")
-                ? "text-yellow-600"
-                : "text-red-600"
-            }`}
+        {/* 🔽 Condición Fiscal con selector */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700">
+            Condición Fiscal
+          </label>
+          <select
+            name="condicion_fiscal"
+            value={(formData as Record<string, any>).condicion_fiscal || ""}
+            onChange={handleChange}
+            className="mt-1 w-full border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-sky-400"
           >
-            {message}
-          </p>
-        )}
-      </section>
+            <option value="">Seleccionar...</option>
+            <option value="Consumidor Final (Exento)">
+              Consumidor Final (Exento)
+            </option>
+            <option value="Monotributista">Monotributista</option>
+            <option value="Responsable Inscripto">
+              Responsable Inscripto
+            </option>
+          </select>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700">
+            Provincia
+          </label>
+          <select
+            name="provincia"
+            value={(formData as Record<string, any>).provincia || ""}
+            onChange={handleChange}
+            className="mt-1 w-full border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-sky-400"
+          >
+            <option value="">Seleccionar provincia...</option>
+            {[
+              "CABA",
+              "Buenos Aires",
+              "Córdoba",
+              "Santa Fe",
+              "Mendoza",
+              "Tucumán",
+              "Salta",
+              "Entre Ríos",
+              "Corrientes",
+              "Misiones",
+              "Chaco",
+              "San Luis",
+              "San Juan",
+              "Neuquén",
+              "Río Negro",
+              "Chubut",
+              "Santa Cruz",
+              "La Pampa",
+              "La Rioja",
+              "Catamarca",
+              "Formosa",
+              "Santiago del Estero",
+              "Jujuy",
+              "Tierra del Fuego",
+            ].map((prov) => (
+              <option key={prov} value={prov}>
+                {prov}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Color Corporativo
+          </label>
+          <input
+            type="color"
+            name="color"
+            value={(formData as Record<string, any>).color || "#2563eb"}
+            onChange={handleChange}
+            className="w-20 h-10 border rounded cursor-pointer"
+          />
+        </div>
+
+        <div className="flex flex-col gap-2">
+          <label className="block text-sm font-medium text-gray-700">
+            Logo de la empresa
+          </label>
+          {(formData as Record<string, any>).logo_url ? (
+            <img
+              src={`${
+                (formData as Record<string, any>).logo_url
+              }${
+                (formData as Record<string, any>).logo_url.includes("?")
+                  ? ""
+                  : `?v=${logoBust}`
+              }`}
+              alt="Logo actual"
+              className="h-16 object-contain border rounded"
+            />
+          ) : (
+            <p className="text-gray-400 text-sm">No hay logo cargado</p>
+          )}
+          <input
+            type="file"
+            accept="image/*"
+            onChange={handleLogoUpload}
+            disabled={uploading}
+            className="text-sm text-gray-600"
+          />
+        </div>
+
+        <div className="md:col-span-2 flex justify-center mt-2">
+          <button
+            type="submit"
+            disabled={saving}
+            className="bg-sky-600 text-white font-semibold px-6 py-2 rounded-md hover:bg-sky-700 transition disabled:opacity-50"
+          >
+            {saving ? "Guardando..." : "Guardar cambios"}
+          </button>
+        </div>
+      </form>
+
+      {message && (
+        <p
+          className={`mt-3 text-center text-sm ${
+            message.startsWith("✅")
+              ? "text-green-600"
+              : message.startsWith("⚠️")
+              ? "text-yellow-600"
+              : "text-red-600"
+          }`}
+        >
+          {message}
+        </p>
+      )}
+    </section>
 
       {/* CUENTA / CREDENCIALES */}
       <section>

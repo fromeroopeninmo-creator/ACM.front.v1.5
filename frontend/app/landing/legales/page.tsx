@@ -795,7 +795,6 @@ export default function LegalesPage() {
         </div>
       </main>
 
-      {/* Footer global */}
       <SiteFooter />
     </div>
   );

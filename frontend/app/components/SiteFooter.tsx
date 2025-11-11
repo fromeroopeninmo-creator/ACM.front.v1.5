@@ -9,7 +9,7 @@ export default function SiteFooter() {
   return (
     <footer className="border-t border-neutral-900 bg-black">
       <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-5 text-xs text-neutral-500 md:flex-row md:items-center md:justify-between">
-        {/* Texto principal */}
+        {/* Bloque legal */}
         <div className="space-y-1">
           <div className="flex flex-wrap items-center gap-2">
             <span>© {year} VAI Prop.</span>
@@ -45,36 +45,69 @@ export default function SiteFooter() {
           </div>
         </div>
 
-        {/* Soporte + Redes sociales */}
-        <div className="flex flex-col items-start gap-2 text-neutral-500 md:items-end">
-          {/* Botón de soporte */}
-          <a
-            href="mailto:soporte@vaiprop.com"
-            className="inline-flex items-center gap-2 rounded-full border border-neutral-700 px-3 py-1.5 text-[11px] font-semibold text-neutral-100 hover:bg-neutral-900 hover:text-white transition"
-          >
-            {/* Icono sobre (email) */}
-            <svg
-              className="h-3.5 w-3.5"
-              viewBox="0 0 24 24"
-              aria-hidden="true"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.6"
-            >
-              <rect
-                x="3.2"
-                y="5"
-                width="17.6"
-                height="14"
-                rx="2"
-                ry="2"
-              />
-              <path d="M4 7l8 6 8-6" />
-            </svg>
-            Contactar soporte
-          </a>
+        {/* Bloque Contacto + Redes */}
+        <div className="flex flex-col items-start gap-3 text-neutral-500 md:items-end">
+          {/* Contacto */}
+          <div className="flex flex-col items-start gap-2 md:items-end">
+            <span className="text-[11px] uppercase tracking-wide text-neutral-500">
+              Contactanos
+            </span>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  window.location.href = "mailto:soporte@vaiprop.com";
+                }}
+                className="inline-flex items-center gap-1 rounded-full border border-neutral-700 px-3 py-1.5 text-[11px] font-semibold text-neutral-100 hover:bg-neutral-900 hover:text-white transition"
+              >
+                {/* Icono sobre */}
+                <svg
+                  className="h-3.5 w-3.5"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                >
+                  <rect
+                    x="3.2"
+                    y="5"
+                    width="17.6"
+                    height="14"
+                    rx="2"
+                    ry="2"
+                  />
+                  <path d="M4 7l8 6 8-6" />
+                </svg>
+                Soporte
+              </button>
 
-          {/* Texto + íconos redes */}
+              <button
+                type="button"
+                onClick={() => {
+                  window.location.href = "mailto:info@vaiprop.com";
+                }}
+                className="inline-flex items-center gap-1 rounded-full border border-neutral-700 px-3 py-1.5 text-[11px] font-semibold text-neutral-100 hover:bg-neutral-900 hover:text-white transition"
+              >
+                {/* Icono info */}
+                <svg
+                  className="h-3.5 w-3.5"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                >
+                  <circle cx="12" cy="12" r="9" />
+                  <path d="M12 10v6" />
+                  <circle cx="12" cy="7.5" r="0.7" fill="currentColor" />
+                </svg>
+                Info
+              </button>
+            </div>
+          </div>
+
+          {/* Redes sociales */}
           <div className="flex flex-col items-start gap-1 md:items-end">
             <span className="text-[11px] uppercase tracking-wide text-neutral-500">
               Seguinos en redes

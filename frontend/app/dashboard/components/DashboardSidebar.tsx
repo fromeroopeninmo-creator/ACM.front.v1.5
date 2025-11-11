@@ -26,6 +26,7 @@ export default function DashboardSidebar({ role, color }: SidebarProps) {
       { name: "Cashflow / Pagos", href: "/dashboard/admin/cashflow" },
       { name: "Admins", href: "/dashboard/admin/usuarios" }, // SOLO ROOT
       { name: "Configuración", href: "/dashboard/admin/cuenta" },
+      { name: "FAQs", href: "/landing/faqs" },
     ],
     super_admin: [
       { name: "Inicio", href: "/dashboard/admin" },
@@ -35,12 +36,14 @@ export default function DashboardSidebar({ role, color }: SidebarProps) {
       { name: "Cashflow / Pagos", href: "/dashboard/admin/cashflow" },
       // 👇 Se quita "Admins" para super_admin (root-only)
       { name: "Configuración", href: "/dashboard/admin/cuenta" },
+      { name: "FAQs", href: "/landing/faqs" },
     ],
     soporte: [
       { name: "Inicio", href: "/dashboard/soporte" },
       { name: "Empresas", href: "/dashboard/soporte/empresas" },
       { name: "Registros", href: "/dashboard/soporte/logs" },
       { name: "Configuración", href: "/dashboard/soporte/cuenta" },
+      { name: "FAQs", href: "/landing/faqs" },
     ],
     empresa: [
       { name: "Inicio", href: "/dashboard/empresa" },
@@ -48,11 +51,13 @@ export default function DashboardSidebar({ role, color }: SidebarProps) {
       { name: "Informes", href: "/dashboard/empresa/informes" },
       { name: "Planes", href: "/dashboard/empresa/planes" },
       { name: "Configuración", href: "/dashboard/empresa/cuenta" },
+      { name: "FAQs", href: "/landing/faqs" },
     ],
     asesor: [
       { name: "Inicio", href: "/dashboard/asesor" },
       { name: "Mis Informes", href: "/dashboard/asesor/informes" },
       { name: "Configuración", href: "/dashboard/asesor/cuenta" },
+      { name: "FAQs", href: "/landing/faqs" },
     ],
   };
 
@@ -125,7 +130,10 @@ export default function DashboardSidebar({ role, color }: SidebarProps) {
   return (
     <>
       {/* 🖥️ Desktop (igual que siempre) */}
-      <aside className={`hidden md:flex ${sidebarClasses}`} style={{ backgroundColor: bgColor }}>
+      <aside
+        className={`hidden md:flex ${sidebarClasses}`}
+        style={{ backgroundColor: bgColor }}
+      >
         {NavList}
       </aside>
 
@@ -158,8 +166,19 @@ export default function DashboardSidebar({ role, color }: SidebarProps) {
               aria-label="Cerrar menú"
             >
               {/* X icon */}
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                className="h-5 w-5"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M6 18L18 6M6 6l12 12"
+                />
               </svg>
             </button>
           </div>

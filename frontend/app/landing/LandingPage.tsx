@@ -609,7 +609,7 @@ export default function LandingPage() {
                   Crear cuenta ahora
                 </Link>
                 <a
-                  href="mailto:info@vaiprop.com"
+                  onClick={() => openGmailCompose("info@vaiprop.com", "Consulta general")}
                   className="inline-flex items-center justify-center rounded-full border border-neutral-700 px-6 py-2.5 text-sm font-medium text-neutral-100 hover:bg-neutral-900 transition"
                 >
                   Hablar con el equipo

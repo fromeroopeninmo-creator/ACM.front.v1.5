@@ -7,6 +7,17 @@ import { useState } from "react";
 
 export default function LandingPage() {
   const [mobileOpen, setMobileOpen] = useState(false);
+    const openGmailCompose = (to: string, subject?: string) => {
+    const params = new URLSearchParams();
+    params.set("to", to);
+    if (subject) params.set("su", subject);
+
+    // Abre Gmail compose en una pestaña nueva
+    window.open(
+      `https://mail.google.com/mail/?view=cm&fs=1&${params.toString()}`,
+      "_blank"
+    );
+  };
 
   const accent = "#E6A930"; // dorado corporativo
 

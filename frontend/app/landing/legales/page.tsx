@@ -794,8 +794,6 @@ export default function LegalesPage() {
           </div>
         </div>
       </main>
-
-      <SiteFooter />
     </div>
   );
 }

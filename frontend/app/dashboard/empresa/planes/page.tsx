@@ -742,7 +742,7 @@ export default function EmpresaPlanesPage() {
                 {previewConfirmLoading
                   ? "Aplicando..."
                   : previewTipo === "upgrade"
-                  ? "Pagar diferencia"
+                  ? "Abonar"
                   : "Confirmar cambio"}
               </button>
             </div>

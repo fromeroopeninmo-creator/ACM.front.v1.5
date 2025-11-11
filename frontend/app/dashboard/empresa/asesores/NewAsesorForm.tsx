@@ -61,49 +61,52 @@ export default function NewAsesorForm({ empresaId, onCreated }: Props) {
     fetchEmpresaId();
   }, [user, resolvedEmpresaId]);
 
-  // 🔍 Cargar plan activo y cantidad de asesores
+  // 🔍 Función reutilizable: cargar plan activo y cantidad de asesores
+  const fetchPlanInfo = async (empId: string) => {
+    // Plan activo
+    const { data: empresaPlan, error: errorEmpresaPlan } = await supabase
+      .from("empresas_planes")
+      .select("plan_id")
+      .eq("empresa_id", empId)
+      .eq("activo", true)
+      .maybeSingle();
+
+    if (errorEmpresaPlan) {
+      console.error("Error buscando plan de empresa:", errorEmpresaPlan);
+      setError("Error al obtener el plan actual.");
+      return;
+    }
+
+    if (!empresaPlan?.plan_id) {
+      setError("No se encontró plan activo para esta empresa.");
+      return;
+    }
+
+    const { data: planData } = await supabase
+      .from("planes")
+      .select("nombre")
+      .eq("id", empresaPlan.plan_id)
+      .maybeSingle();
+
+    const nombrePlan = planData?.nombre || "Trial";
+    setPlanNombre(nombrePlan);
+    setPlanLimite(limitesPlanes[nombrePlan] ?? 0);
+
+    // Cantidad de asesores activos
+    const { count } = await supabase
+      .from("asesores")
+      .select("*", { count: "exact", head: true })
+      .eq("empresa_id", empId)
+      .eq("activo", true);
+
+    setAsesoresActivos(count || 0);
+  };
+
+  // Cargar plan + cantidad al montar cuando ya tenemos empresa
   useEffect(() => {
-    const fetchPlan = async () => {
-      if (!resolvedEmpresaId) return;
-
-      const { data: empresaPlan, error: errorEmpresaPlan } = await supabase
-        .from("empresas_planes")
-        .select("plan_id")
-        .eq("empresa_id", resolvedEmpresaId)
-        .eq("activo", true)
-        .maybeSingle();
-
-      if (errorEmpresaPlan) {
-        console.error("Error buscando plan de empresa:", errorEmpresaPlan);
-        setError("Error al obtener el plan actual.");
-        return;
-      }
-
-      if (!empresaPlan?.plan_id) {
-        setError("No se encontró plan activo para esta empresa.");
-        return;
-      }
-
-      const { data: planData } = await supabase
-        .from("planes")
-        .select("nombre")
-        .eq("id", empresaPlan.plan_id)
-        .single();
-
-      const nombrePlan = planData?.nombre || "Trial";
-      setPlanNombre(nombrePlan);
-      setPlanLimite(limitesPlanes[nombrePlan] ?? 0);
-
-      const { count } = await supabase
-        .from("asesores")
-        .select("*", { count: "exact", head: true })
-        .eq("empresa_id", resolvedEmpresaId)
-        .eq("activo", true);
-
-      setAsesoresActivos(count || 0);
-    };
-
-    fetchPlan();
+    if (!resolvedEmpresaId) return;
+    fetchPlanInfo(resolvedEmpresaId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resolvedEmpresaId]);
 
   // 🧩 Enviar datos al backend seguro
@@ -148,12 +151,17 @@ export default function NewAsesorForm({ empresaId, onCreated }: Props) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "No se pudo crear el asesor.");
 
-      // 🔄 Reset form y recargar lista
+      // 🔄 Reset form
       setNombre("");
       setApellido("");
       setEmail("");
       setTelefono("");
       setPassword("");
+
+      // 🔄 Recalcular plan + cantidad real desde la base
+      await fetchPlanInfo(resolvedEmpresaId);
+
+      // Notificar al padre (para recargar listado)
       onCreated();
     } catch (err: any) {
       console.error("Error al crear asesor:", err);

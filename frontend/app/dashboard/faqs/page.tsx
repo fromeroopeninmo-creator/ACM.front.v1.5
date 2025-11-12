@@ -11,7 +11,9 @@ export default function DashboardFaqsPage() {
           Todo lo que necesitás saber sobre VAI Prop. Si todavía tenés dudas,
           podés escribirnos a{" "}
           <a
-            href="mailto:soporte@vaiprop.com?subject=Consulta%20sobre%20VAI%20Prop"
+            href="https://mail.google.com/mail/?view=cm&fs=1&to=soporte@vaiprop.com&su=Consulta%20sobre%20VAI%20Prop"
+            target="_blank"
+            rel="noopener noreferrer"
             className="text-amber-400 hover:text-amber-300 font-medium underline-offset-2 hover:underline"
           >
             soporte@vaiprop.com
@@ -29,12 +31,10 @@ export default function DashboardFaqsPage() {
 
           <div className="space-y-3 text-sm text-neutral-700">
             <div>
-              <h3 className="font-semibold">
-                1.1. ¿Qué es VAI Prop?
-              </h3>
+              <h3 className="font-semibold">1.1. ¿Qué es VAI Prop?</h3>
               <p className="mt-1">
-                VAI Prop es una plataforma online para profesionales y empresas del
-                rubro inmobiliario y de desarrollos que permite generar:
+                VAI Prop es una plataforma online para profesionales y empresas
+                del rubro inmobiliario y de desarrollos que permite generar:
               </p>
               <ul className="mt-1 list-disc list-inside space-y-1">
                 <li>Informes de valuación de activos inmobiliarios (VAI)</li>
@@ -46,9 +46,7 @@ export default function DashboardFaqsPage() {
             </div>
 
             <div>
-              <h3 className="font-semibold">
-                1.2. ¿Quiénes pueden usar VAI Prop?
-              </h3>
+              <h3 className="font-semibold">1.2. ¿Quiénes pueden usar VAI Prop?</h3>
               <p className="mt-1">Principalmente:</p>
               <ul className="mt-1 list-disc list-inside space-y-1">
                 <li>Inmobiliarias y desarrolladoras</li>
@@ -59,9 +57,7 @@ export default function DashboardFaqsPage() {
             </div>
 
             <div>
-              <h3 className="font-semibold">
-                1.3. ¿Cómo creo una cuenta?
-              </h3>
+              <h3 className="font-semibold">1.3. ¿Cómo creo una cuenta?</h3>
               <p className="mt-1">
                 Podés crear una cuenta de Empresa desde la página de registro de{" "}
                 <span className="font-mono text-xs bg-neutral-100 px-1 py-0.5 rounded">
@@ -82,8 +78,8 @@ export default function DashboardFaqsPage() {
               <ul className="mt-1 list-disc list-inside space-y-1">
                 <li>Gestionar planes y pagos</li>
                 <li>
-                  Configurar datos de la empresa (logo, color, datos del profesional
-                  responsable)
+                  Configurar datos de la empresa (logo, color, datos del
+                  profesional responsable)
                 </li>
                 <li>Crear y gestionar asesores</li>
               </ul>
@@ -135,20 +131,16 @@ export default function DashboardFaqsPage() {
             </div>
 
             <div>
-              <h3 className="font-semibold">
-                2.2. ¿Cómo se realizan los pagos?
-              </h3>
+              <h3 className="font-semibold">2.2. ¿Cómo se realizan los pagos?</h3>
               <p className="mt-1">
                 Los pagos se realizan de forma segura a través de pasarelas de pago
-                (por ejemplo, Mercado Pago). Podés abonar con tarjeta u otros medios
-                habilitados por la pasarela.
+                (por ejemplo, Mercado Pago). Podés abonar con tarjeta u otros
+                medios habilitados por la pasarela.
               </p>
             </div>
 
             <div>
-              <h3 className="font-semibold">
-                2.3. ¿Recibo factura por mi plan?
-              </h3>
+              <h3 className="font-semibold">2.3. ¿Recibo factura por mi plan?</h3>
               <p className="mt-1">
                 Sí. En los planes pagos emitimos la factura según los datos fiscales
                 que cargues en tu perfil de Empresa.
@@ -161,12 +153,10 @@ export default function DashboardFaqsPage() {
               </h3>
               <p className="mt-1">
                 Sí. Podés cambiar a un plan superior o, si está habilitado, a uno
-                inferior desde la sección de <span className="font-medium">
-                  “Planes”
-                </span>{" "}
-                de tu cuenta. Los cambios pueden tener impacto en el ciclo de
-                facturación actual o en el próximo, según se indique en la pantalla
-                de confirmación.
+                inferior desde la sección de{" "}
+                <span className="font-medium">“Planes”</span> de tu cuenta. Los
+                cambios pueden tener impacto en el ciclo de facturación actual o en
+                el próximo, según se indique en la pantalla de confirmación.
               </p>
             </div>
 
@@ -174,9 +164,7 @@ export default function DashboardFaqsPage() {
               <h3 className="font-semibold">
                 2.5. ¿Qué pasa si no pago o se vence mi plan?
               </h3>
-              <p className="mt-1">
-                En caso de falta de pago o vencimiento:
-              </p>
+              <p className="mt-1">En caso de falta de pago o vencimiento:</p>
               <ul className="mt-1 list-disc list-inside space-y-1">
                 <li>Podés perder acceso a ciertas funcionalidades.</li>
                 <li>
@@ -211,15 +199,12 @@ export default function DashboardFaqsPage() {
             </div>
 
             <div>
-              <h3 className="font-semibold">
-                3.2. ¿Puedo borrar informes?
-              </h3>
+              <h3 className="font-semibold">3.2. ¿Puedo borrar informes?</h3>
               <p className="mt-1">
-                Sí. Desde la sección de <span className="font-medium">
-                  “Informes”
-                </span>{" "}
-                podés eliminar informes que ya no necesites. Tené en cuenta que
-                esta acción es definitiva y no se puede deshacer.
+                Sí. Desde la sección de{" "}
+                <span className="font-medium">“Informes”</span> podés eliminar
+                informes que ya no necesites. Tené en cuenta que esta acción es
+                definitiva y no se puede deshacer.
               </p>
             </div>
 
@@ -290,7 +275,8 @@ export default function DashboardFaqsPage() {
 
             <div>
               <h3 className="font-semibold">
-                4.2. ¿VAI Prop valida automáticamente la normativa urbanística de cada municipio?
+                4.2. ¿VAI Prop valida automáticamente la normativa urbanística de
+                cada municipio?
               </h3>
               <p className="mt-1">
                 No. VAI Prop no sustituye la revisión normativa específica en cada
@@ -301,9 +287,7 @@ export default function DashboardFaqsPage() {
             </div>
 
             <div>
-              <h3 className="font-semibold">
-                4.3. ¿Puedo adjuntar una foto del lote?
-              </h3>
+              <h3 className="font-semibold">4.3. ¿Puedo adjuntar una foto del lote?</h3>
               <p className="mt-1">
                 Sí. Podés cargar la foto del lote al inicio del formulario y se
                 incluirá en el informe PDF.
@@ -342,9 +326,7 @@ export default function DashboardFaqsPage() {
             </div>
 
             <div>
-              <h3 className="font-semibold">
-                5.2. ¿Quién puede ver mis informes?
-              </h3>
+              <h3 className="font-semibold">5.2. ¿Quién puede ver mis informes?</h3>
               <p className="mt-1">
                 Si sos <span className="font-medium">Empresa</span>, podés ver tus
                 informes y los de tus Asesores asociados.
@@ -383,12 +365,15 @@ export default function DashboardFaqsPage() {
           <div className="space-y-3 text-sm text-neutral-700">
             <div>
               <h3 className="font-semibold">
-                6.1. Tengo un problema con mi cuenta o un error en la plataforma, ¿qué hago?
+                6.1. Tengo un problema con mi cuenta o un error en la plataforma,
+                ¿qué hago?
               </h3>
               <p className="mt-1">
                 Podés escribirnos a{" "}
                 <a
-                  href="mailto:soporte@vaiprop.com?subject=Problema%20con%20mi%20cuenta%20o%20la%20plataforma"
+                  href="https://mail.google.com/mail/?view=cm&fs=1&to=soporte@vaiprop.com&su=Problema%20con%20mi%20cuenta%20o%20la%20plataforma"
+                  target="_blank"
+                  rel="noopener noreferrer"
                   className="text-amber-400 hover:text-amber-300 font-medium underline-offset-2 hover:underline"
                 >
                   soporte@vaiprop.com
@@ -405,7 +390,9 @@ export default function DashboardFaqsPage() {
               <p className="mt-1">
                 Actualmente el soporte se brinda por correo electrónico en{" "}
                 <a
-                  href="mailto:soporte@vaiprop.com"
+                  href="https://mail.google.com/mail/?view=cm&fs=1&to=soporte@vaiprop.com"
+                  target="_blank"
+                  rel="noopener noreferrer"
                   className="text-amber-400 hover:text-amber-300 font-medium underline-offset-2 hover:underline"
                 >
                   soporte@vaiprop.com

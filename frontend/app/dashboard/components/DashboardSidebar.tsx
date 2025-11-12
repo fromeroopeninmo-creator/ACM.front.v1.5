@@ -26,7 +26,7 @@ export default function DashboardSidebar({ role, color }: SidebarProps) {
       { name: "Cashflow / Pagos", href: "/dashboard/admin/cashflow" },
       { name: "Admins", href: "/dashboard/admin/usuarios" }, // SOLO ROOT
       { name: "Configuración", href: "/dashboard/admin/cuenta" },
-      { name: "FAQs", href: "/landing/faqs" },
+      { name: "FAQs", href: "/dashboard/faqs" },
     ],
     super_admin: [
       { name: "Inicio", href: "/dashboard/admin" },
@@ -36,14 +36,14 @@ export default function DashboardSidebar({ role, color }: SidebarProps) {
       { name: "Cashflow / Pagos", href: "/dashboard/admin/cashflow" },
       // 👇 Se quita "Admins" para super_admin (root-only)
       { name: "Configuración", href: "/dashboard/admin/cuenta" },
-      { name: "FAQs", href: "/landing/faqs" },
+      { name: "FAQs", href: "/dashboard/faqs" },
     ],
     soporte: [
       { name: "Inicio", href: "/dashboard/soporte" },
       { name: "Empresas", href: "/dashboard/soporte/empresas" },
       { name: "Registros", href: "/dashboard/soporte/logs" },
       { name: "Configuración", href: "/dashboard/soporte/cuenta" },
-      { name: "FAQs", href: "/landing/faqs" },
+      { name: "FAQs", href: "/dashboard/faqs" },
     ],
     empresa: [
       { name: "Inicio", href: "/dashboard/empresa" },
@@ -51,13 +51,13 @@ export default function DashboardSidebar({ role, color }: SidebarProps) {
       { name: "Informes", href: "/dashboard/empresa/informes" },
       { name: "Planes", href: "/dashboard/empresa/planes" },
       { name: "Configuración", href: "/dashboard/empresa/cuenta" },
-      { name: "FAQs", href: "/landing/faqs" },
+      { name: "FAQs", href: "/dashboard/faqs" },
     ],
     asesor: [
       { name: "Inicio", href: "/dashboard/asesor" },
       { name: "Mis Informes", href: "/dashboard/asesor/informes" },
       { name: "Configuración", href: "/dashboard/asesor/cuenta" },
-      { name: "FAQs", href: "/landing/faqs" },
+      { name: "FAQs", href: "/dashboard/faqs" },
     ],
   };
 
@@ -103,7 +103,11 @@ export default function DashboardSidebar({ role, color }: SidebarProps) {
   // ==============================
   const NavList = useMemo(
     () => (
-      <nav className="w-full space-y-2" role="navigation" aria-label="Menú principal">
+      <nav
+        className="w-full space-y-2"
+        role="navigation"
+        aria-label="Menú principal"
+      >
         {links.map((item) => {
           const active =
             pathname === item.href || pathname.startsWith(item.href + "/");
@@ -112,7 +116,9 @@ export default function DashboardSidebar({ role, color }: SidebarProps) {
               key={item.href}
               href={item.href}
               className={`block px-3 py-2 rounded-md text-sm font-medium transition ${
-                active ? "bg-white text-gray-900" : "text-white hover:bg-white/20"
+                active
+                  ? "bg-white text-gray-900"
+                  : "text-white hover:bg-white/20"
               }`}
             >
               {item.name}

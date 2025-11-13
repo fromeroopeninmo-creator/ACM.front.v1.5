@@ -663,7 +663,7 @@ const handleDownloadPDF = async () => {
 
   // ===== Encabezado: izquierda (3 filas) – logo centrado – derecha (2 filas) =====
   const headerLeftX = M;
-  const headerRightX = pageW - M - 210; // bloque derecho (ancho referencial 250)
+  const headerRightX = pageW - M - 200; // bloque derecho (ancho referencial 250)
   const headerBlockH = 50; // alto mínimo, luego ajustamos
 
   // Izquierda (tres filas, misma línea por campo)
@@ -690,7 +690,7 @@ const handleDownloadPDF = async () => {
         const logoW = 70;
         const logoH = 70;
         const centerX = pageW / 2 - logoW / 2;
-        doc.addImage(base64Img, "PNG", centerX, y - 10, logoW, logoH, undefined, "FAST");
+        doc.addImage(base64Img, "PNG", centerX, y - 12, logoW, logoH, undefined, "FAST");
       }
     } catch { /* no-op */ }
   }

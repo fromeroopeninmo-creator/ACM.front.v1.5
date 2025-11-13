@@ -538,8 +538,8 @@ export default function FactibilidadForm() {
     };
   }, [formData]);
 
-    /* =========================
-   *  PDF — versión estilizada
+      /* =========================
+   *  PDF — estilo profesional (sin cards)
    * ========================= */
   const handleDownloadPDF = async () => {
     const { jsPDF } = await import("jspdf");
@@ -560,8 +560,9 @@ export default function FactibilidadForm() {
     };
     const pc = hexToRgb(primaryHex);
 
-    const H1 = 16; // títulos de secciones
-    const H2 = 12; // subtítulos/cards
+    // Tamaños de texto (más discretos)
+    const H1 = 14; // título principal
+    const HSEC = 12; // subtítulos de sección (más chicos)
     const TXT = 10; // texto normal
     const LINE = 14; // interlineado
 
@@ -569,10 +570,10 @@ export default function FactibilidadForm() {
     doc.setTextColor(0, 0, 0);
 
     // =========================
-    // Encabezado: 3 columnas + logo centrado
-    // Izq: Empresa / Profesional / Asesor
-    // Ctro: Logo
-    // Der: Matricula / Fecha / Proyecto
+    // Encabezado (3 filas por lado) + LOGO al centro
+    // Izquierda: Empresa / Profesional / Matrícula
+    // Centro: LOGO
+    // Derecha: Asesor / Fecha  (+ 1 fila extra en blanco para balance)
     // =========================
     const anyUser = user as any;
     const role = (anyUser?.role || "").toLowerCase();
@@ -582,13 +583,13 @@ export default function FactibilidadForm() {
     let cpi = anyUser?.cpi || "—";
     let inmobiliaria = themeCompanyName || anyUser?.inmobiliaria || "—";
     const asesorNombre =
-      isAsesor && anyUser?.nombre && anyUser?.apellido
-        ? `${anyUser.nombre} ${anyUser.apellido}`
+      isAsesor && (anyUser?.nombre || anyUser?.apellido)
+        ? `${anyUser?.nombre ?? ""} ${anyUser?.apellido ?? ""}`.trim()
         : isAsesor
-        ? (anyUser?.nombre || anyUser?.apellido ? `${anyUser?.nombre ?? ""} ${anyUser?.apellido ?? ""}`.trim() : "—")
+        ? "—"
         : "—";
 
-    // Completar datos desde empresas si falta algo
+    // Completar desde empresas si falta algo
     if (inmobiliaria === "—" || matriculado === "—" || cpi === "—") {
       try {
         const { supabase } = await import("#lib/supabaseClient");
@@ -603,8 +604,8 @@ export default function FactibilidadForm() {
           query = query.eq("user_id", anyUser.id);
         }
 
-        const { data: empresaRow, error } = await query.maybeSingle();
-        if (!error && empresaRow) {
+        const { data: empresaRow } = await query.maybeSingle();
+        if (empresaRow) {
           if (inmobiliaria === "—" && empresaRow.nombre_comercial) inmobiliaria = empresaRow.nombre_comercial;
           if (matriculado === "—" && empresaRow.matriculado) matriculado = empresaRow.matriculado;
           if (cpi === "—" && empresaRow.cpi) cpi = empresaRow.cpi;
@@ -614,48 +615,42 @@ export default function FactibilidadForm() {
       }
     }
 
-    // Header layout
+    // Columnas del header
     const colW = (pageW - marginX * 2) / 3;
     const leftX = marginX;
     const centerX = marginX + colW;
     const rightX = marginX + colW * 2;
 
-    // Títulos pequeños gris para etiquetas
-    const labelGray = (txt: string, x: number, y: number) => {
+    const fechaTxt = new Date(formData.date || new Date().toISOString()).toLocaleDateString("es-AR");
+
+    const labelLight = (txt: string, x: number, y: number) => {
       doc.setFont("helvetica", "bold");
       doc.setFontSize(9);
       doc.setTextColor(110, 110, 110);
       doc.text(txt, x, y);
       doc.setTextColor(0, 0, 0);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(TXT);
     };
 
-    // Columna izquierda
-    doc.setFontSize(TXT);
-    labelGray("Empresa", leftX, y);
-    doc.setFont("helvetica", "normal");
+    // Columna izquierda (3 filas)
+    labelLight("Empresa", leftX, y);
     doc.text(inmobiliaria, leftX, y + LINE);
 
-    labelGray("Profesional", leftX, y + LINE * 2);
+    labelLight("Profesional", leftX, y + LINE * 2);
     doc.text(matriculado, leftX, y + LINE * 3);
 
-    labelGray("Asesor", leftX, y + LINE * 4);
-    doc.text(asesorNombre || "—", leftX, y + LINE * 5);
+    labelLight("Matrícula N°", leftX, y + LINE * 4);
+    doc.text(cpi, leftX, y + LINE * 5);
 
-    // Columna derecha
-    const fechaTxt = new Date(formData.date || new Date().toISOString()).toLocaleDateString("es-AR");
-    const proyectoTxt = formData.nombreProyecto || "-";
+    // Columna derecha (2 filas + 1 en blanco para balance visual)
+    labelLight("Asesor", rightX, y);
+    doc.text(asesorNombre || "—", rightX, y + LINE);
 
-    labelGray("Matrícula N°", rightX, y);
-    doc.setFont("helvetica", "normal");
-    doc.text(cpi, rightX, y + LINE);
-
-    labelGray("Fecha", rightX, y + LINE * 2);
+    labelLight("Fecha", rightX, y + LINE * 2);
     doc.text(fechaTxt, rightX, y + LINE * 3);
 
-    labelGray("Proyecto", rightX, y + LINE * 4);
-    doc.text(proyectoTxt, rightX, y + LINE * 5);
-
-    // Logo centrado en la columna del medio
+    // LOGO centrado
     const themeLogo = themeLogoUrl || null;
     let headerBottomY = y + LINE * 6;
 
@@ -666,7 +661,7 @@ export default function FactibilidadForm() {
           const logoW = 80;
           const logoH = 80;
           const cx = centerX + colW / 2 - logoW / 2;
-          const cy = y + LINE; // verticalmente centrado respecto a las líneas
+          const cy = y + LINE; // centrado vertical aprox respecto a las líneas
           doc.addImage(base64Img, "PNG", cx, cy, logoW, logoH, undefined, "FAST");
           headerBottomY = Math.max(headerBottomY, cy + logoH + 10);
         }
@@ -675,25 +670,26 @@ export default function FactibilidadForm() {
       }
     }
 
-    y = headerBottomY + 10;
+    y = headerBottomY;
 
     // Separador
+    y += 6;
     doc.setDrawColor(pc.r, pc.g, pc.b);
     doc.setLineWidth(0.8);
     doc.line(marginX, y, pageW - marginX, y);
-    y += 20;
+    y += 16;
 
     // =========================
-    // Título principal centrado
+    // Título centrado
     // =========================
     doc.setFont("helvetica", "bold");
     doc.setFontSize(H1);
     doc.setTextColor(pc.r, pc.g, pc.b);
     doc.text("Informe de Factibilidad Constructiva", pageW / 2, y, { align: "center" });
     doc.setTextColor(0, 0, 0);
-    y += 22;
+    y += 18;
 
-    // Helper para salto de página
+    // Helpers
     const ensureSpace = (h: number) => {
       if (y + h > pageH - 60) {
         doc.addPage();
@@ -701,43 +697,40 @@ export default function FactibilidadForm() {
       }
     };
 
-    // Helper para secciones
     const sectionTitle = (title: string) => {
-      ensureSpace(30);
+      ensureSpace(28);
       doc.setFont("helvetica", "bold");
-      doc.setFontSize(H1);
+      doc.setFontSize(HSEC);
       doc.setTextColor(pc.r, pc.g, pc.b);
       doc.text(title, marginX, y);
       doc.setTextColor(0, 0, 0);
-      y += 14;
+      y += 10;
 
-      doc.setDrawColor(pc.r, pc.g, pc.b);
-      doc.setLineWidth(0.8);
+      doc.setDrawColor(210, 210, 210);
+      doc.setLineWidth(0.6);
       doc.line(marginX, y, pageW - marginX, y);
-      y += 16;
+      y += 12;
     };
 
-    // =========
-    // Sección: Datos del Lote (resumen compacto en PDF)
-    // =========
-    sectionTitle("Datos del Lote");
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(TXT);
-
-    const L = (label: string, value: string, offset: number = 0) => {
+    const L = (label: string, value: string) => {
       ensureSpace(LINE);
       doc.setFont("helvetica", "bold");
       doc.setFontSize(TXT);
-      doc.text(`${label}:`, marginX + offset, y);
+      doc.text(`${label}:`, marginX, y);
       doc.setFont("helvetica", "normal");
-      doc.text(value, marginX + offset + 90, y);
+      doc.text(value, marginX + 140, y);
       y += LINE;
     };
 
+    // =========
+    // Sección 1: Datos del Lote (incluye Proyecto primero)
+    // =========
+    sectionTitle("1. Datos del Lote");
+    L("Proyecto", formData.nombreProyecto || "-");
     L("Dirección", formData.direccion || "-");
     L("Localidad", formData.localidad || "-");
     L("Barrio", formData.barrio || "-");
-    L("Zona/Distrito", formData.zona || "-");
+    L("Zona / Distrito", formData.zona || "-");
     L("Superficie del lote", `${numero(formData.superficieLote)} m²`);
     L("Frente", `${numero(formData.frente)} m`);
     L("Fondo", `${numero(formData.fondo)} m`);
@@ -747,173 +740,117 @@ export default function FactibilidadForm() {
     y += 6;
 
     // =========
-    // Sección: Normativa y Morfología
+    // Sección 2: Normativa y Morfología
     // =========
-    sectionTitle("Normativa y Morfología");
-    const twoColW = (pageW - marginX * 2 - 20) / 2;
-
-    const normBlock = (x: number, items: string[]) => {
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(TXT);
-      items.forEach((line) => {
-        ensureSpace(LINE);
-        doc.text(line, x, y);
-        y += LINE;
-      });
-    };
-
-    const startYNorm = y;
-    // Columna izquierda
-    normBlock(marginX, [
-      `FOS: ${numero(formData.FOS, 2)}`,
-      `FOT: ${numero(formData.FOT, 2)}`,
-      `Altura máx.: ${numero(formData.alturaMaxima)} m`,
-      `Pisos máx.: ${numero(formData.pisosMaximos)}`,
-    ]);
-    // Columna derecha (mismo inicio de Y)
-    const savedY = y;
-    y = startYNorm;
-    normBlock(marginX + twoColW + 20, [
-      `Retiros frente: ${numero(formData.retiroFrente)} m`,
-      `Retiros fondo: ${numero(formData.retiroFondo)} m`,
-      `Retiros laterales: ${numero(formData.retiroLaterales)} m`,
-      `Perfilería: ${
-        formData.perfilAnguloGrados != null && formData.perfilDesdePiso != null
-          ? `${numero(formData.perfilAnguloGrados)}° desde piso ${numero(formData.perfilDesdePiso)}`
-          : "—"
-      }`,
-    ]);
-    y = Math.max(savedY, y) + 10;
-
-    // =========
-    // Sección: Usos y Eficiencia (CARD)
-    // =========
-    sectionTitle("Usos y Eficiencia");
-
-    // Card
-    const cardPad = 12;
-    const cardW = pageW - marginX * 2;
-    const linesUsos = [
-      `m² construibles (estimados): ${numero(calculos.superficieConstruibleTotal)} m²`,
-      `m² vendibles (estimados): ${numero(calculos.superficieVendibleTotal)} m²`,
-      `m² no vendibles (estimados): ${numero(calculos.superficieComun)} m²`,
-      `Unidades vendibles (aprox.): ${numero(calculos.unidadesVendibles)}`,
-      `m² por unidad: ${numero(formData.metrosPorUnidad)} m²`,
-      `Valor de venta por unidad: ${peso(formData.valorVentaPorUnidad ?? null)}`,
-      `Valor total de unidades vendibles: ${peso(calculos.valorTotalUnidadesVendibles ?? null)}`,
-    ];
-
-    // Dibujar card con fondo suave
-    ensureSpace(cardPad * 2 + linesUsos.length * LINE);
-    doc.setDrawColor(225, 225, 225);
-    doc.setFillColor(249, 250, 251); // gris muy claro
-    doc.rect(marginX, y, cardW, cardPad * 2 + linesUsos.length * LINE, "F");
-
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(H2);
-    doc.setTextColor(pc.r, pc.g, pc.b);
-    doc.text("Resumen de Usos y Eficiencia", marginX + cardPad, y + cardPad + 2);
-    doc.setTextColor(0, 0, 0);
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(TXT);
-
-    let yUsos = y + cardPad + 8 + LINE;
-    linesUsos.forEach((line) => {
-      doc.text(line, marginX + cardPad, yUsos);
-      yUsos += LINE;
-    });
-    y = y + cardPad * 2 + linesUsos.length * LINE + 10;
-
-    // =========
-    // Sección: Incidencia del Lote y Precio Sugerido
-    // =========
-    sectionTitle("Incidencia del Lote y Precio Sugerido");
-
-    // Card 1 — Detalle
-    const costoDemoTotal = calculos.costoDemolicionTotal ?? (
-      formData.superficieDemoler != null && formData.costoDemolicionM2 != null
-        ? formData.superficieDemoler * formData.costoDemolicionM2
-        : null
+    sectionTitle("2. Normativa urbanística y morfología");
+    L("FOS", `${numero(formData.FOS, 2)}`);
+    L("FOT", `${numero(formData.FOT, 2)}`);
+    L("Altura máxima", `${numero(formData.alturaMaxima)} m`);
+    L("Pisos máximos", `${numero(formData.pisosMaximos)}`);
+    L("Retiros frente", `${numero(formData.retiroFrente)} m`);
+    L("Retiros fondo", `${numero(formData.retiroFondo)} m`);
+    L("Retiros laterales", `${numero(formData.retiroLaterales)} m`);
+    L(
+      "Perfilería",
+      formData.perfilAnguloGrados != null && formData.perfilDesdePiso != null
+        ? `${numero(formData.perfilAnguloGrados)}° desde piso ${numero(formData.perfilDesdePiso)}`
+        : "—"
     );
 
-    const incLines = [
-      `Índice de incidencia zonal: ${
-        formData.indiceIncidenciaZonal != null ? `${(formData.indiceIncidenciaZonal * 100).toFixed(2)} %` : "—"
-      }`,
-      `Superficie a demoler: ${numero(formData.superficieDemoler)} m²`,
-      `Precio de demolición por m²: ${peso(formData.costoDemolicionM2 ?? null)}`,
-      `Costo total de demolición: ${peso(costoDemoTotal ?? null)}`,
-    ];
+    y += 6;
 
-    ensureSpace(cardPad * 2 + incLines.length * LINE);
-    doc.setDrawColor(225, 225, 225);
-    doc.setFillColor(249, 250, 251);
-    doc.rect(marginX, y, cardW, cardPad * 2 + incLines.length * LINE, "F");
+    // =========
+    // Sección 3: Usos previstos y eficiencia (sin mostrar "eficiencia global" aquí)
+    // Orden: m² construibles / m² vendibles / m² no vendibles / Unidades vendibles / m² por unidad / Valor por unidad / Valor total vendible
+    // =========
+    sectionTitle("3. Usos previstos y eficiencia");
+    L("m² construibles (estimados)", `${numero(calculos.superficieConstruibleTotal)} m²`);
+    L("m² vendibles (estimados)", `${numero(calculos.superficieVendibleTotal)} m²`);
+    L("m² no vendibles (estimados)", `${numero(calculos.superficieComun)} m²`);
+    L("Unidades vendibles (aprox.)", `${numero(calculos.unidadesVendibles)}`);
+    L("m² por unidad", `${numero((formData as any).metrosPorUnidad)} m²`);
+    L("Valor de venta por unidad", `${peso((formData as any).valorVentaPorUnidad ?? null)}`);
+    L("Valor total de unidades vendibles", `${peso(calculos.valorTotalUnidadesVendibles ?? null)}`);
 
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(H2);
-    doc.setTextColor(pc.r, pc.g, pc.b);
-    doc.text("Parámetros de Incidencia", marginX + cardPad, y + cardPad + 2);
-    doc.setTextColor(0, 0, 0);
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(TXT);
+    y += 6;
 
-    let yInc = y + cardPad + 8 + LINE;
-    incLines.forEach((line) => {
-      doc.text(line, marginX + cardPad, yInc);
-      yInc += LINE;
-    });
-    y = y + cardPad * 2 + incLines.length * LINE + 12;
+    // =========
+    // Sección 4: Incidencia del lote y precio sugerido (solo texto + recuadro centrado para el número)
+    // =========
+    sectionTitle("4. Incidencia del lote y precio sugerido");
+    // Detalles lineales
+    L(
+      "Índice de incidencia zonal",
+      formData.indiceIncidenciaZonal != null ? `${(formData.indiceIncidenciaZonal * 100).toFixed(2)} %` : "—"
+    );
+    L("Superficie a demoler", `${numero(formData.superficieDemoler)} m²`);
+    L("Precio de demolición por m²", `${peso((formData as any).costoDemolicionM2 ?? null)}`);
 
-    // Card 2 — Precio sugerido (destacada)
-    const precioSugerido = calculos.precioSugeridoLote ?? null;
-    const bigCardH = 90;
+    const costoDemoTotal =
+      formData.superficieDemoler != null && (formData as any).costoDemolicionM2 != null
+        ? Number(formData.superficieDemoler) * Number((formData as any).costoDemolicionM2)
+        : null;
 
-    ensureSpace(bigCardH);
+    L("Costo total de demolición", `${peso(costoDemoTotal ?? null)}`);
+
+    // Recuadro centrado con el precio sugerido
+    const precioSugerido = (calculos as any).precioSugeridoLote ?? null;
+    const boxW = Math.min(420, pageW - marginX * 2);
+    const boxH = 80;
+    const boxX = (pageW - boxW) / 2;
+
+    // Dejar aire
+    y += 6;
+    if (y + boxH > pageH - 60) {
+      doc.addPage();
+      y = 40;
+    }
+
     doc.setDrawColor(pc.r, pc.g, pc.b);
-    doc.setFillColor(239, 246, 255); // leve celeste (o ajusta si querés más “dorado”)
-    doc.rect(marginX, y, cardW, bigCardH, "F");
+    doc.setLineWidth(1.2);
+    doc.roundedRect(boxX, y, boxW, boxH, 8, 8);
 
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(14);
+    doc.setFontSize(12);
     doc.setTextColor(pc.r, pc.g, pc.b);
-    doc.text("Precio Sugerido del Lote", marginX + cardPad, y + 24);
+    doc.text("Precio Sugerido del Lote", boxX + boxW / 2, y + 26, { align: "center" });
 
     doc.setTextColor(0, 0, 0);
-    doc.setFont("helvetica", "bold");
     doc.setFontSize(20);
-    doc.text(peso(precioSugerido ?? null), marginX + cardPad, y + 24 + 26);
+    doc.text(peso(precioSugerido ?? null), boxX + boxW / 2, y + 26 + 26, { align: "center" });
 
+    // Nota pequeña debajo (fórmula)
     doc.setFont("helvetica", "normal");
     doc.setFontSize(9);
     doc.setTextColor(110, 110, 110);
     doc.text(
       "Fórmula: (Valor total de unidades vendibles × índice) − (m² a demoler × precio demolición/m²)",
-      marginX + cardPad,
-      y + bigCardH - 14
+      boxX + boxW / 2,
+      y + boxH - 12,
+      { align: "center" }
     );
-
     doc.setTextColor(0, 0, 0);
-    y += bigCardH + 12;
+
+    y += boxH + 10;
 
     // =========
-    // Sección: Conclusión (texto)
+    // Sección 5: Conclusión (texto)
     // =========
-    sectionTitle("Conclusión");
+    sectionTitle("5. Conclusión");
 
     const paragraph = (title: string, text: string) => {
       doc.setFont("helvetica", "bold");
-      doc.setFontSize(H2);
+      doc.setFontSize(TXT);
       doc.text(title, marginX, y);
       y += 10;
 
       doc.setFont("helvetica", "normal");
       doc.setFontSize(TXT);
       const lines = doc.splitTextToSize(text || "—", pageW - marginX * 2);
-      const h = (lines as string[]).length * LINE;
+      const h = (lines as string[]).length * (TXT + 2);
       ensureSpace(h);
       doc.text(lines as any, marginX, y);
-      y += h + 10;
+      y += h + 8;
     };
 
     paragraph("Observaciones", formData.observaciones);
@@ -922,7 +859,7 @@ export default function FactibilidadForm() {
     paragraph("Notas adicionales", formData.notasAdicionales);
 
     // =========================
-    // Footer: Profesional | Matrícula
+    // Footer (Profesional | Matrícula)
     // =========================
     const footerText = `${matriculado}  |  Matrícula N°: ${cpi}`;
     doc.setFont("helvetica", "italic");

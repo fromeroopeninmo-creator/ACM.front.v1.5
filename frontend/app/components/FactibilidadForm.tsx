@@ -30,8 +30,8 @@ interface FactibilidadFormData {
   fondo: number | null;
   tipoImplantacion: 'entre_medianeras' | 'esquina' | 'dos_frentes' | 'otro';
 
-  superficieDemoler: number | null;
-  superficieConservar: number | null;
+  superficieDemoler: number | null;     // solo informativo (no resta)
+  superficieConservar: number | null;   // solo informativo (no resta)
 
   fotoLoteUrl?: string;
   fotoLoteBase64?: string;
@@ -52,34 +52,23 @@ interface FactibilidadFormData {
   permiteSubsuelo: boolean;
   nivelesSubsuelo: number | null;
 
-  // Nueva perfilería / plano límite
-  perfilAnguloGrados: number | null;
-  perfilDesdePiso: number | null;
+  // 🔹 Perfilería (opcional)
+  perfilAnguloGrados: number | null;   // ej. 45°
+  perfilDesdePiso: number | null;      // ej. 8
 
-  // Bloque 3: Usos y eficiencia
-  porcentajeVivienda: number | null;
-  porcentajeComercio: number | null;
-  porcentajeOficinas: number | null;
-  porcentajeIndustria: number | null;
-  eficienciaGlobal: number | null;
-  metrosPorUnidad: number | null;
-  valorVentaPorUnidad: number | null;
+  // Bloque 3: Usos y eficiencia (simplificado)
+  eficienciaGlobal: number | null;     // ej. 0.80
+  metrosPorUnidad: number | null;      // ej. 40 (m²)
+  valorVentaPorUnidad: number | null;  // ej. 40000 (ARS, USD, etc.)
 
-  // Bloque 4: Costos
-  costoConstruccionM2: number | null;
-  costoDemolicionM2: number | null;
-  otrosCostosHonorarios: number | null;
-  otrosCostosPermisos: number | null;
-  otrosCostosImprevistos: number | null;
+  // Bloque 5: Incidencia
+  indiceIncidenciaZonal: number | null; // ej. 0.10 (10%)
 
-  // Bloque 6: Comentarios
+  // Conclusión
   observaciones: string;
   riesgos: string;
   oportunidades: string;
   notasAdicionales: string;
-
-  // Incidencias
-  indiceIncidenciaZonal: number | null;
 }
 
 type InlineMsg = { type: 'success' | 'error'; text: string } | null;
@@ -89,18 +78,18 @@ type InlineMsg = { type: 'success' | 'error'; text: string } | null;
  * ========================= */
 
 const peso = (n: number | null | undefined) =>
-  (!n && n !== 0) || isNaN(n as number)
-    ? '-'
-    : n!.toLocaleString('es-AR', {
+  n == null || isNaN(n)
+    ? '—'
+    : n.toLocaleString('es-AR', {
         style: 'currency',
         currency: 'ARS',
         maximumFractionDigits: 0,
       });
 
 const numero = (n: number | null | undefined, dec = 0) =>
-  (!n && n !== 0) || isNaN(n as number)
-    ? '-'
-    : n!.toLocaleString('es-AR', {
+  n == null || isNaN(n)
+    ? '—'
+    : n.toLocaleString('es-AR', {
         maximumFractionDigits: dec,
         minimumFractionDigits: dec,
       });
@@ -121,7 +110,7 @@ function dataUrlToFile(dataUrl: string, filename: string) {
   return new File([u8arr], filename, { type: mime });
 }
 
-// Comprimir a JPEG ≤ 40KB y máx 560px (igual que en ACM)
+// Comprimir a JPEG ≤ 40KB y máx 560px
 async function compressFileToDataUrl(
   file: File,
   opts?: {
@@ -252,25 +241,16 @@ const makeInitialData = (): FactibilidadFormData => ({
   perfilAnguloGrados: null,
   perfilDesdePiso: null,
 
-  porcentajeVivienda: null,
-  porcentajeComercio: null,
-  porcentajeOficinas: null,
-  porcentajeIndustria: null,
   eficienciaGlobal: null,
   metrosPorUnidad: null,
   valorVentaPorUnidad: null,
 
-  costoConstruccionM2: null,
-  costoDemolicionM2: null,
-  otrosCostosHonorarios: null,
-  otrosCostosPermisos: null,
-  otrosCostosImprevistos: null,
+  indiceIncidenciaZonal: null,
 
   observaciones: '',
   riesgos: '',
   oportunidades: '',
   notasAdicionales: '',
-  indiceIncidenciaZonal: null,
 });
 
 /* =========================
@@ -384,20 +364,13 @@ export default function FactibilidadForm() {
       'retiroFondo',
       'retiroLaterales',
       'porcentajeLibreInterior',
-      'porcentajeVivienda',
-      'porcentajeComercio',
-      'porcentajeOficinas',
-      'porcentajeIndustria',
       'eficienciaGlobal',
       'metrosPorUnidad',
       'valorVentaPorUnidad',
+      'nivelesSubsuelo',
       'perfilAnguloGrados',
       'perfilDesdePiso',
-      'costoConstruccionM2',
-      'costoDemolicionM2',
-      'otrosCostosHonorarios',
-      'otrosCostosPermisos',
-      'otrosCostosImprevistos',
+      'indiceIncidenciaZonal',
     ]);
 
     if (numericFields.has(name)) {
@@ -457,55 +430,51 @@ export default function FactibilidadForm() {
     const FOT = formData.FOT ?? null;
     const FOS = formData.FOS ?? null;
     const pisos = formData.pisosMaximos ?? null;
-    const perfilAngulo = formData.perfilAnguloGrados ?? null;
-    const perfilDesdePiso = formData.perfilDesdePiso ?? null;
 
-    const eff = formData.eficienciaGlobal ?? null;
-    const metrosPorUnidad = formData.metrosPorUnidad ?? null;
-    const valorVentaPorUnidad = formData.valorVentaPorUnidad ?? null;
-
-    // Superficie por FOT
+    // Superficie por FOT (tope absoluto)
     const superficieMaxPorFOT =
       sLote > 0 && FOT !== null ? sLote * FOT : null;
 
-    // Superficie por altura/pisos ~ usando FOS como componente (planta típica ~ sLote*FOS)
+    // Superficie por altura/pisos (con o sin perfilería)
     let superficieMaxPorAltura: number | null = null;
-    if (sLote > 0 && FOS !== null && pisos !== null) {
+
+    if (sLote > 0 && FOS !== null && pisos !== null && pisos > 0) {
       const plantaBase = sLote * FOS;
-      const fondo = formData.fondo || 0;
 
-      const aplicaPerfil =
-        perfilAngulo !== null &&
-        perfilDesdePiso !== null &&
-        perfilDesdePiso > 0 &&
-        perfilDesdePiso <= pisos &&
-        fondo > 0;
+      const ang = formData.perfilAnguloGrados ?? null;
+      const desde = formData.perfilDesdePiso ?? null;
+      const fondo = formData.fondo ?? null;
 
-      if (aplicaPerfil) {
-        const alturaPorPiso = 3; // m/piso
-        const angleRad = (perfilAngulo * Math.PI) / 180;
-        const avanceHorizontalPorPiso = Math.tan(angleRad) * alturaPorPiso;
-        const factorReduccionPorPiso = avanceHorizontalPorPiso / fondo;
-
-        const pisosSinPerfil = Math.max(
-          0,
-          Math.min(pisos, perfilDesdePiso - 1)
-        );
-        const pisosConPerfil = Math.max(0, pisos - pisosSinPerfil);
-
-        let areaSinPerfil = plantaBase * pisosSinPerfil;
-        let areaConPerfil = 0;
-
-        for (let k = 0; k < pisosConPerfil; k++) {
-          const ratio = Math.max(0, 1 - factorReduccionPorPiso * (k + 1));
-          if (ratio <= 0) break;
-          areaConPerfil += plantaBase * ratio;
-        }
-
-        superficieMaxPorAltura = areaSinPerfil + areaConPerfil;
-      } else {
-        // Sin perfilería: edificio "rectangular" en todos los pisos
+      // Sin perfilería → homogéneo
+      if (
+        ang == null ||
+        isNaN(ang) ||
+        desde == null ||
+        isNaN(desde) ||
+        fondo == null ||
+        isNaN(fondo) ||
+        fondo <= 0 ||
+        ang <= 0
+      ) {
         superficieMaxPorAltura = plantaBase * pisos;
+      } else {
+        // Con perfilería: reducimos profundidad a partir de "desde"
+        const angleRad = (ang * Math.PI) / 180;
+        const avancePorPiso = Math.tan(angleRad) * 3; // 3m por piso
+        const anchoBase = plantaBase / fondo;
+
+        let suma = 0;
+        for (let p = 1; p <= pisos; p++) {
+          if (p < desde) {
+            suma += plantaBase;
+          } else {
+            const pasos = p - (desde - 1);
+            const profundidad = Math.max(fondo - avancePorPiso * pasos, 0);
+            const areaPiso = Math.max(anchoBase * profundidad, 0);
+            suma += areaPiso;
+          }
+        }
+        superficieMaxPorAltura = suma;
       }
     }
 
@@ -522,128 +491,51 @@ export default function FactibilidadForm() {
       superficieConstruibleTotal = superficieMaxPorAltura;
     }
 
-    // Superficie vendible / común
+    // Superficie vendible (según eficiencia)
+    const eff = formData.eficienciaGlobal ?? null;
     const superficieVendibleTotal =
       superficieConstruibleTotal !== null && eff !== null
         ? superficieConstruibleTotal * eff
         : null;
 
-    const superficieComun =
-      superficieConstruibleTotal !== null &&
-      superficieVendibleTotal !== null
-        ? superficieConstruibleTotal - superficieVendibleTotal
-        : null;
-
-    // Costos
-    const costoConstruccionTotal =
-      superficieConstruibleTotal !== null &&
-      formData.costoConstruccionM2 !== null
-        ? superficieConstruibleTotal * formData.costoConstruccionM2
-        : null;
-
-    const costoDemolicionTotal =
-      formData.superficieDemoler !== null &&
-      formData.costoDemolicionM2 !== null
-        ? formData.superficieDemoler * formData.costoDemolicionM2
-        : null;
-
-    const costoOtrosTotal =
-      (formData.otrosCostosHonorarios ?? 0) +
-      (formData.otrosCostosPermisos ?? 0) +
-      (formData.otrosCostosImprevistos ?? 0);
-
-    const hayOtros =
-      formData.otrosCostosHonorarios !== null ||
-      formData.otrosCostosPermisos !== null ||
-      formData.otrosCostosImprevistos !== null;
-
-    const costoTotalProyectoRaw =
-      (costoConstruccionTotal ?? 0) +
-      (costoDemolicionTotal ?? 0) +
-      (hayOtros ? costoOtrosTotal : 0);
-
-    const costoTotalProyecto =
-      costoConstruccionTotal !== null ||
-      costoDemolicionTotal !== null ||
-      hayOtros
-        ? costoTotalProyectoRaw
-        : null;
-
-    // Unidades y ventas
-    const unidadesPosibles =
+    // Cálculo interno para precio de lote (no se muestran intermedios)
+    let unidadesPosibles: number | null = null;
+    if (
       superficieVendibleTotal !== null &&
-      metrosPorUnidad !== null &&
-      metrosPorUnidad > 0
-        ? Math.floor(superficieVendibleTotal / metrosPorUnidad)
-        : null;
+      formData.metrosPorUnidad !== null &&
+      formData.metrosPorUnidad > 0
+    ) {
+      unidadesPosibles = Math.floor(
+        superficieVendibleTotal / formData.metrosPorUnidad
+      );
+    }
 
-    const valorTotalVentas =
-      unidadesPosibles !== null && valorVentaPorUnidad !== null
-        ? unidadesPosibles * valorVentaPorUnidad
-        : null;
+    let valorTotalVentas: number | null = null;
+    if (
+      unidadesPosibles !== null &&
+      formData.valorVentaPorUnidad !== null &&
+      formData.valorVentaPorUnidad > 0
+    ) {
+      valorTotalVentas = unidadesPosibles * formData.valorVentaPorUnidad;
+    }
 
-    // Incidencia: índice aplicado sobre valor de ventas (no sobre costo)
-    const indice = formData.indiceIncidenciaZonal ?? null;
-
-    const valorLoteBase =
-      valorTotalVentas !== null && indice !== null
-        ? valorTotalVentas * indice
-        : null;
-
-    // Precio sugerido del lote: base menos costo de demolición (si hubiera)
-    const precioSugeridoLote =
-      valorLoteBase !== null
-        ? valorLoteBase - (costoDemolicionTotal ?? 0)
-        : null;
-
-    const incidenciaPorM2Lote =
-      precioSugeridoLote !== null && sLote > 0
-        ? precioSugeridoLote / sLote
-        : null;
-
-    const incidenciaPorM2Vendible =
-      precioSugeridoLote !== null &&
-      superficieVendibleTotal !== null &&
-      superficieVendibleTotal > 0
-        ? precioSugeridoLote / superficieVendibleTotal
-        : null;
-
-    // Rentabilidad (solo si se cargaron costos)
-    const utilidadBruta =
+    let precioSugeridoLote: number | null = null;
+    if (
       valorTotalVentas !== null &&
-      costoTotalProyecto !== null &&
-      precioSugeridoLote !== null
-        ? valorTotalVentas - costoTotalProyecto - precioSugeridoLote
-        : null;
-
-    const rentabilidadSobreVentas =
-      utilidadBruta !== null &&
-      valorTotalVentas !== null &&
-      valorTotalVentas > 0
-        ? utilidadBruta / valorTotalVentas
-        : null;
+      formData.indiceIncidenciaZonal !== null &&
+      formData.indiceIncidenciaZonal >= 0
+    ) {
+      precioSugeridoLote = valorTotalVentas * formData.indiceIncidenciaZonal;
+    }
 
     return {
       superficieMaxPorFOT,
       superficieMaxPorAltura,
       superficieConstruibleTotal,
       superficieVendibleTotal,
-      superficieComun,
-      costoConstruccionTotal,
-      costoDemolicionTotal,
-      costoOtrosTotal: hayOtros ? costoOtrosTotal : null,
-      costoTotalProyecto,
-      unidadesPosibles,
-      valorTotalVentas,
-      valorLoteBase,
       precioSugeridoLote,
-      incidenciaPorM2Lote,
-      incidenciaPorM2Vendible,
-      utilidadBruta,
-      rentabilidadSobreVentas,
     };
   }, [formData]);
-
   /* =========================
    *  Guardar / Cargar
    * ========================= */
@@ -653,12 +545,10 @@ export default function FactibilidadForm() {
       setIsSubmitting(true);
       setSaveMsg(null);
 
-      // Clonar datos y enchufar resultados en el JSON
+      // Clonar datos y adjuntar snapshot de cálculos
       const datosLimpios = structuredClone(formData) as FactibilidadFormData & {
         calculos?: any;
       };
-
-      // Adjuntamos snapshot de cálculos al JSON (útil para trazabilidad)
       datosLimpios['calculos'] = calculos;
 
       const fotoB64 = datosLimpios.fotoLoteBase64;
@@ -684,7 +574,6 @@ export default function FactibilidadForm() {
       const data = await res.json();
       const id: string | undefined = data?.informe?.id;
       if (!id) throw new Error('No se recibió ID de informe.');
-
       setInformeId(id);
 
       // Subimos foto (si hay base64)
@@ -704,10 +593,7 @@ export default function FactibilidadForm() {
         if (up.ok && upData?.url) {
           nuevaFotoUrl = String(upData.url);
         } else {
-          console.warn(
-            'Upload foto_lote falló:',
-            upData?.error || up.statusText
-          );
+          console.warn('Upload foto_lote falló:', upData?.error || up.statusText);
         }
       }
 
@@ -734,16 +620,10 @@ export default function FactibilidadForm() {
         fotoLoteBase64: undefined,
       }));
 
-      setSaveMsg({
-        type: 'success',
-        text: `Informe guardado con éxito. ID: ${id}`,
-      });
+      setSaveMsg({ type: 'success', text: `Informe guardado con éxito. ID: ${id}` });
     } catch (err: any) {
       console.error('Guardar Factibilidad', err);
-      setSaveMsg({
-        type: 'error',
-        text: err?.message || 'No se pudo guardar el informe',
-      });
+      setSaveMsg({ type: 'error', text: err?.message || 'No se pudo guardar el informe' });
     } finally {
       setIsSubmitting(false);
     }
@@ -757,10 +637,7 @@ export default function FactibilidadForm() {
 
   const handleConfirmLoad = async () => {
     if (!loadIdInput) {
-      setLoadMsg({
-        type: 'error',
-        text: 'Por favor, ingresá un ID válido.',
-      });
+      setLoadMsg({ type: 'error', text: 'Por favor, ingresá un ID válido.' });
       return;
     }
 
@@ -778,9 +655,7 @@ export default function FactibilidadForm() {
 
       const inf = data?.informe ?? data;
       const payload: FactibilidadFormData | undefined = inf?.datos_json;
-      if (!payload) {
-        throw new Error('El informe no contiene datos_json');
-      }
+      if (!payload) throw new Error('El informe no contiene datos_json');
 
       const fotoUrl: string = inf?.foto_lote_url || '';
 
@@ -793,22 +668,16 @@ export default function FactibilidadForm() {
 
       const loadedId = inf?.id || loadIdInput;
       setInformeId(loadedId);
-      setLoadMsg({
-        type: 'success',
-        text: `Informe cargado correctamente (ID: ${loadedId}).`,
-      });
+      setLoadMsg({ type: 'success', text: `Informe cargado correctamente (ID: ${loadedId}).` });
       setLoadOpen(false);
     } catch (err: any) {
       console.error('Cargar Factibilidad', err);
-      setLoadMsg({
-        type: 'error',
-        text: `Error al cargar: ${err?.message || 'desconocido'}`,
-      });
+      setLoadMsg({ type: 'error', text: `Error al cargar: ${err?.message || 'desconocido'}` });
     }
   };
 
   /* =========================
-   *  PDF
+   *  PDF (simplificado para esta versión)
    * ========================= */
 
   const handleDownloadPDF = async () => {
@@ -820,112 +689,34 @@ export default function FactibilidadForm() {
     const margin = 40;
     let y = margin;
 
-    // 🔹 Datos desde Auth / Theme (misma lógica que ACMForm)
+    const themeLogo = (theme as any)?.logoUrlBusted ?? (theme as any)?.logoUrl ?? null;
     const anyUser = user as any;
-
-    let matriculado = anyUser?.matriculado_nombre || '—';
-    let cpi = anyUser?.cpi || '—';
-    let inmobiliaria = themeCompanyName || anyUser?.inmobiliaria || '—';
-    const asesorNombre =
-      anyUser?.nombre && anyUser?.apellido
-        ? `${anyUser.nombre} ${anyUser.apellido}`
-        : '—';
-
-    const role = (anyUser?.role || '').toLowerCase();
-    const isAsesor = role === 'asesor';
-
-    // ⤵️ Igual que en ACMForm: si faltan datos, los completamos desde la tabla empresas
-    if (inmobiliaria === '—' || matriculado === '—' || cpi === '—') {
-      try {
-        const { supabase } = await import('#lib/supabaseClient');
-
-        let query = supabase
-          .from('empresas')
-          .select('id, nombre_comercial, matriculado, cpi, user_id')
-          .limit(1);
-
-        if (isAsesor && anyUser?.empresa_id) {
-          // Asesor → buscamos la empresa asociada por id
-          query = query.eq('id', anyUser.empresa_id);
-        } else if (anyUser?.id) {
-          // Empresa (owner) → buscamos por user_id
-          query = query.eq('user_id', anyUser.id);
-        }
-
-        const { data: empresaRow, error } = await query.maybeSingle();
-        if (!error && empresaRow) {
-          if (inmobiliaria === '—' && empresaRow.nombre_comercial) {
-            inmobiliaria = empresaRow.nombre_comercial;
-          }
-          if (matriculado === '—' && empresaRow.matriculado) {
-            matriculado = empresaRow.matriculado;
-          }
-          if (cpi === '—' && empresaRow.cpi) {
-            cpi = empresaRow.cpi;
-          }
-        }
-      } catch (e) {
-        console.warn(
-          'No se pudieron resolver datos de empresa para asesor/empresa (PDF Factibilidad):',
-          e
-        );
-      }
-    }
-
-    // Logo y color como en ACMForm
-    const themeLogo = themeLogoUrl || null;
 
     const hexToRgb = (hex: string) => {
       const m = hex.replace('#', '');
-      const int = parseInt(
-        m.length === 3 ? m.split('').map((c) => c + c).join('') : m,
-        16
-      );
-      return {
-        r: (int >> 16) & 255,
-        g: (int >> 8) & 255,
-        b: int & 255,
-      };
+      const int = parseInt(m.length === 3 ? m.split('').map((c) => c + c).join('') : m, 16);
+      return { r: (int >> 16) & 255, g: (int >> 8) & 255, b: int & 255 };
     };
 
     const pc = hexToRgb(effectivePrimaryColor);
 
-    // 🔹 Título principal
+    // Título centrado
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(16);
     doc.setTextColor(pc.r, pc.g, pc.b);
-    doc.text('Informe de Factibilidad Constructiva', pageW / 2, y, {
-      align: 'center',
-    });
+    doc.text('Factibilidad Constructiva', pageW / 2, y, { align: 'center' });
     doc.setTextColor(0, 0, 0);
-    y += 30;
 
-    // 🔹 Encabezado (empresa / profesional / asesor)
-    const colLeftX = margin;
-    const colRightX = pageW - margin - 220;
-
-    doc.setFontSize(11);
-    doc.setFont('helvetica', 'normal');
-
-    // Izquierda (igual criterio que ACMForm)
-    doc.text(`Empresa: ${inmobiliaria}`, colLeftX, y);
-    doc.text(`Profesional: ${matriculado}`, colLeftX, y + 15);
-    doc.text(`Asesor: ${isAsesor ? asesorNombre : '—'}`, colLeftX, y + 30);
-
-    // Derecha
-    doc.text(`Matricula N°: ${cpi}`, colRightX, y);
+    // Fecha a la derecha
+    doc.setFontSize(10);
     doc.text(
-      `Fecha: ${new Date(formData.date).toLocaleDateString('es-AR')}`,
-      colRightX,
-      y + 15
-    );
-    doc.text(
-      `Proyecto: ${formData.nombreProyecto || '-'}`,
-      colRightX,
-      y + 30
+      new Date(formData.date || new Date().toISOString()).toLocaleDateString('es-AR'),
+      pageW - margin,
+      y,
+      { align: 'right' }
     );
 
-    // 🔹 Logo centrado (como en ACMForm)
+    // Logo opcional centrado debajo del título
     if (themeLogo) {
       try {
         const base64Img = await fetchToDataURL(themeLogo);
@@ -933,130 +724,43 @@ export default function FactibilidadForm() {
           const logoW = 70;
           const logoH = 70;
           const centerX = pageW / 2 - logoW / 2;
-          doc.addImage(
-            base64Img,
-            'PNG',
-            centerX,
-            y - 10,
-            logoW,
-            logoH,
-            undefined,
-            'FAST'
-          );
+          doc.addImage(base64Img, 'PNG', centerX, y + 10, logoW, logoH, undefined, 'FAST');
         }
       } catch (err) {
         console.warn('No se pudo cargar el logo en PDF factibilidad', err);
       }
     }
 
-    y += 70;
+    y += 95;
 
-    // 🔹 Separador
+    // Separador
     doc.setDrawColor(pc.r, pc.g, pc.b);
     doc.setLineWidth(0.8);
     doc.line(margin, y, pageW - margin, y);
-    y += 20;
+    y += 18;
 
-    /* Bloque: Datos del lote */
+    // Bloque: Datos del lote (resumen)
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(13);
     doc.setTextColor(pc.r, pc.g, pc.b);
     doc.text('Datos del Lote', pageW / 2, y, { align: 'center' });
     doc.setTextColor(0, 0, 0);
-    y += 18;
+    y += 16;
 
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(10);
-
     const lh = 14;
-    let yDatos = y;
 
-    const linesIzq = [
-      `Dirección: ${formData.direccion || '-'}`,
-      `Localidad: ${formData.localidad || '-'}`,
-      `Barrio: ${formData.barrio || '-'}`,
-      `Zona / Distrito: ${formData.zona || '-'}`,
-      `Superficie lote: ${numero(formData.superficieLote)} m²`,
+    const linesLote = [
+      `Proyecto: ${formData.nombreProyecto || '—'}`,
+      `Dirección: ${formData.direccion || '—'}`,
+      `Localidad: ${formData.localidad || '—'}`,
+      `Barrio: ${formData.barrio || '—'}`,
+      `Zona / Distrito: ${formData.zona || '—'}`,
+      `Superficie de lote: ${numero(formData.superficieLote)} m²`,
       `Frente: ${numero(formData.frente)} m`,
       `Fondo: ${numero(formData.fondo)} m`,
-      `Superficie a demoler: ${numero(formData.superficieDemoler)} m²`,
-      `Superficie a conservar: ${numero(formData.superficieConservar)} m²`,
-    ];
-
-    linesIzq.forEach((line) => {
-      doc.text(line, margin, yDatos);
-      yDatos += lh;
-    });
-
-    // 🔹 Foto del lote
-    let fotoDataURL: string | null = null;
-    if (formData.fotoLoteBase64) {
-      fotoDataURL = formData.fotoLoteBase64;
-    } else if (formData.fotoLoteUrl) {
-      fotoDataURL = await fetchToDataURL(formData.fotoLoteUrl);
-    }
-
-    if (fotoDataURL) {
-      try {
-        const imgW = 180;
-        const imgH = 135;
-        doc.addImage(
-          fotoDataURL,
-          'JPEG',
-          pageW - margin - imgW,
-          y,
-          imgW,
-          imgH,
-          undefined,
-          'FAST'
-        );
-        yDatos = Math.max(yDatos, y + imgH + 10);
-      } catch (err) {
-        console.warn('No se pudo agregar foto de lote al PDF', err);
-      }
-    }
-
-    y = yDatos + 10;
-    if (y > pageH - 160) {
-      doc.addPage();
-      y = margin;
-    }
-
-    // 🔹 Bloque Normativa
-    doc.setDrawColor(pc.r, pc.g, pc.b);
-    doc.line(margin, y, pageW - margin, y);
-    y += 18;
-
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(13);
-    doc.setTextColor(pc.r, pc.g, pc.b);
-    doc.text('Normativa y Morfología', pageW / 2, y, {
-      align: 'center',
-    });
-    doc.setTextColor(0, 0, 0);
-    y += 18;
-
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(10);
-
-    const normasIzq = [
-      `FOS: ${numero(formData.FOS, 2)}`,
-      `FOT: ${numero(formData.FOT, 2)}`,
-      `Altura máxima: ${numero(formData.alturaMaxima)} m`,
-      `Pisos máximos: ${numero(formData.pisosMaximos)}`,
-      `Retiros frente: ${numero(formData.retiroFrente)} m`,
-      `Retiros fondo: ${numero(formData.retiroFondo)} m`,
-      `Retiros laterales: ${numero(formData.retiroLaterales)} m`,
-    ];
-
-    const normasDer = [
-      `Requiere corazón de manzana: ${
-        formData.requiereCorazonManzana ? 'Sí' : 'No'
-      }`,
-      `Área libre / interior: ${numero(formData.porcentajeLibreInterior)} %`,
-      `Permite subsuelo: ${formData.permiteSubsuelo ? 'Sí' : 'No'}`,
-      `Niveles de subsuelo: ${numero(formData.nivelesSubsuelo)}`,
-      `Tipo implantación: ${
+      `Implantación: ${
         formData.tipoImplantacion === 'entre_medianeras'
           ? 'Entre medianeras'
           : formData.tipoImplantacion === 'esquina'
@@ -1065,29 +769,86 @@ export default function FactibilidadForm() {
           ? 'Dos frentes'
           : 'Otro'
       }`,
-      `Perfilería (°): ${numero(formData.perfilAnguloGrados, 2)}`,
-      `Plano límite desde piso: ${numero(formData.perfilDesdePiso)}`,
+    ];
+
+    let yTemp = y;
+    linesLote.forEach((t) => {
+      doc.text(t, margin, yTemp);
+      yTemp += lh;
+    });
+
+    // Foto (si hay)
+    let fotoDataURL: string | null = null;
+    if (formData.fotoLoteBase64) fotoDataURL = formData.fotoLoteBase64;
+    else if (formData.fotoLoteUrl) fotoDataURL = await fetchToDataURL(formData.fotoLoteUrl);
+
+    if (fotoDataURL) {
+      try {
+        const imgW = 180;
+        const imgH = 135;
+        doc.addImage(fotoDataURL, 'JPEG', pageW - margin - imgW, y, imgW, imgH, undefined, 'FAST');
+        yTemp = Math.max(yTemp, y + imgH + 8);
+      } catch (err) {
+        console.warn('No se pudo agregar foto de lote al PDF', err);
+      }
+    }
+    y = yTemp + 6;
+
+    if (y > pageH - 160) {
+      doc.addPage();
+      y = margin;
+    }
+
+    // Bloque: Normativa y morfología (resumen)
+    doc.setDrawColor(pc.r, pc.g, pc.b);
+    doc.line(margin, y, pageW - margin, y);
+    y += 18;
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(13);
+    doc.setTextColor(pc.r, pc.g, pc.b);
+    doc.text('Normativa y Morfología', pageW / 2, y, { align: 'center' });
+    doc.setTextColor(0, 0, 0);
+    y += 16;
+
+    const normasIzq = [
+      `FOS: ${numero(formData.FOS, 2)}`,
+      `FOT: ${numero(formData.FOT, 2)}`,
+      `Altura máxima: ${numero(formData.alturaMaxima)} m`,
+      `Pisos máximos: ${numero(formData.pisosMaximos)}`,
+    ];
+
+    const normasDer = [
+      `Retiros frente: ${numero(formData.retiroFrente)} m`,
+      `Retiros fondo: ${numero(formData.retiroFondo)} m`,
+      `Retiros laterales: ${numero(formData.retiroLaterales)} m`,
+      `Perfilería: ${
+        formData.perfilAnguloGrados != null && formData.perfilDesdePiso != null
+          ? `${numero(formData.perfilAnguloGrados)}° desde piso ${numero(formData.perfilDesdePiso)}`
+          : '—'
+      }`,
     ];
 
     let yN1 = y;
-    normasIzq.forEach((line) => {
-      doc.text(line, margin, yN1);
+    normasIzq.forEach((t) => {
+      doc.text(t, margin, yN1);
       yN1 += lh;
     });
 
     let yN2 = y;
-    normasDer.forEach((line) => {
-      doc.text(line, pageW / 2, yN2);
+    normasDer.forEach((t) => {
+      doc.text(t, pageW / 2, yN2);
       yN2 += lh;
     });
 
-    y = Math.max(yN1, yN2) + 10;
+    y = Math.max(yN1, yN2) + 8;
+
     if (y > pageH - 160) {
       doc.addPage();
       y = margin;
     }
 
-    // 🔹 Bloque Superficies & Costos
+    // Bloque: Usos y eficiencia (resumen)
     doc.setDrawColor(pc.r, pc.g, pc.b);
     doc.line(margin, y, pageW - margin, y);
     y += 18;
@@ -1095,85 +856,26 @@ export default function FactibilidadForm() {
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(13);
     doc.setTextColor(pc.r, pc.g, pc.b);
-    doc.text('Superficies y Costos', pageW / 2, y, {
-      align: 'center',
-    });
+    doc.text('Usos y Eficiencia', pageW / 2, y, { align: 'center' });
     doc.setTextColor(0, 0, 0);
-    y += 18;
+    y += 16;
 
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(10);
-
-    const supLines = [
-      `Superficie máx. por FOT: ${numero(calculos.superficieMaxPorFOT)} m²`,
-      `Superficie máx. por altura/pisos: ${numero(
-        calculos.superficieMaxPorAltura
-      )} m²`,
-      `Superficie construible total: ${numero(
-        calculos.superficieConstruibleTotal
-      )} m²`,
-      `Superficie vendible aprox.: ${numero(
-        calculos.superficieVendibleTotal
-      )} m²`,
-      `Superficie común/no vendible: ${numero(
-        calculos.superficieComun
-      )} m²`,
+    const usos = [
       `Eficiencia global: ${numero(formData.eficienciaGlobal, 2)}`,
+      `m² por unidad: ${numero(formData.metrosPorUnidad)}`,
+      `Valor de venta por unidad: ${peso(formData.valorVentaPorUnidad || null)}`,
     ];
-
-    const costoLines = [
-      `Costo construcción/m²: ${peso(formData.costoConstruccionM2 ?? null)}`,
-      `Costo total construcción: ${
-        calculos.costoConstruccionTotal !== null
-          ? peso(calculos.costoConstruccionTotal)
-          : '-'
-      }`,
-      `Costo demolición/m²: ${peso(formData.costoDemolicionM2 ?? null)}`,
-      `Costo total demolición: ${
-        calculos.costoDemolicionTotal !== null
-          ? peso(calculos.costoDemolicionTotal)
-          : '-'
-      }`,
-      `Otros costos (honorarios, permisos, imprevistos): ${
-        calculos.costoOtrosTotal !== null
-          ? peso(calculos.costoOtrosTotal)
-          : '-'
-      }`,
-      `Costo total aproximado del proyecto: ${
-        calculos.costoTotalProyecto !== null
-          ? peso(calculos.costoTotalProyecto)
-          : '-'
-      }`,
-    ];
-
-    let yS1 = y;
-    supLines.forEach((line) => {
-      doc.text(line, margin, yS1);
-      yS1 += lh;
+    usos.forEach((t) => {
+      doc.text(t, margin, y);
+      y += lh;
     });
 
-    let yS2 = y;
-
-    const tieneCostosProyecto =
-      calculos.costoConstruccionTotal !== null ||
-      calculos.costoDemolicionTotal !== null ||
-      calculos.costoOtrosTotal !== null ||
-      calculos.costoTotalProyecto !== null;
-
-    if (tieneCostosProyecto) {
-      costoLines.forEach((line) => {
-        doc.text(line, pageW / 2, yS2);
-        yS2 += lh;
-      });
-    }
-
-    y = Math.max(yS1, yS2) + 10;
     if (y > pageH - 160) {
       doc.addPage();
       y = margin;
     }
 
-    // 🔹 Bloque Incidencias
+    // Bloque: Resultado (solo Precio Sugerido del Lote)
     doc.setDrawColor(pc.r, pc.g, pc.b);
     doc.line(margin, y, pageW - margin, y);
     y += 18;
@@ -1181,101 +883,22 @@ export default function FactibilidadForm() {
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(13);
     doc.setTextColor(pc.r, pc.g, pc.b);
-    doc.text('Incidencia y Precio sugerido del lote', pageW / 2, y, {
-      align: 'center',
-    });
+    doc.text('Resultado', pageW / 2, y, { align: 'center' });
     doc.setTextColor(0, 0, 0);
-    y += 18;
-
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(10);
-
-    const incLines = [
-      `Unidades posibles (aprox.): ${
-        calculos.unidadesPosibles != null
-          ? numero(calculos.unidadesPosibles)
-          : '-'
-      }`,
-      `Valor total de unidades vendibles: ${
-        calculos.valorTotalVentas !== null
-          ? peso(calculos.valorTotalVentas)
-          : '-'
-      }`,
-      `Índice de incidencia zonal (sobre valor de ventas): ${
-        formData.indiceIncidenciaZonal != null
-          ? `${(formData.indiceIncidenciaZonal * 100).toFixed(2)} %`
-          : '-'
-      }`,
-      `Precio sugerido del lote: ${
-        calculos.precioSugeridoLote !== null
-          ? peso(calculos.precioSugeridoLote)
-          : '-'
-      }`,
-      `Incidencia por m² de lote: ${
-        calculos.incidenciaPorM2Lote !== null
-          ? peso(calculos.incidenciaPorM2Lote)
-          : '-'
-      }`,
-      `Incidencia por m² vendible: ${
-        calculos.incidenciaPorM2Vendible !== null
-          ? peso(calculos.incidenciaPorM2Vendible)
-          : '-'
-      }`,
-    ];
-
-    let yInc = y;
-    incLines.forEach((line) => {
-      doc.text(line, margin, yInc);
-      yInc += lh;
-    });
-
-    // Bloque opcional de rentabilidad (solo si hay datos)
-    if (
-      calculos.utilidadBruta !== null &&
-      calculos.rentabilidadSobreVentas !== null
-    ) {
-      yInc += 6;
-      doc.setFont('helvetica', 'bold');
-      doc.text('Rentabilidad estimada del proyecto:', margin, yInc);
-      yInc += 14;
-      doc.setFont('helvetica', 'normal');
-      doc.text(
-        `Utilidad bruta aprox.: ${peso(calculos.utilidadBruta)}`,
-        margin,
-        yInc
-      );
-      yInc += 14;
-      doc.text(
-        `Margen sobre ventas: ${(calculos.rentabilidadSobreVentas * 100).toFixed(
-          2
-        )} %`,
-        margin,
-        yInc
-      );
-    }
-
-    y = yInc + 18;
+    y += 24;
 
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(16);
-    doc.text(
-      calculos.precioSugeridoLote !== null
-        ? peso(calculos.precioSugeridoLote)
-        : peso(null),
-      pageW / 2,
-      y,
-      {
-        align: 'center',
-      }
-    );
-    y += 24;
+    const precioTxt = peso(calculos.precioSugeridoLote ?? null);
+    doc.text(`Precio sugerido del lote: ${precioTxt}`, pageW / 2, y, { align: 'center' });
+    y += 28;
 
     if (y > pageH - 160) {
       doc.addPage();
       y = margin;
     }
 
-    // 🔹 Bloque Comentarios
+    // Bloque: Conclusión
     doc.setDrawColor(pc.r, pc.g, pc.b);
     doc.line(margin, y, pageW - margin, y);
     y += 18;
@@ -1283,11 +906,9 @@ export default function FactibilidadForm() {
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(13);
     doc.setTextColor(pc.r, pc.g, pc.b);
-    doc.text('Comentarios y Observaciones', pageW / 2, y, {
-      align: 'center',
-    });
+    doc.text('Conclusión', pageW / 2, y, { align: 'center' });
     doc.setTextColor(0, 0, 0);
-    y += 16;
+    y += 14;
 
     const block = (title: string, text: string) => {
       doc.setFont('helvetica', 'bold');
@@ -1296,11 +917,9 @@ export default function FactibilidadForm() {
       y += 12;
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(10);
-      const lines = doc.splitTextToSize(text || '-', pageW - margin * 2);
+      const lines = doc.splitTextToSize(text || '—', pageW - margin * 2);
       doc.text(lines as any, margin, y);
-      y +=
-        (Array.isArray(lines) ? (lines as string[]).length : 1) * 14 +
-        8;
+      y += (Array.isArray(lines) ? (lines as string[]).length : 1) * 14 + 8;
       if (y > pageH - 80) {
         doc.addPage();
         y = margin;
@@ -1312,11 +931,11 @@ export default function FactibilidadForm() {
     block('Oportunidades', formData.oportunidades);
     block('Notas adicionales', formData.notasAdicionales);
 
-    // 🔹 Footer (igual criterio que ACMForm)
-    const footerText = `${matriculado}  |  Matricula N°: ${cpi}`;
+    // Footer simple
     doc.setFont('helvetica', 'italic');
     doc.setFontSize(9);
-    doc.text(footerText, pageW / 2, pageH - 30, { align: 'center' });
+    const footerText = `${(anyUser?.nombre || '—')} ${(anyUser?.apellido || '')}`.trim();
+    doc.text(footerText || '—', pageW / 2, pageH - 30, { align: 'center' });
 
     doc.save('Informe_Factibilidad.pdf');
   };
@@ -1328,26 +947,21 @@ export default function FactibilidadForm() {
   return (
     <>
       <div className="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8 space-y-6">
-        {/* Header del formulario */}
+        {/* Header del formulario (nuevo layout) */}
         <div className="flex items-center justify-between gap-4 mb-2 border-b pb-3">
-          <div className="font-semibold tracking-wide">VAI</div>
-          <div className="text-2xl text-center grow">
-            {themeCompanyName || (user as any)?.inmobiliaria || 'Empresa'}
+          <div className="w-24" />
+          <div className="text-xl sm:text-2xl font-semibold text-center grow">
+            Factibilidad Constructiva
           </div>
           <div className="text-sm whitespace-nowrap">
-            {new Date(
-              formData.date || new Date().toISOString()
-            ).toLocaleDateString('es-AR')}
+            {new Date(formData.date || new Date().toISOString()).toLocaleDateString('es-AR')}
           </div>
         </div>
 
-        {/* Bloque 1: Datos del lote + Foto */}
+        {/* 1) Datos del lote + Foto */}
         <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
           <div className="border-b border-gray-200 p-4 sm:p-6">
-            <h2
-              className="text-base sm:text-lg font-semibold"
-              style={{ color: effectivePrimaryColor }}
-            >
+            <h2 className="text-base sm:text-lg font-semibold" style={{ color: effectivePrimaryColor }}>
               1. Datos del lote y foto de referencia
             </h2>
           </div>
@@ -1356,9 +970,7 @@ export default function FactibilidadForm() {
             {/* Datos del lote */}
             <div className="lg:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-1 md:col-span-2">
-                <label className="block text-sm font-medium text-gray-700">
-                  Título del informe
-                </label>
+                <label className="block text-sm font-medium text-gray-700">Título del informe</label>
                 <input
                   name="titulo"
                   value={formData.titulo}
@@ -1369,9 +981,7 @@ export default function FactibilidadForm() {
               </div>
 
               <div className="space-y-1 md:col-span-2">
-                <label className="block text-sm font-medium text-gray-700">
-                  Nombre del proyecto
-                </label>
+                <label className="block text-sm font-medium text-gray-700">Nombre del proyecto</label>
                 <input
                   name="nombreProyecto"
                   value={formData.nombreProyecto}
@@ -1382,9 +992,7 @@ export default function FactibilidadForm() {
               </div>
 
               <div className="space-y-1 md:col-span-2">
-                <label className="block text-sm font-medium text-gray-700">
-                  Dirección
-                </label>
+                <label className="block text-sm font-medium text-gray-700">Dirección</label>
                 <input
                   name="direccion"
                   value={formData.direccion}
@@ -1395,9 +1003,7 @@ export default function FactibilidadForm() {
               </div>
 
               <div className="space-y-1">
-                <label className="block text-sm font-medium text-gray-700">
-                  Localidad
-                </label>
+                <label className="block text-sm font-medium text-gray-700">Localidad</label>
                 <input
                   name="localidad"
                   value={formData.localidad}
@@ -1408,9 +1014,7 @@ export default function FactibilidadForm() {
               </div>
 
               <div className="space-y-1">
-                <label className="block text-sm font-medium text-gray-700">
-                  Barrio
-                </label>
+                <label className="block text-sm font-medium text-gray-700">Barrio</label>
                 <input
                   name="barrio"
                   value={formData.barrio}
@@ -1421,9 +1025,7 @@ export default function FactibilidadForm() {
               </div>
 
               <div className="space-y-1 md:col-span-2">
-                <label className="block text-sm font-medium text-gray-700">
-                  Zona / Distrito urbanístico
-                </label>
+                <label className="block text-sm font-medium text-gray-700">Zona / Distrito urbanístico</label>
                 <input
                   name="zona"
                   value={formData.zona}
@@ -1434,9 +1036,7 @@ export default function FactibilidadForm() {
               </div>
 
               <div className="space-y-1">
-                <label className="block text-sm font-medium text-gray-700">
-                  Superficie del lote (m²)
-                </label>
+                <label className="block text-sm font-medium text-gray-700">Superficie del lote (m²)</label>
                 <input
                   name="superficieLote"
                   type="number"
@@ -1449,9 +1049,7 @@ export default function FactibilidadForm() {
               </div>
 
               <div className="space-y-1">
-                <label className="block text-sm font-medium text-gray-700">
-                  Frente (m)
-                </label>
+                <label className="block text-sm font-medium text-gray-700">Frente (m)</label>
                 <input
                   name="frente"
                   type="number"
@@ -1464,9 +1062,7 @@ export default function FactibilidadForm() {
               </div>
 
               <div className="space-y-1">
-                <label className="block text-sm font-medium text-gray-700">
-                  Fondo (m)
-                </label>
+                <label className="block text-sm font-medium text-gray-700">Fondo (m)</label>
                 <input
                   name="fondo"
                   type="number"
@@ -1479,52 +1075,18 @@ export default function FactibilidadForm() {
               </div>
 
               <div className="space-y-1">
-                <label className="block text-sm font-medium text-gray-700">
-                  Tipo de implantación
-                </label>
+                <label className="block text-sm font-medium text-gray-700">Tipo de implantación</label>
                 <select
                   name="tipoImplantacion"
                   value={formData.tipoImplantacion}
                   onChange={handleSimpleChange}
                   className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
                 >
-                  <option value="entre_medianeras">
-                    Entre medianeras
-                  </option>
+                  <option value="entre_medianeras">Entre medianeras</option>
                   <option value="esquina">Esquina</option>
                   <option value="dos_frentes">Dos frentes</option>
                   <option value="otro">Otro</option>
                 </select>
-              </div>
-
-              <div className="space-y-1">
-                <label className="block text-sm font-medium text-gray-700">
-                  Superficie a demoler (m²)
-                </label>
-                <input
-                  name="superficieDemoler"
-                  type="number"
-                  inputMode="decimal"
-                  value={formData.superficieDemoler ?? ''}
-                  onChange={handleSimpleChange}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
-                  placeholder="Opcional"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="block text-sm font-medium text-gray-700">
-                  Superficie a conservar (m²)
-                </label>
-                <input
-                  name="superficieConservar"
-                  type="number"
-                  inputMode="decimal"
-                  value={formData.superficieConservar ?? ''}
-                  onChange={handleSimpleChange}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
-                  placeholder="Fachada / Patrimonio (opcional)"
-                />
               </div>
             </div>
 
@@ -1535,27 +1097,16 @@ export default function FactibilidadForm() {
               </h3>
 
               {(() => {
-                const src =
-                  formData.fotoLoteBase64 ||
-                  formData.fotoLoteUrl ||
-                  '';
+                const src = formData.fotoLoteBase64 || formData.fotoLoteUrl || '';
                 if (src) {
                   return (
                     <div className="overflow-hidden rounded-lg border border-gray-200">
-                      <img
-                        src={src}
-                        alt="Foto del lote"
-                        className="h-48 sm:h-64 w-full object-cover"
-                      />
+                      <img src={src} alt="Foto del lote" className="h-48 sm:h-64 w-full object-cover" />
                       <div className="p-2 flex items-center justify-between">
                         <button
                           type="button"
                           onClick={() =>
-                            setFormData((p) => ({
-                              ...p,
-                              fotoLoteBase64: undefined,
-                              fotoLoteUrl: '',
-                            }))
+                            setFormData((p) => ({ ...p, fotoLoteBase64: undefined, fotoLoteUrl: '' }))
                           }
                           className="inline-flex items-center rounded-md border border-gray-300 bg-white px-2 py-1 text-xs sm:text-sm text-gray-700 hover:bg-gray-50"
                         >
@@ -1563,9 +1114,7 @@ export default function FactibilidadForm() {
                         </button>
                         <button
                           type="button"
-                          onClick={() =>
-                            fotoLoteInputRef.current?.click()
-                          }
+                          onClick={() => fotoLoteInputRef.current?.click()}
                           className="inline-flex items-center rounded-md border border-gray-300 bg-white px-2 py-1 text-xs sm:text-sm text-gray-700 hover:bg-gray-50"
                         >
                           Cambiar foto
@@ -1577,22 +1126,17 @@ export default function FactibilidadForm() {
 
                 return (
                   <div className="rounded-lg border border-dashed border-gray-300 p-4 text-center">
-                    <p className="mb-2 text-xs text-gray-500">
-                      Subir imagen (JPG/PNG)
-                    </p>
+                    <p className="mb-2 text-xs text-gray-500">Subir imagen (JPG/PNG)</p>
                     <button
                       type="button"
-                      onClick={() =>
-                        fotoLoteInputRef.current?.click()
-                      }
+                      onClick={() => fotoLoteInputRef.current?.click()}
                       className="inline-flex items-center rounded-md border border-gray-300 bg-white px-2 py-1 text-xs sm:text-sm text-gray-700 hover:bg-gray-50"
                     >
                       Subir foto
                     </button>
                     {!informeId && (
                       <p className="mt-2 text-[11px] text-gray-500">
-                        Consejo: guardá el informe para subir la foto al
-                        Storage.
+                        Consejo: guardá el informe para subir la foto al Storage.
                       </p>
                     )}
                   </div>
@@ -1610,22 +1154,17 @@ export default function FactibilidadForm() {
           </div>
         </div>
 
-        {/* Bloque 2: Normativa / Morfología */}
+        {/* 2) Normativa / Morfología */}
         <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
           <div className="border-b border-gray-200 p-4 sm:p-6">
-            <h2
-              className="text-base sm:text-lg font-semibold"
-              style={{ color: effectivePrimaryColor }}
-            >
+            <h2 className="text-base sm:text-lg font-semibold" style={{ color: effectivePrimaryColor }}>
               2. Normativa urbanística y morfología
             </h2>
           </div>
 
           <div className="p-4 sm:p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-1">
-              <label className="block text-sm font-medium text-gray-700">
-                FOS (Factor de Ocupación del Suelo)
-              </label>
+              <label className="block text-sm font-medium text-gray-700">FOS (Factor de Ocupación del Suelo)</label>
               <input
                 name="FOS"
                 type="number"
@@ -1638,9 +1177,7 @@ export default function FactibilidadForm() {
             </div>
 
             <div className="space-y-1">
-              <label className="block text-sm font-medium text-gray-700">
-                FOT (Factor de Ocupación Total)
-              </label>
+              <label className="block text-sm font-medium text-gray-700">FOT (Factor de Ocupación Total)</label>
               <input
                 name="FOT"
                 type="number"
@@ -1653,9 +1190,7 @@ export default function FactibilidadForm() {
             </div>
 
             <div className="space-y-1">
-              <label className="block text-sm font-medium text-gray-700">
-                Altura máxima (m)
-              </label>
+              <label className="block text-sm font-medium text-gray-700">Altura máxima (m)</label>
               <input
                 name="alturaMaxima"
                 type="number"
@@ -1668,9 +1203,7 @@ export default function FactibilidadForm() {
             </div>
 
             <div className="space-y-1">
-              <label className="block text-sm font-medium text-gray-700">
-                Pisos máximos
-              </label>
+              <label className="block text-sm font-medium text-gray-700">Pisos máximos</label>
               <input
                 name="pisosMaximos"
                 type="number"
@@ -1683,9 +1216,7 @@ export default function FactibilidadForm() {
             </div>
 
             <div className="space-y-1">
-              <label className="block text-sm font-medium text-gray-700">
-                Retiro frente (m)
-              </label>
+              <label className="block text-sm font-medium text-gray-700">Retiro frente (m)</label>
               <input
                 name="retiroFrente"
                 type="number"
@@ -1698,9 +1229,7 @@ export default function FactibilidadForm() {
             </div>
 
             <div className="space-y-1">
-              <label className="block text-sm font-medium text-gray-700">
-                Retiro fondo (m)
-              </label>
+              <label className="block text-sm font-medium text-gray-700">Retiro fondo (m)</label>
               <input
                 name="retiroFondo"
                 type="number"
@@ -1713,9 +1242,7 @@ export default function FactibilidadForm() {
             </div>
 
             <div className="space-y-1">
-              <label className="block text-sm font-medium text-gray-700">
-                Retiros laterales (m)
-              </label>
+              <label className="block text-sm font-medium text-gray-700">Retiros laterales (m)</label>
               <input
                 name="retiroLaterales"
                 type="number"
@@ -1727,71 +1254,9 @@ export default function FactibilidadForm() {
               />
             </div>
 
+            {/* Perfilería opcional */}
             <div className="space-y-1">
-              <label className="block text-sm font-medium text-gray-700">
-                Requiere corazón de manzana
-              </label>
-              <select
-                name="requiereCorazonManzana"
-                value={String(formData.requiereCorazonManzana)}
-                onChange={handleSimpleChange}
-                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
-              >
-                <option value="false">No</option>
-                <option value="true">Sí</option>
-              </select>
-            </div>
-
-            <div className="space-y-1">
-              <label className="block text-sm font-medium text-gray-700">
-                Área libre / interior mínima (%)
-              </label>
-              <input
-                name="porcentajeLibreInterior"
-                type="number"
-                inputMode="decimal"
-                value={formData.porcentajeLibreInterior ?? ''}
-                onChange={handleSimpleChange}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
-                placeholder="Opcional"
-              />
-            </div>
-
-            <div className="space-y-1">
-              <label className="block text-sm font-medium text-gray-700">
-                Permite subsuelo
-              </label>
-              <select
-                name="permiteSubsuelo"
-                value={String(formData.permiteSubsuelo)}
-                onChange={handleSimpleChange}
-                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
-              >
-                <option value="false">No</option>
-                <option value="true">Sí</option>
-              </select>
-            </div>
-
-            <div className="space-y-1">
-              <label className="block text-sm font-medium text-gray-700">
-                Niveles de subsuelo
-              </label>
-              <input
-                name="nivelesSubsuelo"
-                type="number"
-                inputMode="decimal"
-                value={formData.nivelesSubsuelo ?? ''}
-                onChange={handleSimpleChange}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
-                placeholder="Opcional"
-              />
-            </div>
-
-            {/* Perfilería / plano límite */}
-            <div className="space-y-1">
-              <label className="block text-sm font-medium text-gray-700">
-                Perfilería / plano límite (°)
-              </label>
+              <label className="block text-sm font-medium text-gray-700">Perfilería – Ángulo (°)</label>
               <input
                 name="perfilAnguloGrados"
                 type="number"
@@ -1801,16 +1266,11 @@ export default function FactibilidadForm() {
                 className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
                 placeholder="Ej: 45"
               />
-              <p className="text-[11px] text-gray-500">
-                Opcional. Ángulo del plano límite (altura de cálculo 3 m por
-                piso).
-              </p>
+              <p className="text-[11px] text-gray-500">Si se deja vacío, se asume edificio homogéneo en todos los pisos.</p>
             </div>
 
             <div className="space-y-1">
-              <label className="block text-sm font-medium text-gray-700">
-                Plano límite a partir del piso n°
-              </label>
+              <label className="block text-sm font-medium text-gray-700">Perfilería – Desde el piso N°</label>
               <input
                 name="perfilDesdePiso"
                 type="number"
@@ -1820,31 +1280,22 @@ export default function FactibilidadForm() {
                 className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
                 placeholder="Ej: 8"
               />
-              <p className="text-[11px] text-gray-500">
-                Opcional. Si se completa junto al ángulo, se reduce
-                progresivamente la superficie construible a partir de ese piso.
-              </p>
+              <p className="text-[11px] text-gray-500">Se aplica la reducción de planta desde este nivel inclusive.</p>
             </div>
           </div>
         </div>
 
-        {/* Bloque 3: Usos y eficiencia */}
+        {/* 3) Usos previstos y eficiencia (simplificado) */}
         <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
           <div className="border-b border-gray-200 p-4 sm:p-6">
-            <h2
-              className="text-base sm:text-lg font-semibold"
-              style={{ color: effectivePrimaryColor }}
-            >
+            <h2 className="text-base sm:text-lg font-semibold" style={{ color: effectivePrimaryColor }}>
               3. Usos previstos y eficiencia
             </h2>
           </div>
 
-          <div className="p-4 sm:p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Eficiencia y unidades */}
-            <div className="space-y-1 md:col-span-2">
-              <label className="block text-sm font-medium text-gray-700">
-                Eficiencia global del proyecto
-              </label>
+          <div className="p-4 sm:p-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="space-y-1">
+              <label className="block text-sm font-medium text-gray-700">Eficiencia global del proyecto</label>
               <input
                 name="eficienciaGlobal"
                 type="number"
@@ -1852,14 +1303,13 @@ export default function FactibilidadForm() {
                 value={formData.eficienciaGlobal ?? ''}
                 onChange={handleSimpleChange}
                 className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
-                placeholder="Ej: 0.8 (80% vendible sobre total construido)"
+                placeholder="Ej: 0.80"
               />
+              <p className="text-[11px] text-gray-500">Proporción vendible sobre la superficie construible total.</p>
             </div>
 
             <div className="space-y-1">
-              <label className="block text-sm font-medium text-gray-700">
-                Superficie promedio por unidad (m²)
-              </label>
+              <label className="block text-sm font-medium text-gray-700">m² por unidad</label>
               <input
                 name="metrosPorUnidad"
                 type="number"
@@ -1869,16 +1319,10 @@ export default function FactibilidadForm() {
                 className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
                 placeholder="Ej: 40"
               />
-              <p className="text-[11px] text-gray-500">
-                Se usa para estimar cuántas unidades reales pueden construirse
-                (se redondea hacia abajo).
-              </p>
             </div>
 
             <div className="space-y-1">
-              <label className="block text-sm font-medium text-gray-700">
-                Valor de venta por unidad
-              </label>
+              <label className="block text-sm font-medium text-gray-700">Valor de venta por unidad</label>
               <input
                 name="valorVentaPorUnidad"
                 type="number"
@@ -1888,391 +1332,55 @@ export default function FactibilidadForm() {
                 className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
                 placeholder="Ej: 40000"
               />
-              <p className="text-[11px] text-gray-500">
-                Valor estimado de venta de cada unidad (misma moneda que los
-                costos).
-              </p>
-            </div>
-
-            {/* Mix de usos (opcional / informativo) */}
-            <div className="space-y-1 md:col-span-2 mt-2">
-              <label className="block text-sm font-medium text-gray-700">
-                Mix de usos (% del proyecto)
-              </label>
-              <p className="text-xs text-gray-500 mb-1">
-                Todos los campos son opcionales y de carácter informativo. Si
-                completás más de uno, idealmente deberían sumar 100%.
-              </p>
-            </div>
-
-            <div className="space-y-1">
-              <label className="block text-sm font-medium text-gray-700">
-                Vivienda (%)
-              </label>
-              <input
-                name="porcentajeVivienda"
-                type="number"
-                inputMode="decimal"
-                value={formData.porcentajeVivienda ?? ''}
-                onChange={handleSimpleChange}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
-                placeholder="Ej: 70"
-              />
-            </div>
-
-            <div className="space-y-1">
-              <label className="block text-sm font-medium text-gray-700">
-                Comercio (%)
-              </label>
-              <input
-                name="porcentajeComercio"
-                type="number"
-                inputMode="decimal"
-                value={formData.porcentajeComercio ?? ''}
-                onChange={handleSimpleChange}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
-                placeholder="Ej: 20"
-              />
-            </div>
-
-            <div className="space-y-1">
-              <label className="block text-sm font-medium text-gray-700">
-                Oficinas (%)
-              </label>
-              <input
-                name="porcentajeOficinas"
-                type="number"
-                inputMode="decimal"
-                value={formData.porcentajeOficinas ?? ''}
-                onChange={handleSimpleChange}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
-                placeholder="Ej: 10"
-              />
-            </div>
-
-            <div className="space-y-1">
-              <label className="block text-sm font-medium text-gray-700">
-                Industria (%)
-              </label>
-              <input
-                name="porcentajeIndustria"
-                type="number"
-                inputMode="decimal"
-                value={formData.porcentajeIndustria ?? ''}
-                onChange={handleSimpleChange}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
-                placeholder="Opcional"
-              />
-            </div>
-
-            {/* Resumen rápido */}
-            <div className="md:col-span-2 mt-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs sm:text-sm">
-              <p className="font-semibold mb-1">
-                Superficies y unidades calculadas (aprox.)
-              </p>
-              <p>
-                Superficie construible total:{' '}
-                <strong>
-                  {numero(
-                    calculos.superficieConstruibleTotal
-                  )}{' '}
-                  m²
-                </strong>
-              </p>
-              <p>
-                Superficie vendible aprox.:{' '}
-                <strong>
-                  {numero(calculos.superficieVendibleTotal)} m²
-                </strong>
-              </p>
-              <p>
-                Superficie común / no vendible:{' '}
-                <strong>
-                  {numero(calculos.superficieComun)} m²
-                </strong>
-              </p>
-              <p>
-                Unidades posibles (aprox.):{' '}
-                <strong>
-                  {numero(calculos.unidadesPosibles ?? null)}
-                </strong>
-              </p>
-              <p>
-                Valor total de unidades vendibles:{' '}
-                <strong>
-                  {peso(calculos.valorTotalVentas ?? null)}
-                </strong>
-              </p>
-            </div>
-          </div>
-        </div>
-        {/* Bloque 4: Costos */}
-        <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
-          <div className="border-b border-gray-200 p-4 sm:p-6">
-            <h2
-              className="text-base sm:text-lg font-semibold"
-              style={{ color: effectivePrimaryColor }}
-            >
-              4. Costos estimados del proyecto
-            </h2>
-          </div>
-
-          <div className="p-4 sm:p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-1">
-              <label className="block text-sm font-medium text-gray-700">
-                Costo de construcción por m²
-              </label>
-              <input
-                name="costoConstruccionM2"
-                type="number"
-                inputMode="decimal"
-                value={formData.costoConstruccionM2 ?? ''}
-                onChange={handleSimpleChange}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
-                placeholder="Ej: 500000"
-              />
-              <p className="text-[11px] text-gray-500">
-                Se multiplica por la superficie construible total.
-              </p>
-            </div>
-
-            <div className="space-y-1">
-              <label className="block text-sm font-medium text-gray-700">
-                Costo de demolición por m²
-              </label>
-              <input
-                name="costoDemolicionM2"
-                type="number"
-                inputMode="decimal"
-                value={formData.costoDemolicionM2 ?? ''}
-                onChange={handleSimpleChange}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
-                placeholder="Ej: 60000"
-              />
-              <p className="text-[11px] text-gray-500">
-                Se multiplica por la superficie a demoler.
-              </p>
-            </div>
-
-            <div className="space-y-1">
-              <label className="block text-sm font-medium text-gray-700">
-                Honorarios profesionales (total)
-              </label>
-              <input
-                name="otrosCostosHonorarios"
-                type="number"
-                inputMode="decimal"
-                value={formData.otrosCostosHonorarios ?? ''}
-                onChange={handleSimpleChange}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
-                placeholder="Opcional"
-              />
-            </div>
-
-            <div className="space-y-1">
-              <label className="block text-sm font-medium text-gray-700">
-                Tasas, derechos y permisos (total)
-              </label>
-              <input
-                name="otrosCostosPermisos"
-                type="number"
-                inputMode="decimal"
-                value={formData.otrosCostosPermisos ?? ''}
-                onChange={handleSimpleChange}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
-                placeholder="Opcional"
-              />
-            </div>
-
-            <div className="space-y-1">
-              <label className="block text-sm font-medium text-gray-700">
-                Contingencias / imprevistos (total)
-              </label>
-              <input
-                name="otrosCostosImprevistos"
-                type="number"
-                inputMode="decimal"
-                value={formData.otrosCostosImprevistos ?? ''}
-                onChange={handleSimpleChange}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
-                placeholder="Opcional"
-              />
-            </div>
-
-            <div className="md:col-span-2 mt-2 rounded-lg border border-sky-200 bg-sky-50 p-3 text-xs sm:text-sm">
-              <p className="font-semibold mb-1">
-                Costo aproximado del proyecto
-              </p>
-              <p>
-                Costo total de construcción:{' '}
-                <strong>
-                  {peso(
-                    calculos.costoConstruccionTotal !== null
-                      ? calculos.costoConstruccionTotal
-                      : null
-                  )}
-                </strong>
-              </p>
-              <p>
-                Costo total de demolición:{' '}
-                <strong>
-                  {peso(
-                    calculos.costoDemolicionTotal !== null
-                      ? calculos.costoDemolicionTotal
-                      : null
-                  )}
-                </strong>
-              </p>
-              <p>
-                Otros costos totales:{' '}
-                <strong>
-                  {peso(
-                    calculos.costoOtrosTotal !== null
-                      ? calculos.costoOtrosTotal
-                      : null
-                  )}
-                </strong>
-              </p>
-              <p className="mt-1">
-                <span className="font-semibold">
-                  Costo total aproximado del proyecto:{' '}
-                </span>
-                <span className="font-bold">
-                  {peso(
-                    calculos.costoTotalProyecto !== null
-                      ? calculos.costoTotalProyecto
-                      : null
-                  )}
-                </span>
-              </p>
             </div>
           </div>
         </div>
 
-        {/* Bloque 5: Incidencia / Precio sugerido del lote */}
+        {/* 4) Resultado: solo Precio sugerido del lote */}
         <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
           <div className="border-b border-gray-200 p-4 sm:p-6">
-            <h2
-              className="text-base sm:text-lg font-semibold"
-              style={{ color: effectivePrimaryColor }}
-            >
-              5. Incidencia del lote y precio sugerido
+            <h2 className="text-base sm:text-lg font-semibold" style={{ color: effectivePrimaryColor }}>
+              4. Incidencia del lote y precio sugerido
             </h2>
           </div>
 
           <div className="p-4 sm:p-6 space-y-4">
             <div className="space-y-1">
-              <label className="block text-sm font-medium text-gray-700">
-                Índice de incidencia zonal del terreno
-              </label>
+              <label className="block text-sm font-medium text-gray-700">Índice de incidencia zonal del terreno</label>
               <input
                 name="indiceIncidenciaZonal"
                 type="number"
                 inputMode="decimal"
-                value={(formData as any).indiceIncidenciaZonal ?? ''}
-                onChange={(e) => {
-                  const raw = e.target.value.replace(',', '.');
-                  const n =
-                    raw === '' ? null : Number(raw);
-                  setFormData((prev: any) => ({
-                    ...prev,
-                    indiceIncidenciaZonal:
-                      n === null || isNaN(n) ? null : n,
-                  }));
-                }}
+                value={formData.indiceIncidenciaZonal ?? ''}
+                onChange={handleSimpleChange}
                 className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
-                placeholder="Ej: 0.10 → 10% del valor total de ventas"
+                placeholder="Ej: 0.10 → 10%"
               />
               <p className="text-[11px] text-gray-500">
-                Se interpreta como proporción del valor total de las unidades
-                vendibles que puede destinarse al valor del terreno.
+                Proporción del valor total de ventas que se asigna al valor del terreno.
               </p>
             </div>
 
-            <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm sm:text-base space-y-1">
-              <p>
-                Unidades posibles (aprox.):{' '}
-                <strong>
-                  {numero(calculos.unidadesPosibles ?? null)}
-                </strong>
+            <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm sm:text-base">
+              <p className="font-semibold mb-1">Precio sugerido del lote</p>
+              <p className="text-2xl font-bold">
+                {peso(calculos.precioSugeridoLote ?? null)}
               </p>
-              <p>
-                Valor total de unidades vendibles:{' '}
-                <strong>
-                  {peso(calculos.valorTotalVentas ?? null)}
-                </strong>
-              </p>
-              <p>
-                Precio sugerido del lote:{' '}
-                <strong>
-                  {peso(calculos.precioSugeridoLote ?? null)}
-                </strong>
-              </p>
-              <p>
-                Incidencia por m² de lote:{' '}
-                <strong>
-                  {peso(calculos.incidenciaPorM2Lote ?? null)}
-                </strong>
-              </p>
-              <p>
-                Incidencia por m² vendible:{' '}
-                <strong>
-                  {peso(
-                    calculos.incidenciaPorM2Vendible ?? null
-                  )}
-                </strong>
-              </p>
-
-              {calculos.costoTotalProyecto !== null &&
-                calculos.utilidadBruta !== null &&
-                calculos.rentabilidadSobreVentas !== null && (
-                  <>
-                    <p className="mt-2 font-semibold">
-                      Rentabilidad estimada del proyecto
-                    </p>
-                    <p>
-                      Costo total aproximado del proyecto:{' '}
-                      <strong>
-                        {peso(calculos.costoTotalProyecto)}
-                      </strong>
-                    </p>
-                    <p>
-                      Utilidad bruta aprox.:{' '}
-                      <strong>
-                        {peso(calculos.utilidadBruta)}
-                      </strong>
-                    </p>
-                    <p>
-                      Margen sobre ventas:{' '}
-                      <strong>
-                        {(calculos.rentabilidadSobreVentas * 100).toFixed(
-                          2
-                        )}{' '}
-                        %
-                      </strong>
-                    </p>
-                  </>
-                )}
             </div>
           </div>
         </div>
 
-        {/* Bloque 6: Comentarios */}
+        {/* 5) Conclusión */}
         <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
           <div className="border-b border-gray-200 p-4 sm:p-6">
-            <h2
-              className="text-base sm:text-lg font-semibold"
-              style={{ color: effectivePrimaryColor }}
-            >
-              6. Comentarios y observaciones
+            <h2 className="text-base sm:text-lg font-semibold" style={{ color: effectivePrimaryColor }}>
+              5. Conclusión
             </h2>
           </div>
 
           <div className="grid grid-cols-1 gap-4 sm:gap-5 p-4 sm:p-6">
             <div className="space-y-1">
-              <label className="block text-sm font-medium text-gray-700">
-                Observaciones generales
-              </label>
+              <label className="block text-sm font-medium text-gray-700">Observaciones generales</label>
               <textarea
                 name="observaciones"
                 value={formData.observaciones}
@@ -2284,9 +1392,7 @@ export default function FactibilidadForm() {
             </div>
 
             <div className="space-y-1">
-              <label className="block text-sm font-medium text-gray-700">
-                Riesgos
-              </label>
+              <label className="block text-sm font-medium text-gray-700">Riesgos</label>
               <textarea
                 name="riesgos"
                 value={formData.riesgos}
@@ -2298,9 +1404,7 @@ export default function FactibilidadForm() {
             </div>
 
             <div className="space-y-1">
-              <label className="block text-sm font-medium text-gray-700">
-                Oportunidades
-              </label>
+              <label className="block text-sm font-medium text-gray-700">Oportunidades</label>
               <textarea
                 name="oportunidades"
                 value={formData.oportunidades}
@@ -2312,9 +1416,7 @@ export default function FactibilidadForm() {
             </div>
 
             <div className="space-y-1">
-              <label className="block text-sm font-medium text-gray-700">
-                Notas adicionales
-              </label>
+              <label className="block text-sm font-medium text-gray-700">Notas adicionales</label>
               <textarea
                 name="notasAdicionales"
                 value={formData.notasAdicionales}
@@ -2338,9 +1440,7 @@ export default function FactibilidadForm() {
                 className="inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-semibold text-white w-full sm:w-auto text-center disabled:opacity-60"
                 style={{ backgroundColor: effectivePrimaryColor }}
               >
-                {isSubmitting
-                  ? 'Guardando...'
-                  : 'Guardar Informe'}
+                {isSubmitting ? 'Guardando...' : 'Guardar Informe'}
               </button>
 
               <button
@@ -2366,31 +1466,17 @@ export default function FactibilidadForm() {
 
           <div className="mt-3 space-y-1">
             {saveMsg && (
-              <p
-                className={
-                  saveMsg.type === 'success'
-                    ? 'text-green-600'
-                    : 'text-red-600'
-                }
-              >
+              <p className={saveMsg.type === 'success' ? 'text-green-600' : 'text-red-600'}>
                 {saveMsg.text}
               </p>
             )}
             {loadMsg && (
-              <p
-                className={
-                  loadMsg.type === 'success'
-                    ? 'text-green-600'
-                    : 'text-red-600'
-                }
-              >
+              <p className={loadMsg.type === 'success' ? 'text-green-600' : 'text-red-600'}>
                 {loadMsg.text}
               </p>
             )}
             {informeId && (
-              <p className="text-xs text-gray-500">
-                ID actual del informe: {informeId}
-              </p>
+              <p className="text-xs text-gray-500">ID actual del informe: {informeId}</p>
             )}
           </div>
         </div>
@@ -2434,13 +1520,7 @@ export default function FactibilidadForm() {
             </div>
 
             {loadMsg && (
-              <p
-                className={
-                  loadMsg.type === 'success'
-                    ? 'text-green-600 mt-3'
-                    : 'text-red-600 mt-3'
-                }
-              >
+              <p className={loadMsg.type === 'success' ? 'text-green-600 mt-3' : 'text-red-600 mt-3'}>
                 {loadMsg.text}
               </p>
             )}

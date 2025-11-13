@@ -798,7 +798,7 @@ const handleDownloadPDF = async () => {
         const logoW = 70;
         const logoH = 70;
         const centerX = pageW / 2 - logoW / 2;
-        doc.addImage(base64Img, "PNG", centerX, y - 10, logoW, logoH, undefined, "FAST");
+        doc.addImage(base64Img, "PNG", centerX, y - 14, logoW, logoH, undefined, "FAST");
       }
     } catch (err) {
       console.warn("⚠️ No se pudo cargar el logo del tema en el PDF", err);

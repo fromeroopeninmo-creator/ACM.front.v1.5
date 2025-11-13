@@ -574,7 +574,7 @@ const handleDownloadPDF = async () => {
     doc.setDrawColor(pc.r, pc.g, pc.b);
     doc.setLineWidth(0.8);
     doc.line(M, y, pageW - M, y);
-    y += 18;
+    y += 20;
   };
 
   // Título de sección centrado
@@ -585,7 +585,7 @@ const handleDownloadPDF = async () => {
     doc.setTextColor(pc.r, pc.g, pc.b);
     doc.text(text, pageW / 2, y, { align: "center" });
     doc.setTextColor(0, 0, 0);
-    y += 18;
+    y += 24;
   };
 
   // Par (Label: value) con salto ordenado (value indentado en líneas siguientes)
@@ -663,8 +663,8 @@ const handleDownloadPDF = async () => {
 
   // ===== Encabezado: izquierda (3 filas) – logo centrado – derecha (2 filas) =====
   const headerLeftX = M;
-  const headerRightX = pageW - M - 250; // bloque derecho (ancho referencial 250)
-  const headerBlockH = 48; // alto mínimo, luego ajustamos
+  const headerRightX = pageW - M - 210; // bloque derecho (ancho referencial 250)
+  const headerBlockH = 50; // alto mínimo, luego ajustamos
 
   // Izquierda (tres filas, misma línea por campo)
   doc.setFont("helvetica", "normal");

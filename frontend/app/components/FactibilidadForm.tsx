@@ -538,299 +538,401 @@ export default function FactibilidadForm() {
     };
   }, [formData]);
 
-  /* =========================
-   *  PDF (actualizado)
+    /* =========================
+   *  PDF — versión estilizada
    * ========================= */
-
   const handleDownloadPDF = async () => {
-    const { jsPDF } = await import('jspdf');
+    const { jsPDF } = await import("jspdf");
 
-    const doc = new jsPDF('p', 'pt', 'a4');
+    const doc = new jsPDF("p", "pt", "a4");
     const pageW = doc.internal.pageSize.getWidth();
     const pageH = doc.internal.pageSize.getHeight();
-    const margin = 40;
-    let y = margin;
 
-    const themeLogo = (theme as any)?.logoUrlBusted ?? (theme as any)?.logoUrl ?? null;
-    const anyUser = user as any;
+    // --- Estilos base
+    const marginX = 40;
+    let y = 40;
+    const primaryHex = effectivePrimaryColor || "#0ea5e9";
 
     const hexToRgb = (hex: string) => {
-      const m = hex.replace('#', '');
-      const int = parseInt(m.length === 3 ? m.split('').map((c) => c + c).join('') : m, 16);
+      const m = hex.replace("#", "");
+      const int = parseInt(m.length === 3 ? m.split("").map(c => c + c).join("") : m, 16);
       return { r: (int >> 16) & 255, g: (int >> 8) & 255, b: int & 255 };
     };
-    const pc = hexToRgb(effectivePrimaryColor);
+    const pc = hexToRgb(primaryHex);
 
-    // Título centrado
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(16);
-    doc.setTextColor(pc.r, pc.g, pc.b);
-    doc.text('Factibilidad Constructiva', pageW / 2, y, { align: 'center' });
+    const H1 = 16; // títulos de secciones
+    const H2 = 12; // subtítulos/cards
+    const TXT = 10; // texto normal
+    const LINE = 14; // interlineado
+
+    doc.setFont("helvetica", "normal");
     doc.setTextColor(0, 0, 0);
 
-    // Fecha a la derecha
-    doc.setFontSize(10);
-    doc.text(
-      new Date(formData.date || new Date().toISOString()).toLocaleDateString('es-AR'),
-      pageW - margin,
-      y,
-      { align: 'right' }
-    );
+    // =========================
+    // Encabezado: 3 columnas + logo centrado
+    // Izq: Empresa / Profesional / Asesor
+    // Ctro: Logo
+    // Der: Matricula / Fecha / Proyecto
+    // =========================
+    const anyUser = user as any;
+    const role = (anyUser?.role || "").toLowerCase();
+    const isAsesor = role === "asesor";
 
-    // Logo opcional
+    let matriculado = anyUser?.matriculado_nombre || "—";
+    let cpi = anyUser?.cpi || "—";
+    let inmobiliaria = themeCompanyName || anyUser?.inmobiliaria || "—";
+    const asesorNombre =
+      isAsesor && anyUser?.nombre && anyUser?.apellido
+        ? `${anyUser.nombre} ${anyUser.apellido}`
+        : isAsesor
+        ? (anyUser?.nombre || anyUser?.apellido ? `${anyUser?.nombre ?? ""} ${anyUser?.apellido ?? ""}`.trim() : "—")
+        : "—";
+
+    // Completar datos desde empresas si falta algo
+    if (inmobiliaria === "—" || matriculado === "—" || cpi === "—") {
+      try {
+        const { supabase } = await import("#lib/supabaseClient");
+        let query = supabase
+          .from("empresas")
+          .select("id, nombre_comercial, matriculado, cpi, user_id")
+          .limit(1);
+
+        if (isAsesor && anyUser?.empresa_id) {
+          query = query.eq("id", anyUser.empresa_id);
+        } else if (anyUser?.id) {
+          query = query.eq("user_id", anyUser.id);
+        }
+
+        const { data: empresaRow, error } = await query.maybeSingle();
+        if (!error && empresaRow) {
+          if (inmobiliaria === "—" && empresaRow.nombre_comercial) inmobiliaria = empresaRow.nombre_comercial;
+          if (matriculado === "—" && empresaRow.matriculado) matriculado = empresaRow.matriculado;
+          if (cpi === "—" && empresaRow.cpi) cpi = empresaRow.cpi;
+        }
+      } catch {
+        // no-op
+      }
+    }
+
+    // Header layout
+    const colW = (pageW - marginX * 2) / 3;
+    const leftX = marginX;
+    const centerX = marginX + colW;
+    const rightX = marginX + colW * 2;
+
+    // Títulos pequeños gris para etiquetas
+    const labelGray = (txt: string, x: number, y: number) => {
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(9);
+      doc.setTextColor(110, 110, 110);
+      doc.text(txt, x, y);
+      doc.setTextColor(0, 0, 0);
+    };
+
+    // Columna izquierda
+    doc.setFontSize(TXT);
+    labelGray("Empresa", leftX, y);
+    doc.setFont("helvetica", "normal");
+    doc.text(inmobiliaria, leftX, y + LINE);
+
+    labelGray("Profesional", leftX, y + LINE * 2);
+    doc.text(matriculado, leftX, y + LINE * 3);
+
+    labelGray("Asesor", leftX, y + LINE * 4);
+    doc.text(asesorNombre || "—", leftX, y + LINE * 5);
+
+    // Columna derecha
+    const fechaTxt = new Date(formData.date || new Date().toISOString()).toLocaleDateString("es-AR");
+    const proyectoTxt = formData.nombreProyecto || "-";
+
+    labelGray("Matrícula N°", rightX, y);
+    doc.setFont("helvetica", "normal");
+    doc.text(cpi, rightX, y + LINE);
+
+    labelGray("Fecha", rightX, y + LINE * 2);
+    doc.text(fechaTxt, rightX, y + LINE * 3);
+
+    labelGray("Proyecto", rightX, y + LINE * 4);
+    doc.text(proyectoTxt, rightX, y + LINE * 5);
+
+    // Logo centrado en la columna del medio
+    const themeLogo = themeLogoUrl || null;
+    let headerBottomY = y + LINE * 6;
+
     if (themeLogo) {
       try {
         const base64Img = await fetchToDataURL(themeLogo);
         if (base64Img) {
-          const logoW = 70;
-          const logoH = 70;
-          const centerX = pageW / 2 - logoW / 2;
-          doc.addImage(base64Img, 'PNG', centerX, y + 10, logoW, logoH, undefined, 'FAST');
+          const logoW = 80;
+          const logoH = 80;
+          const cx = centerX + colW / 2 - logoW / 2;
+          const cy = y + LINE; // verticalmente centrado respecto a las líneas
+          doc.addImage(base64Img, "PNG", cx, cy, logoW, logoH, undefined, "FAST");
+          headerBottomY = Math.max(headerBottomY, cy + logoH + 10);
         }
-      } catch (err) {
-        console.warn('No se pudo cargar el logo en PDF factibilidad', err);
+      } catch {
+        // sin logo
       }
     }
 
-    y += 95;
+    y = headerBottomY + 10;
 
     // Separador
     doc.setDrawColor(pc.r, pc.g, pc.b);
     doc.setLineWidth(0.8);
-    doc.line(margin, y, pageW - margin, y);
-    y += 18;
+    doc.line(marginX, y, pageW - marginX, y);
+    y += 20;
 
-    // Datos del Lote (resumen + foto)
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(13);
+    // =========================
+    // Título principal centrado
+    // =========================
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(H1);
     doc.setTextColor(pc.r, pc.g, pc.b);
-    doc.text('Datos del Lote', pageW / 2, y, { align: 'center' });
+    doc.text("Informe de Factibilidad Constructiva", pageW / 2, y, { align: "center" });
     doc.setTextColor(0, 0, 0);
-    y += 16;
+    y += 22;
 
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(10);
-    const lh = 14;
-
-    const linesLote = [
-      `Proyecto: ${formData.nombreProyecto || '—'}`,
-      `Dirección: ${formData.direccion || '—'}`,
-      `Localidad: ${formData.localidad || '—'}`,
-      `Barrio: ${formData.barrio || '—'}`,
-      `Zona / Distrito: ${formData.zona || '—'}`,
-      `Superficie de lote: ${numero(formData.superficieLote)} m²`,
-      `Frente: ${numero(formData.frente)} m`,
-      `Fondo: ${numero(formData.fondo)} m`,
-      `Superficie a demoler: ${numero(formData.superficieDemoler)} m²`,
-      `Superficie a conservar: ${numero(formData.superficieConservar)} m²`,
-      `Implantación: ${
-        formData.tipoImplantacion === 'entre_medianeras'
-          ? 'Entre medianeras'
-          : formData.tipoImplantacion === 'esquina'
-          ? 'Esquina'
-          : formData.tipoImplantacion === 'dos_frentes'
-          ? 'Dos frentes'
-          : 'Otro'
-      }`,
-    ];
-
-    let yTemp = y;
-    linesLote.forEach((t) => {
-      doc.text(t, margin, yTemp);
-      yTemp += lh;
-    });
-
-    let fotoDataURL: string | null = null;
-    if (formData.fotoLoteBase64) fotoDataURL = formData.fotoLoteBase64;
-    else if (formData.fotoLoteUrl) fotoDataURL = await fetchToDataURL(formData.fotoLoteUrl);
-
-    if (fotoDataURL) {
-      try {
-        const imgW = 180;
-        const imgH = 135;
-        doc.addImage(fotoDataURL, 'JPEG', pageW - margin - imgW, y, imgW, imgH, undefined, 'FAST');
-        yTemp = Math.max(yTemp, y + imgH + 8);
-      } catch (err) {
-        console.warn('No se pudo agregar foto de lote al PDF', err);
+    // Helper para salto de página
+    const ensureSpace = (h: number) => {
+      if (y + h > pageH - 60) {
+        doc.addPage();
+        y = 40;
       }
-    }
-    y = yTemp + 6;
+    };
 
-    if (y > pageH - 160) {
-      doc.addPage();
-      y = margin;
-    }
+    // Helper para secciones
+    const sectionTitle = (title: string) => {
+      ensureSpace(30);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(H1);
+      doc.setTextColor(pc.r, pc.g, pc.b);
+      doc.text(title, marginX, y);
+      doc.setTextColor(0, 0, 0);
+      y += 14;
 
-    // Normativa y Morfología
-    doc.setDrawColor(pc.r, pc.g, pc.b);
-    doc.line(margin, y, pageW - margin, y);
-    y += 18;
+      doc.setDrawColor(pc.r, pc.g, pc.b);
+      doc.setLineWidth(0.8);
+      doc.line(marginX, y, pageW - marginX, y);
+      y += 16;
+    };
 
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(13);
-    doc.setTextColor(pc.r, pc.g, pc.b);
-    doc.text('Normativa y Morfología', pageW / 2, y, { align: 'center' });
-    doc.setTextColor(0, 0, 0);
-    y += 16;
+    // =========
+    // Sección: Datos del Lote (resumen compacto en PDF)
+    // =========
+    sectionTitle("Datos del Lote");
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(TXT);
 
-    const normasIzq = [
+    const L = (label: string, value: string, offset: number = 0) => {
+      ensureSpace(LINE);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(TXT);
+      doc.text(`${label}:`, marginX + offset, y);
+      doc.setFont("helvetica", "normal");
+      doc.text(value, marginX + offset + 90, y);
+      y += LINE;
+    };
+
+    L("Dirección", formData.direccion || "-");
+    L("Localidad", formData.localidad || "-");
+    L("Barrio", formData.barrio || "-");
+    L("Zona/Distrito", formData.zona || "-");
+    L("Superficie del lote", `${numero(formData.superficieLote)} m²`);
+    L("Frente", `${numero(formData.frente)} m`);
+    L("Fondo", `${numero(formData.fondo)} m`);
+    L("Superficie a demoler", `${numero(formData.superficieDemoler)} m²`);
+    L("Superficie a conservar", `${numero(formData.superficieConservar)} m²`);
+
+    y += 6;
+
+    // =========
+    // Sección: Normativa y Morfología
+    // =========
+    sectionTitle("Normativa y Morfología");
+    const twoColW = (pageW - marginX * 2 - 20) / 2;
+
+    const normBlock = (x: number, items: string[]) => {
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(TXT);
+      items.forEach((line) => {
+        ensureSpace(LINE);
+        doc.text(line, x, y);
+        y += LINE;
+      });
+    };
+
+    const startYNorm = y;
+    // Columna izquierda
+    normBlock(marginX, [
       `FOS: ${numero(formData.FOS, 2)}`,
       `FOT: ${numero(formData.FOT, 2)}`,
-      `Altura máxima: ${numero(formData.alturaMaxima)} m`,
-      `Pisos máximos: ${numero(formData.pisosMaximos)}`,
-    ];
-    const normasDer = [
+      `Altura máx.: ${numero(formData.alturaMaxima)} m`,
+      `Pisos máx.: ${numero(formData.pisosMaximos)}`,
+    ]);
+    // Columna derecha (mismo inicio de Y)
+    const savedY = y;
+    y = startYNorm;
+    normBlock(marginX + twoColW + 20, [
       `Retiros frente: ${numero(formData.retiroFrente)} m`,
       `Retiros fondo: ${numero(formData.retiroFondo)} m`,
       `Retiros laterales: ${numero(formData.retiroLaterales)} m`,
       `Perfilería: ${
         formData.perfilAnguloGrados != null && formData.perfilDesdePiso != null
           ? `${numero(formData.perfilAnguloGrados)}° desde piso ${numero(formData.perfilDesdePiso)}`
-          : '—'
+          : "—"
       }`,
-    ];
+    ]);
+    y = Math.max(savedY, y) + 10;
 
-    let yN1 = y;
-    normasIzq.forEach((t) => {
-      doc.text(t, margin, yN1);
-      yN1 += lh;
-    });
+    // =========
+    // Sección: Usos y Eficiencia (CARD)
+    // =========
+    sectionTitle("Usos y Eficiencia");
 
-    let yN2 = y;
-    normasDer.forEach((t) => {
-      doc.text(t, pageW / 2, yN2);
-      yN2 += lh;
-    });
-
-    y = Math.max(yN1, yN2) + 8;
-
-    if (y > pageH - 160) {
-      doc.addPage();
-      y = margin;
-    }
-
-    // Usos y Eficiencia + Métricas
-    doc.setDrawColor(pc.r, pc.g, pc.b);
-    doc.line(margin, y, pageW - margin, y);
-    y += 18;
-
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(13);
-    doc.setTextColor(pc.r, pc.g, pc.b);
-    doc.text('Usos y Eficiencia', pageW / 2, y, { align: 'center' });
-    doc.setTextColor(0, 0, 0);
-    y += 16;
-
-    const usos = [
-      `Eficiencia global: ${numero(formData.eficienciaGlobal, 2)}`,
-      `m² por unidad: ${numero(formData.metrosPorUnidad)}`,
-      `Valor de venta por unidad: ${peso(formData.valorVentaPorUnidad || null)}`,
-    ];
-    usos.forEach((t) => {
-      doc.text(t, margin, y);
-      y += lh;
-    });
-
-    const mLines = [
+    // Card
+    const cardPad = 12;
+    const cardW = pageW - marginX * 2;
+    const linesUsos = [
       `m² construibles (estimados): ${numero(calculos.superficieConstruibleTotal)} m²`,
       `m² vendibles (estimados): ${numero(calculos.superficieVendibleTotal)} m²`,
       `m² no vendibles (estimados): ${numero(calculos.superficieComun)} m²`,
-      `Unidades posibles (aprox.): ${numero(calculos.unidadesVendibles)}`,
-      `Valor total de unidades vendibles: ${peso(calculos.valorTotalUnidadesVendibles || null)}`,
+      `Unidades vendibles (aprox.): ${numero(calculos.unidadesVendibles)}`,
+      `m² por unidad: ${numero(formData.metrosPorUnidad)} m²`,
+      `Valor de venta por unidad: ${peso(formData.valorVentaPorUnidad ?? null)}`,
+      `Valor total de unidades vendibles: ${peso(calculos.valorTotalUnidadesVendibles ?? null)}`,
     ];
-    y += 6;
-    mLines.forEach((t) => {
-      doc.text(t, margin, y);
-      y += lh;
-    });
 
-    if (y > pageH - 160) {
-      doc.addPage();
-      y = margin;
-    }
+    // Dibujar card con fondo suave
+    ensureSpace(cardPad * 2 + linesUsos.length * LINE);
+    doc.setDrawColor(225, 225, 225);
+    doc.setFillColor(249, 250, 251); // gris muy claro
+    doc.rect(marginX, y, cardW, cardPad * 2 + linesUsos.length * LINE, "F");
 
-    // Resultado (Precio sugerido)
-    doc.setDrawColor(pc.r, pc.g, pc.b);
-    doc.line(margin, y, pageW - margin, y);
-    y += 18;
-
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(13);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(H2);
     doc.setTextColor(pc.r, pc.g, pc.b);
-    doc.text('Incidencia del Lote y Precio Sugerido', pageW / 2, y, { align: 'center' });
+    doc.text("Resumen de Usos y Eficiencia", marginX + cardPad, y + cardPad + 2);
     doc.setTextColor(0, 0, 0);
-    y += 16;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(TXT);
+
+    let yUsos = y + cardPad + 8 + LINE;
+    linesUsos.forEach((line) => {
+      doc.text(line, marginX + cardPad, yUsos);
+      yUsos += LINE;
+    });
+    y = y + cardPad * 2 + linesUsos.length * LINE + 10;
+
+    // =========
+    // Sección: Incidencia del Lote y Precio Sugerido
+    // =========
+    sectionTitle("Incidencia del Lote y Precio Sugerido");
+
+    // Card 1 — Detalle
+    const costoDemoTotal = calculos.costoDemolicionTotal ?? (
+      formData.superficieDemoler != null && formData.costoDemolicionM2 != null
+        ? formData.superficieDemoler * formData.costoDemolicionM2
+        : null
+    );
 
     const incLines = [
       `Índice de incidencia zonal: ${
-        formData.indiceIncidenciaZonal != null ? (formData.indiceIncidenciaZonal * 100).toFixed(2) + ' %' : '—'
+        formData.indiceIncidenciaZonal != null ? `${(formData.indiceIncidenciaZonal * 100).toFixed(2)} %` : "—"
       }`,
-      `Precio de demolición por m²: ${peso(formData.costoDemolicionM2 || null)}`,
       `Superficie a demoler: ${numero(formData.superficieDemoler)} m²`,
-      `Costo total de demolición: ${peso(calculos.costoDemolicionTotal)}`,
+      `Precio de demolición por m²: ${peso(formData.costoDemolicionM2 ?? null)}`,
+      `Costo total de demolición: ${peso(costoDemoTotal ?? null)}`,
     ];
-    incLines.forEach((t) => {
-      doc.text(t, margin, y);
-      y += lh;
-    });
 
-    y += 8;
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(16);
-    doc.text(
-      `Precio sugerido del lote: ${peso(calculos.precioSugeridoLote ?? null)}`,
-      pageW / 2,
-      y,
-      { align: 'center' }
-    );
-    y += 28;
+    ensureSpace(cardPad * 2 + incLines.length * LINE);
+    doc.setDrawColor(225, 225, 225);
+    doc.setFillColor(249, 250, 251);
+    doc.rect(marginX, y, cardW, cardPad * 2 + incLines.length * LINE, "F");
 
-    if (y > pageH - 160) {
-      doc.addPage();
-      y = margin;
-    }
-
-    // Conclusión
-    doc.setDrawColor(pc.r, pc.g, pc.b);
-    doc.line(margin, y, pageW - margin, y);
-    y += 18;
-
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(13);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(H2);
     doc.setTextColor(pc.r, pc.g, pc.b);
-    doc.text('Conclusión', pageW / 2, y, { align: 'center' });
+    doc.text("Parámetros de Incidencia", marginX + cardPad, y + cardPad + 2);
     doc.setTextColor(0, 0, 0);
-    y += 14;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(TXT);
 
-    const block = (title: string, text: string) => {
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(11);
-      doc.text(title, margin, y);
-      y += 12;
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(10);
-      const lines = doc.splitTextToSize(text || '—', pageW - margin * 2);
-      doc.text(lines as any, margin, y);
-      y += (Array.isArray(lines) ? (lines as string[]).length : 1) * 14 + 8;
-      if (y > pageH - 80) {
-        doc.addPage();
-        y = margin;
-      }
+    let yInc = y + cardPad + 8 + LINE;
+    incLines.forEach((line) => {
+      doc.text(line, marginX + cardPad, yInc);
+      yInc += LINE;
+    });
+    y = y + cardPad * 2 + incLines.length * LINE + 12;
+
+    // Card 2 — Precio sugerido (destacada)
+    const precioSugerido = calculos.precioSugeridoLote ?? null;
+    const bigCardH = 90;
+
+    ensureSpace(bigCardH);
+    doc.setDrawColor(pc.r, pc.g, pc.b);
+    doc.setFillColor(239, 246, 255); // leve celeste (o ajusta si querés más “dorado”)
+    doc.rect(marginX, y, cardW, bigCardH, "F");
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(14);
+    doc.setTextColor(pc.r, pc.g, pc.b);
+    doc.text("Precio Sugerido del Lote", marginX + cardPad, y + 24);
+
+    doc.setTextColor(0, 0, 0);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(20);
+    doc.text(peso(precioSugerido ?? null), marginX + cardPad, y + 24 + 26);
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(110, 110, 110);
+    doc.text(
+      "Fórmula: (Valor total de unidades vendibles × índice) − (m² a demoler × precio demolición/m²)",
+      marginX + cardPad,
+      y + bigCardH - 14
+    );
+
+    doc.setTextColor(0, 0, 0);
+    y += bigCardH + 12;
+
+    // =========
+    // Sección: Conclusión (texto)
+    // =========
+    sectionTitle("Conclusión");
+
+    const paragraph = (title: string, text: string) => {
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(H2);
+      doc.text(title, marginX, y);
+      y += 10;
+
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(TXT);
+      const lines = doc.splitTextToSize(text || "—", pageW - marginX * 2);
+      const h = (lines as string[]).length * LINE;
+      ensureSpace(h);
+      doc.text(lines as any, marginX, y);
+      y += h + 10;
     };
 
-    block('Observaciones', formData.observaciones);
-    block('Riesgos', formData.riesgos);
-    block('Oportunidades', formData.oportunidades);
-    block('Notas adicionales', formData.notasAdicionales);
+    paragraph("Observaciones", formData.observaciones);
+    paragraph("Riesgos", formData.riesgos);
+    paragraph("Oportunidades", formData.oportunidades);
+    paragraph("Notas adicionales", formData.notasAdicionales);
 
-    // Footer simple
-    doc.setFont('helvetica', 'italic');
+    // =========================
+    // Footer: Profesional | Matrícula
+    // =========================
+    const footerText = `${matriculado}  |  Matrícula N°: ${cpi}`;
+    doc.setFont("helvetica", "italic");
     doc.setFontSize(9);
-    const footerText = `${(anyUser?.nombre || '—')} ${(anyUser?.apellido || '')}`.trim();
-    doc.text(footerText || '—', pageW / 2, pageH - 30, { align: 'center' });
+    doc.setTextColor(0, 0, 0);
+    doc.text(footerText, pageW / 2, pageH - 30, { align: "center" });
 
-    doc.save('Informe_Factibilidad.pdf');
+    doc.save("Informe_Factibilidad.pdf");
   };
+
   /* =========================
    *  Guardar / Cargar (sin cambios de endpoints)
    * ========================= */

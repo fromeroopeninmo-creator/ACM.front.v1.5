@@ -867,7 +867,7 @@ export default function FactibilidadForm() {
     doc.setTextColor(0, 0, 0);
     doc.text(footerText, pageW / 2, pageH - 30, { align: "center" });
 
-    doc.save("Informe_Factibilidad.pdf");
+    doc.save("Informe_de_Factibilidad.pdf");
   };
 
   /* =========================

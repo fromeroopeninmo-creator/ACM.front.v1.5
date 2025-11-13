@@ -538,37 +538,74 @@ export default function FactibilidadForm() {
     };
   }, [formData]);
 
-       /* ========= PDF (formato VAI adaptado a Factibilidad) ========= */
+       /* ========= PDF profesional – Factibilidad ========= */
 const handleDownloadPDF = async () => {
   const { jsPDF } = await import("jspdf");
 
   const doc = new jsPDF("p", "pt", "a4");
   const pageW = doc.internal.pageSize.getWidth();
   const pageH = doc.internal.pageSize.getHeight();
-  const margin = 40;
-  let y = margin;
 
-  // ===== Helpers =====
+  // Layout
+  const M = 40;               // margen
+  const COL_GAP = 24;
+  const LH = 16;              // line height base
+  let y = M;
+
+  // Colores / estilo
   const hexToRgb = (hex: string) => {
     const m = hex.replace("#", "");
     const int = parseInt(m.length === 3 ? m.split("").map((c) => c + c).join("") : m, 16);
     return { r: (int >> 16) & 255, g: (int >> 8) & 255, b: int & 255 };
   };
+  const pc = hexToRgb(effectivePrimaryColor || "#E6A930"); // dorado por defecto
 
-  const pc = hexToRgb(effectivePrimaryColor || "#0ea5e9");
-  const lh = 15; // line height para listas
+  // Helpers de dibujo
+  const ensureRoom = (needed = 100) => {
+    if (y + needed > pageH - M) {
+      doc.addPage();
+      y = M;
+    }
+  };
 
-  // Render línea "Etiqueta: Valor" simple
-  const line = (label: string, value: string, x: number) => {
+  // Dibuja una línea separadora de sección
+  const sectionRule = () => {
+    ensureRoom(20);
+    doc.setDrawColor(pc.r, pc.g, pc.b);
+    doc.setLineWidth(0.8);
+    doc.line(M, y, pageW - M, y);
+    y += 18;
+  };
+
+  // Título de sección centrado
+  const sectionTitle = (text: string) => {
+    ensureRoom(28);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(13);
+    doc.setTextColor(pc.r, pc.g, pc.b);
+    doc.text(text, pageW / 2, y, { align: "center" });
+    doc.setTextColor(0, 0, 0);
+    y += 18;
+  };
+
+  // Par (Label: value) con salto ordenado (value indentado en líneas siguientes)
+  const drawKV = (label: string, value: string, x: number, maxW: number, valueIndent = 110) => {
+    ensureRoom(LH + 8);
+    // Label
     doc.setFont("helvetica", "bold");
     doc.setFontSize(10);
     doc.text(`${label}:`, x, y);
+
+    // Value (envoltura y sangría)
     doc.setFont("helvetica", "normal");
-    doc.text(`${value}`, x + 120, y); // 120px de offset para que el valor no se superponga
-    y += lh;
+    doc.setFontSize(10);
+    const avail = Math.max(60, maxW - valueIndent);
+    const lines = doc.splitTextToSize(value || "—", avail) as string[];
+    doc.text(lines, x + valueIndent, y);
+    y += LH * Math.max(1, lines.length);
   };
 
-  // Cargar imagen (URL o base64)
+  // Carga de imagen (URL o base64)
   const getDataURL = async (url?: string | null) => {
     try {
       if (!url) return null;
@@ -576,16 +613,16 @@ const handleDownloadPDF = async () => {
       if (!r.ok) return null;
       const b = await r.blob();
       return await new Promise<string>((resolve) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(String(reader.result));
-        reader.readAsDataURL(b);
+        const fr = new FileReader();
+        fr.onload = () => resolve(String(fr.result));
+        fr.readAsDataURL(b);
       });
     } catch {
       return null;
     }
   };
 
-  // ===== Datos desde Auth/Theme (igual que referencia VAI) =====
+  // ===== Datos Auth / Theme (empresa/profesional/asesor) =====
   const anyUser = user as any;
   const role = (anyUser?.role || "").toLowerCase();
   const isAsesor = role === "asesor";
@@ -600,8 +637,7 @@ const handleDownloadPDF = async () => {
   if (inmobiliaria === "—" || matriculado === "—" || cpi === "—") {
     try {
       const { supabase } = await import("#lib/supabaseClient");
-      let query = supabase
-        .from("empresas")
+      let query = supabase.from("empresas")
         .select("id, nombre_comercial, matriculado, cpi, user_id")
         .limit(1);
 
@@ -617,28 +653,35 @@ const handleDownloadPDF = async () => {
     } catch {/* no-op */}
   }
 
-  // ===== Título centrado =====
+  // ===== Título principal =====
   doc.setFont("helvetica", "bold");
   doc.setFontSize(16);
   doc.setTextColor(pc.r, pc.g, pc.b);
   doc.text("Informe de Factibilidad Constructiva", pageW / 2, y, { align: "center" });
   doc.setTextColor(0, 0, 0);
-  y += 30;
+  y += 26;
 
-  // ===== Encabezado (dos columnas) + logo centrado =====
-  const colLeftX = margin;
-  const colRightX = pageW - margin - 220;
+  // ===== Encabezado: izquierda (3 filas) – logo centrado – derecha (2 filas) =====
+  const headerLeftX = M;
+  const headerRightX = pageW - M - 250; // bloque derecho (ancho referencial 250)
+  const headerBlockH = 48; // alto mínimo, luego ajustamos
 
-  doc.setFontSize(11);
+  // Izquierda (tres filas, misma línea por campo)
   doc.setFont("helvetica", "normal");
-  doc.text(`Empresa: ${inmobiliaria}`, colLeftX, y);
-  doc.text(`Asesor: ${isAsesor ? asesorNombre : "—"}`, colLeftX, y + 15);
+  doc.setFontSize(11);
+  doc.text(`Empresa: ${inmobiliaria}`, headerLeftX, y);
+  doc.text(`Profesional: ${matriculado}`, headerLeftX, y + 16);
+  doc.text(`Matrícula N°: ${cpi}`, headerLeftX, y + 32);
 
-  doc.text(`Profesional: ${matriculado}`, colRightX, y);
-  doc.text(`Matricula N°: ${cpi}`, colRightX, y + 15);
-  doc.text(`Fecha: ${new Date(formData.date || new Date().toISOString()).toLocaleDateString("es-AR")}`, colRightX, y + 30);
+  // Derecha (dos filas, misma línea por campo)
+  doc.text(`Asesor: ${isAsesor ? asesorNombre : "—"}`, headerRightX, y);
+  doc.text(
+    `Fecha: ${new Date(formData.date || new Date().toISOString()).toLocaleDateString("es-AR")}`,
+    headerRightX,
+    y + 16
+  );
 
-  // Logo centrado (si existe)
+  // Logo centrado
   const themeLogo = (theme as any)?.logoUrlBusted ?? (theme as any)?.logoUrl ?? null;
   if (themeLogo) {
     try {
@@ -649,88 +692,108 @@ const handleDownloadPDF = async () => {
         const centerX = pageW / 2 - logoW / 2;
         doc.addImage(base64Img, "PNG", centerX, y - 10, logoW, logoH, undefined, "FAST");
       }
-    } catch {}
+    } catch { /* no-op */ }
   }
 
-  y += 60;
+  y += Math.max(headerBlockH, 60);
 
-  // ===== Línea separadora (como referencia VAI) =====
-  doc.setDrawColor(pc.r, pc.g, pc.b);
+  // ===== Separador =====
+  sectionRule();
+
+  // ===== 1) Datos del lote (lista alineada) + foto a la derecha en marco =====
+  sectionTitle("Datos del lote");
+
+  // Layout: columna izquierda (texto) + columna derecha (foto)
+  const textColW = pageW - M * 2 - 200 - COL_GAP; // dejamos 200 px para foto + gap
+  const leftX = M;
+  const rightBoxW = 200;
+  const rightX = pageW - M - rightBoxW;
+
+  // Guardamos y0 para calcular la altura total de la fila
+  const yStartDatos = y;
+
+  // Bloque texto (izquierda)
+  const kv = (label: string, value: string) => drawKV(label, value, leftX, textColW, 120);
+
+  kv("Proyecto", formData.nombreProyecto || "-");
+  kv("Dirección", formData.direccion || "-");
+  kv("Localidad", formData.localidad || "-");
+  kv("Barrio", formData.barrio || "-");
+  kv("Zona / Distrito", formData.zona || "-");
+  kv("Superficie del lote", `${numero(formData.superficieLote)} m²`);
+  kv("Frente", `${numero(formData.frente)} m`);
+  kv("Fondo", `${numero(formData.fondo)} m`);
+  kv("Superficie a demoler", `${numero(formData.superficieDemoler)} m²`);
+  kv("Superficie a conservar", `${numero(formData.superficieConservar)} m²`);
+
+  // Bloque foto (derecha con marco)
+  const yPhotoTop = yStartDatos; // alineado arriba con el bloque de texto
+  const photoPad = 8;
+  let photoBoxH = 150;
+
+  doc.setDrawColor(200, 200, 200);
   doc.setLineWidth(0.8);
-  doc.line(margin, y, pageW - margin, y);
-  y += 20;
+  doc.rect(rightX, yPhotoTop, rightBoxW, photoBoxH);
 
-  // ===== Sección: Datos del Lote =====
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(13);
-  doc.setTextColor(pc.r, pc.g, pc.b);
-  doc.text("Datos del Lote", pageW / 2, y, { align: "center" });
-  doc.setTextColor(0, 0, 0);
-  y += 20;
-
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(10);
-
-  // Lista izquierda
-  const leftX = margin;
-  const rightX = pageW - margin - 200; // columna de imagen (como VAI)
-  let yDatos = y;
-
-  // Proyecto primero
-  line("Proyecto", formData.nombreProyecto || "-", leftX);
-  line("Dirección", formData.direccion || "-", leftX);
-  line("Localidad", formData.localidad || "-", leftX);
-  line("Barrio", formData.barrio || "-", leftX);
-  line("Zona / Distrito", formData.zona || "-", leftX);
-  line("Superficie del lote", `${numero(formData.superficieLote)} m²`, leftX);
-  line("Frente", `${numero(formData.frente)} m`, leftX);
-  line("Fondo", `${numero(formData.fondo)} m`, leftX);
-  line("Superficie a demoler", `${numero(formData.superficieDemoler)} m²`, leftX);
-  line("Superficie a conservar", `${numero(formData.superficieConservar)} m²`, leftX);
-
-  // Foto del lote (base64 o URL) a la derecha
   let fotoDataURL: string | null = null;
   if (formData.fotoLoteBase64) fotoDataURL = formData.fotoLoteBase64;
-  else if (formData.fotoLoteUrl) fotoDataURL = await getDataURL(formData.fotoLoteUrl);
+  else if (formData.fotoLoteUrl) fotoDataURL = await fetchToDataURL(formData.fotoLoteUrl);
 
   if (fotoDataURL) {
     try {
-      doc.addImage(fotoDataURL, "JPEG", rightX, y, 180, 135, undefined, "FAST");
-    } catch {}
+      // Insertamos imagen con padding y ajuste (cover-like)
+      const imgW = rightBoxW - photoPad * 2;
+      const imgH = photoBoxH - photoPad * 2;
+      doc.addImage(
+        fotoDataURL,
+        "JPEG",
+        rightX + photoPad,
+        yPhotoTop + photoPad,
+        imgW,
+        imgH,
+        undefined,
+        "FAST"
+      );
+    } catch {
+      // si falla, dejamos marco vacío
+    }
   }
 
-  y = Math.max(yDatos, y + 135) + 20;
+  // Empujar y hasta el mayor extremo entre texto y foto
+  y = Math.max(y, yPhotoTop + photoBoxH) + 12;
 
-  // ===== Sección: Normativa y Morfología =====
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(13);
-  doc.setTextColor(pc.r, pc.g, pc.b);
-  doc.text("Normativa urbanística y morfología", pageW / 2, y, { align: "center" });
-  doc.setTextColor(0, 0, 0);
-  y += 18;
+  // ===== Separador =====
+  sectionRule();
 
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(10);
+  // ===== 2) Normativa urbanística y morfología =====
+  sectionTitle("Normativa urbanística y morfología");
 
-  line("FOS", `${numero(formData.FOS, 2)}`, margin);
-  line("FOT", `${numero(formData.FOT, 2)}`, margin);
-  line("Altura máxima", `${numero(formData.alturaMaxima)} m`, margin);
-  line("Pisos máximos", `${numero(formData.pisosMaximos)}`, margin);
-  line("Retiros frente", `${numero(formData.retiroFrente)} m`, margin);
-  line("Retiros fondo", `${numero(formData.retiroFondo)} m`, margin);
-  line("Retiros laterales", `${numero(formData.retiroLaterales)} m`, margin);
-
-  // Perfilería opcional
   const perfTxt =
     (formData as any).perfilAnguloGrados != null && (formData as any).perfilDesdePiso != null
       ? `${numero((formData as any).perfilAnguloGrados)}° desde piso ${numero((formData as any).perfilDesdePiso)}`
       : "—";
-  line("Perfilería", perfTxt, margin);
 
-  // ===== Cálculos locales de apoyo (por si no están en 'calculos') =====
+  drawKV("FOS", `${numero(formData.FOS, 2)}`, M, pageW - M * 2, 120);
+  drawKV("FOT", `${numero(formData.FOT, 2)}`, M, pageW - M * 2, 120);
+  drawKV("Altura máxima", `${numero(formData.alturaMaxima)} m`, M, pageW - M * 2, 120);
+  drawKV("Pisos máximos", `${numero(formData.pisosMaximos)}`, M, pageW - M * 2, 120);
+  drawKV("Retiros frente", `${numero(formData.retiroFrente)} m`, M, pageW - M * 2, 120);
+  drawKV("Retiros fondo", `${numero(formData.retiroFondo)} m`, M, pageW - M * 2, 120);
+  drawKV("Retiros laterales", `${numero(formData.retiroLaterales)} m`, M, pageW - M * 2, 120);
+  drawKV("Perfilería", perfTxt, M, pageW - M * 2, 120);
+
+  // ===== Separador =====
+  sectionRule();
+
+  // ===== 3) Usos previstos y eficiencia (métricas) =====
+  sectionTitle("Usos previstos y eficiencia");
+
+  // Lectura de cálculos ya memorizados en el componente
   const sConstruible = (calculos as any)?.superficieConstruibleTotal ?? null;
   const sVendible = (calculos as any)?.superficieVendibleTotal ?? null;
-  const sComun = (calculos as any)?.superficieComun ?? (sConstruible != null && sVendible != null ? sConstruible - sVendible : null);
+  const sComun =
+    (calculos as any)?.superficieComun ??
+    (sConstruible != null && sVendible != null ? sConstruible - sVendible : null);
 
   const m2xUnidad = (formData as any).metrosPorUnidad ?? null;
   const valorUnidad = (formData as any).valorVentaPorUnidad ?? null;
@@ -745,111 +808,94 @@ const handleDownloadPDF = async () => {
       ? Number(unidadesVendibles) * Number(valorUnidad)
       : null);
 
-  const costoDemoTotal =
-    formData.superficieDemoler != null && (formData as any).costoDemolicionM2 != null
-      ? Number(formData.superficieDemoler) * Number((formData as any).costoDemolicionM2)
-      : null;
+  drawKV("m² construibles (estimados)", `${numero(sConstruible)} m²`, M, pageW - M * 2, 180);
+  drawKV("m² vendibles (estimados)", `${numero(sVendible)} m²`, M, pageW - M * 2, 180);
+  drawKV("m² no vendibles (estimados)", `${numero(sComun)} m²`, M, pageW - M * 2, 180);
+  drawKV("Unidades vendibles (aprox.)", `${numero(unidadesVendibles)}`, M, pageW - M * 2, 180);
+  drawKV("m² por unidad", `${numero(m2xUnidad)} m²`, M, pageW - M * 2, 180);
+  drawKV("Valor de venta por unidad", `${peso(valorUnidad ?? null)}`, M, pageW - M * 2, 180);
+  drawKV("Valor total de unidades vendibles", `${peso(valorTotalVendible ?? null)}`, M, pageW - M * 2, 180);
+
+  // ===== Separador =====
+  sectionRule();
+
+  // ===== 4) Incidencia del lote y precio sugerido =====
+  sectionTitle("Incidencia del lote y precio sugerido");
 
   const indice = formData.indiceIncidenciaZonal ?? null;
+  const costoDemolicionM2 = (formData as any).costoDemolicionM2 ?? null;
+  const costoDemoTotal =
+    formData.superficieDemoler != null && costoDemolicionM2 != null
+      ? Number(formData.superficieDemoler) * Number(costoDemolicionM2)
+      : null;
+
+  // Precio sugerido: (Valor total vendible × índice) − costo demolición
   const precioSugeridoLote =
     (calculos as any)?.precioSugeridoLote ??
     (indice != null && valorTotalVendible != null
       ? Number(valorTotalVendible) * Number(indice) - (costoDemoTotal ?? 0)
       : null);
 
-  // ===== Sección: Usos previstos y eficiencia (listado) =====
-  y += 10;
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(13);
-  doc.setTextColor(pc.r, pc.g, pc.b);
-  doc.text("Usos previstos y eficiencia", pageW / 2, y, { align: "center" });
-  doc.setTextColor(0, 0, 0);
-  y += 18;
-
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(10);
-  line("m² construibles (estimados)", `${numero(sConstruible)} m²`, margin);
-  line("m² vendibles (estimados)", `${numero(sVendible)} m²`, margin);
-  line("m² no vendibles (estimados)", `${numero(sComun)} m²`, margin);
-  line("Unidades vendibles (aprox.)", `${numero(unidadesVendibles)}`, margin);
-  line("m² por unidad", `${numero(m2xUnidad)} m²`, margin);
-  line("Valor de venta por unidad", `${peso(valorUnidad ?? null)}`, margin);
-  line("Valor total de unidades vendibles", `${peso(valorTotalVendible ?? null)}`, margin);
-
-  // ===== Sección: Incidencia del lote y precio sugerido =====
-  y += 10;
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(13);
-  doc.setTextColor(pc.r, pc.g, pc.b);
-  doc.text("Incidencia del lote y precio sugerido", pageW / 2, y, { align: "center" });
-  doc.setTextColor(0, 0, 0);
-  y += 18;
-
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(10);
-  line(
+  drawKV(
     "Índice de incidencia zonal",
     indice != null ? `${(indice * 100).toFixed(2)} %` : "—",
-    margin
+    M,
+    pageW - M * 2,
+    180
   );
-  line("Superficie a demoler", `${numero(formData.superficieDemoler)} m²`, margin);
-  line("Precio de demolición por m²", `${peso((formData as any).costoDemolicionM2 ?? null)}`, margin);
-  line("Costo total de demolición", `${peso(costoDemoTotal ?? null)}`, margin);
+  drawKV("Superficie a demoler", `${numero(formData.superficieDemoler)} m²`, M, pageW - M * 2, 180);
+  drawKV("Precio de demolición por m²", `${peso(costoDemolicionM2 ?? null)}`, M, pageW - M * 2, 180);
+  drawKV("Costo total de demolición", `${peso(costoDemoTotal ?? null)}`, M, pageW - M * 2, 180);
 
-  // Precio sugerido centrado (estilo VAI)
+  // Recuadro del precio sugerido (centrado)
+  ensureRoom(90);
   y += 6;
   doc.setDrawColor(pc.r, pc.g, pc.b);
   doc.setLineWidth(0.8);
-  doc.line(margin, y, pageW - margin, y);
-  y += 16;
+  // Caja centrada
+  const boxW = 360;
+  const boxH = 54;
+  const boxX = pageW / 2 - boxW / 2;
+  doc.rect(boxX, y, boxW, boxH);
 
+  // Título y valor al centro
   doc.setFont("helvetica", "bold");
   doc.setFontSize(12);
   doc.setTextColor(pc.r, pc.g, pc.b);
-  doc.text("Precio sugerido del lote", margin, y);
-  doc.setTextColor(0, 0, 0);
-  y += 16;
+  doc.text("Precio sugerido del lote", pageW / 2, y + 18, { align: "center" });
 
-  doc.setFont("helvetica", "bold");
+  doc.setTextColor(0, 0, 0);
   doc.setFontSize(18);
-  doc.text(peso(precioSugeridoLote ?? null), pageW / 2, y, { align: "center" });
-  y += 30;
+  doc.text(peso(precioSugeridoLote ?? null), pageW / 2, y + 40, { align: "center" });
 
-  doc.setDrawColor(pc.r, pc.g, pc.b);
-  doc.line(margin, y, pageW - margin, y);
-  y += 16;
+  y += boxH + 20;
 
-  // ===== Conclusión =====
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(12);
-  doc.setTextColor(pc.r, pc.g, pc.b);
-  doc.text("Conclusión", margin, y);
-  doc.setTextColor(0, 0, 0);
-  y += 16;
+  // ===== Separador =====
+  sectionRule();
 
-  const block = (title: string, text: string) => {
+  // ===== 5) Conclusión =====
+  sectionTitle("Conclusión");
+
+  const addPara = (title: string, text: string) => {
+    ensureRoom(60);
     doc.setFont("helvetica", "bold");
     doc.setFontSize(11);
-    doc.text(title, margin, y);
+    doc.text(title, M, y);
     y += 12;
     doc.setFont("helvetica", "normal");
     doc.setFontSize(10);
-    const lines = doc.splitTextToSize(text || "-", pageW - margin * 2);
-    doc.text(lines as any, margin, y);
-    y += (Array.isArray(lines) ? (lines as string[]).length : 1) * 14 + 8;
-    if (y > pageH - 80) {
-      doc.addPage();
-      y = margin;
-    }
+    const lines = doc.splitTextToSize(text || "—", pageW - M * 2) as string[];
+    doc.text(lines, M, y);
+    y += LH * Math.max(1, lines.length) + 6;
   };
 
-  block("Observaciones", formData.observaciones);
-  block("Riesgos", formData.riesgos);
-  block("Oportunidades", formData.oportunidades);
-  block("Notas adicionales", formData.notasAdicionales);
+  addPara("Observaciones", formData.observaciones);
+  addPara("Riesgos", formData.riesgos);
+  addPara("Oportunidades", formData.oportunidades);
+  addPara("Notas adicionales", formData.notasAdicionales);
 
   // ===== Footer =====
-  const footerText = `${matriculado}  |  Matricula N°: ${cpi}`;
+  const footerText = `${matriculado}  |  Matrícula N°: ${cpi}`;
   doc.setFont("helvetica", "italic");
   doc.setFontSize(9);
   doc.text(footerText, pageW / 2, pageH - 30, { align: "center" });

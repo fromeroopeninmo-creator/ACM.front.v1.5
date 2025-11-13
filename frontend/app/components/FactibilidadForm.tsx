@@ -538,320 +538,324 @@ export default function FactibilidadForm() {
     };
   }, [formData]);
 
-        /* =========================
-   *  PDF — formato limpio y alineado
-   * ========================= */
-  const handleDownloadPDF = async () => {
-    const { jsPDF } = await import("jspdf");
+       /* ========= PDF (formato VAI adaptado a Factibilidad) ========= */
+const handleDownloadPDF = async () => {
+  const { jsPDF } = await import("jspdf");
 
-    const doc = new jsPDF("p", "pt", "a4");
-    const pageW = doc.internal.pageSize.getWidth();
-    const pageH = doc.internal.pageSize.getHeight();
+  const doc = new jsPDF("p", "pt", "a4");
+  const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
+  const margin = 40;
+  let y = margin;
 
-    // --- Estilos base
-    const marginX = 40;
-    let y = 40;
-    const primaryHex = effectivePrimaryColor || "#0ea5e9";
-
-    const hexToRgb = (hex: string) => {
-      const m = hex.replace("#", "");
-      const int = parseInt(m.length === 3 ? m.split("").map(c => c + c).join("") : m, 16);
-      return { r: (int >> 16) & 255, g: (int >> 8) & 255, b: int & 255 };
-    };
-    const pc = hexToRgb(primaryHex);
-
-    // Tamaños
-    const H1 = 14;  // título principal
-    const HSEC = 11; // subtítulos (más chicos)
-    const TXT = 10; // texto normal
-    const LINE = 14; // interlineado
-    const GAP = 6;  // espacio entre secciones
-
-    doc.setFont("helvetica", "normal");
-    doc.setTextColor(0, 0, 0);
-
-    // ===== Helpers de texto =====
-    const ensureSpace = (h: number) => {
-      if (y + h > pageH - 60) {
-        doc.addPage();
-        y = 40;
-      }
-    };
-
-    // Dibuja "Etiqueta: Valor" en la MISMA línea, con wrap si el valor es largo.
-    // Si hay wrap, las líneas siguientes se indentan después de "Etiqueta: ".
-    const drawLabelValue = (label: string, value: string, x: number, maxWidth: number) => {
-      doc.setFontSize(TXT);
-      doc.setFont("helvetica", "bold");
-      const labelText = `${label}: `;
-      const labelWidth = doc.getTextWidth(labelText);
-      const availForValue = Math.max(20, maxWidth - labelWidth);
-
-      doc.setFont("helvetica", "normal");
-      // Wrap del valor según ancho disponible
-      const valueLines = doc.splitTextToSize(value ?? "—", availForValue) as string[];
-
-      ensureSpace(LINE * valueLines.length);
-      // Primera línea: etiqueta + primera parte del valor
-      doc.setFont("helvetica", "bold");
-      doc.text(labelText, x, y);
-      doc.setFont("helvetica", "normal");
-      doc.text(valueLines[0] || "—", x + labelWidth, y);
-
-      // Líneas siguientes: solo el valor, indentado
-      for (let i = 1; i < valueLines.length; i++) {
-        y += LINE;
-        ensureSpace(LINE);
-        doc.text(valueLines[i], x + labelWidth, y);
-      }
-      y += LINE;
-    };
-
-    const sectionTitle = (title: string) => {
-      ensureSpace(LINE + 2);
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(HSEC);
-      doc.setTextColor(pc.r, pc.g, pc.b);
-      doc.text(title, marginX, y);
-      doc.setTextColor(0, 0, 0);
-      y += LINE; // sin líneas separadoras
-    };
-
-    // =========================
-    // Encabezado (2 columnas + logo centrado)
-    // Izq (3 filas): Empresa / Profesional / Matrícula
-    // Der (2 filas): Asesor / Fecha
-    // =========================
-    const anyUser = user as any;
-    const role = (anyUser?.role || "").toLowerCase();
-    const isAsesor = role === "asesor";
-
-    let matriculado = anyUser?.matriculado_nombre || "—";
-    let cpi = anyUser?.cpi || "—";
-    let inmobiliaria = themeCompanyName || anyUser?.inmobiliaria || "—";
-    const asesorNombre =
-      isAsesor && (anyUser?.nombre || anyUser?.apellido)
-        ? `${anyUser?.nombre ?? ""} ${anyUser?.apellido ?? ""}`.trim()
-        : isAsesor
-        ? "—"
-        : "—";
-
-    // Completar desde empresas si falta info
-    if (inmobiliaria === "—" || matriculado === "—" || cpi === "—") {
-      try {
-        const { supabase } = await import("#lib/supabaseClient");
-        let query = supabase
-          .from("empresas")
-          .select("id, nombre_comercial, matriculado, cpi, user_id")
-          .limit(1);
-
-        if (isAsesor && anyUser?.empresa_id) {
-          query = query.eq("id", anyUser.empresa_id);
-        } else if (anyUser?.id) {
-          query = query.eq("user_id", anyUser.id);
-        }
-
-        const { data: empresaRow } = await query.maybeSingle();
-        if (empresaRow) {
-          if (inmobiliaria === "—" && empresaRow.nombre_comercial) inmobiliaria = empresaRow.nombre_comercial;
-          if (matriculado === "—" && empresaRow.matriculado) matriculado = empresaRow.matriculado;
-          if (cpi === "—" && empresaRow.cpi) cpi = empresaRow.cpi;
-        }
-      } catch {
-        // no-op
-      }
-    }
-
-    const colW = (pageW - marginX * 2) / 3;
-    const leftX = marginX;
-    const centerX = marginX + colW;
-    const rightX = marginX + colW * 2;
-
-    const fechaTxt = new Date(formData.date || new Date().toISOString()).toLocaleDateString("es-AR");
-
-    // Tres filas izquierda
-    {
-      const maxW = colW - 4;
-      doc.setFontSize(TXT);
-      drawLabelValue("Empresa", inmobiliaria, leftX, maxW);
-      drawLabelValue("Profesional", matriculado, leftX, maxW);
-      drawLabelValue("Matrícula N°", cpi, leftX, maxW);
-    }
-
-    // Logo centrado
-    let headerBottomY = y;
-    const themeLogo = themeLogoUrl || null;
-    if (themeLogo) {
-      try {
-        const base64Img = await fetchToDataURL(themeLogo);
-        if (base64Img) {
-          const logoW = 80;
-          const logoH = 80;
-          const cx = centerX + colW / 2 - logoW / 2;
-          // Centrar en altura respecto a las 3 filas de la izquierda (aprox)
-          const startY = 40 + LINE; // cerca del primer renglón
-          doc.addImage(base64Img, "PNG", cx, startY, logoW, logoH, undefined, "FAST");
-          headerBottomY = Math.max(headerBottomY, startY + logoH);
-        }
-      } catch {
-        // sin logo
-      }
-    }
-
-    // Dos filas derecha
-    {
-      // Alinear verticalmente con el bloque izquierdo (arranque aproximado)
-      const saveY = y;
-      y = 40; // volvemos arriba para dibujar derecha a la misma altura aproximada
-      const maxW = colW - 4;
-      drawLabelValue("Asesor", asesorNombre || "—", rightX, maxW);
-      drawLabelValue("Fecha", fechaTxt, rightX, maxW);
-      // el y se movió; tomemos el mayor fondo de header
-      headerBottomY = Math.max(headerBottomY, y);
-      // restaurar y para continuar debajo del header
-      y = Math.max(saveY, headerBottomY);
-    }
-
-    // Título centrado
-    y += GAP;
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(H1);
-    doc.setTextColor(pc.r, pc.g, pc.b);
-    doc.text("Informe de Factibilidad Constructiva", pageW / 2, y, { align: "center" });
-    doc.setTextColor(0, 0, 0);
-    y += LINE + GAP;
-
-    // ===== Sección 1: Datos del Lote =====
-    sectionTitle("1. Datos del Lote");
-    drawLabelValue("Proyecto", formData.nombreProyecto || "-", marginX, pageW - marginX * 2);
-    drawLabelValue("Dirección", formData.direccion || "-", marginX, pageW - marginX * 2);
-    drawLabelValue("Localidad", formData.localidad || "-", marginX, pageW - marginX * 2);
-    drawLabelValue("Barrio", formData.barrio || "-", marginX, pageW - marginX * 2);
-    drawLabelValue("Zona / Distrito", formData.zona || "-", marginX, pageW - marginX * 2);
-    drawLabelValue("Superficie del lote", `${numero(formData.superficieLote)} m²`, marginX, pageW - marginX * 2);
-    drawLabelValue("Frente", `${numero(formData.frente)} m`, marginX, pageW - marginX * 2);
-    drawLabelValue("Fondo", `${numero(formData.fondo)} m`, marginX, pageW - marginX * 2);
-    drawLabelValue("Superficie a demoler", `${numero(formData.superficieDemoler)} m²`, marginX, pageW - marginX * 2);
-    drawLabelValue("Superficie a conservar", `${numero(formData.superficieConservar)} m²`, marginX, pageW - marginX * 2);
-
-    y += GAP;
-
-    // ===== Sección 2: Normativa =====
-    sectionTitle("2. Normativa urbanística y morfología");
-    drawLabelValue("FOS", `${numero(formData.FOS, 2)}`, marginX, pageW - marginX * 2);
-    drawLabelValue("FOT", `${numero(formData.FOT, 2)}`, marginX, pageW - marginX * 2);
-    drawLabelValue("Altura máxima", `${numero(formData.alturaMaxima)} m`, marginX, pageW - marginX * 2);
-    drawLabelValue("Pisos máximos", `${numero(formData.pisosMaximos)}`, marginX, pageW - marginX * 2);
-    drawLabelValue("Retiros frente", `${numero(formData.retiroFrente)} m`, marginX, pageW - marginX * 2);
-    drawLabelValue("Retiros fondo", `${numero(formData.retiroFondo)} m`, marginX, pageW - marginX * 2);
-    drawLabelValue("Retiros laterales", `${numero(formData.retiroLaterales)} m`, marginX, pageW - marginX * 2);
-    drawLabelValue(
-      "Perfilería",
-      formData.perfilAnguloGrados != null && formData.perfilDesdePiso != null
-        ? `${numero(formData.perfilAnguloGrados)}° desde piso ${numero(formData.perfilDesdePiso)}`
-        : "—",
-      marginX,
-      pageW - marginX * 2
-    );
-
-    y += GAP;
-
-    // ===== Sección 3: Usos y Eficiencia =====
-    sectionTitle("3. Usos previstos y eficiencia");
-    drawLabelValue("m² construibles (estimados)", `${numero(calculos.superficieConstruibleTotal)} m²`, marginX, pageW - marginX * 2);
-    drawLabelValue("m² vendibles (estimados)", `${numero(calculos.superficieVendibleTotal)} m²`, marginX, pageW - marginX * 2);
-    drawLabelValue("m² no vendibles (estimados)", `${numero(calculos.superficieComun)} m²`, marginX, pageW - marginX * 2);
-    drawLabelValue("Unidades vendibles (aprox.)", `${numero(calculos.unidadesVendibles)}`, marginX, pageW - marginX * 2);
-    drawLabelValue("m² por unidad", `${numero((formData as any).metrosPorUnidad)} m²`, marginX, pageW - marginX * 2);
-    drawLabelValue("Valor de venta por unidad", `${peso((formData as any).valorVentaPorUnidad ?? null)}`, marginX, pageW - marginX * 2);
-    drawLabelValue(
-      "Valor total de unidades vendibles",
-      `${peso(calculos.valorTotalUnidadesVendibles ?? null)}`,
-      marginX,
-      pageW - marginX * 2
-    );
-
-    y += GAP;
-
-    // ===== Sección 4: Incidencia y Precio =====
-    sectionTitle("4. Incidencia del lote y precio sugerido");
-    drawLabelValue(
-      "Índice de incidencia zonal",
-      formData.indiceIncidenciaZonal != null ? `${(formData.indiceIncidenciaZonal * 100).toFixed(2)} %` : "—",
-      marginX,
-      pageW - marginX * 2
-    );
-    drawLabelValue("Superficie a demoler", `${numero(formData.superficieDemoler)} m²`, marginX, pageW - marginX * 2);
-    drawLabelValue(
-      "Precio de demolición por m²",
-      `${peso((formData as any).costoDemolicionM2 ?? null)}`,
-      marginX,
-      pageW - marginX * 2
-    );
-
-    const costoDemoTotal =
-      formData.superficieDemoler != null && (formData as any).costoDemolicionM2 != null
-        ? Number(formData.superficieDemoler) * Number((formData as any).costoDemolicionM2)
-        : null;
-
-    drawLabelValue("Costo total de demolición", `${peso(costoDemoTotal ?? null)}`, marginX, pageW - marginX * 2);
-
-    // Recuadro centrado SOLO con el precio
-    const precioSugerido = (calculos as any).precioSugeridoLote ?? null;
-    const boxW = Math.min(420, pageW - marginX * 2);
-    const boxH = 80;
-    const boxX = (pageW - boxW) / 2;
-
-    y += 8;
-    ensureSpace(boxH + 10);
-    doc.setDrawColor(pc.r, pc.g, pc.b);
-    doc.setLineWidth(1.2);
-    doc.roundedRect(boxX, y, boxW, boxH, 8, 8);
-
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(12);
-    doc.setTextColor(pc.r, pc.g, pc.b);
-    doc.text("Precio Sugerido del Lote", boxX + boxW / 2, y + 26, { align: "center" });
-
-    doc.setTextColor(0, 0, 0);
-    doc.setFontSize(20);
-    doc.text(peso(precioSugerido ?? null), boxX + boxW / 2, y + 26 + 26, { align: "center" });
-
-    // separador vertical antes de Conclusión (sin línea, solo aire)
-    y += boxH + 18;
-
-    // ===== Sección 5: Conclusión =====
-    sectionTitle("5. Conclusión");
-
-    const paragraph = (title: string, text: string) => {
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(TXT);
-      doc.text(title, marginX, y);
-      y += 10;
-
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(TXT);
-      const lines = doc.splitTextToSize(text || "—", pageW - marginX * 2) as string[];
-      const h = lines.length * LINE;
-      ensureSpace(h);
-      doc.text(lines as any, marginX, y);
-      y += h + 6;
-    };
-
-    paragraph("Observaciones", formData.observaciones);
-    paragraph("Riesgos", formData.riesgos);
-    paragraph("Oportunidades", formData.oportunidades);
-    paragraph("Notas adicionales", formData.notasAdicionales);
-
-    // Footer
-    const footerText = `${matriculado}  |  Matrícula N°: ${cpi}`;
-    doc.setFont("helvetica", "italic");
-    doc.setFontSize(9);
-    doc.setTextColor(0, 0, 0);
-    doc.text(footerText, pageW / 2, pageH - 30, { align: "center" });
-
-    doc.save("Informe_Factibilidad.pdf");
+  // ===== Helpers =====
+  const hexToRgb = (hex: string) => {
+    const m = hex.replace("#", "");
+    const int = parseInt(m.length === 3 ? m.split("").map((c) => c + c).join("") : m, 16);
+    return { r: (int >> 16) & 255, g: (int >> 8) & 255, b: int & 255 };
   };
+
+  const pc = hexToRgb(effectivePrimaryColor || "#0ea5e9");
+  const lh = 15; // line height para listas
+
+  // Render línea "Etiqueta: Valor" simple
+  const line = (label: string, value: string, x: number) => {
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.text(`${label}:`, x, y);
+    doc.setFont("helvetica", "normal");
+    doc.text(`${value}`, x + 120, y); // 120px de offset para que el valor no se superponga
+    y += lh;
+  };
+
+  // Cargar imagen (URL o base64)
+  const getDataURL = async (url?: string | null) => {
+    try {
+      if (!url) return null;
+      const r = await fetch(url);
+      if (!r.ok) return null;
+      const b = await r.blob();
+      return await new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result));
+        reader.readAsDataURL(b);
+      });
+    } catch {
+      return null;
+    }
+  };
+
+  // ===== Datos desde Auth/Theme (igual que referencia VAI) =====
+  const anyUser = user as any;
+  const role = (anyUser?.role || "").toLowerCase();
+  const isAsesor = role === "asesor";
+
+  let matriculado = anyUser?.matriculado_nombre || "—";
+  let cpi = anyUser?.cpi || "—";
+  let inmobiliaria = (theme as any)?.companyName || anyUser?.inmobiliaria || "—";
+  const asesorNombre =
+    anyUser?.nombre && anyUser?.apellido ? `${anyUser.nombre} ${anyUser.apellido}` : "—";
+
+  // Completar desde empresas si falta algo
+  if (inmobiliaria === "—" || matriculado === "—" || cpi === "—") {
+    try {
+      const { supabase } = await import("#lib/supabaseClient");
+      let query = supabase
+        .from("empresas")
+        .select("id, nombre_comercial, matriculado, cpi, user_id")
+        .limit(1);
+
+      if (isAsesor && anyUser?.empresa_id) query = query.eq("id", anyUser.empresa_id);
+      else if (anyUser?.id) query = query.eq("user_id", anyUser.id);
+
+      const { data: empresaRow, error } = await query.maybeSingle();
+      if (!error && empresaRow) {
+        if (inmobiliaria === "—" && empresaRow.nombre_comercial) inmobiliaria = empresaRow.nombre_comercial;
+        if (matriculado === "—" && empresaRow.matriculado) matriculado = empresaRow.matriculado;
+        if (cpi === "—" && empresaRow.cpi) cpi = empresaRow.cpi;
+      }
+    } catch {/* no-op */}
+  }
+
+  // ===== Título centrado =====
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(16);
+  doc.setTextColor(pc.r, pc.g, pc.b);
+  doc.text("Informe de Factibilidad Constructiva", pageW / 2, y, { align: "center" });
+  doc.setTextColor(0, 0, 0);
+  y += 30;
+
+  // ===== Encabezado (dos columnas) + logo centrado =====
+  const colLeftX = margin;
+  const colRightX = pageW - margin - 220;
+
+  doc.setFontSize(11);
+  doc.setFont("helvetica", "normal");
+  doc.text(`Empresa: ${inmobiliaria}`, colLeftX, y);
+  doc.text(`Asesor: ${isAsesor ? asesorNombre : "—"}`, colLeftX, y + 15);
+
+  doc.text(`Profesional: ${matriculado}`, colRightX, y);
+  doc.text(`Matricula N°: ${cpi}`, colRightX, y + 15);
+  doc.text(`Fecha: ${new Date(formData.date || new Date().toISOString()).toLocaleDateString("es-AR")}`, colRightX, y + 30);
+
+  // Logo centrado (si existe)
+  const themeLogo = (theme as any)?.logoUrlBusted ?? (theme as any)?.logoUrl ?? null;
+  if (themeLogo) {
+    try {
+      const base64Img = await getDataURL(themeLogo);
+      if (base64Img) {
+        const logoW = 70;
+        const logoH = 70;
+        const centerX = pageW / 2 - logoW / 2;
+        doc.addImage(base64Img, "PNG", centerX, y - 10, logoW, logoH, undefined, "FAST");
+      }
+    } catch {}
+  }
+
+  y += 60;
+
+  // ===== Línea separadora (como referencia VAI) =====
+  doc.setDrawColor(pc.r, pc.g, pc.b);
+  doc.setLineWidth(0.8);
+  doc.line(margin, y, pageW - margin, y);
+  y += 20;
+
+  // ===== Sección: Datos del Lote =====
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(13);
+  doc.setTextColor(pc.r, pc.g, pc.b);
+  doc.text("Datos del Lote", pageW / 2, y, { align: "center" });
+  doc.setTextColor(0, 0, 0);
+  y += 20;
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+
+  // Lista izquierda
+  const leftX = margin;
+  const rightX = pageW - margin - 200; // columna de imagen (como VAI)
+  let yDatos = y;
+
+  // Proyecto primero
+  line("Proyecto", formData.nombreProyecto || "-", leftX);
+  line("Dirección", formData.direccion || "-", leftX);
+  line("Localidad", formData.localidad || "-", leftX);
+  line("Barrio", formData.barrio || "-", leftX);
+  line("Zona / Distrito", formData.zona || "-", leftX);
+  line("Superficie del lote", `${numero(formData.superficieLote)} m²`, leftX);
+  line("Frente", `${numero(formData.frente)} m`, leftX);
+  line("Fondo", `${numero(formData.fondo)} m`, leftX);
+  line("Superficie a demoler", `${numero(formData.superficieDemoler)} m²`, leftX);
+  line("Superficie a conservar", `${numero(formData.superficieConservar)} m²`, leftX);
+
+  // Foto del lote (base64 o URL) a la derecha
+  let fotoDataURL: string | null = null;
+  if (formData.fotoLoteBase64) fotoDataURL = formData.fotoLoteBase64;
+  else if (formData.fotoLoteUrl) fotoDataURL = await getDataURL(formData.fotoLoteUrl);
+
+  if (fotoDataURL) {
+    try {
+      doc.addImage(fotoDataURL, "JPEG", rightX, y, 180, 135, undefined, "FAST");
+    } catch {}
+  }
+
+  y = Math.max(yDatos, y + 135) + 20;
+
+  // ===== Sección: Normativa y Morfología =====
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(13);
+  doc.setTextColor(pc.r, pc.g, pc.b);
+  doc.text("Normativa urbanística y morfología", pageW / 2, y, { align: "center" });
+  doc.setTextColor(0, 0, 0);
+  y += 18;
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+
+  line("FOS", `${numero(formData.FOS, 2)}`, margin);
+  line("FOT", `${numero(formData.FOT, 2)}`, margin);
+  line("Altura máxima", `${numero(formData.alturaMaxima)} m`, margin);
+  line("Pisos máximos", `${numero(formData.pisosMaximos)}`, margin);
+  line("Retiros frente", `${numero(formData.retiroFrente)} m`, margin);
+  line("Retiros fondo", `${numero(formData.retiroFondo)} m`, margin);
+  line("Retiros laterales", `${numero(formData.retiroLaterales)} m`, margin);
+
+  // Perfilería opcional
+  const perfTxt =
+    (formData as any).perfilAnguloGrados != null && (formData as any).perfilDesdePiso != null
+      ? `${numero((formData as any).perfilAnguloGrados)}° desde piso ${numero((formData as any).perfilDesdePiso)}`
+      : "—";
+  line("Perfilería", perfTxt, margin);
+
+  // ===== Cálculos locales de apoyo (por si no están en 'calculos') =====
+  const sConstruible = (calculos as any)?.superficieConstruibleTotal ?? null;
+  const sVendible = (calculos as any)?.superficieVendibleTotal ?? null;
+  const sComun = (calculos as any)?.superficieComun ?? (sConstruible != null && sVendible != null ? sConstruible - sVendible : null);
+
+  const m2xUnidad = (formData as any).metrosPorUnidad ?? null;
+  const valorUnidad = (formData as any).valorVentaPorUnidad ?? null;
+  const unidadesVendibles =
+    sVendible != null && m2xUnidad && Number(m2xUnidad) > 0
+      ? Math.floor(Number(sVendible) / Number(m2xUnidad))
+      : (calculos as any)?.unidadesVendibles ?? null;
+
+  const valorTotalVendible =
+    (calculos as any)?.valorTotalUnidadesVendibles ??
+    (unidadesVendibles != null && valorUnidad != null
+      ? Number(unidadesVendibles) * Number(valorUnidad)
+      : null);
+
+  const costoDemoTotal =
+    formData.superficieDemoler != null && (formData as any).costoDemolicionM2 != null
+      ? Number(formData.superficieDemoler) * Number((formData as any).costoDemolicionM2)
+      : null;
+
+  const indice = formData.indiceIncidenciaZonal ?? null;
+  const precioSugeridoLote =
+    (calculos as any)?.precioSugeridoLote ??
+    (indice != null && valorTotalVendible != null
+      ? Number(valorTotalVendible) * Number(indice) - (costoDemoTotal ?? 0)
+      : null);
+
+  // ===== Sección: Usos previstos y eficiencia (listado) =====
+  y += 10;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(13);
+  doc.setTextColor(pc.r, pc.g, pc.b);
+  doc.text("Usos previstos y eficiencia", pageW / 2, y, { align: "center" });
+  doc.setTextColor(0, 0, 0);
+  y += 18;
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+  line("m² construibles (estimados)", `${numero(sConstruible)} m²`, margin);
+  line("m² vendibles (estimados)", `${numero(sVendible)} m²`, margin);
+  line("m² no vendibles (estimados)", `${numero(sComun)} m²`, margin);
+  line("Unidades vendibles (aprox.)", `${numero(unidadesVendibles)}`, margin);
+  line("m² por unidad", `${numero(m2xUnidad)} m²`, margin);
+  line("Valor de venta por unidad", `${peso(valorUnidad ?? null)}`, margin);
+  line("Valor total de unidades vendibles", `${peso(valorTotalVendible ?? null)}`, margin);
+
+  // ===== Sección: Incidencia del lote y precio sugerido =====
+  y += 10;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(13);
+  doc.setTextColor(pc.r, pc.g, pc.b);
+  doc.text("Incidencia del lote y precio sugerido", pageW / 2, y, { align: "center" });
+  doc.setTextColor(0, 0, 0);
+  y += 18;
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+  line(
+    "Índice de incidencia zonal",
+    indice != null ? `${(indice * 100).toFixed(2)} %` : "—",
+    margin
+  );
+  line("Superficie a demoler", `${numero(formData.superficieDemoler)} m²`, margin);
+  line("Precio de demolición por m²", `${peso((formData as any).costoDemolicionM2 ?? null)}`, margin);
+  line("Costo total de demolición", `${peso(costoDemoTotal ?? null)}`, margin);
+
+  // Precio sugerido centrado (estilo VAI)
+  y += 6;
+  doc.setDrawColor(pc.r, pc.g, pc.b);
+  doc.setLineWidth(0.8);
+  doc.line(margin, y, pageW - margin, y);
+  y += 16;
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(12);
+  doc.setTextColor(pc.r, pc.g, pc.b);
+  doc.text("Precio sugerido del lote", margin, y);
+  doc.setTextColor(0, 0, 0);
+  y += 16;
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(18);
+  doc.text(peso(precioSugeridoLote ?? null), pageW / 2, y, { align: "center" });
+  y += 30;
+
+  doc.setDrawColor(pc.r, pc.g, pc.b);
+  doc.line(margin, y, pageW - margin, y);
+  y += 16;
+
+  // ===== Conclusión =====
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(12);
+  doc.setTextColor(pc.r, pc.g, pc.b);
+  doc.text("Conclusión", margin, y);
+  doc.setTextColor(0, 0, 0);
+  y += 16;
+
+  const block = (title: string, text: string) => {
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.text(title, margin, y);
+    y += 12;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    const lines = doc.splitTextToSize(text || "-", pageW - margin * 2);
+    doc.text(lines as any, margin, y);
+    y += (Array.isArray(lines) ? (lines as string[]).length : 1) * 14 + 8;
+    if (y > pageH - 80) {
+      doc.addPage();
+      y = margin;
+    }
+  };
+
+  block("Observaciones", formData.observaciones);
+  block("Riesgos", formData.riesgos);
+  block("Oportunidades", formData.oportunidades);
+  block("Notas adicionales", formData.notasAdicionales);
+
+  // ===== Footer =====
+  const footerText = `${matriculado}  |  Matricula N°: ${cpi}`;
+  doc.setFont("helvetica", "italic");
+  doc.setFontSize(9);
+  doc.text(footerText, pageW / 2, pageH - 30, { align: "center" });
+
+  doc.save("Informe_Factibilidad.pdf");
+};
 
 
   /* =========================

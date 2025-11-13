@@ -1,11 +1,6 @@
 'use client';
 
-import React, {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 import { useTheme } from '@/context/ThemeContext';
 import { useAuth } from '@/context/AuthContext';
@@ -30,8 +25,8 @@ interface FactibilidadFormData {
   fondo: number | null;
   tipoImplantacion: 'entre_medianeras' | 'esquina' | 'dos_frentes' | 'otro';
 
-  superficieDemoler: number | null;     // solo informativo (no resta)
-  superficieConservar: number | null;   // solo informativo (no resta)
+  superficieDemoler: number | null;
+  superficieConservar: number | null;
 
   fotoLoteUrl?: string;
   fotoLoteBase64?: string;
@@ -52,19 +47,20 @@ interface FactibilidadFormData {
   permiteSubsuelo: boolean;
   nivelesSubsuelo: number | null;
 
-  // 🔹 Perfilería (opcional)
-  perfilAnguloGrados: number | null;   // ej. 45°
-  perfilDesdePiso: number | null;      // ej. 8
+  // Perfilería opcional
+  perfilAnguloGrados: number | null;
+  perfilDesdePiso: number | null;
 
-  // Bloque 3: Usos y eficiencia (simplificado)
-  eficienciaGlobal: number | null;     // ej. 0.80
-  metrosPorUnidad: number | null;      // ej. 40 (m²)
-  valorVentaPorUnidad: number | null;  // ej. 40000 (ARS, USD, etc.)
+  // Bloque 3: Usos y eficiencia
+  eficienciaGlobal: number | null;
+  metrosPorUnidad: number | null;
+  valorVentaPorUnidad: number | null;
 
-  // Bloque 5: Incidencia
-  indiceIncidenciaZonal: number | null; // ej. 0.10 (10%)
+  // Bloque 4: Incidencia
+  indiceIncidenciaZonal: number | null;
+  costoDemolicionM2: number | null; // usado para descontar del precio sugerido
 
-  // Conclusión
+  // Bloque 5: Conclusión
   observaciones: string;
   riesgos: string;
   oportunidades: string;
@@ -79,7 +75,7 @@ type InlineMsg = { type: 'success' | 'error'; text: string } | null;
 
 const peso = (n: number | null | undefined) =>
   n == null || isNaN(n)
-    ? '—'
+    ? '-'
     : n.toLocaleString('es-AR', {
         style: 'currency',
         currency: 'ARS',
@@ -88,7 +84,7 @@ const peso = (n: number | null | undefined) =>
 
 const numero = (n: number | null | undefined, dec = 0) =>
   n == null || isNaN(n)
-    ? '—'
+    ? '-'
     : n.toLocaleString('es-AR', {
         maximumFractionDigits: dec,
         minimumFractionDigits: dec,
@@ -246,6 +242,7 @@ const makeInitialData = (): FactibilidadFormData => ({
   valorVentaPorUnidad: null,
 
   indiceIncidenciaZonal: null,
+  costoDemolicionM2: null,
 
   observaciones: '',
   riesgos: '',
@@ -338,14 +335,8 @@ export default function FactibilidadForm() {
     const { name, value } = e.target;
 
     // Booleanos
-    if (
-      name === 'requiereCorazonManzana' ||
-      name === 'permiteSubsuelo'
-    ) {
-      setFormData((prev) => ({
-        ...prev,
-        [name]: value === 'true',
-      }));
+    if (name === 'requiereCorazonManzana' || name === 'permiteSubsuelo') {
+      setFormData((prev) => ({ ...prev, [name]: value === 'true' }));
       return;
     }
 
@@ -367,10 +358,10 @@ export default function FactibilidadForm() {
       'eficienciaGlobal',
       'metrosPorUnidad',
       'valorVentaPorUnidad',
-      'nivelesSubsuelo',
+      'indiceIncidenciaZonal',
+      'costoDemolicionM2',
       'perfilAnguloGrados',
       'perfilDesdePiso',
-      'indiceIncidenciaZonal',
     ]);
 
     if (numericFields.has(name)) {
@@ -393,10 +384,7 @@ export default function FactibilidadForm() {
     }
 
     // El resto texto
-    setFormData((prev) => ({
-      ...prev,
-      [name]: value,
-    }));
+    setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
   const handleFotoLoteSelect = async (
@@ -413,11 +401,7 @@ export default function FactibilidadForm() {
       step: 0.07,
     });
 
-    setFormData((prev) => ({
-      ...prev,
-      fotoLoteBase64: b64,
-      fotoLoteUrl: '',
-    }));
+    setFormData((prev) => ({ ...prev, fotoLoteBase64: b64, fotoLoteUrl: '' }));
     if (fotoLoteInputRef.current) fotoLoteInputRef.current.value = '';
   };
 
@@ -430,55 +414,66 @@ export default function FactibilidadForm() {
     const FOT = formData.FOT ?? null;
     const FOS = formData.FOS ?? null;
     const pisos = formData.pisosMaximos ?? null;
+    const frente = formData.frente ?? null;
+    const fondo = formData.fondo ?? null;
 
-    // Superficie por FOT (tope absoluto)
-    const superficieMaxPorFOT =
-      sLote > 0 && FOT !== null ? sLote * FOT : null;
+    const conservar = formData.superficieConservar ?? 0;
+    const demoler = formData.superficieDemoler ?? 0;
 
-    // Superficie por altura/pisos (con o sin perfilería)
+    // Lote efectivo para nueva planta por conservación
+    // (ejemplo del usuario: 500 m² lote, FOS 0.8, conservar 100 → planta = (500-100)*0.8 = 320)
+    const loteEfectivo = Math.max(0, sLote - conservar);
+
+    // Planta base por FOS
+    const plantaBase =
+      loteEfectivo > 0 && FOS !== null ? loteEfectivo * FOS : null;
+
+    // Cálculo por altura/pisos con perfilería (opcional)
     let superficieMaxPorAltura: number | null = null;
-
-    if (sLote > 0 && FOS !== null && pisos !== null && pisos > 0) {
-      const plantaBase = sLote * FOS;
-
+    if (pisos !== null && pisos > 0 && plantaBase !== null) {
       const ang = formData.perfilAnguloGrados ?? null;
       const desde = formData.perfilDesdePiso ?? null;
-      const fondo = formData.fondo ?? null;
+      const alturaPiso = 3; // m por piso
 
-      // Sin perfilería → homogéneo
+      // Si no hay perfilería o faltan frente/fondo para geometría, usamos plantaBase * pisos
       if (
         ang == null ||
-        isNaN(ang) ||
         desde == null ||
+        isNaN(ang) ||
         isNaN(desde) ||
+        desde <= 1 ||
+        frente == null ||
         fondo == null ||
-        isNaN(fondo) ||
-        fondo <= 0 ||
-        ang <= 0
+        frente <= 0 ||
+        fondo <= 0
       ) {
         superficieMaxPorAltura = plantaBase * pisos;
       } else {
-        // Con perfilería: reducimos profundidad a partir de "desde"
-        const angleRad = (ang * Math.PI) / 180;
-        const avancePorPiso = Math.tan(angleRad) * 3; // 3m por piso
-        const anchoBase = plantaBase / fondo;
+        const rad = (ang * Math.PI) / 180;
+        const deltaProfPorPiso = Math.tan(rad) * alturaPiso; // retiro lineal por piso en metros
 
-        let suma = 0;
+        let total = 0;
         for (let p = 1; p <= pisos; p++) {
           if (p < desde) {
-            suma += plantaBase;
+            total += plantaBase;
           } else {
-            const pasos = p - (desde - 1);
-            const profundidad = Math.max(fondo - avancePorPiso * pasos, 0);
-            const areaPiso = Math.max(anchoBase * profundidad, 0);
-            suma += areaPiso;
+            const pisosDesde = p - (desde - 1);
+            const profundidad = Math.max(fondo - deltaProfPorPiso * pisosDesde, 0);
+            const areaGeometrica = Math.max(frente * profundidad, 0);
+            // El área efectiva del piso no puede exceder la plantaBase (por FOS)
+            const areaPiso = Math.min(plantaBase, areaGeometrica);
+            total += areaPiso;
           }
         }
-        superficieMaxPorAltura = suma;
+        superficieMaxPorAltura = total;
       }
     }
 
-    // Tomar el mínimo que exista, o el único que haya
+    // Cálculo por FOT (tope total)
+    const superficieMaxPorFOT =
+      sLote > 0 && FOT !== null ? sLote * FOT : null;
+
+    // Tomar el mínimo de las restricciones válidas
     let superficieConstruibleTotal: number | null = null;
     if (superficieMaxPorFOT !== null && superficieMaxPorAltura !== null) {
       superficieConstruibleTotal = Math.min(
@@ -491,55 +486,354 @@ export default function FactibilidadForm() {
       superficieConstruibleTotal = superficieMaxPorAltura;
     }
 
-    // Superficie vendible (según eficiencia)
+    // Superficie vendible / común
     const eff = formData.eficienciaGlobal ?? null;
     const superficieVendibleTotal =
       superficieConstruibleTotal !== null && eff !== null
         ? superficieConstruibleTotal * eff
         : null;
 
-    // Cálculo interno para precio de lote (no se muestran intermedios)
-    let unidadesPosibles: number | null = null;
-    if (
-      superficieVendibleTotal !== null &&
-      formData.metrosPorUnidad !== null &&
-      formData.metrosPorUnidad > 0
-    ) {
-      unidadesPosibles = Math.floor(
-        superficieVendibleTotal / formData.metrosPorUnidad
-      );
-    }
+    const superficieComun =
+      superficieConstruibleTotal !== null && superficieVendibleTotal !== null
+        ? Math.max(superficieConstruibleTotal - superficieVendibleTotal, 0)
+        : null;
 
-    let valorTotalVentas: number | null = null;
-    if (
-      unidadesPosibles !== null &&
-      formData.valorVentaPorUnidad !== null &&
-      formData.valorVentaPorUnidad > 0
-    ) {
-      valorTotalVentas = unidadesPosibles * formData.valorVentaPorUnidad;
-    }
+    // Unidades vendibles y valor total de ventas
+    const m2Unidad = formData.metrosPorUnidad ?? null;
+    const valorPorUnidad = formData.valorVentaPorUnidad ?? null;
 
-    let precioSugeridoLote: number | null = null;
-    if (
-      valorTotalVentas !== null &&
-      formData.indiceIncidenciaZonal !== null &&
-      formData.indiceIncidenciaZonal >= 0
-    ) {
-      precioSugeridoLote = valorTotalVentas * formData.indiceIncidenciaZonal;
-    }
+    const unidadesVendibles =
+      superficieVendibleTotal !== null && m2Unidad !== null && m2Unidad > 0
+        ? Math.floor(superficieVendibleTotal / m2Unidad)
+        : null;
+
+    const valorTotalUnidadesVendibles =
+      unidadesVendibles !== null && valorPorUnidad !== null
+        ? unidadesVendibles * valorPorUnidad
+        : null;
+
+    // Precio sugerido del lote (solo con incidencia y valor ventas, menos demolición)
+    const indice = formData.indiceIncidenciaZonal ?? null;
+    const costoDem2 = formData.costoDemolicionM2 ?? null;
+
+    const costoDemolicionTotal =
+      demoler > 0 && costoDem2 !== null ? demoler * costoDem2 : 0;
+
+    const precioSugeridoLote =
+      indice !== null && valorTotalUnidadesVendibles !== null
+        ? Math.max(valorTotalUnidadesVendibles * indice - costoDemolicionTotal, 0)
+        : null;
 
     return {
+      plantaBase,
       superficieMaxPorFOT,
       superficieMaxPorAltura,
       superficieConstruibleTotal,
       superficieVendibleTotal,
+      superficieComun,
+      unidadesVendibles,
+      valorTotalUnidadesVendibles,
+      costoDemolicionTotal,
       precioSugeridoLote,
     };
   }, [formData]);
+
   /* =========================
-   *  Guardar / Cargar
+   *  PDF (actualizado)
    * ========================= */
 
+  const handleDownloadPDF = async () => {
+    const { jsPDF } = await import('jspdf');
+
+    const doc = new jsPDF('p', 'pt', 'a4');
+    const pageW = doc.internal.pageSize.getWidth();
+    const pageH = doc.internal.pageSize.getHeight();
+    const margin = 40;
+    let y = margin;
+
+    const themeLogo = (theme as any)?.logoUrlBusted ?? (theme as any)?.logoUrl ?? null;
+    const anyUser = user as any;
+
+    const hexToRgb = (hex: string) => {
+      const m = hex.replace('#', '');
+      const int = parseInt(m.length === 3 ? m.split('').map((c) => c + c).join('') : m, 16);
+      return { r: (int >> 16) & 255, g: (int >> 8) & 255, b: int & 255 };
+    };
+    const pc = hexToRgb(effectivePrimaryColor);
+
+    // Título centrado
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(16);
+    doc.setTextColor(pc.r, pc.g, pc.b);
+    doc.text('Factibilidad Constructiva', pageW / 2, y, { align: 'center' });
+    doc.setTextColor(0, 0, 0);
+
+    // Fecha a la derecha
+    doc.setFontSize(10);
+    doc.text(
+      new Date(formData.date || new Date().toISOString()).toLocaleDateString('es-AR'),
+      pageW - margin,
+      y,
+      { align: 'right' }
+    );
+
+    // Logo opcional
+    if (themeLogo) {
+      try {
+        const base64Img = await fetchToDataURL(themeLogo);
+        if (base64Img) {
+          const logoW = 70;
+          const logoH = 70;
+          const centerX = pageW / 2 - logoW / 2;
+          doc.addImage(base64Img, 'PNG', centerX, y + 10, logoW, logoH, undefined, 'FAST');
+        }
+      } catch (err) {
+        console.warn('No se pudo cargar el logo en PDF factibilidad', err);
+      }
+    }
+
+    y += 95;
+
+    // Separador
+    doc.setDrawColor(pc.r, pc.g, pc.b);
+    doc.setLineWidth(0.8);
+    doc.line(margin, y, pageW - margin, y);
+    y += 18;
+
+    // Datos del Lote (resumen + foto)
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(13);
+    doc.setTextColor(pc.r, pc.g, pc.b);
+    doc.text('Datos del Lote', pageW / 2, y, { align: 'center' });
+    doc.setTextColor(0, 0, 0);
+    y += 16;
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(10);
+    const lh = 14;
+
+    const linesLote = [
+      `Proyecto: ${formData.nombreProyecto || '—'}`,
+      `Dirección: ${formData.direccion || '—'}`,
+      `Localidad: ${formData.localidad || '—'}`,
+      `Barrio: ${formData.barrio || '—'}`,
+      `Zona / Distrito: ${formData.zona || '—'}`,
+      `Superficie de lote: ${numero(formData.superficieLote)} m²`,
+      `Frente: ${numero(formData.frente)} m`,
+      `Fondo: ${numero(formData.fondo)} m`,
+      `Superficie a demoler: ${numero(formData.superficieDemoler)} m²`,
+      `Superficie a conservar: ${numero(formData.superficieConservar)} m²`,
+      `Implantación: ${
+        formData.tipoImplantacion === 'entre_medianeras'
+          ? 'Entre medianeras'
+          : formData.tipoImplantacion === 'esquina'
+          ? 'Esquina'
+          : formData.tipoImplantacion === 'dos_frentes'
+          ? 'Dos frentes'
+          : 'Otro'
+      }`,
+    ];
+
+    let yTemp = y;
+    linesLote.forEach((t) => {
+      doc.text(t, margin, yTemp);
+      yTemp += lh;
+    });
+
+    let fotoDataURL: string | null = null;
+    if (formData.fotoLoteBase64) fotoDataURL = formData.fotoLoteBase64;
+    else if (formData.fotoLoteUrl) fotoDataURL = await fetchToDataURL(formData.fotoLoteUrl);
+
+    if (fotoDataURL) {
+      try {
+        const imgW = 180;
+        const imgH = 135;
+        doc.addImage(fotoDataURL, 'JPEG', pageW - margin - imgW, y, imgW, imgH, undefined, 'FAST');
+        yTemp = Math.max(yTemp, y + imgH + 8);
+      } catch (err) {
+        console.warn('No se pudo agregar foto de lote al PDF', err);
+      }
+    }
+    y = yTemp + 6;
+
+    if (y > pageH - 160) {
+      doc.addPage();
+      y = margin;
+    }
+
+    // Normativa y Morfología
+    doc.setDrawColor(pc.r, pc.g, pc.b);
+    doc.line(margin, y, pageW - margin, y);
+    y += 18;
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(13);
+    doc.setTextColor(pc.r, pc.g, pc.b);
+    doc.text('Normativa y Morfología', pageW / 2, y, { align: 'center' });
+    doc.setTextColor(0, 0, 0);
+    y += 16;
+
+    const normasIzq = [
+      `FOS: ${numero(formData.FOS, 2)}`,
+      `FOT: ${numero(formData.FOT, 2)}`,
+      `Altura máxima: ${numero(formData.alturaMaxima)} m`,
+      `Pisos máximos: ${numero(formData.pisosMaximos)}`,
+    ];
+    const normasDer = [
+      `Retiros frente: ${numero(formData.retiroFrente)} m`,
+      `Retiros fondo: ${numero(formData.retiroFondo)} m`,
+      `Retiros laterales: ${numero(formData.retiroLaterales)} m`,
+      `Perfilería: ${
+        formData.perfilAnguloGrados != null && formData.perfilDesdePiso != null
+          ? `${numero(formData.perfilAnguloGrados)}° desde piso ${numero(formData.perfilDesdePiso)}`
+          : '—'
+      }`,
+    ];
+
+    let yN1 = y;
+    normasIzq.forEach((t) => {
+      doc.text(t, margin, yN1);
+      yN1 += lh;
+    });
+
+    let yN2 = y;
+    normasDer.forEach((t) => {
+      doc.text(t, pageW / 2, yN2);
+      yN2 += lh;
+    });
+
+    y = Math.max(yN1, yN2) + 8;
+
+    if (y > pageH - 160) {
+      doc.addPage();
+      y = margin;
+    }
+
+    // Usos y Eficiencia + Métricas
+    doc.setDrawColor(pc.r, pc.g, pc.b);
+    doc.line(margin, y, pageW - margin, y);
+    y += 18;
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(13);
+    doc.setTextColor(pc.r, pc.g, pc.b);
+    doc.text('Usos y Eficiencia', pageW / 2, y, { align: 'center' });
+    doc.setTextColor(0, 0, 0);
+    y += 16;
+
+    const usos = [
+      `Eficiencia global: ${numero(formData.eficienciaGlobal, 2)}`,
+      `m² por unidad: ${numero(formData.metrosPorUnidad)}`,
+      `Valor de venta por unidad: ${peso(formData.valorVentaPorUnidad || null)}`,
+    ];
+    usos.forEach((t) => {
+      doc.text(t, margin, y);
+      y += lh;
+    });
+
+    const mLines = [
+      `m² construibles (estimados): ${numero(calculos.superficieConstruibleTotal)} m²`,
+      `m² vendibles (estimados): ${numero(calculos.superficieVendibleTotal)} m²`,
+      `m² no vendibles (estimados): ${numero(calculos.superficieComun)} m²`,
+      `Unidades posibles (aprox.): ${numero(calculos.unidadesVendibles)}`,
+      `Valor total de unidades vendibles: ${peso(calculos.valorTotalUnidadesVendibles || null)}`,
+    ];
+    y += 6;
+    mLines.forEach((t) => {
+      doc.text(t, margin, y);
+      y += lh;
+    });
+
+    if (y > pageH - 160) {
+      doc.addPage();
+      y = margin;
+    }
+
+    // Resultado (Precio sugerido)
+    doc.setDrawColor(pc.r, pc.g, pc.b);
+    doc.line(margin, y, pageW - margin, y);
+    y += 18;
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(13);
+    doc.setTextColor(pc.r, pc.g, pc.b);
+    doc.text('Incidencia del Lote y Precio Sugerido', pageW / 2, y, { align: 'center' });
+    doc.setTextColor(0, 0, 0);
+    y += 16;
+
+    const incLines = [
+      `Índice de incidencia zonal: ${
+        formData.indiceIncidenciaZonal != null ? (formData.indiceIncidenciaZonal * 100).toFixed(2) + ' %' : '—'
+      }`,
+      `Precio de demolición por m²: ${peso(formData.costoDemolicionM2 || null)}`,
+      `Superficie a demoler: ${numero(formData.superficieDemoler)} m²`,
+      `Costo total de demolición: ${peso(calculos.costoDemolicionTotal)}`,
+    ];
+    incLines.forEach((t) => {
+      doc.text(t, margin, y);
+      y += lh;
+    });
+
+    y += 8;
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(16);
+    doc.text(
+      `Precio sugerido del lote: ${peso(calculos.precioSugeridoLote ?? null)}`,
+      pageW / 2,
+      y,
+      { align: 'center' }
+    );
+    y += 28;
+
+    if (y > pageH - 160) {
+      doc.addPage();
+      y = margin;
+    }
+
+    // Conclusión
+    doc.setDrawColor(pc.r, pc.g, pc.b);
+    doc.line(margin, y, pageW - margin, y);
+    y += 18;
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(13);
+    doc.setTextColor(pc.r, pc.g, pc.b);
+    doc.text('Conclusión', pageW / 2, y, { align: 'center' });
+    doc.setTextColor(0, 0, 0);
+    y += 14;
+
+    const block = (title: string, text: string) => {
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(11);
+      doc.text(title, margin, y);
+      y += 12;
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(10);
+      const lines = doc.splitTextToSize(text || '—', pageW - margin * 2);
+      doc.text(lines as any, margin, y);
+      y += (Array.isArray(lines) ? (lines as string[]).length : 1) * 14 + 8;
+      if (y > pageH - 80) {
+        doc.addPage();
+        y = margin;
+      }
+    };
+
+    block('Observaciones', formData.observaciones);
+    block('Riesgos', formData.riesgos);
+    block('Oportunidades', formData.oportunidades);
+    block('Notas adicionales', formData.notasAdicionales);
+
+    // Footer simple
+    doc.setFont('helvetica', 'italic');
+    doc.setFontSize(9);
+    const footerText = `${(anyUser?.nombre || '—')} ${(anyUser?.apellido || '')}`.trim();
+    doc.text(footerText || '—', pageW / 2, pageH - 30, { align: 'center' });
+
+    doc.save('Informe_Factibilidad.pdf');
+  };
+  /* =========================
+   *  Guardar / Cargar (sin cambios de endpoints)
+   * ========================= */
   const saveInforme = async () => {
     try {
       setIsSubmitting(true);
@@ -574,9 +868,10 @@ export default function FactibilidadForm() {
       const data = await res.json();
       const id: string | undefined = data?.informe?.id;
       if (!id) throw new Error('No se recibió ID de informe.');
+
       setInformeId(id);
 
-      // Subimos foto (si hay base64)
+      // Subir foto si hay base64
       let nuevaFotoUrl = '';
       if (isDataUrl(fotoB64)) {
         const file = dataUrlToFile(fotoB64!, 'foto_lote.jpg');
@@ -644,14 +939,10 @@ export default function FactibilidadForm() {
     try {
       setLoadMsg(null);
 
-      const res = await fetch(
-        `/api/factibilidad/get?id=${encodeURIComponent(loadIdInput)}`
-      );
+      const res = await fetch(`/api/factibilidad/get?id=${encodeURIComponent(loadIdInput)}`);
       const data = await res.json();
 
-      if (!res.ok) {
-        throw new Error(data?.error || 'No se pudo obtener el informe');
-      }
+      if (!res.ok) throw new Error(data?.error || 'No se pudo obtener el informe');
 
       const inf = data?.informe ?? data;
       const payload: FactibilidadFormData | undefined = inf?.datos_json;
@@ -677,277 +968,12 @@ export default function FactibilidadForm() {
   };
 
   /* =========================
-   *  PDF (simplificado para esta versión)
-   * ========================= */
-
-  const handleDownloadPDF = async () => {
-    const { jsPDF } = await import('jspdf');
-
-    const doc = new jsPDF('p', 'pt', 'a4');
-    const pageW = doc.internal.pageSize.getWidth();
-    const pageH = doc.internal.pageSize.getHeight();
-    const margin = 40;
-    let y = margin;
-
-    const themeLogo = (theme as any)?.logoUrlBusted ?? (theme as any)?.logoUrl ?? null;
-    const anyUser = user as any;
-
-    const hexToRgb = (hex: string) => {
-      const m = hex.replace('#', '');
-      const int = parseInt(m.length === 3 ? m.split('').map((c) => c + c).join('') : m, 16);
-      return { r: (int >> 16) & 255, g: (int >> 8) & 255, b: int & 255 };
-    };
-
-    const pc = hexToRgb(effectivePrimaryColor);
-
-    // Título centrado
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(16);
-    doc.setTextColor(pc.r, pc.g, pc.b);
-    doc.text('Factibilidad Constructiva', pageW / 2, y, { align: 'center' });
-    doc.setTextColor(0, 0, 0);
-
-    // Fecha a la derecha
-    doc.setFontSize(10);
-    doc.text(
-      new Date(formData.date || new Date().toISOString()).toLocaleDateString('es-AR'),
-      pageW - margin,
-      y,
-      { align: 'right' }
-    );
-
-    // Logo opcional centrado debajo del título
-    if (themeLogo) {
-      try {
-        const base64Img = await fetchToDataURL(themeLogo);
-        if (base64Img) {
-          const logoW = 70;
-          const logoH = 70;
-          const centerX = pageW / 2 - logoW / 2;
-          doc.addImage(base64Img, 'PNG', centerX, y + 10, logoW, logoH, undefined, 'FAST');
-        }
-      } catch (err) {
-        console.warn('No se pudo cargar el logo en PDF factibilidad', err);
-      }
-    }
-
-    y += 95;
-
-    // Separador
-    doc.setDrawColor(pc.r, pc.g, pc.b);
-    doc.setLineWidth(0.8);
-    doc.line(margin, y, pageW - margin, y);
-    y += 18;
-
-    // Bloque: Datos del lote (resumen)
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(13);
-    doc.setTextColor(pc.r, pc.g, pc.b);
-    doc.text('Datos del Lote', pageW / 2, y, { align: 'center' });
-    doc.setTextColor(0, 0, 0);
-    y += 16;
-
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(10);
-    const lh = 14;
-
-    const linesLote = [
-      `Proyecto: ${formData.nombreProyecto || '—'}`,
-      `Dirección: ${formData.direccion || '—'}`,
-      `Localidad: ${formData.localidad || '—'}`,
-      `Barrio: ${formData.barrio || '—'}`,
-      `Zona / Distrito: ${formData.zona || '—'}`,
-      `Superficie de lote: ${numero(formData.superficieLote)} m²`,
-      `Frente: ${numero(formData.frente)} m`,
-      `Fondo: ${numero(formData.fondo)} m`,
-      `Implantación: ${
-        formData.tipoImplantacion === 'entre_medianeras'
-          ? 'Entre medianeras'
-          : formData.tipoImplantacion === 'esquina'
-          ? 'Esquina'
-          : formData.tipoImplantacion === 'dos_frentes'
-          ? 'Dos frentes'
-          : 'Otro'
-      }`,
-    ];
-
-    let yTemp = y;
-    linesLote.forEach((t) => {
-      doc.text(t, margin, yTemp);
-      yTemp += lh;
-    });
-
-    // Foto (si hay)
-    let fotoDataURL: string | null = null;
-    if (formData.fotoLoteBase64) fotoDataURL = formData.fotoLoteBase64;
-    else if (formData.fotoLoteUrl) fotoDataURL = await fetchToDataURL(formData.fotoLoteUrl);
-
-    if (fotoDataURL) {
-      try {
-        const imgW = 180;
-        const imgH = 135;
-        doc.addImage(fotoDataURL, 'JPEG', pageW - margin - imgW, y, imgW, imgH, undefined, 'FAST');
-        yTemp = Math.max(yTemp, y + imgH + 8);
-      } catch (err) {
-        console.warn('No se pudo agregar foto de lote al PDF', err);
-      }
-    }
-    y = yTemp + 6;
-
-    if (y > pageH - 160) {
-      doc.addPage();
-      y = margin;
-    }
-
-    // Bloque: Normativa y morfología (resumen)
-    doc.setDrawColor(pc.r, pc.g, pc.b);
-    doc.line(margin, y, pageW - margin, y);
-    y += 18;
-
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(13);
-    doc.setTextColor(pc.r, pc.g, pc.b);
-    doc.text('Normativa y Morfología', pageW / 2, y, { align: 'center' });
-    doc.setTextColor(0, 0, 0);
-    y += 16;
-
-    const normasIzq = [
-      `FOS: ${numero(formData.FOS, 2)}`,
-      `FOT: ${numero(formData.FOT, 2)}`,
-      `Altura máxima: ${numero(formData.alturaMaxima)} m`,
-      `Pisos máximos: ${numero(formData.pisosMaximos)}`,
-    ];
-
-    const normasDer = [
-      `Retiros frente: ${numero(formData.retiroFrente)} m`,
-      `Retiros fondo: ${numero(formData.retiroFondo)} m`,
-      `Retiros laterales: ${numero(formData.retiroLaterales)} m`,
-      `Perfilería: ${
-        formData.perfilAnguloGrados != null && formData.perfilDesdePiso != null
-          ? `${numero(formData.perfilAnguloGrados)}° desde piso ${numero(formData.perfilDesdePiso)}`
-          : '—'
-      }`,
-    ];
-
-    let yN1 = y;
-    normasIzq.forEach((t) => {
-      doc.text(t, margin, yN1);
-      yN1 += lh;
-    });
-
-    let yN2 = y;
-    normasDer.forEach((t) => {
-      doc.text(t, pageW / 2, yN2);
-      yN2 += lh;
-    });
-
-    y = Math.max(yN1, yN2) + 8;
-
-    if (y > pageH - 160) {
-      doc.addPage();
-      y = margin;
-    }
-
-    // Bloque: Usos y eficiencia (resumen)
-    doc.setDrawColor(pc.r, pc.g, pc.b);
-    doc.line(margin, y, pageW - margin, y);
-    y += 18;
-
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(13);
-    doc.setTextColor(pc.r, pc.g, pc.b);
-    doc.text('Usos y Eficiencia', pageW / 2, y, { align: 'center' });
-    doc.setTextColor(0, 0, 0);
-    y += 16;
-
-    const usos = [
-      `Eficiencia global: ${numero(formData.eficienciaGlobal, 2)}`,
-      `m² por unidad: ${numero(formData.metrosPorUnidad)}`,
-      `Valor de venta por unidad: ${peso(formData.valorVentaPorUnidad || null)}`,
-    ];
-    usos.forEach((t) => {
-      doc.text(t, margin, y);
-      y += lh;
-    });
-
-    if (y > pageH - 160) {
-      doc.addPage();
-      y = margin;
-    }
-
-    // Bloque: Resultado (solo Precio Sugerido del Lote)
-    doc.setDrawColor(pc.r, pc.g, pc.b);
-    doc.line(margin, y, pageW - margin, y);
-    y += 18;
-
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(13);
-    doc.setTextColor(pc.r, pc.g, pc.b);
-    doc.text('Resultado', pageW / 2, y, { align: 'center' });
-    doc.setTextColor(0, 0, 0);
-    y += 24;
-
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(16);
-    const precioTxt = peso(calculos.precioSugeridoLote ?? null);
-    doc.text(`Precio sugerido del lote: ${precioTxt}`, pageW / 2, y, { align: 'center' });
-    y += 28;
-
-    if (y > pageH - 160) {
-      doc.addPage();
-      y = margin;
-    }
-
-    // Bloque: Conclusión
-    doc.setDrawColor(pc.r, pc.g, pc.b);
-    doc.line(margin, y, pageW - margin, y);
-    y += 18;
-
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(13);
-    doc.setTextColor(pc.r, pc.g, pc.b);
-    doc.text('Conclusión', pageW / 2, y, { align: 'center' });
-    doc.setTextColor(0, 0, 0);
-    y += 14;
-
-    const block = (title: string, text: string) => {
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(11);
-      doc.text(title, margin, y);
-      y += 12;
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(10);
-      const lines = doc.splitTextToSize(text || '—', pageW - margin * 2);
-      doc.text(lines as any, margin, y);
-      y += (Array.isArray(lines) ? (lines as string[]).length : 1) * 14 + 8;
-      if (y > pageH - 80) {
-        doc.addPage();
-        y = margin;
-      }
-    };
-
-    block('Observaciones', formData.observaciones);
-    block('Riesgos', formData.riesgos);
-    block('Oportunidades', formData.oportunidades);
-    block('Notas adicionales', formData.notasAdicionales);
-
-    // Footer simple
-    doc.setFont('helvetica', 'italic');
-    doc.setFontSize(9);
-    const footerText = `${(anyUser?.nombre || '—')} ${(anyUser?.apellido || '')}`.trim();
-    doc.text(footerText || '—', pageW / 2, pageH - 30, { align: 'center' });
-
-    doc.save('Informe_Factibilidad.pdf');
-  };
-
-  /* =========================
    *  Render
    * ========================= */
-
   return (
     <>
       <div className="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8 space-y-6">
-        {/* Header del formulario (nuevo layout) */}
+        {/* Header del formulario */}
         <div className="flex items-center justify-between gap-4 mb-2 border-b pb-3">
           <div className="w-24" />
           <div className="text-xl sm:text-2xl font-semibold text-center grow">
@@ -958,7 +984,7 @@ export default function FactibilidadForm() {
           </div>
         </div>
 
-        {/* 1) Datos del lote + Foto */}
+        {/* Bloque 1: Datos del lote + Foto */}
         <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
           <div className="border-b border-gray-200 p-4 sm:p-6">
             <h2 className="text-base sm:text-lg font-semibold" style={{ color: effectivePrimaryColor }}>
@@ -1044,7 +1070,7 @@ export default function FactibilidadForm() {
                   value={formData.superficieLote ?? ''}
                   onChange={handleSimpleChange}
                   className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
-                  placeholder="Ej: 250"
+                  placeholder="Ej: 500"
                 />
               </div>
 
@@ -1070,7 +1096,7 @@ export default function FactibilidadForm() {
                   value={formData.fondo ?? ''}
                   onChange={handleSimpleChange}
                   className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
-                  placeholder="Ej: 25"
+                  placeholder="Ej: 50"
                 />
               </div>
 
@@ -1087,6 +1113,35 @@ export default function FactibilidadForm() {
                   <option value="dos_frentes">Dos frentes</option>
                   <option value="otro">Otro</option>
                 </select>
+              </div>
+
+              <div className="space-y-1">
+                <label className="block text-sm font-medium text-gray-700">Superficie a demoler (m²)</label>
+                <input
+                  name="superficieDemoler"
+                  type="number"
+                  inputMode="decimal"
+                  value={formData.superficieDemoler ?? ''}
+                  onChange={handleSimpleChange}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
+                  placeholder="Opcional"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="block text-sm font-medium text-gray-700">Superficie a conservar (m²)</label>
+                <input
+                  name="superficieConservar"
+                  type="number"
+                  inputMode="decimal"
+                  value={formData.superficieConservar ?? ''}
+                  onChange={handleSimpleChange}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
+                  placeholder="Fachada / Patrimonio (opcional)"
+                />
+                <p className="text-[11px] text-gray-500">
+                  Esta superficie reduce el área efectiva antes de aplicar FOS para el cálculo de planta base.
+                </p>
               </div>
             </div>
 
@@ -1154,7 +1209,7 @@ export default function FactibilidadForm() {
           </div>
         </div>
 
-        {/* 2) Normativa / Morfología */}
+        {/* Bloque 2: Normativa / Morfología */}
         <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
           <div className="border-b border-gray-200 p-4 sm:p-6">
             <h2 className="text-base sm:text-lg font-semibold" style={{ color: effectivePrimaryColor }}>
@@ -1172,7 +1227,7 @@ export default function FactibilidadForm() {
                 value={formData.FOS ?? ''}
                 onChange={handleSimpleChange}
                 className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
-                placeholder="Ej: 0.6"
+                placeholder="Ej: 0.8"
               />
             </div>
 
@@ -1256,7 +1311,7 @@ export default function FactibilidadForm() {
 
             {/* Perfilería opcional */}
             <div className="space-y-1">
-              <label className="block text-sm font-medium text-gray-700">Perfilería – Ángulo (°)</label>
+              <label className="block text-sm font-medium text-gray-700">Perfilería (ángulo en °)</label>
               <input
                 name="perfilAnguloGrados"
                 type="number"
@@ -1266,11 +1321,13 @@ export default function FactibilidadForm() {
                 className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
                 placeholder="Ej: 45"
               />
-              <p className="text-[11px] text-gray-500">Si se deja vacío, se asume edificio homogéneo en todos los pisos.</p>
+              <p className="text-[11px] text-gray-500">
+                Si se completa junto con &ldquo;Desde piso N°&rdquo;, se calculará el setback por piso con 3 m/piso.
+              </p>
             </div>
 
             <div className="space-y-1">
-              <label className="block text-sm font-medium text-gray-700">Perfilería – Desde el piso N°</label>
+              <label className="block text-sm font-medium text-gray-700">Desde piso N°</label>
               <input
                 name="perfilDesdePiso"
                 type="number"
@@ -1280,12 +1337,63 @@ export default function FactibilidadForm() {
                 className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
                 placeholder="Ej: 8"
               />
-              <p className="text-[11px] text-gray-500">Se aplica la reducción de planta desde este nivel inclusive.</p>
+            </div>
+
+            <div className="space-y-1">
+              <label className="block text-sm font-medium text-gray-700">Requiere corazón de manzana</label>
+              <select
+                name="requiereCorazonManzana"
+                value={String(formData.requiereCorazonManzana)}
+                onChange={handleSimpleChange}
+                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
+              >
+                <option value="false">No</option>
+                <option value="true">Sí</option>
+              </select>
+            </div>
+
+            <div className="space-y-1">
+              <label className="block text-sm font-medium text-gray-700">Área libre / interior mínima (%)</label>
+              <input
+                name="porcentajeLibreInterior"
+                type="number"
+                inputMode="decimal"
+                value={formData.porcentajeLibreInterior ?? ''}
+                onChange={handleSimpleChange}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
+                placeholder="Opcional"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="block text-sm font-medium text-gray-700">Permite subsuelo</label>
+              <select
+                name="permiteSubsuelo"
+                value={String(formData.permiteSubsuelo)}
+                onChange={handleSimpleChange}
+                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
+              >
+                <option value="false">No</option>
+                <option value="true">Sí</option>
+              </select>
+            </div>
+
+            <div className="space-y-1">
+              <label className="block text-sm font-medium text-gray-700">Niveles de subsuelo</label>
+              <input
+                name="nivelesSubsuelo"
+                type="number"
+                inputMode="decimal"
+                value={formData.nivelesSubsuelo ?? ''}
+                onChange={handleSimpleChange}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
+                placeholder="Opcional"
+              />
             </div>
           </div>
         </div>
 
-        {/* 3) Usos previstos y eficiencia (simplificado) */}
+        {/* Bloque 3: Usos previstos y eficiencia */}
         <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
           <div className="border-b border-gray-200 p-4 sm:p-6">
             <h2 className="text-base sm:text-lg font-semibold" style={{ color: effectivePrimaryColor }}>
@@ -1293,7 +1401,14 @@ export default function FactibilidadForm() {
             </h2>
           </div>
 
-          <div className="p-4 sm:p-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="p-4 sm:p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-1 md:col-span-2">
+              <p className="text-xs text-gray-500">
+                Primero definí la <strong>eficiencia global</strong> del proyecto y los <strong>m² por unidad</strong>.
+                Con eso estimamos cuántas unidades podrían venderse (redondeo hacia abajo).
+              </p>
+            </div>
+
             <div className="space-y-1">
               <label className="block text-sm font-medium text-gray-700">Eficiencia global del proyecto</label>
               <input
@@ -1303,9 +1418,8 @@ export default function FactibilidadForm() {
                 value={formData.eficienciaGlobal ?? ''}
                 onChange={handleSimpleChange}
                 className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
-                placeholder="Ej: 0.80"
+                placeholder="Ej: 0.8 (80% vendible sobre total construido)"
               />
-              <p className="text-[11px] text-gray-500">Proporción vendible sobre la superficie construible total.</p>
             </div>
 
             <div className="space-y-1">
@@ -1321,7 +1435,7 @@ export default function FactibilidadForm() {
               />
             </div>
 
-            <div className="space-y-1">
+            <div className="space-y-1 md:col-span-2">
               <label className="block text-sm font-medium text-gray-700">Valor de venta por unidad</label>
               <input
                 name="valorVentaPorUnidad"
@@ -1330,13 +1444,35 @@ export default function FactibilidadForm() {
                 value={formData.valorVentaPorUnidad ?? ''}
                 onChange={handleSimpleChange}
                 className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
-                placeholder="Ej: 40000"
+                placeholder="Ej: 40000000"
               />
+            </div>
+
+            {/* Card de métricas clave */}
+            <div className="md:col-span-2 mt-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs sm:text-sm">
+              <p className="font-semibold mb-1">Métricas estimadas</p>
+              <p>
+                m² construibles (estimados):{' '}
+                <strong>{numero(calculos.superficieConstruibleTotal)} m²</strong>
+              </p>
+              <p>
+                m² vendibles (estimados): <strong>{numero(calculos.superficieVendibleTotal)} m²</strong>
+              </p>
+              <p>
+                m² no vendibles (estimados): <strong>{numero(calculos.superficieComun)} m²</strong>
+              </p>
+              <p>
+                Unidades posibles (aprox.): <strong>{numero(calculos.unidadesVendibles)}</strong>
+              </p>
+              <p>
+                Valor total de unidades vendibles:{' '}
+                <strong>{peso(calculos.valorTotalUnidadesVendibles || null)}</strong>
+              </p>
             </div>
           </div>
         </div>
 
-        {/* 4) Resultado: solo Precio sugerido del lote */}
+        {/* Bloque 4: Incidencia del lote y precio sugerido */}
         <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
           <div className="border-b border-gray-200 p-4 sm:p-6">
             <h2 className="text-base sm:text-lg font-semibold" style={{ color: effectivePrimaryColor }}>
@@ -1344,9 +1480,11 @@ export default function FactibilidadForm() {
             </h2>
           </div>
 
-          <div className="p-4 sm:p-6 space-y-4">
+          <div className="p-4 sm:p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-1">
-              <label className="block text-sm font-medium text-gray-700">Índice de incidencia zonal del terreno</label>
+              <label className="block text-sm font-medium text-gray-700">
+                Índice de incidencia zonal del terreno
+              </label>
               <input
                 name="indiceIncidenciaZonal"
                 type="number"
@@ -1357,20 +1495,43 @@ export default function FactibilidadForm() {
                 placeholder="Ej: 0.10 → 10%"
               />
               <p className="text-[11px] text-gray-500">
-                Proporción del valor total de ventas que se asigna al valor del terreno.
+                Se aplica sobre el <em>valor total de unidades vendibles</em> para estimar cuánto debería valer el lote.
               </p>
             </div>
 
-            <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm sm:text-base">
-              <p className="font-semibold mb-1">Precio sugerido del lote</p>
-              <p className="text-2xl font-bold">
-                {peso(calculos.precioSugeridoLote ?? null)}
+            <div className="space-y-1">
+              <label className="block text-sm font-medium text-gray-700">Precio de demolición por m²</label>
+              <input
+                name="costoDemolicionM2"
+                type="number"
+                inputMode="decimal"
+                value={formData.costoDemolicionM2 ?? ''}
+                onChange={handleSimpleChange}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
+                placeholder="Ej: 60000"
+              />
+              <p className="text-[11px] text-gray-500">
+                Se descuenta del precio sugerido: (m² a demoler) × (precio por m²).
+              </p>
+            </div>
+
+            {/* Card de resultado único */}
+            <div className="md:col-span-2 mt-2 rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm sm:text-base space-y-1">
+              <p className="font-semibold">Resultado</p>
+              <p>
+                Precio sugerido del lote:{' '}
+                <span className="font-bold">
+                  {peso(calculos.precioSugeridoLote ?? null)}
+                </span>
+              </p>
+              <p className="text-xs text-gray-600">
+                Fórmula: (Valor total de unidades vendibles × índice) − (m² a demoler × precio demolición/m²).
               </p>
             </div>
           </div>
         </div>
 
-        {/* 5) Conclusión */}
+        {/* Bloque 5: Conclusión */}
         <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
           <div className="border-b border-gray-200 p-4 sm:p-6">
             <h2 className="text-base sm:text-lg font-semibold" style={{ color: effectivePrimaryColor }}>
@@ -1466,14 +1627,10 @@ export default function FactibilidadForm() {
 
           <div className="mt-3 space-y-1">
             {saveMsg && (
-              <p className={saveMsg.type === 'success' ? 'text-green-600' : 'text-red-600'}>
-                {saveMsg.text}
-              </p>
+              <p className={saveMsg.type === 'success' ? 'text-green-600' : 'text-red-600'}>{saveMsg.text}</p>
             )}
             {loadMsg && (
-              <p className={loadMsg.type === 'success' ? 'text-green-600' : 'text-red-600'}>
-                {loadMsg.text}
-              </p>
+              <p className={loadMsg.type === 'success' ? 'text-green-600' : 'text-red-600'}>{loadMsg.text}</p>
             )}
             {informeId && (
               <p className="text-xs text-gray-500">ID actual del informe: {informeId}</p>

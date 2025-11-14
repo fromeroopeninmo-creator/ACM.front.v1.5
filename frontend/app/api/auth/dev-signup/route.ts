@@ -1,11 +1,12 @@
-// frontend/app/api/auth/dev-signup/route.ts
+// app/api/auth/dev-signup/route.ts
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { z } from "zod";
 
 /**
- * IMPORTANTE:
- *  - Usa la Service Role Key: NO expongas esta ruta al público en producción.
- *  - Pensada solo para “modo desarrollo” cuando el signup normal falla.
+ * ⚠️ DEV ONLY:
+ * - Esta ruta usa Service Role. No debe quedar abierta en producción.
+ * - Requiere header `X-Dev-Secret: <process.env.DEV_SIGNUP_SECRET>` o NODE_ENV !== "production".
  */
 
 const supabaseAdmin = createClient(
@@ -13,11 +14,96 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
+// --------- Helpers ---------
+const clean = (v: unknown) =>
+  typeof v === "string" ? v.trim() : v;
+
+const isProd = process.env.NODE_ENV === "production";
+const DEV_SECRET = process.env.DEV_SIGNUP_SECRET;
+
+// Mapea errores comunes de PG/Supabase a códigos HTTP amigables
+function mapSupabaseErrorToStatus(message?: string): number {
+  if (!message) return 500;
+  const m = message.toLowerCase();
+
+  // Conflictos/duplicados típicos
+  if (
+    m.includes("duplicate key") ||
+    m.includes("already exists") ||
+    m.includes("unique constraint")
+  ) {
+    return 409;
+  }
+
+  // Errores de auth o permisos
+  if (m.includes("permission denied") || m.includes("not authorized")) {
+    return 403;
+  }
+
+  // Transitorios o timeouts
+  if (m.includes("timeout") || m.includes("connection")) {
+    return 503;
+  }
+
+  return 500;
+}
+
+// --------- Validación (Zod) ---------
+const payloadSchema = z.object({
+  email: z.string().email().max(254).transform((s) => s.toLowerCase().trim()),
+  password: z.string().min(8).max(128),
+
+  nombre: z.string().min(1).max(100).transform((s) => s.trim()),
+  apellido: z.string().min(1).max(100).transform((s) => s.trim()),
+  telefono: z.string().min(6).max(30).transform((s) => s.trim()),
+  direccion: z.string().min(1).max(200).transform((s) => s.trim()),
+  localidad: z.string().min(1).max(100).transform((s) => s.trim()),
+  provincia: z.string().min(1).max(100).transform((s) => s.trim()),
+
+  razonSocial: z.string().min(1).max(200).transform((s) => s.trim()),
+  inmobiliaria: z.string().min(1).max(200).transform((s) => s.trim()),
+  condicionFiscal: z.enum(["RI", "Monotributo", "Exento", "CF"]).or(z.string().min(1).max(50)),
+  cuit: z
+    .string()
+    .regex(/^\d{11}$/, "CUIT debe tener 11 dígitos numéricos"),
+});
+
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
+    // Guard de seguridad (dev-only o con secreto)
+    if (isProd) {
+      const devHeader = req.headers.get("X-Dev-Secret");
+      if (!DEV_SECRET || devHeader !== DEV_SECRET) {
+        return NextResponse.json(
+          { error: "Ruta no disponible en producción." },
+          { status: 404 } // ó 403 si preferís
+        );
+      }
+    }
 
-    const clean = (v: string) => (typeof v === "string" ? v.trim() : v);
+    let raw: unknown;
+    try {
+      raw = await req.json();
+    } catch {
+      return NextResponse.json(
+        { error: "JSON inválido" },
+        { status: 400 }
+      );
+    }
+
+    const parsed = payloadSchema.safeParse(raw);
+    if (!parsed.success) {
+      return NextResponse.json(
+        {
+          error: "Validación fallida",
+          issues: parsed.error.issues.map((i) => ({
+            path: i.path.join("."),
+            message: i.message,
+          })),
+        },
+        { status: 400 }
+      );
+    }
 
     const {
       email,
@@ -32,96 +118,117 @@ export async function POST(req: Request) {
       inmobiliaria,
       condicionFiscal,
       cuit,
-    } = body || {};
+    } = parsed.data;
 
-    if (
-      !email ||
-      !password ||
-      !nombre ||
-      !apellido ||
-      !telefono ||
-      !direccion ||
-      !localidad ||
-      !provincia ||
-      !razonSocial ||
-      !inmobiliaria ||
-      !condicionFiscal ||
-      !cuit
-    ) {
-      return NextResponse.json(
-        { error: "Faltan campos obligatorios." },
-        { status: 400 }
-      );
-    }
-
-    // 1) Crear user confirmado
+    // 1) Crear usuario confirmado
     const { data: created, error: createErr } =
       await supabaseAdmin.auth.admin.createUser({
-        email: clean(email),
-        password: clean(password),
+        email,
+        password,
         email_confirm: true,
         user_metadata: {
-          nombre: clean(nombre),
-          apellido: clean(apellido),
-          telefono: clean(telefono),
-          direccion: clean(direccion),
-          localidad: clean(localidad),
-          provincia: clean(provincia),
-          razon_social: clean(razonSocial),
-          inmobiliaria: clean(inmobiliaria),
-          condicion_fiscal: clean(condicionFiscal),
-          cuit: clean(cuit),
+          nombre,
+          apellido,
+          telefono,
+          direccion,
+          localidad,
+          provincia,
+          razon_social: razonSocial,
+          inmobiliaria,
+          condicion_fiscal: condicionFiscal,
+          cuit,
           role: "empresa",
         },
       });
 
     if (createErr || !created?.user?.id) {
+      const status = mapSupabaseErrorToStatus(createErr?.message);
       return NextResponse.json(
-        { error: createErr?.message || "No se pudo crear el usuario (admin)." },
-        { status: 500 }
+        { error: createErr?.message || "No se pudo crear el usuario." },
+        { status }
       );
     }
 
     const userId = created.user.id;
 
-    // 2) Insertar empresa
-    const { error: empErr } = await supabaseAdmin.from("empresas").insert([
-      {
-        user_id: userId,
-        nombre_comercial: clean(inmobiliaria),
-        razon_social: clean(razonSocial),
-        cuit: clean(cuit),
-        matriculado: `${clean(nombre)} ${clean(apellido)}`,
-        telefono: clean(telefono),
-        direccion: clean(direccion),
-        localidad: clean(localidad),
-        provincia: clean(provincia),
-        condicion_fiscal: clean(condicionFiscal),
-        color: "#E6A930",
-        logo_url: "",
-      },
-    ]);
+    // 2) Crear empresa
+    const { data: empInsert, error: empErr } = await supabaseAdmin
+      .from("empresas")
+      .insert([
+        {
+          user_id: userId,
+          nombre_comercial: inmobiliaria,
+          razon_social: razonSocial,
+          cuit,
+          matriculado: `${nombre} ${apellido}`,
+          telefono,
+          direccion,
+          localidad,
+          provincia,
+          condicion_fiscal: condicionFiscal,
+          color: "#E6A930",
+          logo_url: null, // mejor null que string vacío
+        },
+      ])
+      .select("id")
+      .single();
 
-    if (empErr) {
-      // opcional: limpiar el usuario creado si falló empresa
-      // await supabaseAdmin.auth.admin.deleteUser(userId);
+    if (empErr || !empInsert?.id) {
+      // Cleanup: borrar el usuario si falló empresa
+      await supabaseAdmin.auth.admin.deleteUser(userId).catch(() => {});
+      const status = mapSupabaseErrorToStatus(empErr?.message);
       return NextResponse.json(
-        { error: `Error creando empresa: ${empErr.message}` },
-        { status: 500 }
+        { error: empErr?.message || "Error creando empresa." },
+        { status }
       );
     }
 
-    // (Opcional) emitir una sesión aquí si quisieras auto-login;
-    // en general lo dejamos para el login normal.
+    const empresaId = empInsert.id;
+
+    // 3) Upsert profiles (coherencia con RLS y dashboard)
+    const { error: profErr } = await supabaseAdmin
+      .from("profiles")
+      .upsert(
+        [
+          {
+            id: userId,
+            email,
+            nombre,
+            apellido,
+            role: "empresa",
+            empresa_id: empresaId,
+            // agrega campos extra si tu tabla los tiene
+          },
+        ],
+        { onConflict: "id" }
+      );
+
+    if (profErr) {
+      // Cleanup: borrar empresa + user para no dejar huérfanos
+      await supabaseAdmin.from("empresas").delete().eq("id", empresaId).catch(() => {});
+      await supabaseAdmin.auth.admin.deleteUser(userId).catch(() => {});
+      const status = mapSupabaseErrorToStatus(profErr?.message);
+      return NextResponse.json(
+        { error: profErr?.message || "Error creando perfil." },
+        { status }
+      );
+    }
+
+    // 4) (Opcional) Activar Trial/plan por defecto aquí si tu app lo requiere
+    // const trialErr = await activarTrial(empresaId).catch(e => e);
+    // if (trialErr) { ...mapear, cleanup si querés ser extremo... }
+
     return NextResponse.json({
       ok: true,
       user_id: userId,
-      message: "Usuario y empresa creados (modo dev, email confirmado).",
+      empresa_id: empresaId,
+      message: "Usuario, empresa y perfil creados (dev, email confirmado).",
     });
   } catch (e: any) {
+    const status = mapSupabaseErrorToStatus(e?.message);
     return NextResponse.json(
       { error: e?.message || "Error interno." },
-      { status: 500 }
+      { status }
     );
   }
 }

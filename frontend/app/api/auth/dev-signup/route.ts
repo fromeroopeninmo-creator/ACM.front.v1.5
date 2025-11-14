@@ -1,12 +1,11 @@
 // app/api/auth/dev-signup/route.ts
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { z } from "zod";
 
 /**
- * ⚠️ DEV ONLY:
- * - Esta ruta usa Service Role. No debe quedar abierta en producción.
- * - Requiere header `X-Dev-Secret: <process.env.DEV_SIGNUP_SECRET>` o NODE_ENV !== "production".
+ * IMPORTANTE:
+ *  - Usa la Service Role Key: NO expongas esta ruta al público en producción.
+ *  - Pensada solo para “modo desarrollo” cuando el signup normal falla.
  */
 
 const supabaseAdmin = createClient(
@@ -14,96 +13,40 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-// --------- Helpers ---------
-const clean = (v: unknown) =>
-  typeof v === "string" ? v.trim() : v;
-
-const isProd = process.env.NODE_ENV === "production";
-const DEV_SECRET = process.env.DEV_SIGNUP_SECRET;
-
-// Mapea errores comunes de PG/Supabase a códigos HTTP amigables
+// Mapea algunos mensajes comunes de Supabase → HTTP status razonable
 function mapSupabaseErrorToStatus(message?: string): number {
-  if (!message) return 500;
-  const m = message.toLowerCase();
+  const msg = (message || "").toLowerCase();
 
-  // Conflictos/duplicados típicos
   if (
-    m.includes("duplicate key") ||
-    m.includes("already exists") ||
-    m.includes("unique constraint")
+    msg.includes("duplicate key") ||
+    msg.includes("already registered") ||
+    msg.includes("user already exists") ||
+    msg.includes("email rate limit exceeded")
   ) {
-    return 409;
+    return 409; // conflicto / ya existe
   }
 
-  // Errores de auth o permisos
-  if (m.includes("permission denied") || m.includes("not authorized")) {
-    return 403;
+  if (
+    msg.includes("invalid") ||
+    msg.includes("malformed") ||
+    msg.includes("password") ||
+    msg.includes("email")
+  ) {
+    return 422; // datos inválidos
   }
 
-  // Transitorios o timeouts
-  if (m.includes("timeout") || m.includes("connection")) {
-    return 503;
+  if (msg.includes("permission") || msg.includes("not allowed")) {
+    return 403; // prohibido
   }
 
-  return 500;
+  return 500; // genérico
 }
-
-// --------- Validación (Zod) ---------
-const payloadSchema = z.object({
-  email: z.string().email().max(254).transform((s) => s.toLowerCase().trim()),
-  password: z.string().min(8).max(128),
-
-  nombre: z.string().min(1).max(100).transform((s) => s.trim()),
-  apellido: z.string().min(1).max(100).transform((s) => s.trim()),
-  telefono: z.string().min(6).max(30).transform((s) => s.trim()),
-  direccion: z.string().min(1).max(200).transform((s) => s.trim()),
-  localidad: z.string().min(1).max(100).transform((s) => s.trim()),
-  provincia: z.string().min(1).max(100).transform((s) => s.trim()),
-
-  razonSocial: z.string().min(1).max(200).transform((s) => s.trim()),
-  inmobiliaria: z.string().min(1).max(200).transform((s) => s.trim()),
-  condicionFiscal: z.enum(["RI", "Monotributo", "Exento", "CF"]).or(z.string().min(1).max(50)),
-  cuit: z
-    .string()
-    .regex(/^\d{11}$/, "CUIT debe tener 11 dígitos numéricos"),
-});
 
 export async function POST(req: Request) {
   try {
-    // Guard de seguridad (dev-only o con secreto)
-    if (isProd) {
-      const devHeader = req.headers.get("X-Dev-Secret");
-      if (!DEV_SECRET || devHeader !== DEV_SECRET) {
-        return NextResponse.json(
-          { error: "Ruta no disponible en producción." },
-          { status: 404 } // ó 403 si preferís
-        );
-      }
-    }
+    const body = await req.json();
 
-    let raw: unknown;
-    try {
-      raw = await req.json();
-    } catch {
-      return NextResponse.json(
-        { error: "JSON inválido" },
-        { status: 400 }
-      );
-    }
-
-    const parsed = payloadSchema.safeParse(raw);
-    if (!parsed.success) {
-      return NextResponse.json(
-        {
-          error: "Validación fallida",
-          issues: parsed.error.issues.map((i) => ({
-            path: i.path.join("."),
-            message: i.message,
-          })),
-        },
-        { status: 400 }
-      );
-    }
+    const clean = (v: string) => (typeof v === "string" ? v.trim() : v);
 
     const {
       email,
@@ -118,25 +61,45 @@ export async function POST(req: Request) {
       inmobiliaria,
       condicionFiscal,
       cuit,
-    } = parsed.data;
+    } = body || {};
 
-    // 1) Crear usuario confirmado
+    if (
+      !email ||
+      !password ||
+      !nombre ||
+      !apellido ||
+      !telefono ||
+      !direccion ||
+      !localidad ||
+      !provincia ||
+      !razonSocial ||
+      !inmobiliaria ||
+      !condicionFiscal ||
+      !cuit
+    ) {
+      return NextResponse.json(
+        { error: "Faltan campos obligatorios." },
+        { status: 400 }
+      );
+    }
+
+    // 1) Crear user confirmado
     const { data: created, error: createErr } =
       await supabaseAdmin.auth.admin.createUser({
-        email,
-        password,
+        email: clean(email),
+        password: clean(password),
         email_confirm: true,
         user_metadata: {
-          nombre,
-          apellido,
-          telefono,
-          direccion,
-          localidad,
-          provincia,
-          razon_social: razonSocial,
-          inmobiliaria,
-          condicion_fiscal: condicionFiscal,
-          cuit,
+          nombre: clean(nombre),
+          apellido: clean(apellido),
+          telefono: clean(telefono),
+          direccion: clean(direccion),
+          localidad: clean(localidad),
+          provincia: clean(provincia),
+          razon_social: clean(razonSocial),
+          inmobiliaria: clean(inmobiliaria),
+          condicion_fiscal: clean(condicionFiscal),
+          cuit: clean(cuit),
           role: "empresa",
         },
       });
@@ -144,91 +107,99 @@ export async function POST(req: Request) {
     if (createErr || !created?.user?.id) {
       const status = mapSupabaseErrorToStatus(createErr?.message);
       return NextResponse.json(
-        { error: createErr?.message || "No se pudo crear el usuario." },
+        { error: createErr?.message || "No se pudo crear el usuario (admin)." },
         { status }
       );
     }
 
     const userId = created.user.id;
 
-    // 2) Crear empresa
-    const { data: empInsert, error: empErr } = await supabaseAdmin
+    // 2) Insertar empresa y devolver su id
+    const { data: empresaRow, error: empErr } = await supabaseAdmin
       .from("empresas")
       .insert([
         {
           user_id: userId,
-          nombre_comercial: inmobiliaria,
-          razon_social: razonSocial,
-          cuit,
-          matriculado: `${nombre} ${apellido}`,
-          telefono,
-          direccion,
-          localidad,
-          provincia,
-          condicion_fiscal: condicionFiscal,
+          nombre_comercial: clean(inmobiliaria),
+          razon_social: clean(razonSocial),
+          cuit: clean(cuit),
+          matriculado: `${clean(nombre)} ${clean(apellido)}`,
+          telefono: clean(telefono),
+          direccion: clean(direccion),
+          localidad: clean(localidad),
+          provincia: clean(provincia),
+          condicion_fiscal: clean(condicionFiscal),
           color: "#E6A930",
-          logo_url: null, // mejor null que string vacío
+          logo_url: "",
         },
       ])
       .select("id")
       .single();
 
-    if (empErr || !empInsert?.id) {
-      // Cleanup: borrar el usuario si falló empresa
-      await supabaseAdmin.auth.admin.deleteUser(userId).catch(() => {});
+    if (empErr || !empresaRow?.id) {
+      // Cleanup: si falló empresa, borrar user
+      try {
+        await supabaseAdmin.auth.admin.deleteUser(userId);
+      } catch (e: any) {
+        console.warn("Cleanup: fallo al borrar usuario tras error en empresa:", e?.message || e);
+      }
+
       const status = mapSupabaseErrorToStatus(empErr?.message);
       return NextResponse.json(
-        { error: empErr?.message || "Error creando empresa." },
+        { error: `Error creando empresa: ${empErr?.message || "desconocido"}` },
         { status }
       );
     }
 
-    const empresaId = empInsert.id;
+    const empresaId = empresaRow.id;
 
-    // 3) Upsert profiles (coherencia con RLS y dashboard)
-    const { error: profErr } = await supabaseAdmin
-      .from("profiles")
-      .upsert(
-        [
-          {
-            id: userId,
-            email,
-            nombre,
-            apellido,
-            role: "empresa",
-            empresa_id: empresaId,
-            // agrega campos extra si tu tabla los tiene
-          },
-        ],
-        { onConflict: "id" }
-      );
+    // 3) (Opcional) Insertar profile enlazado a la empresa con rol "empresa"
+    //    Si esta tabla/flujo no existe en tu esquema, podés retirarlo sin problemas.
+    const { error: profErr } = await supabaseAdmin.from("profiles").insert([
+      {
+        id: userId, // si tu PK de profiles es uuid del user
+        email: clean(email),
+        nombre: clean(nombre),
+        apellido: clean(apellido),
+        role: "empresa",
+        empresa_id: empresaId,
+        telefono: clean(telefono),
+      },
+    ]);
 
     if (profErr) {
       // Cleanup: borrar empresa + user para no dejar huérfanos
-      await supabaseAdmin.from("empresas").delete().eq("id", empresaId).catch(() => {});
-      await supabaseAdmin.auth.admin.deleteUser(userId).catch(() => {});
+      try {
+        await supabaseAdmin.from("empresas").delete().eq("id", empresaId);
+      } catch (e: any) {
+        console.warn("Cleanup: fallo al borrar empresa:", e?.message || e);
+      }
+
+      try {
+        await supabaseAdmin.auth.admin.deleteUser(userId);
+      } catch (e: any) {
+        console.warn("Cleanup: fallo al borrar usuario:", e?.message || e);
+      }
+
       const status = mapSupabaseErrorToStatus(profErr?.message);
       return NextResponse.json(
-        { error: profErr?.message || "Error creando perfil." },
+        { error: `Error creando profile: ${profErr.message}` },
         { status }
       );
     }
 
-    // 4) (Opcional) Activar Trial/plan por defecto aquí si tu app lo requiere
-    // const trialErr = await activarTrial(empresaId).catch(e => e);
-    // if (trialErr) { ...mapear, cleanup si querés ser extremo... }
-
+    // (Opcional) emitir una sesión aquí si quisieras auto-login;
+    // en general lo dejamos para el login normal.
     return NextResponse.json({
       ok: true,
       user_id: userId,
       empresa_id: empresaId,
-      message: "Usuario, empresa y perfil creados (dev, email confirmado).",
+      message: "Usuario, empresa y profile creados (modo dev, email confirmado).",
     });
   } catch (e: any) {
-    const status = mapSupabaseErrorToStatus(e?.message);
     return NextResponse.json(
       { error: e?.message || "Error interno." },
-      { status }
+      { status: 500 }
     );
   }
 }

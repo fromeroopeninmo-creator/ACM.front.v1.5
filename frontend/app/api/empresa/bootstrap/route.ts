@@ -14,13 +14,29 @@ const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE, {
   auth: { persistSession: false, autoRefreshToken: false },
 });
 
-// Cambiá si tu plan Trial tiene otro nombre
+// Nombre “Trial” por compatibilidad; no creamos columnas nuevas.
 const TRIAL_NAME = "Trial";
 
-/**
- * Bootstrap de empresa + plan Trial
- * Se llama SOLO cuando el usuario ya tiene sesión (después de confirmar email).
- */
+/** yyyy-mm-dd en UTC, sin riesgo de TZ local */
+function todayUTC(): string {
+  const d = new Date();
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(d.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+/** Suma días a una fecha (UTC) y devuelve yyyy-mm-dd */
+function addDaysUTC(isoYYYYMMDD: string, days: number): string {
+  const [y, m, d] = isoYYYYMMDD.split("-").map((x) => parseInt(x, 10));
+  const dt = new Date(Date.UTC(y, (m ?? 1) - 1, d ?? 1));
+  dt.setUTCDate(dt.getUTCDate() + days);
+  const yy = dt.getUTCFullYear();
+  const mm = String(dt.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(dt.getUTCDate()).padStart(2, "0");
+  return `${yy}-${mm}-${dd}`;
+}
+
 export async function POST() {
   try {
     // 1) Usuario autenticado desde cookies (SSR)
@@ -62,7 +78,7 @@ export async function POST() {
 
     let empresaId = empExist?.id as string | undefined;
 
-    // 3) Si no existe, crear empresa básica
+    // 3) Si no existe, crear empresa básica (defaults seguros)
     if (!empresaId) {
       const razonBase = email ? email.split("@")[0] : "Empresa";
       const nowIso = new Date().toISOString();
@@ -74,6 +90,9 @@ export async function POST() {
             user_id: userId,
             razon_social: razonBase,
             nombre_comercial: razonBase,
+            // defaults coherentes
+            color: "#E6A930",
+            logo_url: "",
             created_at: nowIso,
             updated_at: nowIso,
           },
@@ -91,7 +110,6 @@ export async function POST() {
       empresaId = nuevaEmp.id;
     }
 
-    // 4) Asegurar plan Trial activo si no hay plan activo
     if (!empresaId) {
       return NextResponse.json(
         { ok: false, error: "No se pudo resolver empresaId" },
@@ -99,44 +117,51 @@ export async function POST() {
       );
     }
 
-    // 4.a Buscar plan activo actual
-    const { data: planActivo } = await supabaseAdmin
+    // 4) Asegurar plan Trial activo si no hay plan activo
+    const { data: planActivo, error: planActivoErr } = await supabaseAdmin
       .from("empresas_planes")
-      .select("id, plan_id, activo")
+      .select("id, activo")
       .eq("empresa_id", empresaId)
       .eq("activo", true)
       .maybeSingle();
 
+    if (planActivoErr) {
+      console.warn("bootstrap: error buscando plan activo:", planActivoErr.message);
+    }
+
     if (!planActivo) {
-      // 4.b Buscar plan Trial
+      // Buscar plan trial por nombre (tolerante a variantes)
       const { data: trialPlan, error: trialErr } = await supabaseAdmin
         .from("planes")
         .select("id, nombre, duracion_dias")
-        .eq("nombre", TRIAL_NAME)
+        .or("nombre.eq.Trial,nombre.eq.trial,nombre.ilike.%trial%")
+        .order("duracion_dias", { ascending: false })
+        .limit(1)
         .maybeSingle();
 
       if (trialErr || !trialPlan?.id) {
-        // No bloqueamos el flujo si no hay Trial configurado
         console.warn("No se encontró el plan Trial; se omite asignación de plan.");
         return NextResponse.json({ ok: true, empresaId }, { status: 200 });
       }
 
-      // 4.c Calcular fechas de inicio y fin
-      const hoy = new Date();
-      const fecha_inicio = hoy.toISOString().slice(0, 10);
-
+      // Fechas (en UTC)
+      const fecha_inicio = todayUTC();
       const dias = Number(trialPlan.duracion_dias) || 7;
-      const fecha_fin = new Date(hoy.getTime() + dias * 86400000)
-        .toISOString()
-        .slice(0, 10);
+      const fecha_fin = addDaysUTC(fecha_inicio, dias);
 
       // Desactivar cualquier plan activo previo (por si acaso)
-      await supabaseAdmin
+      // (sin .catch porque no existe en el builder; errores a consola)
+      const { error: updErr } = await supabaseAdmin
         .from("empresas_planes")
         .update({ activo: false })
         .eq("empresa_id", empresaId)
         .eq("activo", true);
 
+      if (updErr) {
+        console.warn("bootstrap: error desactivando planes previos:", updErr.message);
+      }
+
+      // Insertar trial activo
       const { error: insPlanErr } = await supabaseAdmin
         .from("empresas_planes")
         .insert([
@@ -150,12 +175,13 @@ export async function POST() {
         ]);
 
       if (insPlanErr) {
-        console.warn("No se pudo insertar plan Trial:", insPlanErr.message);
+        console.warn("bootstrap: no se pudo insertar Trial:", insPlanErr.message);
       }
     }
 
     return NextResponse.json({ ok: true, empresaId }, { status: 200 });
   } catch (e: any) {
+    console.error("bootstrap: error inesperado:", e?.message || e);
     return NextResponse.json(
       { ok: false, error: e?.message || "Error interno" },
       { status: 500 }

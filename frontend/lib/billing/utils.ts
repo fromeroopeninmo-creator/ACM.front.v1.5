@@ -18,6 +18,15 @@ export type ActorCtx = {
 /** Redondeo a 2 decimales (half-up). */
 export const round2 = (n: number) => Math.round(n * 100) / 100;
 
+/** yyyy-mm-dd en UTC */
+export function todayUTCDate(): string {
+  const d = new Date();
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(d.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 /** Lee user + profile (role, empresa_id). Lanza si no hay sesión. */
 export async function assertAuthAndGetContext(
   supabase: SupabaseClient
@@ -54,18 +63,18 @@ export async function getEmpresaIdForActor(params: {
 }): Promise<string | null> {
   const { supabase, actor, empresaIdParam } = params;
 
-  const isAdmin =
+  const isAdminLike =
     actor.role === "super_admin_root" ||
     actor.role === "super_admin" ||
     actor.role === "soporte";
 
-  // 1) Admin / soporte puede pasar empresaIdParam explícito
-  if (isAdmin && empresaIdParam) return empresaIdParam;
-
-  // 2) Si el profile ya tiene empresa_id, usarlo
+  // Si el profile ya tiene empresa_id, priorizarlo (evita confusiones)
   if (actor.empresaId) return actor.empresaId;
 
-  // 3) Fallback: empresas.user_id = actor.userId
+  // Admin/soporte puede pasar empresaIdParam
+  if (isAdminLike && empresaIdParam) return empresaIdParam;
+
+  // Fallback: empresas.user_id = actor.userId
   if (actor.userId) {
     const { data: emp, error } = await supabase
       .from("empresas")
@@ -84,7 +93,6 @@ export async function getEmpresaIdForActor(params: {
     if (emp?.id) return emp.id as string;
   }
 
-  // 4) No se pudo resolver
   return null;
 }
 
@@ -148,7 +156,7 @@ export async function getSuscripcionEstado(
     fecha_fin = addDaysISO(fecha_inicio, dur);
   }
 
-  // 3) Devolvemos estructura compatible con lo que usan preview/change-plan
+  // 3) Devolvemos estructura compatible
   return {
     empresa_id,
     ciclo_inicio: fecha_inicio,
@@ -164,14 +172,8 @@ export async function getSuscripcionEstado(
 }
 
 /**
- * Precio neto preferido:
- * - Para planes normales: usa planes.precio (neto).
- * - Para plan "Personalizado":
- *   - Si se pasa maxAsesoresOverride (4to parámetro), calcula:
- *       precio = precio(Premium) + (maxAsesoresOverride - 20) * precio_extra_por_asesor
- *   - Si no se pasa, intenta leer empresas_planes.max_asesores_override
- *     para esa empresa y ese plan (cuando ya está activo).
- *   - Si no hay datos, vuelve a usar planes.precio como fallback.
+ * Precio neto preferido (manejo de plan "Personalizado").
+ * - Ver comentarios en la versión previa: se mantiene igual.
  */
 export async function getPlanPrecioNetoPreferido(
   supabase: SupabaseClient,
@@ -191,17 +193,12 @@ export async function getPlanPrecioNetoPreferido(
   const base = Number((plan as any).precio ?? 0);
   const nombre = ((plan as any).nombre ?? "").toLowerCase();
 
-  // Planes normales → usamos precio base
   if (nombre !== "personalizado") {
     return base;
   }
 
-  // --- Caso especial: plan "Personalizado" ---
-
-  // 1) Resolver el cupo de asesores apuntado (override)
   let targetCount: number | null = null;
 
-  // a) Si nos pasan override explícito (por ejemplo desde preview-change / change-plan)
   if (
     typeof maxAsesoresOverride === "number" &&
     Number.isFinite(maxAsesoresOverride) &&
@@ -209,7 +206,6 @@ export async function getPlanPrecioNetoPreferido(
   ) {
     targetCount = maxAsesoresOverride;
   } else {
-    // b) Si no viene por parámetro, intentamos leerlo desde empresas_planes
     const { data: ep, error: epErr } = await supabase
       .from("empresas_planes")
       .select("max_asesores_override")
@@ -230,12 +226,10 @@ export async function getPlanPrecioNetoPreferido(
     }
   }
 
-  // Si no tenemos un número válido de asesores, devolvemos el base para no romper nada
   if (!targetCount || targetCount <= 20) {
     return base;
   }
 
-  // 2) Buscamos el precio del plan Premium (igual que en el frontend)
   const { data: premiumPlan, error: premiumErr } = await supabase
     .from("planes")
     .select("precio")
@@ -251,7 +245,7 @@ export async function getPlanPrecioNetoPreferido(
 
   const basePremium = premiumPlan
     ? Number((premiumPlan as any).precio ?? 0)
-    : base; // fallback al base si no encontramos Premium
+    : base;
 
   const unitExtra = Number((plan as any).precio_extra_por_asesor ?? 0);
   const extra = Math.max(0, targetCount - 20);
@@ -260,7 +254,7 @@ export async function getPlanPrecioNetoPreferido(
   return personalizadoPrecio;
 }
 
-/** Cálculo puro del prorrateo para upgrade (sin I/O). */
+/** Cálculo de prorrateo (sin I/O). */
 export function calcularDeltaProrrateo(params: {
   cicloInicioISO: string;
   cicloFinISO: string;

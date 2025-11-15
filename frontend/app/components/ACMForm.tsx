@@ -1214,7 +1214,7 @@ return (
 
             {/* m² Terreno */}
             <div className="space-y-1">
-              <label className="block text-sm font-medium text-gray-700">m² Terreno</label>
+              <label className="block text-sm font-medium text-gray-700">m² del Lote</label>
               <input
                 name="landArea"
                 type="number"
@@ -1478,7 +1478,7 @@ return (
           <span className="text-xl sm:text-2xl font-bold text-center sm:text-right">{peso(suggestedPrice)}</span>
         </div>
         <p className="mt-2 text-xs sm:text-sm text-amber-700 text-center sm:text-left">
-          Calculado como promedio del precio/m² ajustado de comparables × m² cubiertos de la propiedad principal.
+          Calculado como promedio del precio/m² ajustado de comparables × m² a valuar de la propiedad principal.
         </p>
       </div>
 
@@ -1685,7 +1685,7 @@ return (
 
                     {/* Link */}
                     <div className="space-y-1 sm:col-span-2">
-                      <label className="block text-sm font-medium text-gray-700">Link de publicación</label>
+                      <label className="block text-sm font-medium text-gray-700">Link de la publicación</label>
                       <input
                         value={c.listingUrl || ""}
                         onChange={(e) => updateComparable(i, "listingUrl", e.target.value)}
@@ -1696,7 +1696,7 @@ return (
 
                     {/* Coeficiente */}
                     <div className="space-y-1">
-                      <label className="block text-sm font-medium text-gray-700">Coeficiente</label>
+                      <label className="block text-sm font-medium text-gray-700">Coeficiente de competitividad</label>
                       <select
                         value={String(c.coefficient ?? 1.0)}
                         onChange={(e) => {
@@ -1715,7 +1715,7 @@ return (
 
                     {/* Precio/m² */}
                     <div className="space-y-1">
-                      <label className="block text-sm font-medium text-gray-700">Precio por m² (ajustado)</label>
+                      <label className="block text-sm font-medium text-gray-700">Precio por m² (ajustado por coeficiente)</label>
                       <div className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm">
                         {peso(ppm2Adj)}
                       </div>

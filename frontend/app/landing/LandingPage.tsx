@@ -43,7 +43,7 @@ export default function LandingPage() {
                   VAI PROP
                 </div>
                 <div className="text-[11px] uppercase text-neutral-400">
-                  Soluciones para Real Estate
+                  Soluciones Digitales para Real Estate
                 </div>
               </div>
             </Link>
@@ -164,7 +164,7 @@ export default function LandingPage() {
             <div className="flex-1 space-y-6">
               <span className="inline-flex items-center gap-2 rounded-full border border-[rgba(230,169,48,0.3)] bg-[rgba(230,169,48,0.08)] px-3 py-1 text-xs font-medium tracking-wide text-[rgba(230,169,48,0.96)]">
                 <span className="inline-block h-1.5 w-1.5 rounded-full bg-[rgba(230,169,48,0.9)]" />
-                Plataforma creada para inmobiliarias y desarrolladores
+                Plataforma creada para Inmobiliarias y Desarrollistas
               </span>
 
               <h1 className="text-balance text-3xl font-semibold tracking-tight text-neutral-50 sm:text-4xl lg:text-[2.75rem]">
@@ -185,7 +185,7 @@ export default function LandingPage() {
                   href="/auth/register"
                   className="inline-flex items-center justify-center rounded-full border border-[rgba(230,169,48,0.95)] bg-[rgba(230,169,48,0.95)] px-6 py-2.5 text-sm font-semibold text-black shadow-[0_12px_35px_rgba(0,0,0,0.65)] hover:bg-[rgba(230,169,48,1)] transition"
                 >
-                  Comenzar gratis
+                  Comenzar Gratis
                 </Link>
                 <Link
                   href="/auth/login"
@@ -231,7 +231,7 @@ export default function LandingPage() {
                     Informes VAI
                   </div>
                   <div className="mt-1 text-[13px] text-neutral-100">
-                    Comparables, fotos y mapa listos para enviar a tu cliente.
+                    Comparables, fotos e informes listos para enviar a tu cliente.
                   </div>
                 </div>
               </div>
@@ -251,8 +251,8 @@ export default function LandingPage() {
                   Herramientas que resuelven el día a día inmobiliario
                 </h2>
                 <p className="mt-2 max-w-2xl text-sm text-neutral-300">
-                  Diseñamos VAI Prop junto a inmobiliarias y desarrolladores para
-                  cubrir los procesos clave: valuación, factibilidad y gestión del
+                  Diseñamos VAI Prop junto a inmobiliarias y desarrollistas para
+                  cubrir los procesos clave: valuación de activos inmobiliarios, factibilidad constructiva y gestión del
                   equipo comercial.
                 </p>
               </div>
@@ -269,7 +269,7 @@ export default function LandingPage() {
                 </h3>
                 <p className="mt-2 text-xs leading-relaxed text-neutral-300">
                   Cargá datos del inmueble, comparables, fotos y notas. Generá un
-                  informe prolijo en minutos y dejá de armar PDFs manualmente.
+                  informe prolijo en minutos y dejá de trabajar con Excel y armar PDFs manualmente.
                 </p>
                 <div className="mt-4 h-28 overflow-hidden rounded-xl border border-neutral-800 bg-black/60">
                   <Image

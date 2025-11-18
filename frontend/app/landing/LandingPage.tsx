@@ -607,9 +607,12 @@ export default function LandingPage() {
                 Llevá tus informes al nivel que tu marca se merece
               </h2>
               <p className="mx-auto mt-3 max-w-2xl text-sm text-neutral-300">
-                VAI Prop te ayuda a ordenar tu operación, hablar con datos y
-                entregar una experiencia profesional a cada cliente. Empezá con
-                un pequeño equipo y escalá cuando lo necesites.
+               VAI Prop no reemplaza una tasación oficial, pero te permite
+                generar una valuación por método comparativo de mercado para
+                respaldar tus tasaciones y presentaciones con clientes. Además,
+                te ayuda a ordenar tu operación, hablar con datos y entregar una
+                experiencia profesional a cada cliente. 
+                Probalo hoy mismo, aprovecha el Plan Trail gratis por 7 dias.
               </p>
               <div className="mt-6 flex flex-col justify-center gap-3 sm:flex-row">
                 <Link

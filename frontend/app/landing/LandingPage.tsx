@@ -336,7 +336,7 @@ export default function LandingPage() {
         {/* SECCIÓN VIDEO / DEMO */}
         <section className="border-b border-neutral-900 bg-black">
           <div className="mx-auto max-w-6xl px-4 py-12 md:py-16">
-            <div className="grid gap-8 md:grid-cols-[1.2fr_1fr] md:items-center">
+            <div className="grid gap-8 md:grid-cols-[1fr_1.2fr] md:items-center">
               <div>
                 <h2 className="text-xl font-semibold text-neutral-50 md:text-2xl">
                   Mirá cómo funciona VAI Prop en la práctica

@@ -3,10 +3,22 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { supabase } from "#lib/supabaseClient";
+
+interface LandingPlan {
+  id: string;
+  nombre: string;
+  max_asesores: number | null;
+  precio: number | string | null;
+}
 
 export default function LandingPage() {
   const [mobileOpen, setMobileOpen] = useState(false);
+
+  // Precio neto (sin IVA) del Plan Inicial para mostrar en la card
+  const [planInicialPrecioNeto, setPlanInicialPrecioNeto] = useState<number | null>(null);
+
   const openGmailCompose = (to: string, subject?: string) => {
     const params = new URLSearchParams();
     params.set("to", to);
@@ -20,6 +32,74 @@ export default function LandingPage() {
   };
 
   const accent = "#E6A930"; // dorado corporativo
+  const IVA_PCT = 0.21;
+
+  // Formateador de moneda en ARS
+  const formatCurrency = (value: number) =>
+    new Intl.NumberFormat("es-AR", {
+      style: "currency",
+      currency: "ARS",
+      maximumFractionDigits: 0,
+    }).format(value);
+
+  // Cargar precio del Plan Inicial desde Supabase (tabla planes)
+  useEffect(() => {
+    const fetchPlanInicial = async () => {
+      try {
+        const { data, error } = await supabase
+          .from("planes")
+          .select("id, nombre, max_asesores, precio")
+          .neq("nombre", "Trial")
+          .neq("nombre", "Desarrollo");
+
+        if (error) {
+          console.error("Error cargando planes para landing:", error);
+          return;
+        }
+
+        if (!data || data.length === 0) return;
+
+        const planes = data as LandingPlan[];
+
+        // 1) Intentar encontrar el plan que coincide con la lógica de la card: hasta 4 asesores
+        let planInicial =
+          planes.find((p) => p.max_asesores === 4) ?? null;
+
+        // 2) Si no lo encuentra, tomar el plan pago más barato como fallback
+        if (!planInicial) {
+          const sorted = [...planes].sort((a, b) => {
+            const aVal =
+              typeof a.precio === "string"
+                ? parseFloat(a.precio)
+                : a.precio ?? 0;
+            const bVal =
+              typeof b.precio === "string"
+                ? parseFloat(b.precio)
+                : b.precio ?? 0;
+            return aVal - bVal;
+          });
+          planInicial = sorted[0] ?? null;
+        }
+
+        if (planInicial && planInicial.precio != null) {
+          const val =
+            typeof planInicial.precio === "string"
+              ? parseFloat(planInicial.precio)
+              : planInicial.precio;
+          if (!isNaN(val)) {
+            setPlanInicialPrecioNeto(val);
+          }
+        }
+      } catch (err) {
+        console.error("Error inesperado cargando plan inicial landing:", err);
+      }
+    };
+
+    fetchPlanInicial();
+  }, []);
+
+  const planInicialPrecioDisplay =
+    planInicialPrecioNeto != null ? formatCurrency(planInicialPrecioNeto) : null;
 
   return (
     <div className="min-h-screen bg-black text-neutral-50 flex flex-col">
@@ -51,16 +131,28 @@ export default function LandingPage() {
 
           {/* Links desktop */}
           <div className="hidden items-center gap-8 text-sm md:flex">
-            <Link href="#features" className="hover:text-[rgba(230,169,48,0.9)] transition">
+            <Link
+              href="#features"
+              className="hover:text-[rgba(230,169,48,0.9)] transition"
+            >
               Herramientas
             </Link>
-            <Link href="#planes" className="hover:text-[rgba(230,169,48,0.9)] transition">
+            <Link
+              href="#planes"
+              className="hover:text-[rgba(230,169,48,0.9)] transition"
+            >
               Planes
             </Link>
-            <Link href="#proximamente" className="hover:text-[rgba(230,169,48,0.9)] transition">
+            <Link
+              href="#proximamente"
+              className="hover:text-[rgba(230,169,48,0.9)] transition"
+            >
               Próximas herramientas
             </Link>
-            <Link href="#faq" className="hover:text-[rgba(230,169,48,0.9)] transition">
+            <Link
+              href="#faq"
+              className="hover:text-[rgba(230,169,48,0.9)] transition"
+            >
               Preguntas frecuentes
             </Link>
           </div>
@@ -174,9 +266,9 @@ export default function LandingPage() {
 
               <p className="max-w-xl text-sm leading-relaxed text-neutral-300 sm:text-base">
                 Centralizá tus valuaciones, estudios de factibilidad y gestión de
-                asesores en una sola plataforma. Menos Excel y WhatsApp,
-                más <span className="font-semibold">informes profesionales</span>{" "}
-                y decisiones rápidas.
+                asesores en una sola plataforma. Menos Excel y WhatsApp, más{" "}
+                <span className="font-semibold">informes profesionales</span> y
+                decisiones rápidas.
               </p>
 
               {/* CTA */}
@@ -252,8 +344,8 @@ export default function LandingPage() {
                 </h2>
                 <p className="mt-2 max-w-2xl text-sm text-neutral-300">
                   Diseñamos VAI Prop junto a inmobiliarias y desarrollistas para
-                  cubrir los procesos clave: valuación de activos inmobiliarios, factibilidad constructiva y gestión del
-                  equipo comercial.
+                  cubrir los procesos clave: valuación de activos inmobiliarios,
+                  factibilidad constructiva y gestión del equipo comercial.
                 </p>
               </div>
             </div>
@@ -269,7 +361,8 @@ export default function LandingPage() {
                 </h3>
                 <p className="mt-2 text-xs leading-relaxed text-neutral-300">
                   Cargá datos del inmueble, comparables, fotos y notas. Generá un
-                  informe prolijo en minutos y dejá de trabajar con Excel y armar PDFs manualmente.
+                  informe prolijo en minutos y dejá de trabajar con Excel y armar
+                  PDFs manualmente.
                 </p>
                 <div className="mt-4 h-28 overflow-hidden rounded-xl border border-neutral-800 bg-black/60">
                   <Image
@@ -336,7 +429,7 @@ export default function LandingPage() {
         {/* SECCIÓN VIDEO / DEMO */}
         <section className="border-b border-neutral-900 bg-black">
           <div className="mx-auto max-w-6xl px-4 py-12 md:py-16">
-            <div className="grid gap-8 md:grid-cols-[1fr_1.2fr] md:items-center">
+            <div className="grid gap-8 md:grid-cols-[1.2fr_1fr] md:items-center">
               <div>
                 <h2 className="text-xl font-semibold text-neutral-50 md:text-2xl">
                   Mirá cómo funciona VAI Prop en la práctica
@@ -435,6 +528,17 @@ export default function LandingPage() {
                   Diseñado para inmobiliarias que quieren ordenar su operación y
                   profesionalizar la presentación al cliente.
                 </p>
+
+                {/* Precio dinámico Plan Inicial */}
+                {planInicialPrecioDisplay && (
+                  <div className="mt-3 text-2xl font-semibold text-neutral-50">
+                    {planInicialPrecioDisplay}
+                    <span className="ml-1 text-xs font-normal text-neutral-400">
+                      + IVA / mes
+                    </span>
+                  </div>
+                )}
+
                 <ul className="mt-4 space-y-2 text-xs text-neutral-100">
                   <li>• Hasta 4 asesores.</li>
                   <li>• Valuador + Factibilidad constructiva.</li>
@@ -578,9 +682,9 @@ export default function LandingPage() {
                   ¿VAI Prop reemplaza mi CRM?
                 </h3>
                 <p className="mt-2 text-xs text-neutral-300">
-                  Hoy VAI Prop se enfoca en informes de valuación, factibilidad
-                  y gestión de asesores. Podés usarlo junto a tu CRM actual o
-                  como base para estandarizar procesos.
+                  Hoy VAI Prop se enfoca en informes de valuación, factibilidad y
+                  gestión de asesores. Podés usarlo junto a tu CRM actual o como
+                  base para estandarizar procesos.
                 </p>
               </div>
 
@@ -607,12 +711,12 @@ export default function LandingPage() {
                 Llevá tus informes al nivel que tu marca se merece
               </h2>
               <p className="mx-auto mt-3 max-w-2xl text-sm text-neutral-300">
-               VAI Prop no reemplaza una tasación oficial, pero te permite
+                VAI Prop no reemplaza una tasación oficial, pero te permite
                 generar una valuación por método comparativo de mercado para
                 respaldar tus tasaciones y presentaciones con clientes. Además,
                 te ayuda a ordenar tu operación, hablar con datos y entregar una
-                experiencia profesional a cada cliente. 
-                Probalo hoy mismo, aprovecha el Plan Trail gratis por 7 dias.
+                experiencia profesional a cada cliente.
+                Comienza tu prueba GRATIS hoy mismo.
               </p>
               <div className="mt-6 flex flex-col justify-center gap-3 sm:flex-row">
                 <Link
@@ -622,7 +726,9 @@ export default function LandingPage() {
                   Crear cuenta ahora
                 </Link>
                 <a
-                  onClick={() => openGmailCompose("info@vaiprop.com", "Consulta general")}
+                  onClick={() =>
+                    openGmailCompose("info@vaiprop.com", "Consulta general")
+                  }
                   className="inline-flex items-center justify-center rounded-full border border-neutral-700 px-6 py-2.5 text-sm font-medium text-neutral-100 hover:bg-neutral-900 transition"
                 >
                   Hablar con el equipo

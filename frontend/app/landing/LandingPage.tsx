@@ -522,11 +522,10 @@ export default function LandingPage() {
                   </span>
                 </div>
                 <div className="mt-3 text-lg font-semibold text-neutral-50">
-                  Para equipos chicos que ya producen informes
+                  Diseñado para equipos en crecimiento
                 </div>
                 <p className="mt-2 text-xs text-neutral-200">
-                  Diseñado para inmobiliarias que quieren ordenar su operación y
-                  profesionalizar la presentación al cliente.
+                 Ordená tu operación, centralizá la información y presentá tus informes con una imagen profesional.
                 </p>
 
                 {/* Precio dinámico Plan Inicial */}

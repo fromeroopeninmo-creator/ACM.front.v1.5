@@ -7,7 +7,7 @@ import { useState } from "react";
 
 export default function LandingPage() {
   const [mobileOpen, setMobileOpen] = useState(false);
-    const openGmailCompose = (to: string, subject?: string) => {
+  const openGmailCompose = (to: string, subject?: string) => {
     const params = new URLSearchParams();
     params.set("to", to);
     if (subject) params.set("su", subject);
@@ -354,21 +354,20 @@ export default function LandingPage() {
                 </ul>
               </div>
 
-              {/* Placeholder de video (reemplazás src con tu video/iframe) */}
+              {/* Video demo */}
               <div className="relative overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-950 shadow-[0_22px_55px_rgba(0,0,0,0.9)]">
-                {/* Si luego tenés un video mp4, podés usar <video> aquí */}
                 <div className="aspect-video w-full bg-black/80">
-                  <div className="flex h-full w-full items-center justify-center">
-                    <button
-                      type="button"
-                      className="flex items-center gap-3 rounded-full border border-[rgba(230,169,48,0.6)] bg-black/70 px-4 py-2 text-sm font-medium text-neutral-100"
-                    >
-                      <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[rgba(230,169,48,0.9)] text-black">
-                        ▶
-                      </span>
-                      Ver demo (próximamente)
-                    </button>
-                  </div>
+                  <video
+                    className="h-full w-full object-cover"
+                    controls
+                    playsInline
+                  >
+                    <source
+                      src="/landing/videos/video_vai.mp4"
+                      type="video/mp4"
+                    />
+                    Tu navegador no soporta la reproducción de video.
+                  </video>
                 </div>
               </div>
             </div>

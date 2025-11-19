@@ -30,6 +30,7 @@ interface TrackerContacto {
   link_fuente: string | null;
   motivo_descartado: string | null;
   notas: string | null;
+  direccion?: string | null; // <- nueva, asumiendo columna en BD
   created_at: string;
   updated_at: string;
 }
@@ -69,6 +70,8 @@ const TIPOLOGIAS = [
   "Local comercial",
   "Oficina",
   "Galpón / Depósito",
+  "Cochera",
+  "Campo",
   "Otro",
 ];
 
@@ -100,12 +103,10 @@ const ETAPAS_ACTIVIDAD = [
 ];
 
 const TIPOS_ACTIVIDAD = [
-  "Llamada",
-  "WhatsApp",
-  "Email",
-  "Reunión presencial",
-  "Visita a inmueble",
-  "Otro",
+  "Llamada en frío",
+  "Seguimiento",
+  "Reunión",
+  "Muestra",
 ];
 
 const RESULTADOS_ACTIVIDAD = [
@@ -117,7 +118,7 @@ const RESULTADOS_ACTIVIDAD = [
 ];
 
 type KpiRange = "30d" | "3m" | "6m" | "1y";
-type Section = "calendario" | "nuevo" | "captadas";
+type Section = "calendario" | "contactos" | "captadas";
 
 function startOfDay(date: Date) {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate(), 0, 0, 0, 0);
@@ -230,19 +231,35 @@ export default function EmpresaTrackerPage() {
   });
   const [selectedDate, setSelectedDate] = useState<Date | null>(() => new Date());
 
-  // Form nuevo prospecto
+  // Form nuevo prospecto (modal)
   const [ncNombre, setNcNombre] = useState("");
   const [ncTelefono, setNcTelefono] = useState("");
   const [ncEmail, setNcEmail] = useState("");
   const [ncTipologia, setNcTipologia] = useState<string>("");
   const [ncTipoOperacion, setNcTipoOperacion] = useState<string>("");
   const [ncZona, setNcZona] = useState("");
+  const [ncDireccion, setNcDireccion] = useState("");
   const [ncOrigen, setNcOrigen] = useState<string>("");
   const [ncLinkFuente, setNcLinkFuente] = useState("");
   const [ncEstadoPipeline, setNcEstadoPipeline] = useState<EstadoPipeline>("no_contactado");
   const [ncNotas, setNcNotas] = useState("");
   const [ncSaving, setNcSaving] = useState(false);
   const [ncSuccessMsg, setNcSuccessMsg] = useState<string | null>(null);
+  const [showNuevoModal, setShowNuevoModal] = useState(false);
+
+  // Ver/Editar contacto (modal simple por ahora)
+  const [selectedContacto, setSelectedContacto] = useState<TrackerContacto | null>(null);
+  const [editSaving, setEditSaving] = useState(false);
+  const [editMsg, setEditMsg] = useState<string | null>(null);
+
+  // Alta tarea en calendario
+  const [newActTipo, setNewActTipo] = useState<string>("Llamada en frío");
+  const [newActContactoId, setNewActContactoId] = useState<string>("");
+  const [newActClienteInteresado, setNewActClienteInteresado] = useState<string>("");
+  const [newActHora, setNewActHora] = useState<string>("");
+  const [newActNotas, setNewActNotas] = useState<string>("");
+  const [newActSaving, setNewActSaving] = useState(false);
+  const [newActMsg, setNewActMsg] = useState<string | null>(null);
 
   const accent = "#E6A930";
 
@@ -416,7 +433,7 @@ export default function EmpresaTrackerPage() {
     };
   }, [contactos, actividades, kpiRange]);
 
-  // Contactos filtrados para la tabla de "Contactos / Clientes"
+  // Contactos filtrados para la tabla de "Contactos / Captaciones"
   const contactosFiltrados = useMemo(() => {
     const search = searchNombre.trim().toLowerCase();
     return contactos.filter((c) => {
@@ -477,6 +494,21 @@ export default function EmpresaTrackerPage() {
     return activitiesByDay.get(key) ?? [];
   }, [selectedDate, activitiesByDay]);
 
+  // Fecha última llamada por contacto (buscando tipo que contenga "llam")
+  const ultimaLlamadaPorContacto = useMemo(() => {
+    const map = new Map<string, string>(); // contacto_id -> ISO fecha
+    actividades.forEach((a) => {
+      if (!a.tipo) return;
+      if (!a.tipo.toLowerCase().includes("llam")) return;
+      const current = map.get(a.contacto_id);
+      const fecha = a.realizado_at || a.created_at;
+      if (!current || new Date(fecha) > new Date(current)) {
+        map.set(a.contacto_id, fecha);
+      }
+    });
+    return map;
+  }, [actividades]);
+
   // Crear nuevo prospecto
   const handleNuevoContacto = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -487,24 +519,29 @@ export default function EmpresaTrackerPage() {
     setErrorMsg(null);
 
     try {
-      const { error } = await supabase.from("tracker_contactos").insert([
-        {
-          empresa_id: empresaId,
-          asesor_id: null,
-          nombre: ncNombre || null,
-          telefono: ncTelefono || null,
-          email: ncEmail || null,
-          tipo_contacto: "prospecto",
-          estado_pipeline: ncEstadoPipeline,
-          tipologia_propiedad: ncTipologia || null,
-          tipo_operacion: ncTipoOperacion || null,
-          zona: ncZona || null,
-          origen: ncOrigen || null,
-          link_fuente: ncLinkFuente || null,
-          motivo_descartado: null,
-          notas: ncNotas || null,
-        },
-      ]);
+      const { data, error } = await supabase
+        .from("tracker_contactos")
+        .insert([
+          {
+            empresa_id: empresaId,
+            asesor_id: null,
+            nombre: ncNombre || null,
+            telefono: ncTelefono || null,
+            email: ncEmail || null,
+            tipo_contacto: "prospecto",
+            estado_pipeline: ncEstadoPipeline,
+            tipologia_propiedad: ncTipologia || null,
+            tipo_operacion: ncTipoOperacion || null,
+            zona: ncZona || null,
+            origen: ncOrigen || null,
+            link_fuente: ncLinkFuente || null,
+            motivo_descartado: null,
+            notas: ncNotas || null,
+            direccion: ncDireccion || null,
+          },
+        ])
+        .select()
+        .single();
 
       if (error) {
         console.error("Error creando contacto:", error);
@@ -519,25 +556,267 @@ export default function EmpresaTrackerPage() {
       setNcTipologia("");
       setNcTipoOperacion("");
       setNcZona("");
+      setNcDireccion("");
       setNcOrigen("");
       setNcLinkFuente("");
       setNcEstadoPipeline("no_contactado");
       setNcNotas("");
 
-      // Recargar contactos
-      const { data: contactosData } = await supabase
-        .from("tracker_contactos")
-        .select("*")
-        .eq("empresa_id", empresaId)
-        .order("created_at", { ascending: false });
-
-      setContactos((contactosData ?? []) as TrackerContacto[]);
+      // Recargar contactos (o agregar el creado)
+      if (data) {
+        setContactos((prev) => [data as TrackerContacto, ...prev]);
+      }
+      setShowNuevoModal(false);
     } catch (err) {
       console.error("Error inesperado creando contacto:", err);
       setErrorMsg("Ocurrió un error al crear el prospecto.");
     } finally {
       setNcSaving(false);
       setTimeout(() => setNcSuccessMsg(null), 3000);
+    }
+  };
+
+  // Actualizar estado de un contacto (select en tabla)
+  const handleChangeEstadoContacto = async (
+    contactoId: string,
+    nuevoEstado: EstadoPipeline
+  ) => {
+    try {
+      const { error } = await supabase
+        .from("tracker_contactos")
+        .update({ estado_pipeline: nuevoEstado })
+        .eq("id", contactoId);
+
+      if (error) {
+        console.error("Error actualizando estado del contacto:", error);
+        setErrorMsg("No se pudo actualizar el estado del contacto.");
+        return;
+      }
+
+      setContactos((prev) =>
+        prev.map((c) =>
+          c.id === contactoId ? { ...c, estado_pipeline: nuevoEstado } : c
+        )
+      );
+    } catch (err) {
+      console.error("Error inesperado actualizando estado:", err);
+      setErrorMsg("Error al actualizar el estado.");
+    }
+  };
+
+  // Eliminar contacto (simple; puede fallar si tenés FKs duros)
+  const handleEliminarContacto = async (contactoId: string) => {
+    const ok = window.confirm(
+      "¿Seguro que querés eliminar este contacto? Si tiene actividades asociadas, es posible que la eliminación falle."
+    );
+    if (!ok) return;
+
+    try {
+      const { error } = await supabase
+        .from("tracker_contactos")
+        .delete()
+        .eq("id", contactoId);
+
+      if (error) {
+        console.error("Error eliminando contacto:", error);
+        setErrorMsg(
+          "No se pudo eliminar el contacto. Es posible que tenga actividades asociadas."
+        );
+        return;
+      }
+
+      setContactos((prev) => prev.filter((c) => c.id !== contactoId));
+    } catch (err) {
+      console.error("Error inesperado eliminando contacto:", err);
+      setErrorMsg("Ocurrió un error al eliminar el contacto.");
+    }
+  };
+
+  // Guardar edición de contacto (modal Ver/Editar)
+  const handleGuardarEdicionContacto = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedContacto) return;
+
+    setEditSaving(true);
+    setEditMsg(null);
+    setErrorMsg(null);
+
+    try {
+      const { id, ...rest } = selectedContacto;
+      const { error } = await supabase
+        .from("tracker_contactos")
+        .update({
+          nombre: rest.nombre,
+          telefono: rest.telefono,
+          email: rest.email,
+          tipologia_propiedad: rest.tipologia_propiedad,
+          tipo_operacion: rest.tipo_operacion,
+          zona: rest.zona,
+          origen: rest.origen,
+          link_fuente: rest.link_fuente,
+          notas: rest.notas,
+          direccion: rest.direccion ?? null,
+        })
+        .eq("id", id);
+
+      if (error) {
+        console.error("Error actualizando contacto:", error);
+        setErrorMsg("No se pudo actualizar el contacto.");
+        return;
+      }
+
+      setContactos((prev) =>
+        prev.map((c) => (c.id === id ? { ...c, ...rest } : c))
+      );
+
+      setEditMsg("Datos actualizados correctamente.");
+      setTimeout(() => {
+        setEditMsg(null);
+        setSelectedContacto(null);
+      }, 1200);
+    } catch (err) {
+      console.error("Error inesperado actualizando contacto:", err);
+      setErrorMsg("Error al actualizar el contacto.");
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
+  // Alta de nueva actividad (tarea) en el calendario
+  const handleNuevaActividad = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!empresaId) return;
+
+    setNewActSaving(true);
+    setNewActMsg(null);
+    setErrorMsg(null);
+
+    try {
+      let contactoId = newActContactoId || "";
+
+      // Si no se eligió contacto pero hay "cliente interesado", creamos uno minimal
+      if (!contactoId && newActClienteInteresado.trim()) {
+        const { data: nuevoContacto, error: contactoError } = await supabase
+          .from("tracker_contactos")
+          .insert([
+            {
+              empresa_id: empresaId,
+              asesor_id: null,
+              nombre: newActClienteInteresado.trim(),
+              tipo_contacto: "cliente_interesado",
+              estado_pipeline: "en_seguimiento",
+              tipologia_propiedad: null,
+              tipo_operacion: null,
+              zona: null,
+              origen: "Cliente interesado",
+              link_fuente: null,
+              motivo_descartado: null,
+              notas: null,
+              direccion: null,
+            },
+          ])
+          .select()
+          .single();
+
+        if (contactoError || !nuevoContacto) {
+          console.error("Error creando cliente interesado:", contactoError);
+          setErrorMsg(
+            "No se pudo crear el cliente interesado. Probá eligiendo un contacto existente."
+          );
+          setNewActSaving(false);
+          return;
+        }
+
+        contactoId = (nuevoContacto as any).id as string;
+        setContactos((prev) => [nuevoContacto as TrackerContacto, ...prev]);
+      }
+
+      if (!contactoId) {
+        setErrorMsg(
+          "Elegí un contacto existente o completá el nombre del cliente interesado."
+        );
+        setNewActSaving(false);
+        return;
+      }
+
+      // Armar proximo_contacto_at combinando fecha seleccionada + hora
+      const base = selectedDate ? new Date(selectedDate) : new Date();
+      let proximo = new Date(
+        base.getFullYear(),
+        base.getMonth(),
+        base.getDate(),
+        9,
+        0,
+        0,
+        0
+      );
+      if (newActHora) {
+        const [hh, mm] = newActHora.split(":");
+        const h = parseInt(hh || "9", 10);
+        const m = parseInt(mm || "0", 10);
+        proximo = new Date(
+          base.getFullYear(),
+          base.getMonth(),
+          base.getDate(),
+          isFinite(h) ? h : 9,
+          isFinite(m) ? m : 0,
+          0,
+          0
+        );
+      }
+
+      // Etapa sugerida según tipo
+      let etapa: string | null = null;
+      if (newActTipo === "Llamada en frío") etapa = "Prospección";
+      else if (newActTipo === "Seguimiento") etapa = "Seguimiento";
+      else if (newActTipo === "Reunión") etapa = "Reunión";
+      else if (newActTipo === "Muestra") etapa = "Visita a propiedad";
+
+      const now = new Date();
+      const { data: nuevaActividad, error: actError } = await supabase
+        .from("tracker_actividades")
+        .insert([
+          {
+            empresa_id: empresaId,
+            asesor_id: null,
+            contacto_id: contactoId,
+            etapa,
+            tipo: newActTipo,
+            resultado: null,
+            detalle: newActNotas || null,
+            proximo_contacto_at: proximo.toISOString(),
+            realizado_at: now.toISOString(),
+            es_venta_cerrada: false,
+            monto_operacion: null,
+            moneda: null,
+            fecha_cierre: null,
+          },
+        ])
+        .select()
+        .single();
+
+      if (actError || !nuevaActividad) {
+        console.error("Error creando actividad:", actError);
+        setErrorMsg("No se pudo crear la actividad.");
+        setNewActSaving(false);
+        return;
+      }
+
+      setActividades((prev) => [...prev, nuevaActividad as TrackerActividad]);
+
+      setNewActMsg("Tarea agregada al calendario.");
+      setNewActTipo("Llamada en frío");
+      setNewActContactoId("");
+      setNewActClienteInteresado("");
+      setNewActHora("");
+      setNewActNotas("");
+
+      setTimeout(() => setNewActMsg(null), 2000);
+    } catch (err) {
+      console.error("Error inesperado creando actividad:", err);
+      setErrorMsg("Ocurrió un error al crear la actividad.");
+    } finally {
+      setNewActSaving(false);
     }
   };
 
@@ -569,9 +848,9 @@ export default function EmpresaTrackerPage() {
               Tracker de trabajo
             </h1>
             <p className="mt-1 text-sm text-gray-600 max-w-xl">
-              Controlá, día a día, cómo estás alimentando tu negocio: nuevos
-              prospectos, captaciones y seguimientos. Pensado como un “tablero
-              de comando” para tu inmobiliaria.
+              Registrá prospección, seguimiento y captaciones para medir tu
+              actividad diaria. Pensado como un tablero de comando simple para
+              tu equipo.
             </p>
           </div>
 
@@ -591,8 +870,7 @@ export default function EmpresaTrackerPage() {
             </div>
             {actividadesHoy.length === 0 ? (
               <p className="mt-2 text-[11px] text-gray-500">
-                No tenés actividades agendadas para hoy. Es un buen momento
-                para generar nuevos contactos o programar seguimientos.
+                No tenés actividades agendadas para hoy.
               </p>
             ) : (
               <ul className="mt-2 space-y-1.5 max-h-28 overflow-y-auto">
@@ -644,8 +922,7 @@ export default function EmpresaTrackerPage() {
             </div>
             {actividadesManiana.length === 0 ? (
               <p className="mt-2 text-[11px] text-gray-500">
-                Mañana todavía no tiene actividades programadas. Programá
-                seguimientos para no perder el ritmo de contactos.
+                Mañana todavía no tiene actividades programadas.
               </p>
             ) : (
               <ul className="mt-2 space-y-1.5 max-h-28 overflow-y-auto">
@@ -757,9 +1034,7 @@ export default function EmpresaTrackerPage() {
                   {kpiCaptados}
                 </div>
                 <p className="mt-1 text-[11px] text-gray-500">
-                  Contactos que actualmente están en estado “Captado”. En
-                  próximas versiones podemos marcar la fecha exacta de
-                  captación.
+                  Contactos que actualmente están en estado “Captado”.
                 </p>
               </div>
 
@@ -796,14 +1071,14 @@ export default function EmpresaTrackerPage() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setActiveSection("nuevo")}
+                  onClick={() => setActiveSection("contactos")}
                   className={`px-3 py-1.5 rounded-full transition ${
-                    activeSection === "nuevo"
+                    activeSection === "contactos"
                       ? "bg-gray-900 text-white"
                       : "text-gray-700 hover:bg-gray-200"
                   }`}
                 >
-                  Nuevo prospecto
+                  Contactos / Captaciones
                 </button>
                 <button
                   type="button"
@@ -838,9 +1113,7 @@ export default function EmpresaTrackerPage() {
                       <button
                         type="button"
                         onClick={() =>
-                          setCurrentMonth(
-                            addMonths(currentMonth, -1)
-                          )
+                          setCurrentMonth(addMonths(currentMonth, -1))
                         }
                         className="rounded-full border border-gray-300 bg-white px-2 py-1 hover:bg-gray-100"
                       >
@@ -851,11 +1124,7 @@ export default function EmpresaTrackerPage() {
                         onClick={() => {
                           const now = new Date();
                           setCurrentMonth(
-                            new Date(
-                              now.getFullYear(),
-                              now.getMonth(),
-                              1
-                            )
+                            new Date(now.getFullYear(), now.getMonth(), 1)
                           );
                           setSelectedDate(new Date());
                         }}
@@ -866,9 +1135,7 @@ export default function EmpresaTrackerPage() {
                       <button
                         type="button"
                         onClick={() =>
-                          setCurrentMonth(
-                            addMonths(currentMonth, 1)
-                          )
+                          setCurrentMonth(addMonths(currentMonth, 1))
                         }
                         className="rounded-full border border-gray-300 bg-white px-2 py-1 hover:bg-gray-100"
                       >
@@ -965,33 +1232,151 @@ export default function EmpresaTrackerPage() {
                   </div>
                 </div>
 
-                {/* Lista de actividades del día seleccionado */}
+                {/* Lista + alta de actividades del día seleccionado */}
                 <div className="rounded-2xl border border-gray-200 bg-white shadow-sm p-4 flex flex-col">
-                  <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center justify-between mb-3">
                     <div>
-                      <h2 className="text-sm font-semibold text-gray-900">
+                      <div className="text-[11px] font-medium text-gray-500 uppercase tracking-[0.18em]">
                         Actividades del día
-                      </h2>
-                      <p className="text-[11px] text-gray-500">
+                      </div>
+                      <div className="text-lg font-semibold text-gray-900">
                         {selectedDate
                           ? selectedDate.toLocaleDateString("es-AR", {
                               day: "2-digit",
                               month: "2-digit",
                               year: "2-digit",
                             })
-                          : "Seleccioná un día en el calendario."}
-                      </p>
+                          : "Seleccioná un día"}
+                      </div>
                     </div>
                   </div>
 
+                  {/* Form de nueva tarea */}
+                  <form
+                    onSubmit={handleNuevaActividad}
+                    className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-3 mb-3 space-y-2"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="text-[11px] font-semibold text-gray-700">
+                        Agregar tarea al calendario
+                      </div>
+                    </div>
+
+                    {newActMsg && (
+                      <div className="text-[11px] text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-2 py-1">
+                        {newActMsg}
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-[11px] text-gray-600 mb-1">
+                          Tipo de tarea
+                        </label>
+                        <select
+                          value={newActTipo}
+                          onChange={(e) => setNewActTipo(e.target.value)}
+                          className="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-xs text-gray-800 bg-white"
+                        >
+                          {TIPOS_ACTIVIDAD.map((t) => (
+                            <option key={t} value={t}>
+                              {t}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-[11px] text-gray-600 mb-1">
+                          Hora
+                        </label>
+                        <input
+                          type="time"
+                          value={newActHora}
+                          onChange={(e) => setNewActHora(e.target.value)}
+                          className="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-xs text-gray-800 bg-white"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-[11px] text-gray-600 mb-1">
+                          Contacto existente
+                        </label>
+                        <select
+                          value={newActContactoId}
+                          onChange={(e) => setNewActContactoId(e.target.value)}
+                          className="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-xs text-gray-800 bg-white"
+                        >
+                          <option value="">
+                            Seleccionar contacto (opcional)
+                          </option>
+                          {contactos.map((c) => (
+                            <option key={c.id} value={c.id}>
+                              {c.nombre || "Sin nombre"}{" "}
+                              {c.zona ? `· ${c.zona}` : ""}
+                            </option>
+                          ))}
+                        </select>
+                        <p className="mt-1 text-[10px] text-gray-400">
+                          Si no existe, podés usar “Cliente interesado” abajo.
+                        </p>
+                      </div>
+                      <div>
+                        <label className="block text-[11px] text-gray-600 mb-1">
+                          Cliente interesado (nombre)
+                        </label>
+                        <input
+                          type="text"
+                          value={newActClienteInteresado}
+                          onChange={(e) =>
+                            setNewActClienteInteresado(e.target.value)
+                          }
+                          placeholder="Ej: Juan (interesado)"
+                          className="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-xs text-gray-800"
+                        />
+                        <p className="mt-1 text-[10px] text-gray-400">
+                          Se creará como contacto básico si no seleccionás uno
+                          arriba.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] text-gray-600 mb-1">
+                        Notas
+                      </label>
+                      <textarea
+                        value={newActNotas}
+                        onChange={(e) => setNewActNotas(e.target.value)}
+                        rows={2}
+                        placeholder="Ej: 2° llamada, quiere que lo contacte después de las 17hs."
+                        className="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-xs text-gray-800 resize-none"
+                      />
+                    </div>
+
+                    <div className="flex justify-end">
+                      <button
+                        type="submit"
+                        disabled={newActSaving}
+                        className={`rounded-lg px-4 py-1.5 text-xs font-semibold text-white transition ${
+                          newActSaving
+                            ? "bg-gray-400 cursor-not-allowed"
+                            : "bg-gray-900 hover:bg-black"
+                        }`}
+                      >
+                        {newActSaving ? "Guardando..." : "Agregar tarea"}
+                      </button>
+                    </div>
+                  </form>
+
+                  {/* Lista de actividades del día seleccionado */}
                   {(!selectedDate || selectedDayActivities.length === 0) ? (
                     <p className="mt-2 text-[11px] text-gray-500 bg-gray-50 border border-dashed border-gray-200 rounded-lg px-3 py-2">
-                      No hay actividades registradas para este día. Podés usar el
-                      formulario de actividades (en otra iteración) o tu flujo
-                      actual para empezar a nutrir el calendario.
+                      No hay actividades registradas en esta fecha.
                     </p>
                   ) : (
-                    <div className="mt-2 space-y-2 overflow-y-auto max-h-[360px] pr-1">
+                    <div className="mt-2 space-y-2 overflow-y-auto max-h-[260px] pr-1">
                       {selectedDayActivities.map((a) => {
                         const c = contactosById.get(a.contacto_id);
                         return (
@@ -1044,317 +1429,151 @@ export default function EmpresaTrackerPage() {
               </div>
             )}
 
-            {activeSection === "nuevo" && (
-              <div className="grid gap-6 lg:grid-cols-[1.4fr_2fr]">
-                {/* Nuevo prospecto */}
-                <div className="rounded-2xl border border-gray-200 bg-white shadow-sm p-4">
-                  <h2 className="text-sm font-semibold text-gray-900 mb-1">
-                    Alta de nuevo prospecto
-                  </h2>
-                  <p className="text-[11px] text-gray-500 mb-3">
-                    Pensá cada prospecto como una oportunidad. Cuantos más
-                    registros alimentes acá, más claro vas a ver qué acciones te
-                    llevan a captar propiedades y cerrar operaciones.
-                  </p>
-
-                  {ncSuccessMsg && (
-                    <div className="mb-2 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-2 py-1.5">
-                      {ncSuccessMsg}
-                    </div>
-                  )}
-
-                  <form onSubmit={handleNuevoContacto} className="space-y-3">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-[11px] font-medium text-gray-600 mb-1">
-                          Nombre del contacto
-                        </label>
-                        <input
-                          type="text"
-                          value={ncNombre}
-                          onChange={(e) => setNcNombre(e.target.value)}
-                          placeholder="Ej: Juan Pérez (dueño)"
-                          className="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-xs text-gray-800"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-[11px] font-medium text-gray-600 mb-1">
-                          Teléfono
-                        </label>
-                        <input
-                          type="text"
-                          value={ncTelefono}
-                          onChange={(e) => setNcTelefono(e.target.value)}
-                          placeholder="Ej: 351 555 1234"
-                          className="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-xs text-gray-800"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-[11px] font-medium text-gray-600 mb-1">
-                          Email
-                        </label>
-                        <input
-                          type="email"
-                          value={ncEmail}
-                          onChange={(e) => setNcEmail(e.target.value)}
-                          placeholder="Ej: juan@mail.com"
-                          className="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-xs text-gray-800"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-[11px] font-medium text-gray-600 mb-1">
-                          Estado inicial
-                        </label>
-                        <select
-                          value={ncEstadoPipeline}
-                          onChange={(e) =>
-                            setNcEstadoPipeline(
-                              e.target.value as EstadoPipeline
-                            )
-                          }
-                          className="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-xs text-gray-800 bg-white"
-                        >
-                          {ESTADOS_PIPELINE.map((opt) => (
-                            <option key={opt.value} value={opt.value}>
-                              {opt.label}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-[11px] font-medium text-gray-600 mb-1">
-                          Tipología de la propiedad
-                        </label>
-                        <select
-                          value={ncTipologia}
-                          onChange={(e) => setNcTipologia(e.target.value)}
-                          className="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-xs text-gray-800 bg-white"
-                        >
-                          <option value="">Seleccioná una opción</option>
-                          {TIPOLOGIAS.map((t) => (
-                            <option key={t} value={t}>
-                              {t}
-                            </option>
-                          ))}
-                        </select>
-                        <p className="mt-1 text-[11px] text-gray-400">
-                          Casa, departamento, dúplex, lote, local, etc.
-                        </p>
-                      </div>
-                      <div>
-                        <label className="block text-[11px] font-medium text-gray-600 mb-1">
-                          Tipo de operación
-                        </label>
-                        <select
-                          value={ncTipoOperacion}
-                          onChange={(e) => setNcTipoOperacion(e.target.value)}
-                          className="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-xs text-gray-800 bg-white"
-                        >
-                          <option value="">Seleccioná una opción</option>
-                          {TIPOS_OPERACION.map((t) => (
-                            <option key={t} value={t}>
-                              {t}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-[11px] font-medium text-gray-600 mb-1">
-                          Zona / barrio
-                        </label>
-                        <input
-                          type="text"
-                          value={ncZona}
-                          onChange={(e) => setNcZona(e.target.value)}
-                          placeholder="Ej: Nueva Córdoba, Gral. Paz"
-                          className="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-xs text-gray-800"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-[11px] font-medium text-gray-600 mb-1">
-                          Origen del contacto
-                        </label>
-                        <select
-                          value={ncOrigen}
-                          onChange={(e) => setNcOrigen(e.target.value)}
-                          className="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-xs text-gray-800 bg-white"
-                        >
-                          <option value="">Seleccioná una opción</option>
-                          {ORIGENES.map((o) => (
-                            <option key={o} value={o}>
-                              {o}
-                            </option>
-                          ))}
-                        </select>
-                        <p className="mt-1 text-[11px] text-gray-400">
-                          Te va a facilitar ver qué canal trae mejores contactos.
-                        </p>
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="block text-[11px] font-medium text-gray-600 mb-1">
-                        Link de referencia (opcional)
-                      </label>
-                      <input
-                        type="text"
-                        value={ncLinkFuente}
-                        onChange={(e) => setNcLinkFuente(e.target.value)}
-                        placeholder="Ej: enlace al aviso donde viste la propiedad"
-                        className="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-xs text-gray-800"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-[11px] font-medium text-gray-600 mb-1">
-                        Notas internas
-                      </label>
-                      <textarea
-                        value={ncNotas}
-                        onChange={(e) => setNcNotas(e.target.value)}
-                        rows={3}
-                        placeholder="Ej: Llamado frío. Le interesa escuchar propuesta, pero quiere hablar con la familia. Volver a contactar la semana próxima."
-                        className="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-xs text-gray-800 resize-none"
-                      />
-                    </div>
-
-                    <button
-                      type="submit"
-                      disabled={ncSaving}
-                      className={`w-full rounded-lg py-2.5 text-xs font-semibold text-white transition ${
-                        ncSaving
-                          ? "bg-gray-400 cursor-not-allowed"
-                          : "bg-gray-900 hover:bg-black"
-                      }`}
-                    >
-                      {ncSaving
-                        ? "Guardando prospecto..."
-                        : "Guardar prospecto en el tracker"}
-                    </button>
-                  </form>
-                </div>
-
-                {/* Tabla contactos / clientes */}
-                <div className="rounded-2xl border border-gray-200 bg-white shadow-sm p-4">
-                  <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-3 mb-3">
-                    <div>
-                      <h2 className="text-sm font-semibold text-gray-900">
-                        Contactos / Clientes
-                      </h2>
-                      <p className="text-[11px] text-gray-500">
-                        Acá ves la base de personas y propiedades con las que
-                        estás trabajando (o podrías trabajar).
-                      </p>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2 text-xs">
-                      <select
-                        value={estadoFiltro}
-                        onChange={(e) =>
-                          setEstadoFiltro(
-                            e.target.value as EstadoPipeline | "todos"
-                          )
-                        }
-                        className="border border-gray-300 rounded-lg px-2 py-1 text-xs text-gray-800 bg-white"
-                      >
-                        <option value="todos">Todos los estados</option>
-                        {ESTADOS_PIPELINE.map((opt) => (
-                          <option key={opt.value} value={opt.value}>
-                            {opt.label}
-                          </option>
-                        ))}
-                      </select>
-                      <input
-                        type="text"
-                        value={searchNombre}
-                        onChange={(e) => setSearchNombre(e.target.value)}
-                        placeholder="Buscar por nombre o email..."
-                        className="border border-gray-300 rounded-lg px-2 py-1 text-xs text-gray-800 bg-white w-40"
-                      />
-                    </div>
-                  </div>
-
-                  {contactosFiltrados.length === 0 ? (
-                    <p className="text-[11px] text-gray-500 bg-gray-50 border border-dashed border-gray-200 rounded-lg px-3 py-2">
-                      Todavía no tenés contactos con este filtro. Arrancá
-                      cargando algunos prospectos desde el formulario de la
-                      izquierda.
+            {activeSection === "contactos" && (
+              <div className="rounded-2xl border border-gray-200 bg-white shadow-sm p-4">
+                <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-3 mb-3">
+                  <div>
+                    <h2 className="text-sm font-semibold text-gray-900">
+                      Contactos / Captaciones
+                    </h2>
+                    <p className="text-[11px] text-gray-500">
+                      Acá ves todos los prospectos y clientes con los que estás
+                      trabajando. Podés actualizar su estado y ver la última
+                      llamada.
                     </p>
-                  ) : (
-                    <div className="overflow-x-auto">
-                      <table className="min-w-full text-[11px]">
-                        <thead>
-                          <tr className="text-left text-gray-500 border-b border-gray-100">
-                            <th className="py-2 pr-3">Contacto</th>
-                            <th className="py-2 pr-3">Propiedad</th>
-                            <th className="py-2 pr-3">Zona</th>
-                            <th className="py-2 pr-3">Estado</th>
-                            <th className="py-2 pr-3">Origen</th>
-                            <th className="py-2 pr-3">Fecha alta</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {contactosFiltrados.map((c) => (
-                            <tr
-                              key={c.id}
-                              className="border-b border-gray-50 hover:bg-gray-50/70"
-                            >
-                              <td className="py-2 pr-3">
-                                <div className="font-medium text-gray-900">
-                                  {c.nombre || "Sin nombre"}
-                                </div>
-                                {c.telefono && (
-                                  <div className="text-[10px] text-gray-500">
-                                    {c.telefono}
-                                  </div>
-                                )}
-                                {c.email && (
-                                  <div className="text-[10px] text-gray-500">
-                                    {c.email}
-                                  </div>
-                                )}
-                              </td>
-                              <td className="py-2 pr-3">
-                                <div className="text-gray-800">
-                                  {c.tipologia_propiedad || "—"}
-                                </div>
-                                <div className="text-[10px] text-gray-500">
-                                  {c.tipo_operacion || "—"}
-                                </div>
-                              </td>
-                              <td className="py-2 pr-3 text-gray-800">
-                                {c.zona || "—"}
-                              </td>
-                              <td className="py-2 pr-3">
-                                <span className="inline-flex items-center rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-[10px] text-gray-700">
-                                  {
-                                    ESTADOS_PIPELINE.find(
-                                      (e) => e.value === c.estado_pipeline
-                                    )?.label ?? "No definido"
-                                  }
-                                </span>
-                              </td>
-                              <td className="py-2 pr-3 text-gray-800">
-                                {c.origen || "—"}
-                              </td>
-                              <td className="py-2 pr-3 text-gray-700 whitespace-nowrap">
-                                {formatDate(c.created_at)}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 text-xs">
+                    <button
+                      type="button"
+                      onClick={() => setShowNuevoModal(true)}
+                      className="inline-flex items-center gap-1 rounded-full bg-gray-900 text-white px-3 py-1.5 hover:bg-black"
+                    >
+                      + Nuevo prospecto / cliente
+                    </button>
+                    <select
+                      value={estadoFiltro}
+                      onChange={(e) =>
+                        setEstadoFiltro(
+                          e.target.value as EstadoPipeline | "todos"
+                        )
+                      }
+                      className="border border-gray-300 rounded-lg px-2 py-1 text-xs text-gray-800 bg-white"
+                    >
+                      <option value="todos">Todos los estados</option>
+                      {ESTADOS_PIPELINE.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      type="text"
+                      value={searchNombre}
+                      onChange={(e) => setSearchNombre(e.target.value)}
+                      placeholder="Buscar por nombre o email..."
+                      className="border border-gray-300 rounded-lg px-2 py-1 text-xs text-gray-800 bg-white w-40"
+                    />
+                  </div>
                 </div>
+
+                {contactosFiltrados.length === 0 ? (
+                  <p className="text-[11px] text-gray-500 bg-gray-50 border border-dashed border-gray-200 rounded-lg px-3 py-2">
+                    Todavía no tenés contactos cargados con este filtro. Usá el
+                    botón “Nuevo prospecto / cliente” para empezar a alimentar el
+                    tracker.
+                  </p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full text-[11px]">
+                      <thead>
+                        <tr className="text-left text-gray-500 border-b border-gray-100">
+                          <th className="py-2 pr-3">Contacto</th>
+                          <th className="py-2 pr-3">Tipología</th>
+                          <th className="py-2 pr-3">Operación</th>
+                          <th className="py-2 pr-3">Estado</th>
+                          <th className="py-2 pr-3">Última llamada</th>
+                          <th className="py-2 pr-3 text-right">Acciones</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {contactosFiltrados.map((c) => (
+                          <tr
+                            key={c.id}
+                            className="border-b border-gray-50 hover:bg-gray-50/70"
+                          >
+                            <td className="py-2 pr-3">
+                              <div className="font-medium text-gray-900">
+                                {c.nombre || "Sin nombre"}
+                              </div>
+                              {c.telefono && (
+                                <div className="text-[10px] text-gray-500">
+                                  {c.telefono}
+                                </div>
+                              )}
+                              {c.email && (
+                                <div className="text-[10px] text-gray-500">
+                                  {c.email}
+                                </div>
+                              )}
+                            </td>
+                            <td className="py-2 pr-3 text-gray-800">
+                              {c.tipologia_propiedad || "—"}
+                            </td>
+                            <td className="py-2 pr-3 text-gray-800">
+                              {c.tipo_operacion || "—"}
+                            </td>
+                            <td className="py-2 pr-3">
+                              <select
+                                value={
+                                  (c.estado_pipeline as EstadoPipeline) ??
+                                  "no_contactado"
+                                }
+                                onChange={(e) =>
+                                  handleChangeEstadoContacto(
+                                    c.id,
+                                    e.target.value as EstadoPipeline
+                                  )
+                                }
+                                className="border border-gray-300 rounded-full px-2 py-0.5 text-[10px] text-gray-800 bg-white"
+                              >
+                                {ESTADOS_PIPELINE.map((opt) => (
+                                  <option key={opt.value} value={opt.value}>
+                                    {opt.label}
+                                  </option>
+                                ))}
+                              </select>
+                            </td>
+                            <td className="py-2 pr-3 text-gray-800 whitespace-nowrap">
+                              {formatDate(
+                                ultimaLlamadaPorContacto.get(c.id) ?? null
+                              )}
+                            </td>
+                            <td className="py-2 pr-3 text-right">
+                              <div className="inline-flex items-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedContacto(c)}
+                                  className="rounded-full border border-gray-300 px-2 py-0.5 text-[10px] text-gray-700 hover:bg-gray-100"
+                                >
+                                  Ver / Editar
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    handleEliminarContacto(c.id)
+                                  }
+                                  className="rounded-full border border-red-200 px-2 py-0.5 text-[10px] text-red-700 hover:bg-red-50"
+                                >
+                                  Eliminar
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
             )}
 
@@ -1449,6 +1668,496 @@ export default function EmpresaTrackerPage() {
             )}
           </section>
         </>
+      )}
+
+      {/* MODAL NUEVO PROSPECTO / CLIENTE */}
+      {showNuevoModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xl max-h-[90vh] overflow-y-auto p-5">
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <h2 className="text-sm font-semibold text-gray-900">
+                  Nuevo prospecto / cliente
+                </h2>
+                <p className="text-[11px] text-gray-500">
+                  Registrá un dueño, propietario o cliente interesado para
+                  empezar a hacer seguimiento desde el tracker.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowNuevoModal(false)}
+                className="text-gray-400 hover:text-gray-600 text-lg leading-none"
+              >
+                ×
+              </button>
+            </div>
+
+            {ncSuccessMsg && (
+              <div className="mb-2 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-2 py-1.5">
+                {ncSuccessMsg}
+              </div>
+            )}
+
+            <form onSubmit={handleNuevoContacto} className="space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-medium text-gray-600 mb-1">
+                    Nombre del contacto
+                  </label>
+                  <input
+                    type="text"
+                    value={ncNombre}
+                    onChange={(e) => setNcNombre(e.target.value)}
+                    placeholder="Ej: Juan Pérez (dueño)"
+                    className="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-xs text-gray-800"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-medium text-gray-600 mb-1">
+                    Teléfono
+                  </label>
+                  <input
+                    type="text"
+                    value={ncTelefono}
+                    onChange={(e) => setNcTelefono(e.target.value)}
+                    placeholder="Ej: 351 555 1234"
+                    className="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-xs text-gray-800"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-medium text-gray-600 mb-1">
+                    Email
+                  </label>
+                  <input
+                    type="email"
+                    value={ncEmail}
+                    onChange={(e) => setNcEmail(e.target.value)}
+                    placeholder="Ej: juan@mail.com"
+                    className="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-xs text-gray-800"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-medium text-gray-600 mb-1">
+                    Estado inicial
+                  </label>
+                  <select
+                    value={ncEstadoPipeline}
+                    onChange={(e) =>
+                      setNcEstadoPipeline(e.target.value as EstadoPipeline)
+                    }
+                    className="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-xs text-gray-800 bg-white"
+                  >
+                    {ESTADOS_PIPELINE.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-medium text-gray-600 mb-1">
+                    Tipología de la propiedad
+                  </label>
+                  <select
+                    value={ncTipologia}
+                    onChange={(e) => setNcTipologia(e.target.value)}
+                    className="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-xs text-gray-800 bg-white"
+                  >
+                    <option value="">Seleccioná una opción</option>
+                    {TIPOLOGIAS.map((t) => (
+                      <option key={t} value={t}>
+                        {t}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[11px] font-medium text-gray-600 mb-1">
+                    Tipo de operación
+                  </label>
+                  <select
+                    value={ncTipoOperacion}
+                    onChange={(e) => setNcTipoOperacion(e.target.value)}
+                    className="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-xs text-gray-800 bg-white"
+                  >
+                    <option value="">Seleccioná una opción</option>
+                    {TIPOS_OPERACION.map((t) => (
+                      <option key={t} value={t}>
+                        {t}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-medium text-gray-600 mb-1">
+                    Zona / barrio
+                  </label>
+                  <input
+                    type="text"
+                    value={ncZona}
+                    onChange={(e) => setNcZona(e.target.value)}
+                    placeholder="Ej: Nueva Córdoba, Gral. Paz"
+                    className="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-xs text-gray-800"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-medium text-gray-600 mb-1">
+                    Dirección (opcional)
+                  </label>
+                  <input
+                    type="text"
+                    value={ncDireccion}
+                    onChange={(e) => setNcDireccion(e.target.value)}
+                    placeholder="Ej: Obispo Trejo 123"
+                    className="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-xs text-gray-800"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-medium text-gray-600 mb-1">
+                    Origen del contacto
+                  </label>
+                  <select
+                    value={ncOrigen}
+                    onChange={(e) => setNcOrigen(e.target.value)}
+                    className="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-xs text-gray-800 bg-white"
+                  >
+                    <option value="">Seleccioná una opción</option>
+                    {ORIGENES.map((o) => (
+                      <option key={o} value={o}>
+                        {o}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[11px] font-medium text-gray-600 mb-1">
+                    Link de referencia (opcional)
+                  </label>
+                  <input
+                    type="text"
+                    value={ncLinkFuente}
+                    onChange={(e) => setNcLinkFuente(e.target.value)}
+                    placeholder="Ej: enlace al aviso donde viste la propiedad"
+                    className="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-xs text-gray-800"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-medium text-gray-600 mb-1">
+                  Notas internas
+                </label>
+                <textarea
+                  value={ncNotas}
+                  onChange={(e) => setNcNotas(e.target.value)}
+                  rows={3}
+                  placeholder="Ej: Llamado frío. Le interesa escuchar propuesta, pero quiere hablar con la familia. Volver a contactar la semana próxima."
+                  className="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-xs text-gray-800 resize-none"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setShowNuevoModal(false)}
+                  className="rounded-lg border border-gray-300 px-4 py-1.5 text-xs text-gray-700 hover:bg-gray-50"
+                  disabled={ncSaving}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={ncSaving}
+                  className={`rounded-lg px-4 py-1.5 text-xs font-semibold text-white transition ${
+                    ncSaving
+                      ? "bg-gray-400 cursor-not-allowed"
+                      : "bg-gray-900 hover:bg-black"
+                  }`}
+                >
+                  {ncSaving
+                    ? "Guardando prospecto..."
+                    : "Guardar prospecto en el tracker"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL VER / EDITAR CONTACTO (simple por ahora) */}
+      {selectedContacto && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xl max-h-[90vh] overflow-y-auto p-5">
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <h2 className="text-sm font-semibold text-gray-900">
+                  Ficha de contacto
+                </h2>
+                <p className="text-[11px] text-gray-500">
+                  Ajustá los datos principales del contacto. En una próxima
+                  iteración sumamos ficha completa de propiedad y ajustes de
+                  precio.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedContacto(null)}
+                className="text-gray-400 hover:text-gray-600 text-lg leading-none"
+              >
+                ×
+              </button>
+            </div>
+
+            {editMsg && (
+              <div className="mb-2 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-2 py-1.5">
+                {editMsg}
+              </div>
+            )}
+
+            <form onSubmit={handleGuardarEdicionContacto} className="space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-medium text-gray-600 mb-1">
+                    Nombre del contacto
+                  </label>
+                  <input
+                    type="text"
+                    value={selectedContacto.nombre || ""}
+                    onChange={(e) =>
+                      setSelectedContacto((prev) =>
+                        prev
+                          ? { ...prev, nombre: e.target.value || null }
+                          : prev
+                      )
+                    }
+                    className="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-xs text-gray-800"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-medium text-gray-600 mb-1">
+                    Teléfono
+                  </label>
+                  <input
+                    type="text"
+                    value={selectedContacto.telefono || ""}
+                    onChange={(e) =>
+                      setSelectedContacto((prev) =>
+                        prev
+                          ? { ...prev, telefono: e.target.value || null }
+                          : prev
+                      )
+                    }
+                    className="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-xs text-gray-800"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-medium text-gray-600 mb-1">
+                    Email
+                  </label>
+                  <input
+                    type="email"
+                    value={selectedContacto.email || ""}
+                    onChange={(e) =>
+                      setSelectedContacto((prev) =>
+                        prev
+                          ? { ...prev, email: e.target.value || null }
+                          : prev
+                      )
+                    }
+                    className="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-xs text-gray-800"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-medium text-gray-600 mb-1">
+                    Dirección
+                  </label>
+                  <input
+                    type="text"
+                    value={selectedContacto.direccion || ""}
+                    onChange={(e) =>
+                      setSelectedContacto((prev) =>
+                        prev
+                          ? { ...prev, direccion: e.target.value || null }
+                          : prev
+                      )
+                    }
+                    className="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-xs text-gray-800"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-medium text-gray-600 mb-1">
+                    Tipología
+                  </label>
+                  <select
+                    value={selectedContacto.tipologia_propiedad || ""}
+                    onChange={(e) =>
+                      setSelectedContacto((prev) =>
+                        prev
+                          ? {
+                              ...prev,
+                              tipologia_propiedad:
+                                e.target.value || null,
+                            }
+                          : prev
+                      )
+                    }
+                    className="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-xs text-gray-800 bg-white"
+                  >
+                    <option value="">Seleccioná una opción</option>
+                    {TIPOLOGIAS.map((t) => (
+                      <option key={t} value={t}>
+                        {t}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[11px] font-medium text-gray-600 mb-1">
+                    Tipo de operación
+                  </label>
+                  <select
+                    value={selectedContacto.tipo_operacion || ""}
+                    onChange={(e) =>
+                      setSelectedContacto((prev) =>
+                        prev
+                          ? { ...prev, tipo_operacion: e.target.value || null }
+                          : prev
+                      )
+                    }
+                    className="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-xs text-gray-800 bg-white"
+                  >
+                    <option value="">Seleccioná una opción</option>
+                    {TIPOS_OPERACION.map((t) => (
+                      <option key={t} value={t}>
+                        {t}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-medium text-gray-600 mb-1">
+                    Zona / barrio
+                  </label>
+                  <input
+                    type="text"
+                    value={selectedContacto.zona || ""}
+                    onChange={(e) =>
+                      setSelectedContacto((prev) =>
+                        prev
+                          ? { ...prev, zona: e.target.value || null }
+                          : prev
+                      )
+                    }
+                    className="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-xs text-gray-800"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-medium text-gray-600 mb-1">
+                    Origen
+                  </label>
+                  <select
+                    value={selectedContacto.origen || ""}
+                    onChange={(e) =>
+                      setSelectedContacto((prev) =>
+                        prev
+                          ? { ...prev, origen: e.target.value || null }
+                          : prev
+                      )
+                    }
+                    className="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-xs text-gray-800 bg-white"
+                  >
+                    <option value="">Seleccioná una opción</option>
+                    {ORIGENES.map((o) => (
+                      <option key={o} value={o}>
+                        {o}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-medium text-gray-600 mb-1">
+                  Link de referencia
+                </label>
+                <input
+                  type="text"
+                  value={selectedContacto.link_fuente || ""}
+                  onChange={(e) =>
+                    setSelectedContacto((prev) =>
+                      prev
+                        ? { ...prev, link_fuente: e.target.value || null }
+                        : prev
+                    )
+                  }
+                  className="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-xs text-gray-800"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-medium text-gray-600 mb-1">
+                  Notas internas
+                </label>
+                <textarea
+                  value={selectedContacto.notas || ""}
+                  onChange={(e) =>
+                    setSelectedContacto((prev) =>
+                      prev
+                        ? { ...prev, notas: e.target.value || null }
+                        : prev
+                    )
+                  }
+                  rows={3}
+                  className="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-xs text-gray-800 resize-none"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setSelectedContacto(null)}
+                  className="rounded-lg border border-gray-300 px-4 py-1.5 text-xs text-gray-700 hover:bg-gray-50"
+                  disabled={editSaving}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={editSaving}
+                  className={`rounded-lg px-4 py-1.5 text-xs font-semibold text-white transition ${
+                    editSaving
+                      ? "bg-gray-400 cursor-not-allowed"
+                      : "bg-gray-900 hover:bg-black"
+                  }`}
+                >
+                  {editSaving ? "Guardando..." : "Guardar cambios"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
     </div>
   );

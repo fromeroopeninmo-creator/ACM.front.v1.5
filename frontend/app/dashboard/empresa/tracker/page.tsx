@@ -1,4 +1,3 @@
-// frontend/app/dashboard/empresa/tracker/page.tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -8,1888 +7,1778 @@ import { useAuth } from "@/context/AuthContext";
 export const dynamic = "force-dynamic";
 
 type EstadoPipeline =
+  | "sin_contactar"
+  | "primer_llamado"
+  | "seguimiento"
+  | "prelisting"
+  | "vai_factibilidad"
+  | "captacion"
+  | "reserva"
+  | "cierre"
+  | "descartado"
+  // legacy
   | "no_contactado"
   | "contactado"
   | "en_seguimiento"
-  | "captado"
-  | "descartado";
+  | "captado";
 
 interface TrackerContacto {
   id: string;
   empresa_id: string;
-  asesor_id: string | null;
-  nombre: string | null;
-  telefono: string | null;
-  email: string | null;
-  tipo_contacto: string | null;
-  estado_pipeline: EstadoPipeline | null;
-  tipologia_propiedad: string | null;
-  tipo_operacion: string | null;
-  zona: string | null;
-  origen: string | null;
-  link_fuente: string | null;
-  motivo_descartado: string | null;
-  notas: string | null;
-  direccion?: string | null; // <- nueva, asumiendo columna en BD
-  created_at: string;
-  updated_at: string;
+  created_at: string | null;
+  updated_at?: string | null;
+  nombre: string;
+  apellido?: string | null;
+  telefono?: string | null;
+  email?: string | null;
+  origen?: string | null;
+  tipologia?: string | null;
+  tipo_operacion?: string | null;
+  direccion?: string | null;
+  link_referencia?: string | null;
+  estado_pipeline?: EstadoPipeline | null;
+  motivo_descartado?: string | null;
+  notas?: string | null;
 }
 
 interface TrackerActividad {
   id: string;
   empresa_id: string;
-  asesor_id: string | null;
-  contacto_id: string;
-  etapa: string | null;
-  tipo: string | null;
-  resultado: string | null;
-  detalle: string | null;
-  proximo_contacto_at: string | null;
-  realizado_at: string;
-  es_venta_cerrada: boolean;
-  monto_operacion: number | null;
-  moneda: string | null;
-  fecha_cierre: string | null;
-  created_at: string;
+  contacto_id?: string | null;
+  tipo?: string | null;
+  fecha_programada?: string | null; // timestamptz
+  notas?: string | null;
+  created_at?: string | null;
 }
 
-const ESTADOS_PIPELINE: { value: EstadoPipeline; label: string }[] = [
-  { value: "no_contactado", label: "No contactado" },
-  { value: "contactado", label: "Contactado" },
-  { value: "en_seguimiento", label: "En seguimiento" },
-  { value: "captado", label: "Captado" },
-  { value: "descartado", label: "Descartado" },
+interface TrackerPropiedad {
+  id: string;
+  empresa_id: string;
+  contacto_id: string;
+  tipologia: string | null;
+  tipo_operacion: string | null;
+  direccion: string | null;
+  zona: string | null;
+  m2_lote: number | null;
+  m2_cubiertos: number | null;
+  precio_lista_inicial: number | null;
+  precio_actual: number | null;
+  precio_cierre: number | null;
+  moneda: string | null;
+  fecha_inicio_comercializacion: string | null;
+  fecha_cierre: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+  contacto?: {
+    nombre: string | null;
+    apellido: string | null;
+  } | null;
+}
+
+interface TrackerPrecioPropiedad {
+  id: string;
+  propiedad_id: string;
+  precio: number;
+  moneda: string | null;
+  fecha_cambio: string | null;
+  motivo: string | null;
+  created_at: string | null;
+}
+
+const ESTADOS_PIPELINE_LABEL: Record<EstadoPipeline, string> = {
+  sin_contactar: "Sin contactar",
+  primer_llamado: "Primer llamado",
+  seguimiento: "Seguimiento",
+  prelisting: "Prelisting",
+  vai_factibilidad: "VAI / Factibilidad",
+  captacion: "Captación",
+  reserva: "Reserva",
+  cierre: "Cierre",
+  descartado: "Descartado",
+
+  no_contactado: "Sin contactar",
+  contactado: "Primer llamado",
+  en_seguimiento: "Seguimiento",
+  captado: "Captación",
+};
+
+const ESTADOS_PIPELINE_OPCIONES: EstadoPipeline[] = [
+  "sin_contactar",
+  "primer_llamado",
+  "seguimiento",
+  "prelisting",
+  "vai_factibilidad",
+  "captacion",
+  "reserva",
+  "cierre",
+  "descartado",
 ];
 
-const TIPOLOGIAS = [
-  "Casa",
-  "Departamento",
-  "Dúplex",
-  "PH",
-  "Lote",
-  "Local comercial",
-  "Oficina",
-  "Galpón / Depósito",
-  "Cochera",
-  "Campo",
-  "Otro",
-];
-
-const TIPOS_OPERACION = [
-  "Venta",
-  "Alquiler",
-  "Alquiler temporal",
-  "Permuta / Canje",
-  "Otro",
-];
-
-const ORIGENES = [
-  "Llamado en frío",
+const ORIGENES_CONTACTO = [
   "Portal inmobiliario",
   "Redes sociales",
   "Referido",
   "Cartel / Walk-in",
   "Base propia",
   "Otro",
-];
-
-const ETAPAS_ACTIVIDAD = [
-  "Prospección",
-  "Presentación de servicio",
-  "Seguimiento",
-  "Visita a propiedad",
-  "Cierre",
-  "Post-venta",
-];
+] as const;
 
 const TIPOS_ACTIVIDAD = [
   "Llamada en frío",
   "Seguimiento",
+  "Prelisting",
+  "VAI",
+  "Factibilidad",
   "Reunión",
   "Muestra",
-];
+  "Reserva",
+  "Cierre",
+] as const;
 
-const RESULTADOS_ACTIVIDAD = [
-  "Sin respuesta",
-  "Contactado",
-  "Interesado",
-  "No interesado",
-  "Pedir que lo vuelva a llamar",
-];
+const TIPOLOGIAS = [
+  "Casa",
+  "Departamento",
+  "Dúplex",
+  "Local",
+  "Oficina",
+  "Galpón / Depósito",
+  "Cochera",
+  "Campo",
+] as const;
 
-type KpiRange = "30d" | "3m" | "6m" | "1y";
-type Section = "calendario" | "contactos" | "captadas";
+const TIPOS_OPERACION = ["Venta", "Alquiler", "Alquiler temporal", "Otro"] as const;
 
-function startOfDay(date: Date) {
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate(), 0, 0, 0, 0);
-}
+type RangoKPI = "30d" | "90d" | "180d" | "365d";
 
-function endOfDay(date: Date) {
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate(), 23, 59, 59, 999);
-}
+const RANGO_LABEL: Record<RangoKPI, string> = {
+  "30d": "Últimos 30 días",
+  "90d": "Últimos 3 meses",
+  "180d": "Últimos 6 meses",
+  "365d": "Último año",
+};
 
-function addMonths(date: Date, months: number) {
-  const d = new Date(date);
-  d.setMonth(d.getMonth() + months);
-  return d;
-}
-
-function addDays(date: Date, days: number) {
-  const d = new Date(date);
-  d.setDate(d.getDate() + days);
-  return d;
-}
-
-function formatDateTime(dt: string | null) {
-  if (!dt) return "-";
-  try {
-    const d = new Date(dt);
-    return d.toLocaleString("es-AR", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  } catch {
-    return dt;
+const normalizarEstado = (raw?: string | null): EstadoPipeline => {
+  if (!raw) return "sin_contactar";
+  const v = raw as EstadoPipeline;
+  switch (v) {
+    case "no_contactado":
+      return "sin_contactar";
+    case "contactado":
+      return "primer_llamado";
+    case "en_seguimiento":
+      return "seguimiento";
+    case "captado":
+      return "captacion";
+    default:
+      return v;
   }
-}
+};
 
-function formatDate(dt: string | null) {
-  if (!dt) return "-";
-  try {
-    const d = new Date(dt);
-    return d.toLocaleDateString("es-AR", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "2-digit",
-    });
-  } catch {
-    return dt;
-  }
-}
+const startOfDay = (d: Date) =>
+  new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
 
-function formatCurrency(val: number | null | undefined) {
-  if (val == null || !isFinite(val)) return "-";
+const startOfMonth = (d: Date) => new Date(d.getFullYear(), d.getMonth(), 1);
+
+const addMonths = (d: Date, diff: number) =>
+  new Date(d.getFullYear(), d.getMonth() + diff, 1);
+
+const isSameDay = (a: Date, b: Date) =>
+  a.getFullYear() === b.getFullYear() &&
+  a.getMonth() === b.getMonth() &&
+  a.getDate() === b.getDate();
+
+const fmtCurrency = (value?: number | null, currency: string = "ARS") => {
+  if (value == null || !isFinite(value)) return "—";
   return new Intl.NumberFormat("es-AR", {
     style: "currency",
-    currency: "ARS",
+    currency,
     maximumFractionDigits: 0,
-  }).format(val);
+  }).format(value);
+};
+
+const fmtDate = (value?: string | null) => {
+  if (!value) return "—";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString("es-AR");
+};
+
+const diffDays = (from?: string | null, to?: string | null) => {
+  if (!from) return null;
+  const a = new Date(from);
+  const b = to ? new Date(to) : new Date();
+  if (Number.isNaN(a.getTime()) || Number.isNaN(b.getTime())) return null;
+  const ms = b.getTime() - a.getTime();
+  return Math.floor(ms / (1000 * 60 * 60 * 24));
+};
+
+function calcDesde(now: Date, rango: RangoKPI) {
+  const msPerDay = 1000 * 60 * 60 * 24;
+  const days =
+    rango === "30d" ? 30 : rango === "90d" ? 90 : rango === "180d" ? 180 : 365;
+  return new Date(now.getTime() - days * msPerDay);
 }
 
-function getMonthLabel(d: Date) {
-  return d.toLocaleDateString("es-AR", { month: "long", year: "numeric" });
+function resolveEtapaActividad(tipo: string): string {
+  switch (tipo) {
+    case "Llamada en frío":
+      return "Primer llamado";
+    case "Seguimiento":
+      return "Seguimiento";
+    case "Prelisting":
+      return "Prelisting";
+    case "VAI":
+    case "Factibilidad":
+      return "VAI / Factibilidad";
+    case "Reserva":
+      return "Reserva";
+    case "Cierre":
+      return "Cierre";
+    case "Muestra":
+      return "Muestra";
+    case "Reunión":
+      return "Reunión";
+    default:
+      return "Actividad";
+  }
 }
 
-function getStartOfMonth(d: Date) {
-  return new Date(d.getFullYear(), d.getMonth(), 1);
+type Section = "calendario" | "contactos" | "propiedades";
+
+function classNames(...values: Array<string | false | null | undefined>) {
+  return values.filter(Boolean).join(" ");
 }
 
-function getEndOfMonth(d: Date) {
-  return new Date(d.getFullYear(), d.getMonth() + 1, 0);
-}
-
-function getStartOfWeek(d: Date) {
-  const day = d.getDay(); // 0 = domingo
-  const diff = (day === 0 ? -6 : 1) - day; // arrancar en lunes
-  return addDays(d, diff);
-}
-
-function isSameDay(a: Date, b: Date) {
+function KpiCard({
+  title,
+  value,
+  subtitle,
+}: {
+  title: string;
+  value: number;
+  subtitle?: string;
+}) {
   return (
-    a.getFullYear() === b.getFullYear() &&
-    a.getMonth() === b.getMonth() &&
-    a.getDate() === b.getDate()
+    <div className="rounded-2xl border border-neutral-800 bg-neutral-950/80 p-4 shadow-[0_16px_40px_rgba(0,0,0,0.9)]">
+      <p className="text-[11px] uppercase tracking-[0.18em] text-neutral-500">
+        {title}
+      </p>
+      <p className="mt-2 text-2xl font-semibold text-neutral-50">{value}</p>
+      {subtitle && (
+        <p className="mt-1 text-[11px] text-neutral-400">{subtitle}</p>
+      )}
+    </div>
   );
 }
 
 export default function EmpresaTrackerPage() {
   const { user } = useAuth();
+  const empresaId = user?.empresa_id ?? null;
 
-  const [empresaId, setEmpresaId] = useState<string | null>(null);
-
-  const [loadingEmpresa, setLoadingEmpresa] = useState(true);
-  const [loadingData, setLoadingData] = useState(true);
+  const [loading, setLoading] = useState(true);
+  const [activeSection, setActiveSection] = useState<Section>("calendario");
 
   const [contactos, setContactos] = useState<TrackerContacto[]>([]);
   const [actividades, setActividades] = useState<TrackerActividad[]>([]);
+  const [propiedades, setPropiedades] = useState<TrackerPropiedad[]>([]);
 
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [selectedDate, setSelectedDate] = useState<Date>(startOfDay(new Date()));
+  const [monthCursor, setMonthCursor] = useState<Date>(
+    startOfMonth(new Date())
+  );
+  const [rangoKPIs, setRangoKPIs] = useState<RangoKPI>("90d");
 
-  // Filtros & UI
-  const [estadoFiltro, setEstadoFiltro] = useState<EstadoPipeline | "todos">("todos");
-  const [searchNombre, setSearchNombre] = useState("");
-  const [kpiRange, setKpiRange] = useState<KpiRange>("30d");
-  const [activeSection, setActiveSection] = useState<Section>("calendario");
-
-  // Calendario
-  const [currentMonth, setCurrentMonth] = useState<Date>(() => {
-    const now = new Date();
-    return new Date(now.getFullYear(), now.getMonth(), 1);
-  });
-  const [selectedDate, setSelectedDate] = useState<Date | null>(() => new Date());
-
-  // Form nuevo prospecto (modal)
+  // Nuevo contacto (modal)
+  const [showNuevoContacto, setShowNuevoContacto] = useState(false);
   const [ncNombre, setNcNombre] = useState("");
+  const [ncApellido, setNcApellido] = useState("");
   const [ncTelefono, setNcTelefono] = useState("");
   const [ncEmail, setNcEmail] = useState("");
-  const [ncTipologia, setNcTipologia] = useState<string>("");
-  const [ncTipoOperacion, setNcTipoOperacion] = useState<string>("");
-  const [ncZona, setNcZona] = useState("");
+  const [ncOrigen, setNcOrigen] =
+    useState<(typeof ORIGENES_CONTACTO)[number]>("Portal inmobiliario");
+  const [ncTipologia, setNcTipologia] =
+    useState<(typeof TIPOLOGIAS)[number]>("Departamento");
+  const [ncTipoOperacion, setNcTipoOperacion] =
+    useState<(typeof TIPOS_OPERACION)[number]>("Venta");
   const [ncDireccion, setNcDireccion] = useState("");
-  const [ncOrigen, setNcOrigen] = useState<string>("");
-  const [ncLinkFuente, setNcLinkFuente] = useState("");
-  const [ncEstadoPipeline, setNcEstadoPipeline] = useState<EstadoPipeline>("no_contactado");
+  const [ncLinkReferencia, setNcLinkReferencia] = useState("");
+  const [ncEstadoPipeline, setNcEstadoPipeline] =
+    useState<EstadoPipeline>("sin_contactar");
   const [ncNotas, setNcNotas] = useState("");
   const [ncSaving, setNcSaving] = useState(false);
-  const [ncSuccessMsg, setNcSuccessMsg] = useState<string | null>(null);
-  const [showNuevoModal, setShowNuevoModal] = useState(false);
 
-  // Ver/Editar contacto (modal simple por ahora)
-  const [selectedContacto, setSelectedContacto] = useState<TrackerContacto | null>(null);
-  const [editSaving, setEditSaving] = useState(false);
-  const [editMsg, setEditMsg] = useState<string | null>(null);
+  // Contacto seleccionado (ficha)
+  const [selectedContacto, setSelectedContacto] =
+    useState<TrackerContacto | null>(null);
 
-  // Alta tarea en calendario
+  // Nueva actividad (modal)
+  const [showNuevaActividadModal, setShowNuevaActividadModal] = useState(false);
   const [newActTipo, setNewActTipo] = useState<string>("Llamada en frío");
-  const [newActContactoId, setNewActContactoId] = useState<string>("");
-  const [newActClienteInteresado, setNewActClienteInteresado] = useState<string>("");
-  const [newActHora, setNewActHora] = useState<string>("");
-  const [newActNotas, setNewActNotas] = useState<string>("");
+  const [newActContactoId, setNewActContactoId] = useState<string | null>(null);
+  const [newActHora, setNewActHora] = useState("10:00");
+  const [newActNotas, setNewActNotas] = useState("");
   const [newActSaving, setNewActSaving] = useState(false);
   const [newActMsg, setNewActMsg] = useState<string | null>(null);
 
-  const accent = "#E6A930";
+  // Propiedad captada (modal desde ficha contacto)
+  const [showPropiedadModal, setShowPropiedadModal] = useState(false);
+  const [propTipologia, setPropTipologia] =
+    useState<(typeof TIPOLOGIAS)[number]>("Departamento");
+  const [propTipoOperacion, setPropTipoOperacion] =
+    useState<(typeof TIPOS_OPERACION)[number]>("Venta");
+  const [propDireccion, setPropDireccion] = useState("");
+  const [propZona, setPropZona] = useState("");
+  const [propM2Lote, setPropM2Lote] = useState<string>("");
+  const [propM2Cubiertos, setPropM2Cubiertos] = useState<string>("");
+  const [propPrecioInicial, setPropPrecioInicial] = useState<string>("");
+  const [propMoneda, setPropMoneda] = useState("ARS");
+  const [propSaving, setPropSaving] = useState(false);
 
-  // 1) Resolver empresa_id a partir del usuario actual
-  useEffect(() => {
-    const fetchEmpresa = async () => {
-      if (!user?.id) {
-        setLoadingEmpresa(false);
-        return;
-      }
-      setLoadingEmpresa(true);
-      setErrorMsg(null);
-      try {
-        const { data, error } = await supabase
-          .from("empresas")
-          .select("id")
-          .or(`user_id.eq.${user.id},id_usuario.eq.${user.id}`)
-          .maybeSingle();
+  // Ver / editar propiedad (desde sección Propiedades captadas)
+  const [selectedPropiedad, setSelectedPropiedad] =
+    useState<TrackerPropiedad | null>(null);
+  const [showPropiedadDetalleModal, setShowPropiedadDetalleModal] =
+    useState(false);
+  const [propDetallePrecioCierre, setPropDetallePrecioCierre] =
+    useState<string>("");
+  const [propDetalleFechaCierre, setPropDetalleFechaCierre] =
+    useState<string>("");
+  const [propDetalleSaving, setPropDetalleSaving] = useState(false);
 
-        if (error) {
-          console.error("Error buscando empresa para tracker:", error);
-          setErrorMsg("No se pudo identificar la empresa asociada al usuario.");
-          setEmpresaId(null);
-        } else {
-          setEmpresaId(data?.id ?? null);
-        }
-      } catch (err) {
-        console.error("Error inesperado buscando empresa:", err);
-        setErrorMsg("Error al buscar la empresa asociada.");
-        setEmpresaId(null);
-      } finally {
-        setLoadingEmpresa(false);
-      }
-    };
-
-    fetchEmpresa();
-  }, [user]);
-
-  // 2) Cargar contactos + actividades de la empresa
-  useEffect(() => {
-    const fetchData = async () => {
-      if (!empresaId) {
-        setLoadingData(false);
-        return;
-      }
-      setLoadingData(true);
-      setErrorMsg(null);
-
-      try {
-        const { data: contactosData, error: contactosError } = await supabase
-          .from("tracker_contactos")
-          .select("*")
-          .eq("empresa_id", empresaId)
-          .order("created_at", { ascending: false });
-
-        if (contactosError) {
-          console.error("Error cargando contactos:", contactosError);
-          throw contactosError;
-        }
-
-        const { data: actividadesData, error: actividadesError } = await supabase
-          .from("tracker_actividades")
-          .select("*")
-          .eq("empresa_id", empresaId)
-          .order("proximo_contacto_at", { ascending: true });
-
-        if (actividadesError) {
-          console.error("Error cargando actividades:", actividadesError);
-          throw actividadesError;
-        }
-
-        setContactos((contactosData ?? []) as TrackerContacto[]);
-        setActividades((actividadesData ?? []) as TrackerActividad[]);
-      } catch (err: any) {
-        console.error("Error cargando datos del tracker:", err);
-        setErrorMsg("No se pudieron cargar los datos del tracker.");
-      } finally {
-        setLoadingData(false);
-      }
-    };
-
-    fetchData();
-  }, [empresaId]);
-
-  const loading = loadingEmpresa || loadingData;
-
-  // Mapa de contactos por id para usar en actividades
-  const contactosById = useMemo(() => {
-    const map = new Map<string, TrackerContacto>();
-    contactos.forEach((c) => map.set(c.id, c));
-    return map;
-  }, [contactos]);
-
-  // Actividades de HOY y MAÑANA (para las cards del header)
-  const { actividadesHoy, actividadesManiana } = useMemo(() => {
-    const hoy = startOfDay(new Date());
-    const finHoy = endOfDay(hoy);
-    const manana = startOfDay(addDays(hoy, 1));
-    const finManiana = endOfDay(manana);
-
-    const hoyList: TrackerActividad[] = [];
-    const mananaList: TrackerActividad[] = [];
-
-    actividades.forEach((a) => {
-      if (!a.proximo_contacto_at) return;
-      const d = new Date(a.proximo_contacto_at);
-      if (d >= hoy && d <= finHoy) hoyList.push(a);
-      else if (d >= manana && d <= finManiana) mananaList.push(a);
+  // Historial de precios de la propiedad seleccionada
+  const [preciosPropiedad, setPreciosPropiedad] = useState<
+    TrackerPrecioPropiedad[]
+  >([]);
+  const [newPrecioValor, setNewPrecioValor] = useState<string>("");
+  const [newPrecioMotivo, setNewPrecioMotivo] = useState<string>("");
+  const [newPrecioSaving, setNewPrecioSaving] = useState(false);
+  const actividadesDelDia = useMemo(() => {
+    return actividades.filter((a) => {
+      if (!a.fecha_programada) return false;
+      const d = new Date(a.fecha_programada);
+      return isSameDay(d, selectedDate);
     });
+  }, [actividades, selectedDate]);
 
-    hoyList.sort(
-      (a, b) =>
-        new Date(a.proximo_contacto_at ?? a.created_at).getTime() -
-        new Date(b.proximo_contacto_at ?? b.created_at).getTime()
-    );
-    mananaList.sort(
-      (a, b) =>
-        new Date(a.proximo_contacto_at ?? a.created_at).getTime() -
-        new Date(b.proximo_contacto_at ?? b.created_at).getTime()
-    );
-
-    return { actividadesHoy: hoyList, actividadesManiana: mananaList };
+  const actividadesPorContacto = useMemo(() => {
+    const map = new Map<string, TrackerActividad[]>();
+    actividades.forEach((a) => {
+      if (!a.contacto_id) return;
+      const prev = map.get(a.contacto_id) ?? [];
+      prev.push(a);
+      map.set(a.contacto_id, prev);
+    });
+    return map;
   }, [actividades]);
 
-  // KPIs con rango
-  const { kpiNuevos, kpiCaptados, kpiCierres } = useMemo(() => {
+  const { prospectos, prelisting, captaciones, cierres } = useMemo(() => {
     const ahora = new Date();
-    let desde: Date;
+    const desde = calcDesde(ahora, rangoKPIs);
 
-    switch (kpiRange) {
-      case "3m":
-        desde = addMonths(ahora, -3);
-        break;
-      case "6m":
-        desde = addMonths(ahora, -6);
-        break;
-      case "1y":
-        desde = addMonths(ahora, -12);
-        break;
-      case "30d":
-      default:
-        desde = addDays(ahora, -30);
-        break;
-    }
-
-    let nuevos = 0;
-    let captados = 0;
-    let cierresMonto = 0;
+    let prospectos = 0;
+    let prelisting = 0;
+    let captaciones = 0;
+    let cierres = 0;
 
     contactos.forEach((c) => {
       const created = c.created_at ? new Date(c.created_at) : null;
       if (!created || created < desde) return;
-      nuevos += 1;
-      if (c.estado_pipeline === "captado") captados += 1;
+
+      const estado = normalizarEstado(c.estado_pipeline);
+      prospectos += 1;
+
+      if (estado === "prelisting") prelisting += 1;
+      if (estado === "captacion") captaciones += 1;
+      if (estado === "cierre") cierres += 1;
     });
 
-    actividades.forEach((a) => {
-      if (!a.es_venta_cerrada) return;
-      const fecha = a.fecha_cierre
-        ? new Date(a.fecha_cierre)
-        : new Date(a.created_at);
-      if (fecha >= desde) {
-        cierresMonto += Number(a.monto_operacion || 0);
-      }
-    });
+    return { prospectos, prelisting, captaciones, cierres };
+  }, [contactos, rangoKPIs]);
 
-    return {
-      kpiNuevos: nuevos,
-      kpiCaptados: captados,
-      kpiCierres: cierresMonto,
-    };
-  }, [contactos, actividades, kpiRange]);
+  const propiedadesConContacto = useMemo(() => {
+    return propiedades.map((p) => ({
+      ...p,
+      contactoNombre:
+        p.contacto?.nombre || p.contacto?.apellido
+          ? `${p.contacto?.nombre ?? ""} ${p.contacto?.apellido ?? ""}`.trim()
+          : "",
+    }));
+  }, [propiedades]);
 
-  // Contactos filtrados para la tabla de "Contactos / Captaciones"
-  const contactosFiltrados = useMemo(() => {
-    const search = searchNombre.trim().toLowerCase();
-    return contactos.filter((c) => {
-      const nombre = `${c.nombre ?? ""} ${c.email ?? ""}`.toLowerCase();
-      const matchSearch = search === "" || nombre.includes(search);
-      const matchEstado =
-        estadoFiltro === "todos" ||
-        (c.estado_pipeline ?? "no_contactado") === estadoFiltro;
-      return matchSearch && matchEstado;
-    });
-  }, [contactos, estadoFiltro, searchNombre]);
-
-  // Contactos captados para la sección "Propiedades captadas"
-  const contactosCaptados = useMemo(
-    () => contactos.filter((c) => c.estado_pipeline === "captado"),
-    [contactos]
-  );
-
-  // Estructura de calendario: días del mes visible
-  const calendarDays = useMemo(() => {
-    const startMonth = getStartOfMonth(currentMonth);
-    const endMonth = getEndOfMonth(currentMonth);
-    const startGrid = getStartOfWeek(startMonth);
-
-    const days: { date: Date; isCurrentMonth: boolean }[] = [];
-    let current = new Date(startGrid);
-
-    while (current <= endMonth || days.length < 42) {
-      days.push({
-        date: new Date(current),
-        isCurrentMonth:
-          current.getMonth() === currentMonth.getMonth() &&
-          current.getFullYear() === currentMonth.getFullYear(),
-      });
-      current = addDays(current, 1);
-      if (days.length >= 42 && current > endMonth) break;
+  // Carga inicial
+  useEffect(() => {
+    if (!empresaId) {
+      setLoading(false);
+      return;
     }
 
-    return days;
-  }, [currentMonth]);
+    const fetchAll = async () => {
+      try {
+        setLoading(true);
 
-  // Actividades por día (para calendar & lista de día seleccionado)
-  const activitiesByDay = useMemo(() => {
-    const map = new Map<string, TrackerActividad[]>();
-    actividades.forEach((a) => {
-      if (!a.proximo_contacto_at) return;
-      const d = new Date(a.proximo_contacto_at);
-      const key = d.toISOString().slice(0, 10); // YYYY-MM-DD
-      if (!map.has(key)) map.set(key, []);
-      map.get(key)!.push(a);
-    });
-    return map;
-  }, [actividades]);
+        const [{ data: cData }, { data: aData }, { data: pData }] =
+          await Promise.all([
+            supabase
+              .from("tracker_contactos")
+              .select("*")
+              .eq("empresa_id", empresaId)
+              .order("created_at", { ascending: false }),
+            supabase
+              .from("tracker_actividades")
+              .select("*")
+              .eq("empresa_id", empresaId)
+              .order("fecha_programada", { ascending: true }),
+            supabase
+              .from("tracker_propiedades")
+              .select(
+                `
+                  id,
+                  empresa_id,
+                  contacto_id,
+                  tipologia,
+                  tipo_operacion,
+                  direccion,
+                  zona,
+                  m2_lote,
+                  m2_cubiertos,
+                  precio_lista_inicial,
+                  precio_actual,
+                  precio_cierre,
+                  moneda,
+                  fecha_inicio_comercializacion,
+                  fecha_cierre,
+                  created_at,
+                  updated_at,
+                  contacto:tracker_contactos (nombre, apellido)
+                `
+              )
+              .eq("empresa_id", empresaId)
+              .order("created_at", { ascending: false }),
+          ]);
 
-  const selectedDayActivities = useMemo(() => {
-    if (!selectedDate) return [];
-    const key = selectedDate.toISOString().slice(0, 10);
-    return activitiesByDay.get(key) ?? [];
-  }, [selectedDate, activitiesByDay]);
-
-  // Fecha última llamada por contacto (buscando tipo que contenga "llam")
-  const ultimaLlamadaPorContacto = useMemo(() => {
-    const map = new Map<string, string>(); // contacto_id -> ISO fecha
-    actividades.forEach((a) => {
-      if (!a.tipo) return;
-      if (!a.tipo.toLowerCase().includes("llam")) return;
-      const current = map.get(a.contacto_id);
-      const fecha = a.realizado_at || a.created_at;
-      if (!current || new Date(fecha) > new Date(current)) {
-        map.set(a.contacto_id, fecha);
+        setContactos((cData as TrackerContacto[]) ?? []);
+        setActividades((aData as TrackerActividad[]) ?? []);
+        setPropiedades((pData as TrackerPropiedad[]) ?? []);
+      } catch (err) {
+        console.error("Error cargando tracker:", err);
+      } finally {
+        setLoading(false);
       }
-    });
-    return map;
-  }, [actividades]);
+    };
 
-  // Crear nuevo prospecto
-  const handleNuevoContacto = async (e: React.FormEvent) => {
+    fetchAll();
+  }, [empresaId]);
+
+  const handleCrearContacto = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!empresaId) return;
-
-    setNcSaving(true);
-    setNcSuccessMsg(null);
-    setErrorMsg(null);
+    if (!ncNombre.trim()) {
+      alert("El nombre es obligatorio");
+      return;
+    }
 
     try {
+      setNcSaving(true);
+
       const { data, error } = await supabase
         .from("tracker_contactos")
-        .insert([
-          {
-            empresa_id: empresaId,
-            asesor_id: null,
-            nombre: ncNombre || null,
-            telefono: ncTelefono || null,
-            email: ncEmail || null,
-            tipo_contacto: "prospecto",
-            estado_pipeline: ncEstadoPipeline,
-            tipologia_propiedad: ncTipologia || null,
-            tipo_operacion: ncTipoOperacion || null,
-            zona: ncZona || null,
-            origen: ncOrigen || null,
-            link_fuente: ncLinkFuente || null,
-            motivo_descartado: null,
-            notas: ncNotas || null,
-            direccion: ncDireccion || null,
-          },
-        ])
-        .select()
+        .insert({
+          empresa_id: empresaId,
+          nombre: ncNombre.trim(),
+          apellido: ncApellido.trim() || null,
+          telefono: ncTelefono.trim() || null,
+          email: ncEmail.trim() || null,
+          origen: ncOrigen,
+          tipologia: ncTipologia,
+          tipo_operacion: ncTipoOperacion,
+          direccion: ncDireccion.trim() || null,
+          link_referencia: ncLinkReferencia.trim() || null,
+          estado_pipeline: ncEstadoPipeline,
+          notas: ncNotas.trim() || null,
+        })
+        .select("*")
         .single();
 
-      if (error) {
-        console.error("Error creando contacto:", error);
-        setErrorMsg("No se pudo crear el prospecto. Intentalo de nuevo.");
-        return;
-      }
+      if (error) throw error;
 
-      setNcSuccessMsg("Prospecto creado correctamente.");
+      setContactos((prev) => [data as TrackerContacto, ...prev]);
+
+      setShowNuevoContacto(false);
       setNcNombre("");
+      setNcApellido("");
       setNcTelefono("");
       setNcEmail("");
-      setNcTipologia("");
-      setNcTipoOperacion("");
-      setNcZona("");
+      setNcOrigen("Portal inmobiliario");
+      setNcTipologia("Departamento");
+      setNcTipoOperacion("Venta");
       setNcDireccion("");
-      setNcOrigen("");
-      setNcLinkFuente("");
-      setNcEstadoPipeline("no_contactado");
+      setNcLinkReferencia("");
+      setNcEstadoPipeline("sin_contactar");
       setNcNotas("");
-
-      // Recargar contactos (o agregar el creado)
-      if (data) {
-        setContactos((prev) => [data as TrackerContacto, ...prev]);
-      }
-      setShowNuevoModal(false);
     } catch (err) {
-      console.error("Error inesperado creando contacto:", err);
-      setErrorMsg("Ocurrió un error al crear el prospecto.");
+      console.error("Error creando contacto:", err);
+      alert("No se pudo crear el contacto");
     } finally {
       setNcSaving(false);
-      setTimeout(() => setNcSuccessMsg(null), 3000);
     }
   };
 
-  // Actualizar estado de un contacto (select en tabla)
   const handleChangeEstadoContacto = async (
     contactoId: string,
     nuevoEstado: EstadoPipeline
   ) => {
     try {
-      const { error } = await supabase
-        .from("tracker_contactos")
-        .update({ estado_pipeline: nuevoEstado })
-        .eq("id", contactoId);
+      let motivo_descartado: string | null = null;
 
-      if (error) {
-        console.error("Error actualizando estado del contacto:", error);
-        setErrorMsg("No se pudo actualizar el estado del contacto.");
-        return;
+      if (nuevoEstado === "descartado") {
+        motivo_descartado =
+          window.prompt(
+            "Motivo del descarte (este dato queda guardado en la ficha):"
+          ) || null;
       }
 
-      setContactos((prev) =>
-        prev.map((c) =>
-          c.id === contactoId ? { ...c, estado_pipeline: nuevoEstado } : c
-        )
-      );
-    } catch (err) {
-      console.error("Error inesperado actualizando estado:", err);
-      setErrorMsg("Error al actualizar el estado.");
-    }
-  };
-
-  // Eliminar contacto (simple; puede fallar si tenés FKs duros)
-  const handleEliminarContacto = async (contactoId: string) => {
-    const ok = window.confirm(
-      "¿Seguro que querés eliminar este contacto? Si tiene actividades asociadas, es posible que la eliminación falle."
-    );
-    if (!ok) return;
-
-    try {
-      const { error } = await supabase
-        .from("tracker_contactos")
-        .delete()
-        .eq("id", contactoId);
-
-      if (error) {
-        console.error("Error eliminando contacto:", error);
-        setErrorMsg(
-          "No se pudo eliminar el contacto. Es posible que tenga actividades asociadas."
-        );
-        return;
-      }
-
-      setContactos((prev) => prev.filter((c) => c.id !== contactoId));
-    } catch (err) {
-      console.error("Error inesperado eliminando contacto:", err);
-      setErrorMsg("Ocurrió un error al eliminar el contacto.");
-    }
-  };
-
-  // Guardar edición de contacto (modal Ver/Editar)
-  const handleGuardarEdicionContacto = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedContacto) return;
-
-    setEditSaving(true);
-    setEditMsg(null);
-    setErrorMsg(null);
-
-    try {
-      const { id, ...rest } = selectedContacto;
       const { error } = await supabase
         .from("tracker_contactos")
         .update({
-          nombre: rest.nombre,
-          telefono: rest.telefono,
-          email: rest.email,
-          tipologia_propiedad: rest.tipologia_propiedad,
-          tipo_operacion: rest.tipo_operacion,
-          zona: rest.zona,
-          origen: rest.origen,
-          link_fuente: rest.link_fuente,
-          notas: rest.notas,
-          direccion: rest.direccion ?? null,
+          estado_pipeline: nuevoEstado,
+          motivo_descartado,
         })
-        .eq("id", id);
+        .eq("id", contactoId);
 
-      if (error) {
-        console.error("Error actualizando contacto:", error);
-        setErrorMsg("No se pudo actualizar el contacto.");
-        return;
-      }
+      if (error) throw error;
 
       setContactos((prev) =>
-        prev.map((c) => (c.id === id ? { ...c, ...rest } : c))
+        prev.map((c) =>
+          c.id === contactoId
+            ? {
+                ...c,
+                estado_pipeline: nuevoEstado,
+                motivo_descartado:
+                  nuevoEstado === "descartado" ? motivo_descartado : null,
+              }
+            : c
+        )
       );
-
-      setEditMsg("Datos actualizados correctamente.");
-      setTimeout(() => {
-        setEditMsg(null);
-        setSelectedContacto(null);
-      }, 1200);
     } catch (err) {
-      console.error("Error inesperado actualizando contacto:", err);
-      setErrorMsg("Error al actualizar el contacto.");
-    } finally {
-      setEditSaving(false);
+      console.error(err);
+      alert("No se pudo actualizar el estado del contacto");
     }
   };
 
-  // Alta de nueva actividad (tarea) en el calendario
   const handleNuevaActividad = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!empresaId) return;
 
-    setNewActSaving(true);
-    setNewActMsg(null);
-    setErrorMsg(null);
-
     try {
-      let contactoId = newActContactoId || "";
+      setNewActSaving(true);
+      setNewActMsg(null);
 
-      // Si no se eligió contacto pero hay "cliente interesado", creamos uno minimal
-      if (!contactoId && newActClienteInteresado.trim()) {
-        const { data: nuevoContacto, error: contactoError } = await supabase
-          .from("tracker_contactos")
-          .insert([
-            {
-              empresa_id: empresaId,
-              asesor_id: null,
-              nombre: newActClienteInteresado.trim(),
-              tipo_contacto: "cliente_interesado",
-              estado_pipeline: "en_seguimiento",
-              tipologia_propiedad: null,
-              tipo_operacion: null,
-              zona: null,
-              origen: "Cliente interesado",
-              link_fuente: null,
-              motivo_descartado: null,
-              notas: null,
-              direccion: null,
-            },
-          ])
-          .select()
-          .single();
+      const [hours, mins] = newActHora.split(":").map((v) => parseInt(v, 10));
+      const fecha = new Date(selectedDate);
+      fecha.setHours(hours || 0, mins || 0, 0, 0);
 
-        if (contactoError || !nuevoContacto) {
-          console.error("Error creando cliente interesado:", contactoError);
-          setErrorMsg(
-            "No se pudo crear el cliente interesado. Probá eligiendo un contacto existente."
-          );
-          setNewActSaving(false);
-          return;
-        }
-
-        contactoId = (nuevoContacto as any).id as string;
-        setContactos((prev) => [nuevoContacto as TrackerContacto, ...prev]);
-      }
-
-      if (!contactoId) {
-        setErrorMsg(
-          "Elegí un contacto existente o completá el nombre del cliente interesado."
-        );
-        setNewActSaving(false);
-        return;
-      }
-
-      // Armar proximo_contacto_at combinando fecha seleccionada + hora
-      const base = selectedDate ? new Date(selectedDate) : new Date();
-      let proximo = new Date(
-        base.getFullYear(),
-        base.getMonth(),
-        base.getDate(),
-        9,
-        0,
-        0,
-        0
-      );
-      if (newActHora) {
-        const [hh, mm] = newActHora.split(":");
-        const h = parseInt(hh || "9", 10);
-        const m = parseInt(mm || "0", 10);
-        proximo = new Date(
-          base.getFullYear(),
-          base.getMonth(),
-          base.getDate(),
-          isFinite(h) ? h : 9,
-          isFinite(m) ? m : 0,
-          0,
-          0
-        );
-      }
-
-      // Etapa sugerida según tipo
-      let etapa: string | null = null;
-      if (newActTipo === "Llamada en frío") etapa = "Prospección";
-      else if (newActTipo === "Seguimiento") etapa = "Seguimiento";
-      else if (newActTipo === "Reunión") etapa = "Reunión";
-      else if (newActTipo === "Muestra") etapa = "Visita a propiedad";
-
-      const now = new Date();
-      const { data: nuevaActividad, error: actError } = await supabase
+      const { data, error } = await supabase
         .from("tracker_actividades")
-        .insert([
-          {
-            empresa_id: empresaId,
-            asesor_id: null,
-            contacto_id: contactoId,
-            etapa,
-            tipo: newActTipo,
-            resultado: null,
-            detalle: newActNotas || null,
-            proximo_contacto_at: proximo.toISOString(),
-            realizado_at: now.toISOString(),
-            es_venta_cerrada: false,
-            monto_operacion: null,
-            moneda: null,
-            fecha_cierre: null,
-          },
-        ])
-        .select()
+        .insert({
+          empresa_id: empresaId,
+          contacto_id: newActContactoId,
+          tipo: newActTipo,
+          fecha_programada: fecha.toISOString(),
+          notas: newActNotas.trim() || null,
+        })
+        .select("*")
         .single();
 
-      if (actError || !nuevaActividad) {
-        console.error("Error creando actividad:", actError);
-        setErrorMsg("No se pudo crear la actividad.");
-        setNewActSaving(false);
-        return;
-      }
+      if (error) throw error;
 
-      setActividades((prev) => [...prev, nuevaActividad as TrackerActividad]);
+      setActividades((prev) => [...prev, data as TrackerActividad]);
 
-      setNewActMsg("Tarea agregada al calendario.");
+      setNewActMsg("Actividad registrada en el calendario.");
+      setTimeout(() => setNewActMsg(null), 2500);
+
+      setShowNuevaActividadModal(false);
       setNewActTipo("Llamada en frío");
-      setNewActContactoId("");
-      setNewActClienteInteresado("");
-      setNewActHora("");
+      setNewActContactoId(null);
+      setNewActHora("10:00");
       setNewActNotas("");
-
-      setTimeout(() => setNewActMsg(null), 2000);
     } catch (err) {
-      console.error("Error inesperado creando actividad:", err);
-      setErrorMsg("Ocurrió un error al crear la actividad.");
+      console.error("Error creando actividad:", err);
+      alert("No se pudo crear la actividad");
     } finally {
       setNewActSaving(false);
     }
   };
 
-  const kpiRangeLabel = (range: KpiRange) => {
-    switch (range) {
-      case "30d":
-        return "Últimos 30 días";
-      case "3m":
-        return "Últimos 3 meses";
-      case "6m":
-        return "Últimos 6 meses";
-      case "1y":
-        return "Último año";
-      default:
-        return "";
+  const handleCrearPropiedad = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!empresaId || !selectedContacto) return;
+    if (!propPrecioInicial.trim()) {
+      alert("Ingresá un precio inicial");
+      return;
+    }
+
+    try {
+      setPropSaving(true);
+      const precioN = parseFloat(propPrecioInicial.replace(/\./g, "").replace(",", "."));
+      if (!isFinite(precioN)) {
+        alert("Precio inválido");
+        setPropSaving(false);
+        return;
+      }
+
+      const m2Lote =
+        propM2Lote.trim() === ""
+          ? null
+          : parseFloat(propM2Lote.replace(",", "."));
+      const m2Cub =
+        propM2Cubiertos.trim() === ""
+          ? null
+          : parseFloat(propM2Cubiertos.replace(",", "."));
+
+      const { data, error } = await supabase
+        .from("tracker_propiedades")
+        .insert({
+          empresa_id: empresaId,
+          contacto_id: selectedContacto.id,
+          tipologia: propTipologia,
+          tipo_operacion: propTipoOperacion,
+          direccion: propDireccion.trim() || null,
+          zona: propZona.trim() || null,
+          m2_lote: isFinite(m2Lote ?? NaN) ? m2Lote : null,
+          m2_cubiertos: isFinite(m2Cub ?? NaN) ? m2Cub : null,
+          precio_lista_inicial: precioN,
+          precio_actual: precioN,
+          moneda: propMoneda,
+          fecha_inicio_comercializacion: new Date().toISOString(),
+        })
+        .select(
+          `
+          id,
+          empresa_id,
+          contacto_id,
+          tipologia,
+          tipo_operacion,
+          direccion,
+          zona,
+          m2_lote,
+          m2_cubiertos,
+          precio_lista_inicial,
+          precio_actual,
+          precio_cierre,
+          moneda,
+          fecha_inicio_comercializacion,
+          fecha_cierre,
+          created_at,
+          updated_at
+        `
+        )
+        .single();
+
+      if (error) throw error;
+
+      setPropiedades((prev) => [
+        {
+          ...(data as any),
+          contacto: {
+            nombre: selectedContacto.nombre,
+            apellido: selectedContacto.apellido ?? null,
+          },
+        } as TrackerPropiedad,
+        ...prev,
+      ]);
+
+      // También insertamos el primer registro en historial de precios
+      await supabase.from("tracker_precios_propiedad").insert({
+        propiedad_id: (data as any).id,
+        precio: precioN,
+        moneda: propMoneda,
+        motivo: "Precio inicial",
+      });
+
+      setShowPropiedadModal(false);
+      setPropTipologia("Departamento");
+      setPropTipoOperacion("Venta");
+      setPropDireccion("");
+      setPropZona("");
+      setPropM2Lote("");
+      setPropM2Cubiertos("");
+      setPropPrecioInicial("");
+      setPropMoneda("ARS");
+    } catch (err) {
+      console.error("Error creando propiedad:", err);
+      alert("No se pudo crear la propiedad captada");
+    } finally {
+      setPropSaving(false);
     }
   };
 
-  const daysOfWeek = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
+  const abrirDetallePropiedad = async (prop: TrackerPropiedad) => {
+    setSelectedPropiedad(prop);
+    setShowPropiedadDetalleModal(true);
+    setPropDetallePrecioCierre(
+      prop.precio_cierre != null ? String(prop.precio_cierre) : ""
+    );
+    setPropDetalleFechaCierre(
+      prop.fecha_cierre ? prop.fecha_cierre.slice(0, 10) : ""
+    );
+    setNewPrecioValor("");
+    setNewPrecioMotivo("");
+
+    try {
+      const { data, error } = await supabase
+        .from("tracker_precios_propiedad")
+        .select("*")
+        .eq("propiedad_id", prop.id)
+        .order("fecha_cambio", { ascending: true });
+
+      if (error) throw error;
+      setPreciosPropiedad((data as TrackerPrecioPropiedad[]) ?? []);
+    } catch (err) {
+      console.error("Error cargando historial precios:", err);
+      setPreciosPropiedad([]);
+    }
+  };
+
+  const handleRegistrarAjustePrecio = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedPropiedad) return;
+    if (!newPrecioValor.trim()) {
+      alert("Ingresá un nuevo precio");
+      return;
+    }
+
+    try {
+      setNewPrecioSaving(true);
+      const precioN = parseFloat(
+        newPrecioValor.replace(/\./g, "").replace(",", ".")
+      );
+      if (!isFinite(precioN)) {
+        alert("Precio inválido");
+        setNewPrecioSaving(false);
+        return;
+      }
+
+      const fechaCambio = new Date().toISOString().slice(0, 10);
+
+      const { error: errIns } = await supabase
+        .from("tracker_precios_propiedad")
+        .insert({
+          propiedad_id: selectedPropiedad.id,
+          precio: precioN,
+          moneda: selectedPropiedad.moneda ?? "ARS",
+          fecha_cambio: fechaCambio,
+          motivo: newPrecioMotivo.trim() || null,
+        });
+
+      if (errIns) throw errIns;
+
+      const { data: updated, error: errUpd } = await supabase
+        .from("tracker_propiedades")
+        .update({
+          precio_actual: precioN,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", selectedPropiedad.id)
+        .select(
+          `
+          id,
+          empresa_id,
+          contacto_id,
+          tipologia,
+          tipo_operacion,
+          direccion,
+          zona,
+          m2_lote,
+          m2_cubiertos,
+          precio_lista_inicial,
+          precio_actual,
+          precio_cierre,
+          moneda,
+          fecha_inicio_comercializacion,
+          fecha_cierre,
+          created_at,
+          updated_at
+        `
+        )
+        .single();
+
+      if (errUpd) throw errUpd;
+
+      setPropiedades((prev) =>
+        prev.map((p) =>
+          p.id === selectedPropiedad.id
+            ? {
+                ...(updated as TrackerPropiedad),
+                contacto: selectedPropiedad.contacto ?? null,
+              }
+            : p
+        )
+      );
+
+      setPreciosPropiedad((prev) => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          propiedad_id: selectedPropiedad.id,
+          precio: precioN,
+          moneda: selectedPropiedad.moneda ?? "ARS",
+          fecha_cambio: fechaCambio,
+          motivo: newPrecioMotivo.trim() || null,
+          created_at: new Date().toISOString(),
+        },
+      ]);
+
+      setNewPrecioValor("");
+      setNewPrecioMotivo("");
+    } catch (err) {
+      console.error("Error registrando ajuste de precio:", err);
+      alert("No se pudo registrar el ajuste de precio");
+    } finally {
+      setNewPrecioSaving(false);
+    }
+  };
+
+  const handleGuardarCierreOperacion = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedPropiedad) return;
+
+    try {
+      setPropDetalleSaving(true);
+
+      const precioCierre =
+        propDetallePrecioCierre.trim() === ""
+          ? null
+          : parseFloat(
+              propDetallePrecioCierre.replace(/\./g, "").replace(",", ".")
+            );
+      const fechaCierre =
+        propDetalleFechaCierre.trim() === ""
+          ? null
+          : propDetalleFechaCierre.trim();
+
+      const { data: updated, error } = await supabase
+        .from("tracker_propiedades")
+        .update({
+          precio_cierre: isFinite(precioCierre ?? NaN)
+            ? precioCierre
+            : null,
+          fecha_cierre: fechaCierre,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", selectedPropiedad.id)
+        .select(
+          `
+          id,
+          empresa_id,
+          contacto_id,
+          tipologia,
+          tipo_operacion,
+          direccion,
+          zona,
+          m2_lote,
+          m2_cubiertos,
+          precio_lista_inicial,
+          precio_actual,
+          precio_cierre,
+          moneda,
+          fecha_inicio_comercializacion,
+          fecha_cierre,
+          created_at,
+          updated_at
+        `
+        )
+        .single();
+
+      if (error) throw error;
+
+      setPropiedades((prev) =>
+        prev.map((p) =>
+          p.id === selectedPropiedad.id
+            ? {
+                ...(updated as TrackerPropiedad),
+                contacto: selectedPropiedad.contacto ?? null,
+              }
+            : p
+        )
+      );
+
+      setSelectedPropiedad((prev) =>
+        prev
+          ? ({
+              ...(updated as TrackerPropiedad),
+              contacto: prev.contacto ?? null,
+            } as TrackerPropiedad)
+          : prev
+      );
+    } catch (err) {
+      console.error("Error guardando cierre de operación:", err);
+      alert("No se pudo guardar el cierre de la operación");
+    } finally {
+      setPropDetalleSaving(false);
+    }
+  };
+
+  const handleDeleteContacto = async (id: string) => {
+    if (!window.confirm("¿Eliminar este contacto y su historial?")) return;
+    try {
+      const { error } = await supabase
+        .from("tracker_contactos")
+        .delete()
+        .eq("id", id);
+      if (error) throw error;
+
+      setContactos((prev) => prev.filter((c) => c.id !== id));
+      setActividades((prev) =>
+        prev.filter((a) => a.contacto_id !== id)
+      );
+      setPropiedades((prev) =>
+        prev.filter((p) => p.contacto_id !== id)
+      );
+    } catch (err) {
+      console.error("Error eliminando contacto:", err);
+      alert("No se pudo eliminar el contacto");
+    }
+  };
+
+  const handleDeletePropiedad = async (id: string) => {
+    if (!window.confirm("¿Eliminar esta propiedad y su historial de precios?"))
+      return;
+    try {
+      const { error } = await supabase
+        .from("tracker_propiedades")
+        .delete()
+        .eq("id", id);
+      if (error) throw error;
+
+      setPropiedades((prev) => prev.filter((p) => p.id !== id));
+      if (selectedPropiedad?.id === id) {
+        setShowPropiedadDetalleModal(false);
+        setSelectedPropiedad(null);
+      }
+    } catch (err) {
+      console.error("Error eliminando propiedad:", err);
+      alert("No se pudo eliminar la propiedad");
+    }
+  };
+
+  // Calendario
+  const buildMonthDays = () => {
+    const year = monthCursor.getFullYear();
+    const month = monthCursor.getMonth();
+
+    const firstDay = new Date(year, month, 1);
+    const firstWeekDay = firstDay.getDay(); // 0-domingo
+
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+    const cells: Date[] = [];
+    const prevDays = (firstWeekDay + 6) % 7;
+
+    for (let i = prevDays; i > 0; i--) {
+      cells.push(new Date(year, month, 1 - i));
+    }
+    for (let d = 1; d <= daysInMonth; d++) {
+      cells.push(new Date(year, month, d));
+    }
+    while (cells.length % 7 !== 0) {
+      const last = cells[cells.length - 1];
+      cells.push(new Date(last.getFullYear(), last.getMonth(), last.getDate() + 1));
+    }
+    return cells;
+  };
+
+  const calendarDays = buildMonthDays();
+
+  const contactosConPropiedad = useMemo(() => {
+    const setIds = new Set(propiedades.map((p) => p.contacto_id));
+    return contactos.map((c) => ({
+      ...c,
+      tienePropiedad: setIds.has(c.id),
+    }));
+  }, [contactos, propiedades]);
+
+  const loadingState = loading && (
+    <div className="flex h-[60vh] items-center justify-center text-sm text-neutral-400">
+      Cargando tracker de trabajo…
+    </div>
+  );
+
+  if (!empresaId) {
+    return (
+      <div className="p-6 text-sm text-neutral-300">
+        No se encontró una empresa asociada al usuario actual.
+      </div>
+    );
+  }
+
+  if (loading) {
+    return loadingState;
+  }
+
+  const actividadesHoy = actividades.filter((a) => {
+    if (!a.fecha_programada) return false;
+    const d = new Date(a.fecha_programada);
+    return isSameDay(d, startOfDay(new Date()));
+  });
+
+  const actividadesManiana = actividades.filter((a) => {
+    if (!a.fecha_programada) return false;
+    const d = new Date(a.fecha_programada);
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    return isSameDay(d, startOfDay(tomorrow));
+  });
 
   return (
-    <div className="p-6 space-y-6">
-      {/* Encabezado */}
-      <section className="rounded-2xl border border-gray-200 bg-gradient-to-r from-white via-white to-gray-50 shadow-sm px-5 py-4">
-        <div className="grid gap-4 lg:grid-cols-[2fr_1.2fr_1.2fr] items-stretch">
-          {/* Izquierda: título + descripción */}
-          <div className="flex flex-col justify-center">
-            <h1 className="text-2xl font-semibold text-gray-900">
-              Tracker de trabajo
-            </h1>
-            <p className="mt-1 text-sm text-gray-600 max-w-xl">
-              Registrá prospección, seguimiento y captaciones para medir tu
-              actividad diaria. Pensado como un tablero de comando simple para
-              tu equipo.
+    <div className="space-y-6 p-6 text-neutral-50">
+      {/* HEADER TRACKER */}
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <div>
+          <h1 className="text-xl font-semibold text-neutral-50">
+            Tracker de trabajo
+          </h1>
+          <p className="mt-1 max-w-lg text-xs text-neutral-300">
+            Registrá tu prospección diaria, seguimiento, prelisting, VAI /
+            factibilidad, captaciones y cierres. Pensado para que veas tu
+            avance medible, todos los días.
+          </p>
+        </div>
+
+        <div className="flex flex-1 flex-col gap-2 md:flex-row md:justify-end">
+          {/* Hoy */}
+          <div className="rounded-2xl border border-neutral-800 bg-neutral-950/80 px-4 py-3 text-xs">
+            <p className="text-[10px] uppercase tracking-[0.18em] text-neutral-500">
+              Hoy
+            </p>
+            <p className="mt-1 text-sm font-semibold text-neutral-50">
+              {new Date().toLocaleDateString("es-AR", {
+                weekday: "long",
+                day: "2-digit",
+                month: "2-digit",
+              })}
+            </p>
+            <p className="mt-1 text-[11px] text-neutral-300">
+              {actividadesHoy.length > 0
+                ? `${actividadesHoy.length} actividad(es) programadas`
+                : "Sin actividades registradas para hoy"}
             </p>
           </div>
 
-          {/* Centro: Hoy */}
-          <div className="rounded-xl border border-gray-200 bg-white/90 px-4 py-3 flex flex-col shadow-[0_8px_25px_rgba(15,23,42,0.08)]">
-            <div className="flex items-center justify-between gap-2">
-              <div className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">
-                Hoy
-              </div>
-              <span
-                className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium"
-                style={{ backgroundColor: "#FEF3C7", color: "#92400E" }}
-              >
-                {actividadesHoy.length} actividad
-                {actividadesHoy.length === 1 ? "" : "es"}
-              </span>
-            </div>
-            {actividadesHoy.length === 0 ? (
-              <p className="mt-2 text-[11px] text-gray-500">
-                No tenés actividades agendadas para hoy.
-              </p>
-            ) : (
-              <ul className="mt-2 space-y-1.5 max-h-28 overflow-y-auto">
-                {actividadesHoy.slice(0, 4).map((a) => {
-                  const c = contactosById.get(a.contacto_id);
-                  return (
-                    <li
-                      key={a.id}
-                      className="text-[11px] text-gray-800 flex items-start gap-2"
-                    >
-                      <span
-                        className="mt-[3px] inline-block h-1.5 w-1.5 rounded-full"
-                        style={{ backgroundColor: accent }}
-                      />
-                      <div>
-                        <div className="font-medium text-gray-900">
-                          {a.tipo || "Actividad"} con{" "}
-                          {c?.nombre || "Contacto sin nombre"}
-                        </div>
-                        <div className="text-[10px] text-gray-500">
-                          {a.detalle
-                            ? a.detalle.slice(0, 80)
-                            : a.etapa || "Seguimiento"}{" "}
-                          · {formatDateTime(a.proximo_contacto_at)}
-                        </div>
-                      </div>
-                    </li>
-                  );
-                })}
-                {actividadesHoy.length > 4 && (
-                  <li className="text-[10px] text-gray-500">
-                    +{actividadesHoy.length - 4} actividades más
-                  </li>
-                )}
-              </ul>
-            )}
+          {/* Mañana */}
+          <div className="rounded-2xl border border-neutral-800 bg-neutral-950/80 px-4 py-3 text-xs">
+            <p className="text-[10px] uppercase tracking-[0.18em] text-neutral-500">
+              Mañana
+            </p>
+            <p className="mt-1 text-sm font-semibold text-neutral-50">
+              {(() => {
+                const d = new Date();
+                d.setDate(d.getDate() + 1);
+                return d.toLocaleDateString("es-AR", {
+                  weekday: "long",
+                  day: "2-digit",
+                  month: "2-digit",
+                });
+              })()}
+            </p>
+            <p className="mt-1 text-[11px] text-neutral-300">
+              {actividadesManiana.length > 0
+                ? `${actividadesManiana.length} actividad(es) programadas`
+                : "Sin actividades registradas para mañana"}
+            </p>
           </div>
+        </div>
+      </div>
 
-          {/* Derecha: Mañana */}
-          <div className="rounded-xl border border-gray-200 bg-white/90 px-4 py-3 flex flex-col shadow-[0_8px_25px_rgba(15,23,42,0.08)]">
-            <div className="flex items-center justify-between gap-2">
-              <div className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">
-                Mañana
-              </div>
-              <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-700">
-                {actividadesManiana.length} actividad
-                {actividadesManiana.length === 1 ? "" : "es"}
-              </span>
-            </div>
-            {actividadesManiana.length === 0 ? (
-              <p className="mt-2 text-[11px] text-gray-500">
-                Mañana todavía no tiene actividades programadas.
-              </p>
-            ) : (
-              <ul className="mt-2 space-y-1.5 max-h-28 overflow-y-auto">
-                {actividadesManiana.slice(0, 4).map((a) => {
-                  const c = contactosById.get(a.contacto_id);
-                  return (
-                    <li
-                      key={a.id}
-                      className="text-[11px] text-gray-800 flex items-start gap-2"
-                    >
-                      <span className="mt-[3px] inline-block h-1.5 w-1.5 rounded-full bg-gray-400" />
-                      <div>
-                        <div className="font-medium text-gray-900">
-                          {a.tipo || "Actividad"} con{" "}
-                          {c?.nombre || "Contacto sin nombre"}
-                        </div>
-                        <div className="text-[10px] text-gray-500">
-                          {a.detalle
-                            ? a.detalle.slice(0, 80)
-                            : a.etapa || "Seguimiento"}{" "}
-                          · {formatDateTime(a.proximo_contacto_at)}
-                        </div>
-                      </div>
-                    </li>
-                  );
-                })}
-                {actividadesManiana.length > 4 && (
-                  <li className="text-[10px] text-gray-500">
-                    +{actividadesManiana.length - 4} actividades más
-                  </li>
-                )}
-              </ul>
-            )}
+      {/* KPIs PRINCIPALES */}
+      <section className="space-y-3 rounded-3xl border border-neutral-800 bg-neutral-950/80 p-4 shadow-[0_22px_60px_rgba(0,0,0,0.9)]">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div>
+            <p className="text-[11px] uppercase tracking-[0.18em] text-neutral-500">
+              Visión rápida
+            </p>
+            <p className="text-sm text-neutral-300">
+              Panorama de tu pipeline en el rango seleccionado.
+            </p>
           </div>
+          <div className="flex items-center gap-2">
+            {(Object.keys(RANGO_LABEL) as RangoKPI[]).map((rk) => (
+              <button
+                key={rk}
+                type="button"
+                onClick={() => setRangoKPIs(rk)}
+                className={classNames(
+                  "rounded-full px-3 py-1.5 text-[11px]",
+                  rangoKPIs === rk
+                    ? "bg-[rgba(230,169,48,0.95)] text-black font-semibold"
+                    : "border border-neutral-700 text-neutral-300 hover:bg-neutral-900"
+                )}
+              >
+                {RANGO_LABEL[rk]}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-4">
+          <KpiCard
+            title="Prospectos"
+            value={prospectos}
+            subtitle={RANGO_LABEL[rangoKPIs]}
+          />
+          <KpiCard
+            title="Prelisting"
+            value={prelisting}
+            subtitle="Propiedades en análisis previo"
+          />
+          <KpiCard
+            title="Captaciones"
+            value={captaciones}
+            subtitle="Propiedades ya tomadas"
+          />
+          <KpiCard
+            title="Cierres"
+            value={cierres}
+            subtitle={RANGO_LABEL[rangoKPIs]}
+          />
         </div>
       </section>
 
-      {errorMsg && (
-        <div className="bg-red-50 border border-red-200 text-red-800 text-sm rounded-lg px-4 py-3">
-          {errorMsg}
-        </div>
-      )}
+      {/* NAV SECCIONES */}
+      <section className="flex flex-wrap gap-3">
+        <button
+          type="button"
+          onClick={() => setActiveSection("calendario")}
+          className={classNames(
+            "rounded-full px-4 py-2 text-xs font-medium",
+            activeSection === "calendario"
+              ? "bg-[rgba(230,169,48,0.95)] text-black"
+              : "border border-neutral-700 text-neutral-200 hover:bg-neutral-900"
+          )}
+        >
+          Calendario
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveSection("contactos")}
+          className={classNames(
+            "rounded-full px-4 py-2 text-xs font-medium",
+            activeSection === "contactos"
+              ? "bg-[rgba(230,169,48,0.95)] text-black"
+              : "border border-neutral-700 text-neutral-200 hover:bg-neutral-900"
+          )}
+        >
+          Contactos / Captaciones
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveSection("propiedades")}
+          className={classNames(
+            "rounded-full px-4 py-2 text-xs font-medium",
+            activeSection === "propiedades"
+              ? "bg-[rgba(230,169,48,0.95)] text-black"
+              : "border border-neutral-700 text-neutral-200 hover:bg-neutral-900"
+          )}
+        >
+          Propiedades captadas
+        </button>
+      </section>
 
-      {loading ? (
-        <div className="flex items-center justify-center h-[40vh] text-gray-500 text-sm">
-          Cargando información del tracker…
-        </div>
-      ) : !empresaId ? (
-        <div className="bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded-lg px-4 py-3">
-          No se encontró una empresa asociada al usuario actual. Verificá que
-          este usuario tenga una empresa creada.
-        </div>
-      ) : (
-        <>
-          {/* KPIs + rango */}
-          <section className="space-y-3">
-            <div className="flex items-center justify-between gap-3">
-              <div className="text-xs text-gray-500">
-                Mostrando métricas para:{" "}
-                <span className="font-medium text-gray-800">
-                  {kpiRangeLabel(kpiRange)}
-                </span>
-              </div>
-              <div className="flex items-center gap-1 rounded-full bg-gray-50 border border-gray-200 px-1 py-1 text-[11px]">
-                {([
-                  { value: "30d", label: "30 días" },
-                  { value: "3m", label: "3 meses" },
-                  { value: "6m", label: "6 meses" },
-                  { value: "1y", label: "1 año" },
-                ] as { value: KpiRange; label: string }[]).map((opt) => {
-                  const active = kpiRange === opt.value;
-                  return (
-                    <button
-                      key={opt.value}
-                      type="button"
-                      onClick={() => setKpiRange(opt.value)}
-                      className={`px-3 py-1 rounded-full transition ${
-                        active
-                          ? "bg-gray-900 text-white"
-                          : "text-gray-700 hover:bg-gray-100"
-                      }`}
-                    >
-                      {opt.label}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div className="grid gap-4 md:grid-cols-3">
-              <div className="rounded-xl border border-gray-200 bg-white px-4 py-3 shadow-sm">
-                <div className="text-xs font-medium text-gray-500 uppercase tracking-[0.18em]">
-                  Nuevos prospectos
-                </div>
-                <div className="mt-2 text-3xl font-semibold text-gray-900">
-                  {kpiNuevos}
-                </div>
-                <p className="mt-1 text-[11px] text-gray-500">
-                  Cantidad de personas/proiedades que ingresaron a tu tracker en
-                  el período seleccionado.
-                </p>
-              </div>
-
-              <div className="rounded-xl border border-gray-200 bg-white px-4 py-3 shadow-sm">
-                <div className="text-xs font-medium text-gray-500 uppercase tracking-[0.18em]">
-                  Captaciones
-                </div>
-                <div className="mt-2 text-3xl font-semibold text-gray-900">
-                  {kpiCaptados}
-                </div>
-                <p className="mt-1 text-[11px] text-gray-500">
-                  Contactos que actualmente están en estado “Captado”.
-                </p>
-              </div>
-
-              <div className="rounded-xl border border-gray-200 bg-white px-4 py-3 shadow-sm">
-                <div className="text-xs font-medium text-gray-500 uppercase tracking-[0.18em]">
-                  Cierres (monto)
-                </div>
-                <div className="mt-2 text-xl font-semibold text-gray-900">
-                  {formatCurrency(kpiCierres)}
-                </div>
-                <p className="mt-1 text-[11px] text-gray-500">
-                  Suma de operaciones marcadas como venta cerrada dentro del
-                  período.
-                </p>
-              </div>
-            </div>
-          </section>
-
-          {/* Tabs/secciones */}
-          <section className="space-y-4">
-            {/* Tabs */}
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="inline-flex rounded-full bg-gray-100 border border-gray-200 p-1 text-xs">
-                <button
-                  type="button"
-                  onClick={() => setActiveSection("calendario")}
-                  className={`px-3 py-1.5 rounded-full transition ${
-                    activeSection === "calendario"
-                      ? "bg-gray-900 text-white"
-                      : "text-gray-700 hover:bg-gray-200"
-                  }`}
-                >
-                  Calendario
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveSection("contactos")}
-                  className={`px-3 py-1.5 rounded-full transition ${
-                    activeSection === "contactos"
-                      ? "bg-gray-900 text-white"
-                      : "text-gray-700 hover:bg-gray-200"
-                  }`}
-                >
-                  Contactos / Captaciones
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveSection("captadas")}
-                  className={`px-3 py-1.5 rounded-full transition ${
-                    activeSection === "captadas"
-                      ? "bg-gray-900 text-white"
-                      : "text-gray-700 hover:bg-gray-200"
-                  }`}
-                >
-                  Propiedades captadas
-                </button>
-              </div>
-            </div>
-
-            {/* CONTENIDO DE SECCIONES */}
-            {activeSection === "calendario" && (
-              <div className="grid gap-6 lg:grid-cols-[2.1fr_1.4fr]">
-                {/* Calendario mensual */}
-                <div className="rounded-2xl border border-gray-200 bg-white shadow-sm p-4">
-                  <div className="flex items-center justify-between mb-3">
-                    <div>
-                      <h2 className="text-sm font-semibold text-gray-900">
-                        Calendario de actividades
-                      </h2>
-                      <p className="text-[11px] text-gray-500">
-                        Visualizá tus llamadas, muestras y seguimientos por día.
-                        Hacé clic en un día para ver el detalle.
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2 text-xs">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setCurrentMonth(addMonths(currentMonth, -1))
-                        }
-                        className="rounded-full border border-gray-300 bg-white px-2 py-1 hover:bg-gray-100"
-                      >
-                        ◀
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const now = new Date();
-                          setCurrentMonth(
-                            new Date(now.getFullYear(), now.getMonth(), 1)
-                          );
-                          setSelectedDate(new Date());
-                        }}
-                        className="rounded-full border border-gray-300 bg-white px-3 py-1 hover:bg-gray-100"
-                      >
-                        Hoy
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setCurrentMonth(addMonths(currentMonth, 1))
-                        }
-                        className="rounded-full border border-gray-300 bg-white px-2 py-1 hover:bg-gray-100"
-                      >
-                        ▶
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="text-sm font-medium text-gray-900 capitalize">
-                      {getMonthLabel(currentMonth)}
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-7 gap-1 text-[11px] text-gray-500 mb-1">
-                    {daysOfWeek.map((d) => (
-                      <div
-                        key={d}
-                        className="text-center font-medium py-1"
-                      >
-                        {d}
-                      </div>
-                    ))}
-                  </div>
-
-                  <div className="grid grid-cols-7 gap-1 text-[11px]">
-                    {calendarDays.map(({ date, isCurrentMonth }) => {
-                      const key = date.toISOString().slice(0, 10);
-                      const hasEvents = (activitiesByDay.get(key) ?? []).length > 0;
-                      const isToday = isSameDay(date, new Date());
-                      const isSelected =
-                        selectedDate && isSameDay(date, selectedDate);
-
-                      return (
-                        <button
-                          key={key}
-                          type="button"
-                          onClick={() => setSelectedDate(new Date(date))}
-                          className={[
-                            "min-h-[56px] rounded-lg border text-left px-1.5 py-1.5 transition flex flex-col",
-                            isSelected
-                              ? "border-gray-900 bg-gray-900 text-white"
-                              : isToday
-                              ? "border-gray-900/50 bg-gray-900/5 text-gray-900"
-                              : isCurrentMonth
-                              ? "border-gray-200 bg-white hover:bg-gray-50 text-gray-800"
-                              : "border-gray-100 bg-gray-50 text-gray-400 hover:bg-gray-100",
-                          ].join(" ")}
-                        >
-                          <div className="flex items-center justify-between">
-                            <span className="text-[11px] font-medium">
-                              {date.getDate()}
-                            </span>
-                            {hasEvents && (
-                              <span
-                                className="inline-block h-1.5 w-1.5 rounded-full"
-                                style={{ backgroundColor: accent }}
-                              />
-                            )}
-                          </div>
-                          {hasEvents && (
-                            <div className="mt-1 space-y-0.5 overflow-hidden">
-                              {(activitiesByDay.get(key) ?? [])
-                                .slice(0, 2)
-                                .map((a) => {
-                                  const c = contactosById.get(a.contacto_id);
-                                  return (
-                                    <div
-                                      key={a.id}
-                                      className={`truncate text-[10px] ${
-                                        isSelected ? "text-gray-100" : "text-gray-500"
-                                      }`}
-                                    >
-                                      {a.tipo || "Actividad"} ·{" "}
-                                      {c?.nombre || "Contacto"}
-                                    </div>
-                                  );
-                                })}
-                              {(activitiesByDay.get(key) ?? []).length > 2 && (
-                                <div
-                                  className={`text-[10px] ${
-                                    isSelected ? "text-gray-200" : "text-gray-400"
-                                  }`}
-                                >
-                                  +
-                                  {(activitiesByDay.get(key) ?? []).length - 2} más
-                                </div>
-                              )}
-                            </div>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* Lista + alta de actividades del día seleccionado */}
-                <div className="rounded-2xl border border-gray-200 bg-white shadow-sm p-4 flex flex-col">
-                  <div className="flex items-center justify-between mb-3">
-                    <div>
-                      <div className="text-[11px] font-medium text-gray-500 uppercase tracking-[0.18em]">
-                        Actividades del día
-                      </div>
-                      <div className="text-lg font-semibold text-gray-900">
-                        {selectedDate
-                          ? selectedDate.toLocaleDateString("es-AR", {
-                              day: "2-digit",
-                              month: "2-digit",
-                              year: "2-digit",
-                            })
-                          : "Seleccioná un día"}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Form de nueva tarea */}
-                  <form
-                    onSubmit={handleNuevaActividad}
-                    className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-3 mb-3 space-y-2"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="text-[11px] font-semibold text-gray-700">
-                        Agregar tarea al calendario
-                      </div>
-                    </div>
-
-                    {newActMsg && (
-                      <div className="text-[11px] text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-2 py-1">
-                        {newActMsg}
-                      </div>
-                    )}
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      <div>
-                        <label className="block text-[11px] text-gray-600 mb-1">
-                          Tipo de tarea
-                        </label>
-                        <select
-                          value={newActTipo}
-                          onChange={(e) => setNewActTipo(e.target.value)}
-                          className="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-xs text-gray-800 bg-white"
-                        >
-                          {TIPOS_ACTIVIDAD.map((t) => (
-                            <option key={t} value={t}>
-                              {t}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-[11px] text-gray-600 mb-1">
-                          Hora
-                        </label>
-                        <input
-                          type="time"
-                          value={newActHora}
-                          onChange={(e) => setNewActHora(e.target.value)}
-                          className="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-xs text-gray-800 bg-white"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      <div>
-                        <label className="block text-[11px] text-gray-600 mb-1">
-                          Contacto existente
-                        </label>
-                        <select
-                          value={newActContactoId}
-                          onChange={(e) => setNewActContactoId(e.target.value)}
-                          className="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-xs text-gray-800 bg-white"
-                        >
-                          <option value="">
-                            Seleccionar contacto (opcional)
-                          </option>
-                          {contactos.map((c) => (
-                            <option key={c.id} value={c.id}>
-                              {c.nombre || "Sin nombre"}{" "}
-                              {c.zona ? `· ${c.zona}` : ""}
-                            </option>
-                          ))}
-                        </select>
-                        <p className="mt-1 text-[10px] text-gray-400">
-                          Si no existe, podés usar “Cliente interesado” abajo.
-                        </p>
-                      </div>
-                      <div>
-                        <label className="block text-[11px] text-gray-600 mb-1">
-                          Cliente interesado (nombre)
-                        </label>
-                        <input
-                          type="text"
-                          value={newActClienteInteresado}
-                          onChange={(e) =>
-                            setNewActClienteInteresado(e.target.value)
-                          }
-                          placeholder="Ej: Juan (interesado)"
-                          className="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-xs text-gray-800"
-                        />
-                        <p className="mt-1 text-[10px] text-gray-400">
-                          Se creará como contacto básico si no seleccionás uno
-                          arriba.
-                        </p>
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="block text-[11px] text-gray-600 mb-1">
-                        Notas
-                      </label>
-                      <textarea
-                        value={newActNotas}
-                        onChange={(e) => setNewActNotas(e.target.value)}
-                        rows={2}
-                        placeholder="Ej: 2° llamada, quiere que lo contacte después de las 17hs."
-                        className="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-xs text-gray-800 resize-none"
-                      />
-                    </div>
-
-                    <div className="flex justify-end">
-                      <button
-                        type="submit"
-                        disabled={newActSaving}
-                        className={`rounded-lg px-4 py-1.5 text-xs font-semibold text-white transition ${
-                          newActSaving
-                            ? "bg-gray-400 cursor-not-allowed"
-                            : "bg-gray-900 hover:bg-black"
-                        }`}
-                      >
-                        {newActSaving ? "Guardando..." : "Agregar tarea"}
-                      </button>
-                    </div>
-                  </form>
-
-                  {/* Lista de actividades del día seleccionado */}
-                  {(!selectedDate || selectedDayActivities.length === 0) ? (
-                    <p className="mt-2 text-[11px] text-gray-500 bg-gray-50 border border-dashed border-gray-200 rounded-lg px-3 py-2">
-                      No hay actividades registradas en esta fecha.
-                    </p>
-                  ) : (
-                    <div className="mt-2 space-y-2 overflow-y-auto max-h-[260px] pr-1">
-                      {selectedDayActivities.map((a) => {
-                        const c = contactosById.get(a.contacto_id);
-                        return (
-                          <div
-                            key={a.id}
-                            className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2"
-                          >
-                            <div className="flex items-center justify-between gap-2">
-                              <div className="text-[11px] font-semibold text-gray-900">
-                                {a.tipo || "Actividad"} ·{" "}
-                                {c?.nombre || "Contacto sin nombre"}
-                              </div>
-                              <div className="text-[10px] text-gray-500">
-                                {formatDateTime(a.proximo_contacto_at)}
-                              </div>
-                            </div>
-                            <div className="mt-0.5 text-[11px] text-gray-600">
-                              {a.detalle
-                                ? a.detalle
-                                : a.etapa || "Seguimiento del contacto"}
-                            </div>
-                            <div className="mt-1 flex flex-wrap gap-1 text-[10px] text-gray-500">
-                              {a.etapa && (
-                                <span className="inline-flex items-center rounded-full border border-gray-300 bg-white px-2 py-0.5">
-                                  {a.etapa}
-                                </span>
-                              )}
-                              {a.resultado && (
-                                <span className="inline-flex items-center rounded-full border border-gray-300 bg-white px-2 py-0.5">
-                                  {a.resultado}
-                                </span>
-                              )}
-                              {c?.tipologia_propiedad && (
-                                <span className="inline-flex items-center rounded-full border border-gray-300 bg-white px-2 py-0.5">
-                                  {c.tipologia_propiedad}
-                                </span>
-                              )}
-                              {c?.zona && (
-                                <span className="inline-flex items-center rounded-full border border-gray-300 bg-white px-2 py-0.5">
-                                  {c.zona}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {activeSection === "contactos" && (
-              <div className="rounded-2xl border border-gray-200 bg-white shadow-sm p-4">
-                <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-3 mb-3">
-                  <div>
-                    <h2 className="text-sm font-semibold text-gray-900">
-                      Contactos / Captaciones
-                    </h2>
-                    <p className="text-[11px] text-gray-500">
-                      Acá ves todos los prospectos y clientes con los que estás
-                      trabajando. Podés actualizar su estado y ver la última
-                      llamada.
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2 text-xs">
-                    <button
-                      type="button"
-                      onClick={() => setShowNuevoModal(true)}
-                      className="inline-flex items-center gap-1 rounded-full bg-gray-900 text-white px-3 py-1.5 hover:bg-black"
-                    >
-                      + Nuevo prospecto / cliente
-                    </button>
-                    <select
-                      value={estadoFiltro}
-                      onChange={(e) =>
-                        setEstadoFiltro(
-                          e.target.value as EstadoPipeline | "todos"
-                        )
-                      }
-                      className="border border-gray-300 rounded-lg px-2 py-1 text-xs text-gray-800 bg-white"
-                    >
-                      <option value="todos">Todos los estados</option>
-                      {ESTADOS_PIPELINE.map((opt) => (
-                        <option key={opt.value} value={opt.value}>
-                          {opt.label}
-                        </option>
-                      ))}
-                    </select>
-                    <input
-                      type="text"
-                      value={searchNombre}
-                      onChange={(e) => setSearchNombre(e.target.value)}
-                      placeholder="Buscar por nombre o email..."
-                      className="border border-gray-300 rounded-lg px-2 py-1 text-xs text-gray-800 bg-white w-40"
-                    />
-                  </div>
-                </div>
-
-                {contactosFiltrados.length === 0 ? (
-                  <p className="text-[11px] text-gray-500 bg-gray-50 border border-dashed border-gray-200 rounded-lg px-3 py-2">
-                    Todavía no tenés contactos cargados con este filtro. Usá el
-                    botón “Nuevo prospecto / cliente” para empezar a alimentar el
-                    tracker.
-                  </p>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full text-[11px]">
-                      <thead>
-                        <tr className="text-left text-gray-500 border-b border-gray-100">
-                          <th className="py-2 pr-3">Contacto</th>
-                          <th className="py-2 pr-3">Tipología</th>
-                          <th className="py-2 pr-3">Operación</th>
-                          <th className="py-2 pr-3">Estado</th>
-                          <th className="py-2 pr-3">Última llamada</th>
-                          <th className="py-2 pr-3 text-right">Acciones</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {contactosFiltrados.map((c) => (
-                          <tr
-                            key={c.id}
-                            className="border-b border-gray-50 hover:bg-gray-50/70"
-                          >
-                            <td className="py-2 pr-3">
-                              <div className="font-medium text-gray-900">
-                                {c.nombre || "Sin nombre"}
-                              </div>
-                              {c.telefono && (
-                                <div className="text-[10px] text-gray-500">
-                                  {c.telefono}
-                                </div>
-                              )}
-                              {c.email && (
-                                <div className="text-[10px] text-gray-500">
-                                  {c.email}
-                                </div>
-                              )}
-                            </td>
-                            <td className="py-2 pr-3 text-gray-800">
-                              {c.tipologia_propiedad || "—"}
-                            </td>
-                            <td className="py-2 pr-3 text-gray-800">
-                              {c.tipo_operacion || "—"}
-                            </td>
-                            <td className="py-2 pr-3">
-                              <select
-                                value={
-                                  (c.estado_pipeline as EstadoPipeline) ??
-                                  "no_contactado"
-                                }
-                                onChange={(e) =>
-                                  handleChangeEstadoContacto(
-                                    c.id,
-                                    e.target.value as EstadoPipeline
-                                  )
-                                }
-                                className="border border-gray-300 rounded-full px-2 py-0.5 text-[10px] text-gray-800 bg-white"
-                              >
-                                {ESTADOS_PIPELINE.map((opt) => (
-                                  <option key={opt.value} value={opt.value}>
-                                    {opt.label}
-                                  </option>
-                                ))}
-                              </select>
-                            </td>
-                            <td className="py-2 pr-3 text-gray-800 whitespace-nowrap">
-                              {formatDate(
-                                ultimaLlamadaPorContacto.get(c.id) ?? null
-                              )}
-                            </td>
-                            <td className="py-2 pr-3 text-right">
-                              <div className="inline-flex items-center gap-1">
-                                <button
-                                  type="button"
-                                  onClick={() => setSelectedContacto(c)}
-                                  className="rounded-full border border-gray-300 px-2 py-0.5 text-[10px] text-gray-700 hover:bg-gray-100"
-                                >
-                                  Ver / Editar
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    handleEliminarContacto(c.id)
-                                  }
-                                  className="rounded-full border border-red-200 px-2 py-0.5 text-[10px] text-red-700 hover:bg-red-50"
-                                >
-                                  Eliminar
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {activeSection === "captadas" && (
-              <div className="rounded-2xl border border-gray-200 bg-white shadow-sm p-4">
-                <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-3 mb-3">
-                  <div>
-                    <h2 className="text-sm font-semibold text-gray-900">
-                      Propiedades captadas
-                    </h2>
-                    <p className="text-[11px] text-gray-500">
-                      Vista de prospectos que ya se transformaron en clientes y
-                      te dieron la propiedad para trabajar.
-                    </p>
-                  </div>
-                </div>
-
-                {contactosCaptados.length === 0 ? (
-                  <p className="text-[11px] text-gray-500 bg-gray-50 border border-dashed border-gray-200 rounded-lg px-3 py-2">
-                    Todavía no tenés propiedades marcadas como “captadas”. Cuando
-                    un contacto pase a ese estado, va a aparecer acá.
-                  </p>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full text-[11px]">
-                      <thead>
-                        <tr className="text-left text-gray-500 border-b border-gray-100">
-                          <th className="py-2 pr-3">Cliente</th>
-                          <th className="py-2 pr-3">Propiedad</th>
-                          <th className="py-2 pr-3">Zona</th>
-                          <th className="py-2 pr-3">Operación</th>
-                          <th className="py-2 pr-3">Fecha captación (aprox.)</th>
-                          <th className="py-2 pr-3">Fuente</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {contactosCaptados.map((c) => (
-                          <tr
-                            key={c.id}
-                            className="border-b border-gray-50 hover:bg-gray-50/70"
-                          >
-                            <td className="py-2 pr-3">
-                              <div className="font-medium text-gray-900">
-                                {c.nombre || "Sin nombre"}
-                              </div>
-                              {c.telefono && (
-                                <div className="text-[10px] text-gray-500">
-                                  {c.telefono}
-                                </div>
-                              )}
-                              {c.email && (
-                                <div className="text-[10px] text-gray-500">
-                                  {c.email}
-                                </div>
-                              )}
-                            </td>
-                            <td className="py-2 pr-3">
-                              <div className="text-gray-800">
-                                {c.tipologia_propiedad || "—"}
-                              </div>
-                            </td>
-                            <td className="py-2 pr-3 text-gray-800">
-                              {c.zona || "—"}
-                            </td>
-                            <td className="py-2 pr-3 text-gray-800">
-                              {c.tipo_operacion || "—"}
-                            </td>
-                            <td className="py-2 pr-3 text-gray-800 whitespace-nowrap">
-                              {formatDate(c.created_at)}
-                            </td>
-                            <td className="py-2 pr-3 text-gray-800">
-                              {c.link_fuente ? (
-                                <a
-                                  href={c.link_fuente}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="text-[11px] text-blue-700 hover:text-blue-800 underline underline-offset-2"
-                                >
-                                  Ver aviso
-                                </a>
-                              ) : (
-                                "—"
-                              )}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            )}
-          </section>
-        </>
-      )}
-
-      {/* MODAL NUEVO PROSPECTO / CLIENTE */}
-      {showNuevoModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xl max-h-[90vh] overflow-y-auto p-5">
-            <div className="flex items-center justify-between mb-3">
+      {/* SECCIÓN PRINCIPAL: contenido según pestaña */}
+      {activeSection === "calendario" && (
+        <section className="grid gap-4 lg:grid-cols-[2fr_1fr]">
+          {/* Calendario mensual */}
+          <div className="rounded-3xl border border-neutral-800 bg-neutral-950/80 p-4">
+            <div className="mb-3 flex items-center justify-between">
               <div>
-                <h2 className="text-sm font-semibold text-gray-900">
-                  Nuevo prospecto / cliente
-                </h2>
-                <p className="text-[11px] text-gray-500">
-                  Registrá un dueño, propietario o cliente interesado para
-                  empezar a hacer seguimiento desde el tracker.
+                <p className="text-[11px] uppercase tracking-[0.18em] text-neutral-500">
+                  Calendario
+                </p>
+                <p className="text-sm text-neutral-200">
+                  {monthCursor.toLocaleDateString("es-AR", {
+                    month: "long",
+                    year: "numeric",
+                  })}
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setMonthCursor((d) => addMonths(d, -1))
+                  }
+                  className="rounded-full border border-neutral-700 px-2 py-1 text-xs text-neutral-200 hover:bg-neutral-900"
+                >
+                  ←
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setMonthCursor(startOfMonth(new Date()))
+                  }
+                  className="rounded-full border border-neutral-700 px-3 py-1 text-xs text-neutral-200 hover:bg-neutral-900"
+                >
+                  Hoy
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMonthCursor((d) => addMonths(d, 1))}
+                  className="rounded-full border border-neutral-700 px-2 py-1 text-xs text-neutral-200 hover:bg-neutral-900"
+                >
+                  →
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-7 gap-1 text-center text-[10px] text-neutral-400">
+              <div>Lun</div>
+              <div>Mar</div>
+              <div>Mié</div>
+              <div>Jue</div>
+              <div>Vie</div>
+              <div>Sáb</div>
+              <div>Dom</div>
+            </div>
+            <div className="mt-1 grid grid-cols-7 gap-1 text-xs">
+              {calendarDays.map((day) => {
+                const hasActivities = actividades.some((a) => {
+                  if (!a.fecha_programada) return false;
+                  const d = new Date(a.fecha_programada);
+                  return isSameDay(d, day);
+                });
+                const isCurrentMonth =
+                  day.getMonth() === monthCursor.getMonth();
+                const isToday = isSameDay(day, startOfDay(new Date()));
+                const isSelected = isSameDay(day, selectedDate);
+
+                return (
+                  <button
+                    key={day.toISOString()}
+                    type="button"
+                    onClick={() => setSelectedDate(startOfDay(day))}
+                    className={classNames(
+                      "flex h-9 flex-col items-center justify-center rounded-lg border text-[11px]",
+                      isSelected
+                        ? "border-[rgba(230,169,48,0.9)] bg-[rgba(230,169,48,0.1)] text-neutral-50"
+                        : isToday
+                        ? "border-neutral-600 bg-neutral-900 text-neutral-50"
+                        : "border-neutral-800 bg-neutral-950 text-neutral-300",
+                      !isCurrentMonth && "opacity-40"
+                    )}
+                  >
+                    <span>{day.getDate()}</span>
+                    {hasActivities && (
+                      <span className="mt-0.5 h-1.5 w-1.5 rounded-full bg-[rgba(230,169,48,0.9)]" />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Panel de actividades del día */}
+          <div className="rounded-3xl border border-neutral-800 bg-neutral-950/80 p-4">
+            <div className="mb-3 flex items-center justify-between">
+              <div>
+                <p className="text-[11px] uppercase tracking-[0.18em] text-neutral-500">
+                  Actividades del día
+                </p>
+                <p className="text-sm text-neutral-100">
+                  {selectedDate.toLocaleDateString("es-AR", {
+                    weekday: "long",
+                    day: "2-digit",
+                    month: "2-digit",
+                  })}
                 </p>
               </div>
               <button
                 type="button"
-                onClick={() => setShowNuevoModal(false)}
-                className="text-gray-400 hover:text-gray-600 text-lg leading-none"
+                onClick={() => setShowNuevaActividadModal(true)}
+                className="inline-flex items-center rounded-full border border-neutral-700 px-3 py-1.5 text-xs font-medium text-neutral-100 hover:bg-neutral-900"
               >
-                ×
+                + Agregar tarea
               </button>
             </div>
 
-            {ncSuccessMsg && (
-              <div className="mb-2 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-2 py-1.5">
-                {ncSuccessMsg}
-              </div>
-            )}
+            {actividadesDelDia.length === 0 ? (
+              <p className="mt-4 text-xs text-neutral-400">
+                No hay actividades registradas en esta fecha.
+              </p>
+            ) : (
+              <ul className="mt-2 space-y-2 text-xs">
+                {actividadesDelDia.map((a) => {
+                  const d = a.fecha_programada
+                    ? new Date(a.fecha_programada)
+                    : null;
+                  const tipo = a.tipo ?? "Actividad";
+                  const hora = d
+                    ? d.toLocaleTimeString("es-AR", {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })
+                    : "";
 
-            <form onSubmit={handleNuevoContacto} className="space-y-3">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  const contacto = contactos.find(
+                    (c) => c.id === a.contacto_id
+                  );
+
+                  return (
+                    <li
+                      key={a.id}
+                      className="rounded-xl border border-neutral-800 bg-neutral-900/70 p-3"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div>
+                          <p className="text-[11px] font-semibold text-neutral-50">
+                            {resolveEtapaActividad(tipo)}
+                          </p>
+                          <p className="text-[11px] text-neutral-300">
+                            {tipo}
+                            {hora ? ` · ${hora} hs` : ""}
+                          </p>
+                        </div>
+                        {contacto && (
+                          <button
+                            type="button"
+                            onClick={() => setSelectedContacto(contacto)}
+                            className="rounded-full border border-neutral-700 px-2 py-1 text-[10px] text-neutral-200 hover:bg-neutral-900"
+                          >
+                            Ver contacto
+                          </button>
+                        )}
+                      </div>
+                      {a.notas && (
+                        <p className="mt-1 text-[11px] text-neutral-400">
+                          {a.notas}
+                        </p>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+        </section>
+      )}
+
+      {activeSection === "contactos" && (
+        <section className="space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <div>
+              <p className="text-sm font-medium text-neutral-100">
+                Contactos / Captaciones
+              </p>
+              <p className="text-xs text-neutral-400">
+                Gestioná prospectos, estados y la evolución de cada oportunidad.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowNuevoContacto(true)}
+              className="rounded-full border border-[rgba(230,169,48,0.9)] bg-[rgba(230,169,48,0.95)] px-4 py-1.5 text-xs font-semibold text-black hover:bg-[rgba(230,169,48,1)]"
+            >
+              + Nuevo prospecto / cliente
+            </button>
+          </div>
+
+          <div className="overflow-hidden rounded-3xl border border-neutral-800 bg-neutral-950/80">
+            <table className="min-w-full text-left text-xs text-neutral-200">
+              <thead className="bg-neutral-950/90 text-[11px] uppercase tracking-[0.16em] text-neutral-500">
+                <tr>
+                  <th className="px-3 py-2">Contacto</th>
+                  <th className="px-3 py-2">Teléfono</th>
+                  <th className="px-3 py-2">Tipología</th>
+                  <th className="px-3 py-2">Operación</th>
+                  <th className="px-3 py-2">Estado</th>
+                  <th className="px-3 py-2">Propiedad</th>
+                  <th className="px-3 py-2">Creado</th>
+                  <th className="px-3 py-2 text-right">Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {contactosConPropiedad.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={8}
+                      className="px-3 py-4 text-center text-xs text-neutral-400"
+                    >
+                      Todavía no cargaste contactos en el tracker.
+                    </td>
+                  </tr>
+                ) : (
+                  contactosConPropiedad.map((c) => (
+                    <tr
+                      key={c.id}
+                      className="border-t border-neutral-800/80 hover:bg-neutral-900/60"
+                    >
+                      <td className="px-3 py-2 align-top">
+                        <div className="flex flex-col">
+                          <span className="text-xs font-semibold text-neutral-50">
+                            {c.nombre} {c.apellido ?? ""}
+                          </span>
+                          {c.email && (
+                            <span className="text-[11px] text-neutral-400">
+                              {c.email}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-3 py-2 align-top text-xs text-neutral-300">
+                        {c.telefono ?? "—"}
+                      </td>
+                      <td className="px-3 py-2 align-top text-xs text-neutral-300">
+                        {c.tipologia ?? "—"}
+                      </td>
+                      <td className="px-3 py-2 align-top text-xs text-neutral-300">
+                        {c.tipo_operacion ?? "—"}
+                      </td>
+                      <td className="px-3 py-2 align-top">
+                        <select
+                          value={normalizarEstado(c.estado_pipeline)}
+                          onChange={(e) =>
+                            handleChangeEstadoContacto(
+                              c.id,
+                              e.target.value as EstadoPipeline
+                            )
+                          }
+                          className="rounded-full border border-neutral-700 bg-neutral-900/80 px-2 py-1 text-[11px]"
+                        >
+                          {ESTADOS_PIPELINE_OPCIONES.map((estado) => (
+                            <option key={estado} value={estado}>
+                              {ESTADOS_PIPELINE_LABEL[estado]}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="px-3 py-2 align-top text-xs">
+                        {c.tienePropiedad ? (
+                          <span className="inline-flex items-center rounded-full bg-emerald-900/40 px-2 py-0.5 text-[10px] text-emerald-200">
+                            Propiedad captada
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center rounded-full bg-neutral-900/80 px-2 py-0.5 text-[10px] text-neutral-400">
+                            Sin propiedad aún
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 align-top text-xs text-neutral-400">
+                        {fmtDate(c.created_at)}
+                      </td>
+                      <td className="px-3 py-2 align-top text-right text-xs">
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedContacto(c)}
+                            className="rounded-full border border-neutral-700 px-2 py-1 text-[11px] text-neutral-100 hover:bg-neutral-900"
+                          >
+                            Ver / Editar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteContacto(c.id)}
+                            className="rounded-full border border-red-900 px-2 py-1 text-[11px] text-red-200 hover:bg-red-950/80"
+                          >
+                            Eliminar
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      {activeSection === "propiedades" && (
+        <section className="space-y-3">
+          <div>
+            <p className="text-sm font-medium text-neutral-100">
+              Propiedades captadas
+            </p>
+            <p className="text-xs text-neutral-400">
+              Vista resumida de las propiedades en cartera: precios, días en
+              mercado y estado de cierre.
+            </p>
+          </div>
+
+          <div className="overflow-hidden rounded-3xl border border-neutral-800 bg-neutral-950/80">
+            <table className="min-w-full text-left text-xs text-neutral-200">
+              <thead className="bg-neutral-950/90 text-[11px] uppercase tracking-[0.16em] text-neutral-500">
+                <tr>
+                  <th className="px-3 py-2">Propietario</th>
+                  <th className="px-3 py-2">Tipología</th>
+                  <th className="px-3 py-2">Operación</th>
+                  <th className="px-3 py-2">Zona / Dirección</th>
+                  <th className="px-3 py-2">Precio actual</th>
+                  <th className="px-3 py-2">Días en mercado</th>
+                  <th className="px-3 py-2">Cierre</th>
+                  <th className="px-3 py-2 text-right">Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {propiedadesConContacto.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={8}
+                      className="px-3 py-4 text-center text-xs text-neutral-400"
+                    >
+                      Todavía no tenés propiedades captadas registradas.
+                    </td>
+                  </tr>
+                ) : (
+                  propiedadesConContacto.map((p) => (
+                    <tr
+                      key={p.id}
+                      className="border-t border-neutral-800/80 hover:bg-neutral-900/60"
+                    >
+                      <td className="px-3 py-2 align-top text-xs text-neutral-100">
+                        {p.contactoNombre || "—"}
+                      </td>
+                      <td className="px-3 py-2 align-top text-xs text-neutral-300">
+                        {p.tipologia ?? "—"}
+                      </td>
+                      <td className="px-3 py-2 align-top text-xs text-neutral-300">
+                        {p.tipo_operacion ?? "—"}
+                      </td>
+                      <td className="px-3 py-2 align-top text-xs text-neutral-300">
+                        {p.zona ?? p.direccion ?? "—"}
+                      </td>
+                      <td className="px-3 py-2 align-top text-xs text-neutral-100">
+                        {fmtCurrency(p.precio_actual ?? p.precio_lista_inicial)}
+                      </td>
+                      <td className="px-3 py-2 align-top text-xs text-neutral-300">
+                        {diffDays(
+                          p.fecha_inicio_comercializacion ??
+                            p.created_at,
+                          p.fecha_cierre
+                        ) ?? "—"}
+                      </td>
+                      <td className="px-3 py-2 align-top text-xs text-neutral-300">
+                        {p.fecha_cierre
+                          ? `Cerrado · ${fmtDate(p.fecha_cierre)}`
+                          : "Abierta"}
+                      </td>
+                      <td className="px-3 py-2 align-top text-right text-xs">
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => abrirDetallePropiedad(p)}
+                            className="rounded-full border border-neutral-700 px-2 py-1 text-[11px] text-neutral-100 hover:bg-neutral-900"
+                          >
+                            Ver / Editar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeletePropiedad(p.id)}
+                            className="rounded-full border border-red-900 px-2 py-1 text-[11px] text-red-200 hover:bg-red-950/80"
+                          >
+                            Eliminar
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+      {/* MODAL NUEVO CONTACTO */}
+      {showNuevoContacto && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
+          <div className="w-full max-w-xl rounded-2xl border border-neutral-800 bg-neutral-950 p-5 text-xs text-neutral-100">
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-sm font-semibold">Nuevo prospecto / cliente</h2>
+              <button
+                type="button"
+                onClick={() => setShowNuevoContacto(false)}
+                className="text-[11px] text-neutral-400 hover:text-neutral-100"
+              >
+                Cerrar
+              </button>
+            </div>
+
+            <form onSubmit={handleCrearContacto} className="space-y-3">
+              <div className="grid gap-3 md:grid-cols-2">
                 <div>
-                  <label className="block text-[11px] font-medium text-gray-600 mb-1">
-                    Nombre del contacto
+                  <label className="block text-[11px] text-neutral-400">
+                    Nombre *
                   </label>
                   <input
-                    type="text"
                     value={ncNombre}
                     onChange={(e) => setNcNombre(e.target.value)}
-                    placeholder="Ej: Juan Pérez (dueño)"
-                    className="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-xs text-gray-800"
+                    className="mt-1 w-full rounded-lg border border-neutral-800 bg-neutral-900/60 px-2 py-1.5 text-xs"
+                    required
                   />
                 </div>
                 <div>
-                  <label className="block text-[11px] font-medium text-gray-600 mb-1">
+                  <label className="block text-[11px] text-neutral-400">
+                    Apellido
+                  </label>
+                  <input
+                    value={ncApellido}
+                    onChange={(e) => setNcApellido(e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-neutral-800 bg-neutral-900/60 px-2 py-1.5 text-xs"
+                  />
+                </div>
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-3">
+                <div>
+                  <label className="block text-[11px] text-neutral-400">
                     Teléfono
                   </label>
                   <input
-                    type="text"
                     value={ncTelefono}
                     onChange={(e) => setNcTelefono(e.target.value)}
-                    placeholder="Ej: 351 555 1234"
-                    className="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-xs text-gray-800"
+                    className="mt-1 w-full rounded-lg border border-neutral-800 bg-neutral-900/60 px-2 py-1.5 text-xs"
+                  />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="block text-[11px] text-neutral-400">
+                    Email
+                  </label>
+                  <input
+                    value={ncEmail}
+                    onChange={(e) => setNcEmail(e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-neutral-800 bg-neutral-900/60 px-2 py-1.5 text-xs"
                   />
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid gap-3 md:grid-cols-3">
                 <div>
-                  <label className="block text-[11px] font-medium text-gray-600 mb-1">
-                    Email
+                  <label className="block text-[11px] text-neutral-400">
+                    Origen
                   </label>
-                  <input
-                    type="email"
-                    value={ncEmail}
-                    onChange={(e) => setNcEmail(e.target.value)}
-                    placeholder="Ej: juan@mail.com"
-                    className="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-xs text-gray-800"
-                  />
+                  <select
+                    value={ncOrigen}
+                    onChange={(e) =>
+                      setNcOrigen(e.target.value as (typeof ORIGENES_CONTACTO)[number])
+                    }
+                    className="mt-1 w-full rounded-lg border border-neutral-800 bg-neutral-900/60 px-2 py-1.5 text-xs"
+                  >
+                    {ORIGENES_CONTACTO.map((o) => (
+                      <option key={o} value={o}>
+                        {o}
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 <div>
-                  <label className="block text-[11px] font-medium text-gray-600 mb-1">
-                    Estado inicial
+                  <label className="block text-[11px] text-neutral-400">
+                    Tipología
+                  </label>
+                  <select
+                    value={ncTipologia}
+                    onChange={(e) =>
+                      setNcTipologia(e.target.value as (typeof TIPOLOGIAS)[number])
+                    }
+                    className="mt-1 w-full rounded-lg border border-neutral-800 bg-neutral-900/60 px-2 py-1.5 text-xs"
+                  >
+                    {TIPOLOGIAS.map((t) => (
+                      <option key={t} value={t}>
+                        {t}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[11px] text-neutral-400">
+                    Operación
+                  </label>
+                  <select
+                    value={ncTipoOperacion}
+                    onChange={(e) =>
+                      setNcTipoOperacion(
+                        e.target.value as (typeof TIPOS_OPERACION)[number]
+                      )
+                    }
+                    className="mt-1 w-full rounded-lg border border-neutral-800 bg-neutral-900/60 px-2 py-1.5 text-xs"
+                  >
+                    {TIPOS_OPERACION.map((t) => (
+                      <option key={t} value={t}>
+                        {t}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] text-neutral-400">
+                  Dirección
+                </label>
+                <input
+                  value={ncDireccion}
+                  onChange={(e) => setNcDireccion(e.target.value)}
+                  className="mt-1 w-full rounded-lg border border-neutral-800 bg-neutral-900/60 px-2 py-1.5 text-xs"
+                  placeholder="Ej: Av. Colón 1234, B° Centro"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] text-neutral-400">
+                  Link de referencia
+                </label>
+                <input
+                  value={ncLinkReferencia}
+                  onChange={(e) => setNcLinkReferencia(e.target.value)}
+                  className="mt-1 w-full rounded-lg border border-neutral-800 bg-neutral-900/60 px-2 py-1.5 text-xs"
+                  placeholder="Ej: link al portal donde viste la propiedad"
+                />
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-2">
+                <div>
+                  <label className="block text-[11px] text-neutral-400">
+                    Estado del pipeline
                   </label>
                   <select
                     value={ncEstadoPipeline}
                     onChange={(e) =>
                       setNcEstadoPipeline(e.target.value as EstadoPipeline)
                     }
-                    className="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-xs text-gray-800 bg-white"
+                    className="mt-1 w-full rounded-lg border border-neutral-800 bg-neutral-900/60 px-2 py-1.5 text-xs"
                   >
-                    {ESTADOS_PIPELINE.map((opt) => (
-                      <option key={opt.value} value={opt.value}>
-                        {opt.label}
+                    {ESTADOS_PIPELINE_OPCIONES.map((estado) => (
+                      <option key={estado} value={estado}>
+                        {ESTADOS_PIPELINE_LABEL[estado]}
                       </option>
                     ))}
                   </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[11px] font-medium text-gray-600 mb-1">
-                    Tipología de la propiedad
-                  </label>
-                  <select
-                    value={ncTipologia}
-                    onChange={(e) => setNcTipologia(e.target.value)}
-                    className="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-xs text-gray-800 bg-white"
-                  >
-                    <option value="">Seleccioná una opción</option>
-                    {TIPOLOGIAS.map((t) => (
-                      <option key={t} value={t}>
-                        {t}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-[11px] font-medium text-gray-600 mb-1">
-                    Tipo de operación
-                  </label>
-                  <select
-                    value={ncTipoOperacion}
-                    onChange={(e) => setNcTipoOperacion(e.target.value)}
-                    className="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-xs text-gray-800 bg-white"
-                  >
-                    <option value="">Seleccioná una opción</option>
-                    {TIPOS_OPERACION.map((t) => (
-                      <option key={t} value={t}>
-                        {t}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[11px] font-medium text-gray-600 mb-1">
-                    Zona / barrio
-                  </label>
-                  <input
-                    type="text"
-                    value={ncZona}
-                    onChange={(e) => setNcZona(e.target.value)}
-                    placeholder="Ej: Nueva Córdoba, Gral. Paz"
-                    className="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-xs text-gray-800"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-medium text-gray-600 mb-1">
-                    Dirección (opcional)
-                  </label>
-                  <input
-                    type="text"
-                    value={ncDireccion}
-                    onChange={(e) => setNcDireccion(e.target.value)}
-                    placeholder="Ej: Obispo Trejo 123"
-                    className="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-xs text-gray-800"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[11px] font-medium text-gray-600 mb-1">
-                    Origen del contacto
-                  </label>
-                  <select
-                    value={ncOrigen}
-                    onChange={(e) => setNcOrigen(e.target.value)}
-                    className="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-xs text-gray-800 bg-white"
-                  >
-                    <option value="">Seleccioná una opción</option>
-                    {ORIGENES.map((o) => (
-                      <option key={o} value={o}>
-                        {o}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-[11px] font-medium text-gray-600 mb-1">
-                    Link de referencia (opcional)
-                  </label>
-                  <input
-                    type="text"
-                    value={ncLinkFuente}
-                    onChange={(e) => setNcLinkFuente(e.target.value)}
-                    placeholder="Ej: enlace al aviso donde viste la propiedad"
-                    className="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-xs text-gray-800"
-                  />
                 </div>
               </div>
 
               <div>
-                <label className="block text-[11px] font-medium text-gray-600 mb-1">
-                  Notas internas
+                <label className="block text-[11px] text-neutral-400">
+                  Notas
                 </label>
                 <textarea
                   value={ncNotas}
                   onChange={(e) => setNcNotas(e.target.value)}
                   rows={3}
-                  placeholder="Ej: Llamado frío. Le interesa escuchar propuesta, pero quiere hablar con la familia. Volver a contactar la semana próxima."
-                  className="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-xs text-gray-800 resize-none"
+                  className="mt-1 w-full rounded-lg border border-neutral-800 bg-neutral-900/60 px-2 py-1.5 text-xs"
+                  placeholder="Ej: cómo llegaste al dueño, qué acordaron, objeciones, etc."
                 />
               </div>
 
-              <div className="flex justify-end gap-2 pt-1">
+              <div className="mt-3 flex justify-end gap-2">
                 <button
                   type="button"
-                  onClick={() => setShowNuevoModal(false)}
-                  className="rounded-lg border border-gray-300 px-4 py-1.5 text-xs text-gray-700 hover:bg-gray-50"
-                  disabled={ncSaving}
+                  onClick={() => setShowNuevoContacto(false)}
+                  className="rounded-full border border-neutral-700 px-4 py-1.5 text-[11px] text-neutral-200 hover:bg-neutral-900"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
                   disabled={ncSaving}
-                  className={`rounded-lg px-4 py-1.5 text-xs font-semibold text-white transition ${
-                    ncSaving
-                      ? "bg-gray-400 cursor-not-allowed"
-                      : "bg-gray-900 hover:bg-black"
-                  }`}
+                  className="rounded-full border border-[rgba(230,169,48,0.9)] bg-[rgba(230,169,48,0.95)] px-5 py-1.5 text-[11px] font-semibold text-black hover:bg-[rgba(230,169,48,1)] disabled:opacity-60"
                 >
-                  {ncSaving
-                    ? "Guardando prospecto..."
-                    : "Guardar prospecto en el tracker"}
+                  {ncSaving ? "Guardando…" : "Guardar contacto"}
                 </button>
               </div>
             </form>
@@ -1897,132 +1786,359 @@ export default function EmpresaTrackerPage() {
         </div>
       )}
 
-      {/* MODAL VER / EDITAR CONTACTO (simple por ahora) */}
+      {/* MODAL FICHA CONTACTO */}
       {selectedContacto && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xl max-h-[90vh] overflow-y-auto p-5">
-            <div className="flex items-center justify-between mb-3">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
+          <div className="w-full max-w-2xl rounded-2xl border border-neutral-800 bg-neutral-950 p-5 text-xs text-neutral-100">
+            <div className="mb-3 flex items-center justify-between">
               <div>
-                <h2 className="text-sm font-semibold text-gray-900">
-                  Ficha de contacto
+                <h2 className="text-sm font-semibold text-neutral-50">
+                  {selectedContacto.nombre} {selectedContacto.apellido ?? ""}
                 </h2>
-                <p className="text-[11px] text-gray-500">
-                  Ajustá los datos principales del contacto. En una próxima
-                  iteración sumamos ficha completa de propiedad y ajustes de
-                  precio.
+                <p className="text-[11px] text-neutral-400">
+                  Ficha completa del contacto
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => setSelectedContacto(null)}
-                className="text-gray-400 hover:text-gray-600 text-lg leading-none"
+                className="text-[11px] text-neutral-400 hover:text-neutral-100"
               >
-                ×
+                Cerrar
               </button>
             </div>
 
-            {editMsg && (
-              <div className="mb-2 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-2 py-1.5">
-                {editMsg}
-              </div>
-            )}
+            <div className="grid gap-4 md:grid-cols-[1.4fr_1fr]">
+              {/* Datos principales */}
+              <div className="space-y-3">
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div>
+                    <p className="text-[10px] text-neutral-400">Teléfono</p>
+                    <p className="text-xs text-neutral-100">
+                      {selectedContacto.telefono ?? "—"}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] text-neutral-400">Email</p>
+                    <p className="text-xs text-neutral-100">
+                      {selectedContacto.email ?? "—"}
+                    </p>
+                  </div>
+                </div>
 
-            <form onSubmit={handleGuardarEdicionContacto} className="space-y-3">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[11px] font-medium text-gray-600 mb-1">
-                    Nombre del contacto
-                  </label>
-                  <input
-                    type="text"
-                    value={selectedContacto.nombre || ""}
-                    onChange={(e) =>
-                      setSelectedContacto((prev) =>
-                        prev
-                          ? { ...prev, nombre: e.target.value || null }
-                          : prev
-                      )
-                    }
-                    className="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-xs text-gray-800"
-                  />
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div>
+                    <p className="text-[10px] text-neutral-400">Tipología</p>
+                    <p className="text-xs text-neutral-100">
+                      {selectedContacto.tipologia ?? "—"}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] text-neutral-400">Operación</p>
+                    <p className="text-xs text-neutral-100">
+                      {selectedContacto.tipo_operacion ?? "—"}
+                    </p>
+                  </div>
                 </div>
+
                 <div>
-                  <label className="block text-[11px] font-medium text-gray-600 mb-1">
-                    Teléfono
-                  </label>
-                  <input
-                    type="text"
-                    value={selectedContacto.telefono || ""}
-                    onChange={(e) =>
-                      setSelectedContacto((prev) =>
-                        prev
-                          ? { ...prev, telefono: e.target.value || null }
-                          : prev
-                      )
-                    }
-                    className="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-xs text-gray-800"
-                  />
+                  <p className="text-[10px] text-neutral-400">Dirección</p>
+                  <p className="text-xs text-neutral-100">
+                    {selectedContacto.direccion ?? "—"}
+                  </p>
                 </div>
+
+                <div>
+                  <p className="text-[10px] text-neutral-400">
+                    Link de referencia
+                  </p>
+                  {selectedContacto.link_referencia ? (
+                    <a
+                      href={selectedContacto.link_referencia}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-[11px] text-[rgba(230,169,48,0.95)] underline"
+                    >
+                      Abrir enlace
+                    </a>
+                  ) : (
+                    <p className="text-xs text-neutral-100">—</p>
+                  )}
+                </div>
+
+                <div>
+                  <p className="text-[10px] text-neutral-400">Notas</p>
+                  <p className="whitespace-pre-wrap text-xs text-neutral-100">
+                    {selectedContacto.notas ?? "—"}
+                  </p>
+                </div>
+
+                {selectedContacto.motivo_descartado && (
+                  <div className="rounded-lg border border-rose-900 bg-rose-950/60 p-2">
+                    <p className="text-[10px] text-rose-200">
+                      Motivo de descarte:
+                    </p>
+                    <p className="text-[11px] text-rose-50">
+                      {selectedContacto.motivo_descartado}
+                    </p>
+                  </div>
+                )}
+
+                {/* Mini métricas del contacto */}
+                {(() => {
+                  const acts =
+                    actividadesPorContacto.get(selectedContacto.id) ?? [];
+                  const llamadas = acts.filter((a) =>
+                    (a.tipo ?? "").toLowerCase().includes("llam")
+                  ).length;
+                  const muestras = acts.filter(
+                    (a) => a.tipo === "Muestra"
+                  ).length;
+                  const diasEnTracker = selectedContacto.created_at
+                    ? diffDays(selectedContacto.created_at, null)
+                    : null;
+
+                  return (
+                    <div className="grid gap-2 md:grid-cols-3">
+                      <div className="rounded-lg border border-neutral-800 bg-neutral-900/70 p-2">
+                        <p className="text-[10px] text-neutral-400">
+                          Llamadas registradas
+                        </p>
+                        <p className="mt-1 text-sm font-semibold text-neutral-50">
+                          {llamadas}
+                        </p>
+                      </div>
+                      <div className="rounded-lg border border-neutral-800 bg-neutral-900/70 p-2">
+                        <p className="text-[10px] text-neutral-400">
+                          Muestras
+                        </p>
+                        <p className="mt-1 text-sm font-semibold text-neutral-50">
+                          {muestras}
+                        </p>
+                      </div>
+                      <div className="rounded-lg border border-neutral-800 bg-neutral-900/70 p-2">
+                        <p className="text-[10px] text-neutral-400">
+                          Días en el tracker
+                        </p>
+                        <p className="mt-1 text-sm font-semibold text-neutral-50">
+                          {diasEnTracker ?? "—"}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[11px] font-medium text-gray-600 mb-1">
-                    Email
-                  </label>
-                  <input
-                    type="email"
-                    value={selectedContacto.email || ""}
+              {/* Panel lateral: pipeline y propiedad */}
+              <div className="space-y-3">
+                <div className="rounded-xl border border-neutral-800 bg-neutral-900/70 p-3">
+                  <p className="text-[10px] uppercase tracking-[0.18em] text-neutral-500">
+                    Estado del pipeline
+                  </p>
+                  <select
+                    value={normalizarEstado(
+                      selectedContacto.estado_pipeline
+                    )}
                     onChange={(e) =>
-                      setSelectedContacto((prev) =>
-                        prev
-                          ? { ...prev, email: e.target.value || null }
-                          : prev
+                      handleChangeEstadoContacto(
+                        selectedContacto.id,
+                        e.target.value as EstadoPipeline
                       )
                     }
-                    className="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-xs text-gray-800"
-                  />
+                    className="mt-2 w-full rounded-lg border border-neutral-700 bg-neutral-950/80 px-2 py-1.5 text-xs"
+                  >
+                    {ESTADOS_PIPELINE_OPCIONES.map((estado) => (
+                      <option key={estado} value={estado}>
+                        {ESTADOS_PIPELINE_LABEL[estado]}
+                      </option>
+                    ))}
+                  </select>
                 </div>
-                <div>
-                  <label className="block text-[11px] font-medium text-gray-600 mb-1">
-                    Dirección
-                  </label>
-                  <input
-                    type="text"
-                    value={selectedContacto.direccion || ""}
-                    onChange={(e) =>
-                      setSelectedContacto((prev) =>
-                        prev
-                          ? { ...prev, direccion: e.target.value || null }
-                          : prev
-                      )
-                    }
-                    className="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-xs text-gray-800"
-                  />
+
+                <div className="rounded-xl border border-neutral-800 bg-neutral-900/70 p-3">
+                  <p className="text-[10px] uppercase tracking-[0.18em] text-neutral-500">
+                    Propiedad captada
+                  </p>
+                  {propiedades.find(
+                    (p) => p.contacto_id === selectedContacto.id
+                  ) ? (
+                    <>
+                      <p className="mt-1 text-[11px] text-neutral-300">
+                        Ya hay una propiedad asociada a este contacto. Podés
+                        verla desde la pestaña{" "}
+                        <span className="font-semibold">
+                          Propiedades captadas
+                        </span>
+                        .
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="mt-1 text-[11px] text-neutral-300">
+                        Una vez que el dueño te da la propiedad para trabajar,
+                        cargá los datos básicos y el precio de salida al
+                        mercado.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setShowPropiedadModal(true)}
+                        className="mt-3 w-full rounded-full border border-[rgba(230,169,48,0.9)] bg-[rgba(230,169,48,0.95)] px-3 py-1.5 text-[11px] font-semibold text-black hover:bg-[rgba(230,169,48,1)]"
+                      >
+                        Cargar propiedad captada
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      {/* MODAL NUEVA ACTIVIDAD */}
+      {showNuevaActividadModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
+          <div className="w-full max-w-md rounded-2xl border border-neutral-800 bg-neutral-950 p-5 text-xs text-neutral-100">
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-neutral-50">
+                Nueva actividad
+              </h2>
+              <button
+                type="button"
+                onClick={() => setShowNuevaActividadModal(false)}
+                className="text-[11px] text-neutral-400 hover:text-neutral-100"
+              >
+                Cerrar
+              </button>
+            </div>
+
+            <form
+              onSubmit={handleNuevaActividad}
+              className="space-y-3 text-xs text-neutral-100"
+            >
+              <div>
+                <label className="block text-[11px] text-neutral-400">
+                  Tipo de actividad
+                </label>
+                <select
+                  value={newActTipo}
+                  onChange={(e) => setNewActTipo(e.target.value)}
+                  className="mt-1 w-full rounded-lg border border-neutral-800 bg-neutral-900/60 px-2 py-1.5"
+                >
+                  {TIPOS_ACTIVIDAD.map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[11px] text-neutral-400">
+                  Contacto / Cliente
+                </label>
+                <select
+                  value={newActContactoId ?? ""}
+                  onChange={(e) =>
+                    setNewActContactoId(e.target.value || null)
+                  }
+                  className="mt-1 w-full rounded-lg border border-neutral-800 bg-neutral-900/60 px-2 py-1.5"
+                >
+                  <option value="">Sin contacto asociado</option>
+                  {contactos.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.nombre} {c.apellido ?? ""} ·{" "}
+                      {c.telefono ?? c.email ?? ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[11px] text-neutral-400">
+                  Hora
+                </label>
+                <input
+                  type="time"
+                  value={newActHora}
+                  onChange={(e) => setNewActHora(e.target.value)}
+                  className="mt-1 w-full rounded-lg border border-neutral-800 bg-neutral-900/60 px-2 py-1.5"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] text-neutral-400">
+                  Notas
+                </label>
+                <textarea
+                  value={newActNotas}
+                  onChange={(e) => setNewActNotas(e.target.value)}
+                  rows={3}
+                  className="mt-1 w-full rounded-lg border border-neutral-800 bg-neutral-900/60 px-2 py-1.5"
+                  placeholder="Ej: 2º llamado, confirmar interés, objeciones, etc."
+                />
+              </div>
+
+              {newActMsg && (
+                <p className="text-[11px] text-emerald-300">{newActMsg}</p>
+              )}
+
+              <div className="mt-3 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowNuevaActividadModal(false)}
+                  className="rounded-full border border-neutral-700 px-4 py-1.5 text-[11px] text-neutral-200 hover:bg-neutral-900"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={newActSaving}
+                  className="rounded-full border border-[rgba(230,169,48,0.9)] bg-[rgba(230,169,48,0.95)] px-5 py-1.5 text-[11px] font-semibold text-black hover:bg-[rgba(230,169,48,1)] disabled:opacity-60"
+                >
+                  {newActSaving ? "Guardando…" : "Guardar actividad"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL CARGA PROPIEDAD CAPTADA */}
+      {showPropiedadModal && selectedContacto && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
+          <div className="w-full max-w-xl rounded-2xl border border-neutral-800 bg-neutral-950 p-5 text-xs text-neutral-100">
+            <div className="mb-3 flex items-center justify-between">
+              <div>
+                <h2 className="text-sm font-semibold text-neutral-50">
+                  Propiedad captada
+                </h2>
+                <p className="text-[11px] text-neutral-400">
+                  {selectedContacto.nombre} {selectedContacto.apellido ?? ""}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowPropiedadModal(false)}
+                className="text-[11px] text-neutral-400 hover:text-neutral-100"
+              >
+                Cerrar
+              </button>
+            </div>
+
+            <form onSubmit={handleCrearPropiedad} className="space-y-3">
+              <div className="grid gap-3 md:grid-cols-2">
                 <div>
-                  <label className="block text-[11px] font-medium text-gray-600 mb-1">
+                  <label className="block text-[11px] text-neutral-400">
                     Tipología
                   </label>
                   <select
-                    value={selectedContacto.tipologia_propiedad || ""}
+                    value={propTipologia}
                     onChange={(e) =>
-                      setSelectedContacto((prev) =>
-                        prev
-                          ? {
-                              ...prev,
-                              tipologia_propiedad:
-                                e.target.value || null,
-                            }
-                          : prev
-                      )
+                      setPropTipologia(e.target.value as (typeof TIPOLOGIAS)[number])
                     }
-                    className="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-xs text-gray-800 bg-white"
+                    className="mt-1 w-full rounded-lg border border-neutral-800 bg-neutral-900/60 px-2 py-1.5"
                   >
-                    <option value="">Seleccioná una opción</option>
                     {TIPOLOGIAS.map((t) => (
                       <option key={t} value={t}>
                         {t}
@@ -2031,21 +2147,18 @@ export default function EmpresaTrackerPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-[11px] font-medium text-gray-600 mb-1">
-                    Tipo de operación
+                  <label className="block text-[11px] text-neutral-400">
+                    Operación
                   </label>
                   <select
-                    value={selectedContacto.tipo_operacion || ""}
+                    value={propTipoOperacion}
                     onChange={(e) =>
-                      setSelectedContacto((prev) =>
-                        prev
-                          ? { ...prev, tipo_operacion: e.target.value || null }
-                          : prev
+                      setPropTipoOperacion(
+                        e.target.value as (typeof TIPOS_OPERACION)[number]
                       )
                     }
-                    className="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-xs text-gray-800 bg-white"
+                    className="mt-1 w-full rounded-lg border border-neutral-800 bg-neutral-900/60 px-2 py-1.5"
                   >
-                    <option value="">Seleccioná una opción</option>
                     {TIPOS_OPERACION.map((t) => (
                       <option key={t} value={t}>
                         {t}
@@ -2055,107 +2168,363 @@ export default function EmpresaTrackerPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[11px] text-neutral-400">
+                  Dirección
+                </label>
+                <input
+                  value={propDireccion}
+                  onChange={(e) => setPropDireccion(e.target.value)}
+                  className="mt-1 w-full rounded-lg border border-neutral-800 bg-neutral-900/60 px-2 py-1.5"
+                  placeholder="Ej: Av. Colón 1234, B° Centro"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] text-neutral-400">
+                  Zona / referencia
+                </label>
+                <input
+                  value={propZona}
+                  onChange={(e) => setPropZona(e.target.value)}
+                  className="mt-1 w-full rounded-lg border border-neutral-800 bg-neutral-900/60 px-2 py-1.5"
+                  placeholder="Ej: Zona Nueva Córdoba, Zona Cerro, etc."
+                />
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-2">
                 <div>
-                  <label className="block text-[11px] font-medium text-gray-600 mb-1">
-                    Zona / barrio
+                  <label className="block text-[11px] text-neutral-400">
+                    m² lote (aprox)
                   </label>
                   <input
-                    type="text"
-                    value={selectedContacto.zona || ""}
-                    onChange={(e) =>
-                      setSelectedContacto((prev) =>
-                        prev
-                          ? { ...prev, zona: e.target.value || null }
-                          : prev
-                      )
-                    }
-                    className="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-xs text-gray-800"
+                    value={propM2Lote}
+                    onChange={(e) => setPropM2Lote(e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-neutral-800 bg-neutral-900/60 px-2 py-1.5"
                   />
                 </div>
                 <div>
-                  <label className="block text-[11px] font-medium text-gray-600 mb-1">
-                    Origen
+                  <label className="block text-[11px] text-neutral-400">
+                    m² cubiertos (aprox)
+                  </label>
+                  <input
+                    value={propM2Cubiertos}
+                    onChange={(e) => setPropM2Cubiertos(e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-neutral-800 bg-neutral-900/60 px-2 py-1.5"
+                  />
+                </div>
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-[1.4fr_1fr]">
+                <div>
+                  <label className="block text-[11px] text-neutral-400">
+                    Precio de lista inicial *
+                  </label>
+                  <input
+                    value={propPrecioInicial}
+                    onChange={(e) => setPropPrecioInicial(e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-neutral-800 bg-neutral-900/60 px-2 py-1.5"
+                    placeholder="Ej: 120000"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] text-neutral-400">
+                    Moneda
                   </label>
                   <select
-                    value={selectedContacto.origen || ""}
-                    onChange={(e) =>
-                      setSelectedContacto((prev) =>
-                        prev
-                          ? { ...prev, origen: e.target.value || null }
-                          : prev
-                      )
-                    }
-                    className="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-xs text-gray-800 bg-white"
+                    value={propMoneda}
+                    onChange={(e) => setPropMoneda(e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-neutral-800 bg-neutral-900/60 px-2 py-1.5"
                   >
-                    <option value="">Seleccioná una opción</option>
-                    {ORIGENES.map((o) => (
-                      <option key={o} value={o}>
-                        {o}
-                      </option>
-                    ))}
+                    <option value="ARS">ARS</option>
+                    <option value="USD">USD</option>
                   </select>
                 </div>
               </div>
 
-              <div>
-                <label className="block text-[11px] font-medium text-gray-600 mb-1">
-                  Link de referencia
-                </label>
-                <input
-                  type="text"
-                  value={selectedContacto.link_fuente || ""}
-                  onChange={(e) =>
-                    setSelectedContacto((prev) =>
-                      prev
-                        ? { ...prev, link_fuente: e.target.value || null }
-                        : prev
-                    )
-                  }
-                  className="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-xs text-gray-800"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-medium text-gray-600 mb-1">
-                  Notas internas
-                </label>
-                <textarea
-                  value={selectedContacto.notas || ""}
-                  onChange={(e) =>
-                    setSelectedContacto((prev) =>
-                      prev
-                        ? { ...prev, notas: e.target.value || null }
-                        : prev
-                    )
-                  }
-                  rows={3}
-                  className="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-xs text-gray-800 resize-none"
-                />
-              </div>
-
-              <div className="flex justify-end gap-2 pt-1">
+              <div className="mt-3 flex justify-end gap-2">
                 <button
                   type="button"
-                  onClick={() => setSelectedContacto(null)}
-                  className="rounded-lg border border-gray-300 px-4 py-1.5 text-xs text-gray-700 hover:bg-gray-50"
-                  disabled={editSaving}
+                  onClick={() => setShowPropiedadModal(false)}
+                  className="rounded-full border border-neutral-700 px-4 py-1.5 text-[11px] text-neutral-200 hover:bg-neutral-900"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  disabled={editSaving}
-                  className={`rounded-lg px-4 py-1.5 text-xs font-semibold text-white transition ${
-                    editSaving
-                      ? "bg-gray-400 cursor-not-allowed"
-                      : "bg-gray-900 hover:bg-black"
-                  }`}
+                  disabled={propSaving}
+                  className="rounded-full border border-[rgba(230,169,48,0.9)] bg-[rgba(230,169,48,0.95)] px-5 py-1.5 text-[11px] font-semibold text-black hover:bg-[rgba(230,169,48,1)] disabled:opacity-60"
                 >
-                  {editSaving ? "Guardando..." : "Guardar cambios"}
+                  {propSaving ? "Guardando…" : "Guardar propiedad"}
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DETALLE PROPIEDAD */}
+      {showPropiedadDetalleModal && selectedPropiedad && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
+          <div className="w-full max-w-3xl rounded-2xl border border-neutral-800 bg-neutral-950 p-5 text-xs text-neutral-100">
+            <div className="mb-3 flex items-center justify-between">
+              <div>
+                <h2 className="text-sm font-semibold text-neutral-50">
+                  Detalle de propiedad
+                </h2>
+                <p className="text-[11px] text-neutral-400">
+                  {selectedPropiedad.contacto?.nombre}{" "}
+                  {selectedPropiedad.contacto?.apellido}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowPropiedadDetalleModal(false)}
+                className="text-[11px] text-neutral-400 hover:text-neutral-100"
+              >
+                Cerrar
+              </button>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-[1.4fr_1fr]">
+              {/* Izquierda: datos y cierre */}
+              <div className="space-y-3">
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div>
+                    <p className="text-[10px] text-neutral-400">Tipología</p>
+                    <p className="text-xs text-neutral-100">
+                      {selectedPropiedad.tipologia ?? "—"}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] text-neutral-400">
+                      Operación
+                    </p>
+                    <p className="text-xs text-neutral-100">
+                      {selectedPropiedad.tipo_operacion ?? "—"}
+                    </p>
+                  </div>
+                </div>
+
+                <div>
+                  <p className="text-[10px] text-neutral-400">
+                    Dirección / zona
+                  </p>
+                  <p className="text-xs text-neutral-100">
+                    {selectedPropiedad.direccion ??
+                      selectedPropiedad.zona ??
+                      "—"}
+                  </p>
+                </div>
+
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div>
+                    <p className="text-[10px] text-neutral-400">
+                      m² lote
+                    </p>
+                    <p className="text-xs text-neutral-100">
+                      {selectedPropiedad.m2_lote ?? "—"}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] text-neutral-400">
+                      m² cubiertos
+                    </p>
+                    <p className="text-xs text-neutral-100">
+                      {selectedPropiedad.m2_cubiertos ?? "—"}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div>
+                    <p className="text-[10px] text-neutral-400">
+                      Precio lista inicial
+                    </p>
+                    <p className="text-xs text-neutral-100">
+                      {fmtCurrency(
+                        selectedPropiedad.precio_lista_inicial,
+                        selectedPropiedad.moneda ?? "ARS"
+                      )}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] text-neutral-400">
+                      Precio actual
+                    </p>
+                    <p className="text-xs text-neutral-100">
+                      {fmtCurrency(
+                        selectedPropiedad.precio_actual ??
+                          selectedPropiedad.precio_lista_inicial,
+                        selectedPropiedad.moneda ?? "ARS"
+                      )}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div>
+                    <p className="text-[10px] text-neutral-400">
+                      Inicio comercialización
+                    </p>
+                    <p className="text-xs text-neutral-100">
+                      {fmtDate(
+                        selectedPropiedad.fecha_inicio_comercializacion ??
+                          selectedPropiedad.created_at
+                      )}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] text-neutral-400">
+                      Días en mercado
+                    </p>
+                    <p className="text-xs text-neutral-100">
+                      {diffDays(
+                        selectedPropiedad.fecha_inicio_comercializacion ??
+                          selectedPropiedad.created_at,
+                        selectedPropiedad.fecha_cierre
+                      ) ?? "—"}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Cierre de operación */}
+                <form
+                  onSubmit={handleGuardarCierreOperacion}
+                  className="mt-3 space-y-2 rounded-xl border border-emerald-900 bg-emerald-950/40 p-3"
+                >
+                  <p className="text-[10px] uppercase tracking-[0.18em] text-emerald-200">
+                    Cierre de operación
+                  </p>
+                  <div className="grid gap-2 md:grid-cols-2">
+                    <div>
+                      <label className="block text-[11px] text-emerald-100">
+                        Precio de cierre
+                      </label>
+                      <input
+                        value={propDetallePrecioCierre}
+                        onChange={(e) =>
+                          setPropDetallePrecioCierre(e.target.value)
+                        }
+                        className="mt-1 w-full rounded-lg border border-emerald-800 bg-emerald-950/60 px-2 py-1.5 text-xs text-emerald-50"
+                        placeholder="Ej: 115000"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] text-emerald-100">
+                        Fecha de cierre
+                      </label>
+                      <input
+                        type="date"
+                        value={propDetalleFechaCierre}
+                        onChange={(e) =>
+                          setPropDetalleFechaCierre(e.target.value)
+                        }
+                        className="mt-1 w-full rounded-lg border border-emerald-800 bg-emerald-950/60 px-2 py-1.5 text-xs text-emerald-50"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex justify-end">
+                    <button
+                      type="submit"
+                      disabled={propDetalleSaving}
+                      className="rounded-full border border-emerald-400 bg-emerald-500/90 px-4 py-1.5 text-[11px] font-semibold text-emerald-950 hover:bg-emerald-500 disabled:opacity-60"
+                    >
+                      {propDetalleSaving
+                        ? "Guardando cierre…"
+                        : "Guardar cierre"}
+                    </button>
+                  </div>
+                </form>
+              </div>
+
+              {/* Derecha: historial de precios */}
+              <div className="space-y-3">
+                <div className="rounded-xl border border-neutral-800 bg-neutral-900/70 p-3">
+                  <p className="text-[10px] uppercase tracking-[0.18em] text-neutral-500">
+                    Historial de precios
+                  </p>
+
+                  {preciosPropiedad.length === 0 ? (
+                    <p className="mt-2 text-[11px] text-neutral-400">
+                      Aún no registraste cambios de precio.
+                    </p>
+                  ) : (
+                    <ul className="mt-2 space-y-2 text-[11px] text-neutral-200">
+                      {preciosPropiedad.map((h) => (
+                        <li
+                          key={h.id}
+                          className="rounded-lg border border-neutral-800 bg-neutral-950/80 p-2"
+                        >
+                          <p className="text-neutral-100">
+                            {fmtCurrency(
+                              h.precio,
+                              h.moneda ?? selectedPropiedad.moneda ?? "ARS"
+                            )}
+                          </p>
+                          <p className="text-[10px] text-neutral-400">
+                            {fmtDate(h.fecha_cambio)}{" "}
+                            {h.motivo ? `· ${h.motivo}` : ""}
+                          </p>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+
+                <form
+                  onSubmit={handleRegistrarAjustePrecio}
+                  className="space-y-2 rounded-xl border border-neutral-800 bg-neutral-900/70 p-3"
+                >
+                  <p className="text-[10px] uppercase tracking-[0.18em] text-neutral-500">
+                    Registrar ajuste de precio
+                  </p>
+                  <div>
+                    <label className="block text-[11px] text-neutral-400">
+                      Nuevo precio
+                    </label>
+                    <input
+                      value={newPrecioValor}
+                      onChange={(e) => setNewPrecioValor(e.target.value)}
+                      className="mt-1 w-full rounded-lg border border-neutral-800 bg-neutral-950/60 px-2 py-1.5 text-xs"
+                      placeholder="Ej: 115000"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] text-neutral-400">
+                      Motivo / nota
+                    </label>
+                    <textarea
+                      value={newPrecioMotivo}
+                      onChange={(e) => setNewPrecioMotivo(e.target.value)}
+                      rows={2}
+                      className="mt-1 w-full rounded-lg border border-neutral-800 bg-neutral-950/60 px-2 py-1.5 text-xs"
+                      placeholder="Ej: ajuste por mercado, negociación con cliente, etc."
+                    />
+                  </div>
+                  <div className="flex justify-end">
+                    <button
+                      type="submit"
+                      disabled={newPrecioSaving}
+                      className="rounded-full border border-[rgba(230,169,48,0.9)] bg-[rgba(230,169,48,0.95)] px-4 py-1.5 text-[11px] font-semibold text-black hover:bg-[rgba(230,169,48,1)] disabled:opacity-60"
+                    >
+                      {newPrecioSaving
+                        ? "Registrando…"
+                        : "Registrar ajuste"}
+                    </button>
+                  </div>
+                </form>
+
+                <button
+                  type="button"
+                  onClick={() => handleDeletePropiedad(selectedPropiedad.id)}
+                  className="w-full rounded-full border border-red-900 bg-red-950/60 px-4 py-1.5 text-[11px] font-semibold text-red-200 hover:bg-red-900/70"
+                >
+                  Eliminar propiedad
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

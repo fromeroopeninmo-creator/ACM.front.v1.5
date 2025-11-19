@@ -405,7 +405,7 @@ export default function EmpresaTrackerPage() {
     }));
   }, [propiedades]);
 
-  // Carga inicial
+   // Carga inicial
   useEffect(() => {
     if (!empresaId) {
       setLoading(false);
@@ -458,7 +458,44 @@ export default function EmpresaTrackerPage() {
 
         setContactos((cData as TrackerContacto[]) ?? []);
         setActividades((aData as TrackerActividad[]) ?? []);
-        setPropiedades((pData as TrackerPropiedad[]) ?? []);
+
+        // 👇 Normalizamos la relación contacto (Supabase la devuelve como array)
+        const propsNormalizadas: TrackerPropiedad[] = (pData ?? []).map(
+          (row: any) => {
+            const contactoRaw = Array.isArray(row.contacto)
+              ? row.contacto[0]
+              : row.contacto;
+
+            return {
+              id: row.id,
+              empresa_id: row.empresa_id,
+              contacto_id: row.contacto_id,
+              tipologia: row.tipologia,
+              tipo_operacion: row.tipo_operacion,
+              direccion: row.direccion,
+              zona: row.zona,
+              m2_lote: row.m2_lote,
+              m2_cubiertos: row.m2_cubiertos,
+              precio_lista_inicial: row.precio_lista_inicial,
+              precio_actual: row.precio_actual,
+              precio_cierre: row.precio_cierre,
+              moneda: row.moneda,
+              fecha_inicio_comercializacion:
+                row.fecha_inicio_comercializacion,
+              fecha_cierre: row.fecha_cierre,
+              created_at: row.created_at,
+              updated_at: row.updated_at,
+              contacto: contactoRaw
+                ? {
+                    nombre: contactoRaw.nombre ?? null,
+                    apellido: contactoRaw.apellido ?? null,
+                  }
+                : null,
+            } as TrackerPropiedad;
+          }
+        );
+
+        setPropiedades(propsNormalizadas);
       } catch (err) {
         console.error("Error cargando tracker:", err);
       } finally {
@@ -468,6 +505,7 @@ export default function EmpresaTrackerPage() {
 
     fetchAll();
   }, [empresaId]);
+
 
   const handleCrearContacto = async (e: React.FormEvent) => {
     e.preventDefault();

@@ -52,7 +52,7 @@ interface TrackerActividad {
   contacto_id: string | null;
   titulo: string;
   tipo: TrackerActividadTipo;
-  fecha_programada: string; // date (YYYY-MM-DD)
+  fecha_programada: string; // YYYY-MM-DD
   hora: string | null; // HH:mm
   notas: string | null;
   created_at: string;
@@ -82,8 +82,6 @@ interface TrackerPropiedad {
     apellido: string | null;
   } | null;
 }
-
-const accent = "#E6A930";
 
 function startOfDay(date: Date) {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate());
@@ -131,9 +129,9 @@ function getMonthMatrix(currentMonth: Date) {
   const firstDayOfMonth = new Date(year, month, 1);
   const lastDayOfMonth = new Date(year, month + 1, 0);
 
-  const startWeekDay = firstDayOfMonth.getDay(); // 0-dom
+  const startWeekDay = firstDayOfMonth.getDay();
   const start = new Date(firstDayOfMonth);
-  start.setDate(firstDayOfMonth.getDate() - (startWeekDay === 0 ? 6 : startWeekDay - 1)); // Lunes inicio
+  start.setDate(firstDayOfMonth.getDate() - (startWeekDay === 0 ? 6 : startWeekDay - 1));
 
   const endWeekDay = lastDayOfMonth.getDay();
   const end = new Date(lastDayOfMonth);
@@ -179,7 +177,6 @@ export default function EmpresaTrackerPage() {
   const [currentMonth, setCurrentMonth] = useState<Date>(new Date());
   const [selectedDate, setSelectedDate] = useState<Date>(startOfDay(new Date()));
 
-  // Modales / formularios
   const [showContactoModal, setShowContactoModal] = useState(false);
   const [editingContacto, setEditingContacto] = useState<TrackerContacto | null>(null);
 
@@ -191,7 +188,6 @@ export default function EmpresaTrackerPage() {
 
   const [mensaje, setMensaje] = useState<string | null>(null);
 
-  // Datos de formulario contacto
   const [formContacto, setFormContacto] = useState({
     nombre: "",
     apellido: "",
@@ -206,7 +202,6 @@ export default function EmpresaTrackerPage() {
     direccion: "",
   });
 
-  // Datos de formulario actividad
   const [formActividad, setFormActividad] = useState({
     titulo: "",
     tipo: "seguimiento" as TrackerActividadTipo,
@@ -216,7 +211,6 @@ export default function EmpresaTrackerPage() {
     notas: "",
   });
 
-  // Datos de formulario propiedad
   const [formPropiedad, setFormPropiedad] = useState({
     contacto_id: "",
     tipologia: "",
@@ -233,31 +227,21 @@ export default function EmpresaTrackerPage() {
     fecha_cierre: "",
   });
 
-  // Helpers de UI
   const hoy = startOfDay(new Date());
   const manana = startOfDay(addDays(new Date(), 1));
 
   const actividadesHoy = useMemo(
-    () =>
-      actividades.filter((a) =>
-        isSameDay(new Date(a.fecha_programada), hoy)
-      ),
+    () => actividades.filter((a) => isSameDay(new Date(a.fecha_programada), hoy)),
     [actividades, hoy]
   );
 
   const actividadesManana = useMemo(
-    () =>
-      actividades.filter((a) =>
-        isSameDay(new Date(a.fecha_programada), manana)
-      ),
+    () => actividades.filter((a) => isSameDay(new Date(a.fecha_programada), manana)),
     [actividades, manana]
   );
 
   const actividadesSelectedDate = useMemo(
-    () =>
-      actividades.filter((a) =>
-        isSameDay(new Date(a.fecha_programada), selectedDate)
-      ),
+    () => actividades.filter((a) => isSameDay(new Date(a.fecha_programada), selectedDate)),
     [actividades, selectedDate]
   );
 
@@ -379,7 +363,6 @@ export default function EmpresaTrackerPage() {
         setContactos((cData as TrackerContacto[]) ?? []);
         setActividades((aData as TrackerActividad[]) ?? []);
 
-        // Normalizamos contacto (Supabase devuelve array)
         const propsNormalizadas: TrackerPropiedad[] = (pData ?? []).map(
           (row: any) => {
             const contactoRaw = Array.isArray(row.contacto)
@@ -528,7 +511,6 @@ export default function EmpresaTrackerPage() {
       showMessage("✅ Contacto guardado.");
       setShowContactoModal(false);
 
-      // refrescar
       const { data: cData } = await supabase
         .from("tracker_contactos")
         .select("*")
@@ -932,7 +914,9 @@ export default function EmpresaTrackerPage() {
     }).format(n);
   };
 
-  const contactoNombreCorto = (c: TrackerContacto | null | undefined) => {
+  const contactoNombreCorto = (
+    c: { nombre?: string | null; apellido?: string | null } | null | undefined
+  ) => {
     if (!c) return "Sin contacto";
     const nom = [c.nombre, c.apellido].filter(Boolean).join(" ");
     return nom || "Sin nombre";
@@ -962,8 +946,9 @@ export default function EmpresaTrackerPage() {
               Tracker de trabajo inmobiliario
             </h1>
             <p className="mt-1 text-sm text-slate-600 max-w-xl">
-              Registrá prospectos, actividades diarias y propiedades captadas
-              para tener una visión clara de tu avance comercial.
+              Tu tablero de mando diario para medir prospección, prelisting,
+              captaciones y cierres. Todo alineado con tus informes VAI y
+              factibilidades.
             </p>
           </div>
 
@@ -1048,9 +1033,14 @@ export default function EmpresaTrackerPage() {
         {/* KPIs principales */}
         <section className="rounded-2xl bg-white border border-gray-200 shadow-sm p-4">
           <div className="flex items-center justify-between gap-3 mb-4">
-            <h2 className="text-sm font-semibold text-slate-900">
-              Resumen de actividad
-            </h2>
+            <div>
+              <h2 className="text-sm font-semibold text-slate-900">
+                Resumen de actividad
+              </h2>
+              <p className="text-xs text-slate-500">
+                Visualizá cuántos contactos avanzan en cada etapa del circuito.
+              </p>
+            </div>
             <div className="flex items-center gap-2 text-xs">
               <span className="text-slate-500">Período:</span>
               <select
@@ -1072,11 +1062,17 @@ export default function EmpresaTrackerPage() {
               <p className="mt-1 text-2xl font-semibold text-slate-900">
                 {kpis.prospectos}
               </p>
+              <p className="mt-1 text-[11px] text-slate-500">
+                Nuevos contactos que entraron al circuito.
+              </p>
             </div>
             <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
               <p className="text-xs text-slate-500">Prelisting</p>
               <p className="mt-1 text-2xl font-semibold text-slate-900">
                 {kpis.prelisting}
+              </p>
+              <p className="mt-1 text-[11px] text-slate-500">
+                Propiedades con visita y análisis previo.
               </p>
             </div>
             <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
@@ -1084,11 +1080,17 @@ export default function EmpresaTrackerPage() {
               <p className="mt-1 text-2xl font-semibold text-slate-900">
                 {kpis.captaciones}
               </p>
+              <p className="mt-1 text-[11px] text-slate-500">
+                Propietarios que te dieron la propiedad.
+              </p>
             </div>
             <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
               <p className="text-xs text-slate-500">Cierres</p>
               <p className="mt-1 text-2xl font-semibold text-slate-900">
                 {kpis.cierres}
+              </p>
+              <p className="mt-1 text-[11px] text-slate-500">
+                Operaciones finalizadas con precio de cierre.
               </p>
             </div>
           </div>
@@ -1120,179 +1122,197 @@ export default function EmpresaTrackerPage() {
 
         {/* CONTENIDO DE TABS */}
         {activeTab === "calendario" && (
-          <section className="grid gap-6 md:grid-cols-[2fr_1.1fr] items-start">
-            {/* Calendario mensual */}
-            <div className="rounded-2xl bg-white border border-gray-200 shadow-sm p-4">
-              <div className="flex items-center justify-between mb-3">
-                <div>
-                  <p className="text-xs uppercase tracking-wide text-slate-500">
-                    Calendario
-                  </p>
-                  <p className="text-sm font-semibold text-slate-900">
-                    {currentMonth.toLocaleDateString("es-AR", {
-                      month: "long",
-                      year: "numeric",
-                    })}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() =>
-                      setCurrentMonth(
-                        new Date(
-                          currentMonth.getFullYear(),
-                          currentMonth.getMonth() - 1,
-                          1
-                        )
-                      )
-                    }
-                    className="rounded-full border border-gray-300 bg-white px-2 py-1 text-xs text-slate-700 hover:bg-gray-100"
-                  >
-                    ←
-                  </button>
-                  <button
-                    onClick={() => {
-                      const now = new Date();
-                      setCurrentMonth(new Date(now.getFullYear(), now.getMonth(), 1));
-                      setSelectedDate(startOfDay(now));
-                    }}
-                    className="rounded-full border border-gray-300 bg-white px-3 py-1 text-xs text-slate-700 hover:bg-gray-100"
-                  >
-                    Hoy
-                  </button>
-                  <button
-                    onClick={() =>
-                      setCurrentMonth(
-                        new Date(
-                          currentMonth.getFullYear(),
-                          currentMonth.getMonth() + 1,
-                          1
-                        )
-                      )
-                    }
-                    className="rounded-full border border-gray-300 bg-white px-2 py-1 text-xs text-slate-700 hover:bg-gray-100"
-                  >
-                    →
-                  </button>
-                </div>
-              </div>
-
-              {/* Cabecera días semana */}
-              <div className="grid grid-cols-7 text-[11px] text-slate-500 mb-1">
-                {["L", "M", "M", "J", "V", "S", "D"].map((d) => (
-                  <div
-                    key={d}
-                    className="py-1 text-center uppercase tracking-wide"
-                  >
-                    {d}
+          <section className="space-y-4">
+            <div className="grid gap-6 md:grid-cols-[2fr_1.1fr] items-start">
+              {/* Calendario mensual */}
+              <div className="rounded-2xl bg-white border border-gray-200 shadow-sm p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-slate-500">
+                      Calendario
+                    </p>
+                    <p className="text-sm font-semibold text-slate-900">
+                      {currentMonth.toLocaleDateString("es-AR", {
+                        month: "long",
+                        year: "numeric",
+                      })}
+                    </p>
                   </div>
-                ))}
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() =>
+                        setCurrentMonth(
+                          new Date(
+                            currentMonth.getFullYear(),
+                            currentMonth.getMonth() - 1,
+                            1
+                          )
+                        )
+                      }
+                      className="rounded-full border border-gray-300 bg-white px-2 py-1 text-xs text-slate-700 hover:bg-gray-100"
+                    >
+                      ←
+                    </button>
+                    <button
+                      onClick={() => {
+                        const now = new Date();
+                        setCurrentMonth(
+                          new Date(now.getFullYear(), now.getMonth(), 1)
+                        );
+                        setSelectedDate(startOfDay(now));
+                      }}
+                      className="rounded-full border border-gray-300 bg-white px-3 py-1 text-xs text-slate-700 hover:bg-gray-100"
+                    >
+                      Hoy
+                    </button>
+                    <button
+                      onClick={() =>
+                        setCurrentMonth(
+                          new Date(
+                            currentMonth.getFullYear(),
+                            currentMonth.getMonth() + 1,
+                            1
+                          )
+                        )
+                      }
+                      className="rounded-full border border-gray-300 bg-white px-2 py-1 text-xs text-slate-700 hover:bg-gray-100"
+                    >
+                      →
+                    </button>
+                  </div>
+                </div>
+
+                {/* Cabecera días semana */}
+                <div className="grid grid-cols-7 text-[11px] text-slate-500 mb-1">
+                  {["L", "M", "M", "J", "V", "S", "D"].map((d) => (
+                    <div
+                      key={d}
+                      className="py-1 text-center uppercase tracking-wide"
+                    >
+                      {d}
+                    </div>
+                  ))}
+                </div>
+
+                <div className="grid grid-rows-6 gap-y-1">
+                  {monthMatrix.map((week, wi) => (
+                    <div key={wi} className="grid grid-cols-7 gap-x-1">
+                      {week.map((day, di) => {
+                        const isCurrentMonth =
+                          day.getMonth() === currentMonth.getMonth();
+                        const isSelected = isSameDay(day, selectedDate);
+                        const key = day.toISOString().substring(0, 10);
+                        const count = actividadesByDateMap.get(key) ?? 0;
+
+                        return (
+                          <button
+                            key={di}
+                            type="button"
+                            onClick={() => setSelectedDate(startOfDay(day))}
+                            className={`flex flex-col items-center justify-center rounded-lg border px-1.5 py-1.5 text-[11px] transition ${
+                              isSelected
+                                ? "border-black bg-black text-white"
+                                : isCurrentMonth
+                                ? "bg-white border-gray-200 text-slate-900 hover:bg-gray-50"
+                                : "bg-gray-50 border-gray-200 text-slate-400 hover:bg-gray-100"
+                            }`}
+                          >
+                            <span className="leading-none">
+                              {day.getDate()}
+                            </span>
+                            {count > 0 && (
+                              <span className="mt-1 inline-flex items-center rounded-full bg-[rgba(230,169,48,0.08)] px-1.5 py-0.5 text-[9px] font-medium text-[rgba(230,169,48,0.95)]">
+                                {count} act.
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ))}
+                </div>
               </div>
 
-              <div className="grid grid-rows-6 gap-y-1">
-                {monthMatrix.map((week, wi) => (
-                  <div key={wi} className="grid grid-cols-7 gap-x-1">
-                    {week.map((day, di) => {
-                      const isCurrentMonth =
-                        day.getMonth() === currentMonth.getMonth();
-                      const isSelected = isSameDay(day, selectedDate);
-                      const key = day.toISOString().substring(0, 10);
-                      const count = actividadesByDateMap.get(key) ?? 0;
+              {/* Actividades del día */}
+              <div className="rounded-2xl bg-white border border-gray-200 shadow-sm p-4">
+                <div className="flex items-center justify-between gap-2 mb-3">
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-slate-500">
+                      Actividades del día
+                    </p>
+                    <p className="text-sm font-semibold text-slate-900">
+                      {formatDate(selectedDate)}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => openNuevaActividad(selectedDate)}
+                    className="inline-flex items-center gap-1 rounded-full bg-black text-white px-3 py-1.5 text-xs font-medium hover:bg-slate-900"
+                  >
+                    <span className="text-sm">＋</span>
+                    Agregar tarea
+                  </button>
+                </div>
 
+                {actividadesSelectedDate.length === 0 ? (
+                  <p className="text-xs text-slate-500">
+                    No hay actividades registradas en esta fecha.
+                  </p>
+                ) : (
+                  <ul className="space-y-2 max-h-[360px] overflow-y-auto">
+                    {actividadesSelectedDate.map((a) => {
+                      const contacto = contactoPorId(a.contacto_id);
                       return (
-                        <button
-                          key={di}
-                          type="button"
-                          onClick={() => setSelectedDate(startOfDay(day))}
-                          className={`flex flex-col items-center justify-center rounded-lg border px-1.5 py-1.5 text-[11px] transition ${
-                            isSelected
-                              ? "border-black bg-black text-white"
-                              : isCurrentMonth
-                              ? "bg-white border-gray-200 text-slate-900 hover:bg-gray-50"
-                              : "bg-gray-50 border-gray-200 text-slate-400 hover:bg-gray-100"
-                          }`}
+                        <li
+                          key={a.id}
+                          className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs flex flex-col gap-1"
                         >
-                          <span className="leading-none">
-                            {day.getDate()}
-                          </span>
-                          {count > 0 && (
-                            <span className="mt-1 inline-flex items-center rounded-full bg-[rgba(230,169,48,0.08)] px-1.5 py-0.5 text-[9px] font-medium text-[rgba(230,169,48,0.95)]">
-                              {count} act.
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-medium text-slate-900">
+                              {a.titulo}
                             </span>
-                          )}
-                        </button>
+                            <span className="text-[11px] text-slate-500">
+                              {a.hora ? formatTime(a.hora) : "Sin hora"}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-[11px] text-slate-500">
+                              {contactoNombreCorto(contacto)}
+                            </span>
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => openEditarActividad(a)}
+                                className="text-[11px] text-slate-600 hover:text-black"
+                              >
+                                Editar
+                              </button>
+                              <button
+                                onClick={() => eliminarActividad(a.id)}
+                                className="text-[11px] text-red-600 hover:text-red-700"
+                              >
+                                Eliminar
+                              </button>
+                            </div>
+                          </div>
+                        </li>
                       );
                     })}
-                  </div>
-                ))}
+                  </ul>
+                )}
               </div>
             </div>
 
-            {/* Actividades del día */}
-            <div className="rounded-2xl bg-white border border-gray-200 shadow-sm p-4">
-              <div className="flex items-center justify-between gap-2 mb-3">
-                <div>
-                  <p className="text-xs uppercase tracking-wide text-slate-500">
-                    Actividades del día
-                  </p>
-                  <p className="text-sm font-semibold text-slate-900">
-                    {formatDate(selectedDate)}
-                  </p>
-                </div>
-                <button
-                  onClick={() => openNuevaActividad(selectedDate)}
-                  className="inline-flex items-center gap-1 rounded-full bg-black text-white px-3 py-1.5 text-xs font-medium hover:bg-slate-900"
-                >
-                  <span className="text-sm">＋</span>
-                  Agregar tarea
-                </button>
-              </div>
-
-              {actividadesSelectedDate.length === 0 ? (
-                <p className="text-xs text-slate-500">
-                  No hay actividades registradas en esta fecha.
-                </p>
-              ) : (
-                <ul className="space-y-2 max-h-[360px] overflow-y-auto">
-                  {actividadesSelectedDate.map((a) => {
-                    const contacto = contactoPorId(a.contacto_id);
-                    return (
-                      <li
-                        key={a.id}
-                        className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs flex flex-col gap-1"
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="font-medium text-slate-900">
-                            {a.titulo}
-                          </span>
-                          <span className="text-[11px] text-slate-500">
-                            {a.hora ? formatTime(a.hora) : "Sin hora"}
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-[11px] text-slate-500">
-                            {contactoNombreCorto(contacto)}
-                          </span>
-                          <div className="flex items-center gap-2">
-                            <button
-                              onClick={() => openEditarActividad(a)}
-                              className="text-[11px] text-slate-600 hover:text-black"
-                            >
-                              Editar
-                            </button>
-                            <button
-                              onClick={() => eliminarActividad(a.id)}
-                              className="text-[11px] text-red-600 hover:text-red-700"
-                            >
-                              Eliminar
-                            </button>
-                          </div>
-                        </div>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
+            {/* Tip visual con ejemplos */}
+            <div className="rounded-xl border-l-4 border-[#E6A930] bg-amber-50/60 px-4 py-3 text-[11px] text-amber-900">
+              <p className="font-medium text-xs mb-1">Tip para usar el tracker</p>
+              <p>
+                Si hoy no tenés actividades agendadas, programá al menos{" "}
+                <span className="font-semibold">3 llamadas de seguimiento</span>{" "}
+                o{" "}
+                <span className="font-semibold">1 prelisting</span>. Ejemplos:
+                &nbsp;“Seguimiento Casa 3D en Centro” a las 10:00, “Prelisting
+                Dúplex zona norte” a las 17:00. Así tu flujo de captaciones se
+                mantiene siempre activo.
+              </p>
             </div>
           </section>
         )}
@@ -1305,8 +1325,9 @@ export default function EmpresaTrackerPage() {
                   Contactos / Captaciones
                 </h2>
                 <p className="text-xs text-slate-500">
-                  Centralizá todos tus propietarios y clientes potenciales en un
-                  solo lugar.
+                  Guardá propietarios y clientes potenciales, y movelos por el
+                  circuito: sin contactar → seguimiento → prelisting →
+                  VAI/Factibilidad → captación → cierre.
                 </p>
               </div>
               <button
@@ -1445,7 +1466,7 @@ export default function EmpresaTrackerPage() {
                 </h2>
                 <p className="text-xs text-slate-500">
                   Seguimiento de propiedades en cartera, ajustes de precio y
-                  cierres.
+                  fechas de cierre para calcular tu tasa de absorción real.
                 </p>
               </div>
               <button
@@ -1494,9 +1515,10 @@ export default function EmpresaTrackerPage() {
                     </tr>
                   )}
                   {propiedades.map((p) => {
-                    const contacto = p.contacto_id
-                      ? contactoPorId(p.contacto_id)
-                      : p.contacto ?? null;
+                    const contacto =
+                      p.contacto_id && contactoPorId(p.contacto_id)
+                        ? contactoPorId(p.contacto_id)
+                        : p.contacto ?? null;
 
                     return (
                       <tr
@@ -1506,9 +1528,7 @@ export default function EmpresaTrackerPage() {
                         <td className="px-3 py-2 align-top">
                           <div className="font-medium text-slate-900">
                             {contacto
-                              ? contactoNombreCorto(
-                                  contacto as TrackerContacto
-                                )
+                              ? contactoNombreCorto(contacto)
                               : "Sin asignar"}
                           </div>
                         </td>
@@ -1589,6 +1609,7 @@ export default function EmpresaTrackerPage() {
                     </label>
                     <input
                       className="w-full rounded-lg border border-gray-300 px-2 py-1 text-xs"
+                      placeholder="Ej: Juan"
                       value={formContacto.nombre}
                       onChange={(e) =>
                         setFormContacto((f) => ({
@@ -1604,6 +1625,7 @@ export default function EmpresaTrackerPage() {
                     </label>
                     <input
                       className="w-full rounded-lg border border-gray-300 px-2 py-1 text-xs"
+                      placeholder="Ej: Pérez"
                       value={formContacto.apellido}
                       onChange={(e) =>
                         setFormContacto((f) => ({
@@ -1622,6 +1644,7 @@ export default function EmpresaTrackerPage() {
                     </label>
                     <input
                       className="w-full rounded-lg border border-gray-300 px-2 py-1 text-xs"
+                      placeholder="Ej: 351 000 0000"
                       value={formContacto.telefono}
                       onChange={(e) =>
                         setFormContacto((f) => ({
@@ -1637,6 +1660,7 @@ export default function EmpresaTrackerPage() {
                     </label>
                     <input
                       className="w-full rounded-lg border border-gray-300 px-2 py-1 text-xs"
+                      placeholder="Ej: juan@cliente.com"
                       value={formContacto.email}
                       onChange={(e) =>
                         setFormContacto((f) => ({
@@ -1726,6 +1750,7 @@ export default function EmpresaTrackerPage() {
                     </label>
                     <input
                       className="w-full rounded-lg border border-gray-300 px-2 py-1 text-xs"
+                      placeholder="Ej: Nueva Córdoba"
                       value={formContacto.zona}
                       onChange={(e) =>
                         setFormContacto((f) => ({
@@ -1770,6 +1795,7 @@ export default function EmpresaTrackerPage() {
                     <textarea
                       className="w-full rounded-lg border border-gray-300 px-2 py-1 text-xs"
                       rows={2}
+                      placeholder="Ej: Prefiere trabajar con otra inmobiliaria, no quiere firmar exclusividad, etc."
                       value={formContacto.motivo_descarte}
                       onChange={(e) =>
                         setFormContacto((f) => ({
@@ -1821,6 +1847,7 @@ export default function EmpresaTrackerPage() {
                   </label>
                   <input
                     className="w-full rounded-lg border border-gray-300 px-2 py-1 text-xs"
+                    placeholder="Ej: Seguimiento Casa 3D en Centro"
                     value={formActividad.titulo}
                     onChange={(e) =>
                       setFormActividad((f) => ({
@@ -1922,6 +1949,7 @@ export default function EmpresaTrackerPage() {
                   <textarea
                     className="w-full rounded-lg border border-gray-300 px-2 py-1 text-xs"
                     rows={3}
+                    placeholder="Ej: Segunda llamada, quedó en revisar condiciones y me devuelve esta semana."
                     value={formActividad.notas}
                     onChange={(e) =>
                       setFormActividad((f) => ({
@@ -2044,6 +2072,7 @@ export default function EmpresaTrackerPage() {
                   </label>
                   <input
                     className="w-full rounded-lg border border-gray-300 px-2 py-1 text-xs"
+                    placeholder="Ej: Av. Siempreviva 123"
                     value={formPropiedad.direccion}
                     onChange={(e) =>
                       setFormPropiedad((f) => ({
@@ -2061,6 +2090,7 @@ export default function EmpresaTrackerPage() {
                     </label>
                     <input
                       className="w-full rounded-lg border border-gray-300 px-2 py-1 text-xs"
+                      placeholder="Ej: Barrio Centro"
                       value={formPropiedad.zona}
                       onChange={(e) =>
                         setFormPropiedad((f) => ({
@@ -2130,6 +2160,7 @@ export default function EmpresaTrackerPage() {
                     </label>
                     <input
                       className="w-full rounded-lg border border-gray-300 px-2 py-1 text-xs"
+                      placeholder="Ej: 120000"
                       value={formPropiedad.precio_lista_inicial}
                       onChange={(e) =>
                         setFormPropiedad((f) => ({
@@ -2145,6 +2176,7 @@ export default function EmpresaTrackerPage() {
                     </label>
                     <input
                       className="w-full rounded-lg border border-gray-300 px-2 py-1 text-xs"
+                      placeholder="Ej: 115000"
                       value={formPropiedad.precio_actual}
                       onChange={(e) =>
                         setFormPropiedad((f) => ({
@@ -2160,6 +2192,7 @@ export default function EmpresaTrackerPage() {
                     </label>
                     <input
                       className="w-full rounded-lg border border-gray-300 px-2 py-1 text-xs"
+                      placeholder="Ej: 110000"
                       value={formPropiedad.precio_cierre}
                       onChange={(e) =>
                         setFormPropiedad((f) => ({

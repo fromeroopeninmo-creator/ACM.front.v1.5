@@ -122,6 +122,15 @@ function formatTime(hora: string | null) {
   return hora.substring(0, 5);
 }
 
+// Normalizamos fechas al formato YYYY-MM-DD (sin huso horario)
+function toDateKey(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+
 function getMonthMatrix(currentMonth: Date) {
   const year = currentMonth.getFullYear();
   const month = currentMonth.getMonth();
@@ -227,28 +236,44 @@ export default function EmpresaTrackerPage() {
     fecha_cierre: "",
   });
 
+   // Referencias de hoy y mañana (hora local, sin mezclar TZ de toISOString)
   const hoy = startOfDay(new Date());
-  const manana = startOfDay(addDays(new Date(), 1));
+  const manana = addDays(hoy, 1);
+
+  // Claves normalizadas YYYY-MM-DD para comparar con lo que viene de la BD
+  const hoyKey = toDateKey(hoy);
+  const mananaKey = toDateKey(manana);
+  const selectedKey = toDateKey(selectedDate);
 
   const actividadesHoy = useMemo(
-    () => actividades.filter((a) => isSameDay(new Date(a.fecha_programada), hoy)),
-    [actividades, hoy]
+    () =>
+      actividades.filter(
+        (a) => a.fecha_programada && a.fecha_programada === hoyKey
+      ),
+    [actividades, hoyKey]
   );
 
   const actividadesManana = useMemo(
-    () => actividades.filter((a) => isSameDay(new Date(a.fecha_programada), manana)),
-    [actividades, manana]
+    () =>
+      actividades.filter(
+        (a) => a.fecha_programada && a.fecha_programada === mananaKey
+      ),
+    [actividades, mananaKey]
   );
 
   const actividadesSelectedDate = useMemo(
-    () => actividades.filter((a) => isSameDay(new Date(a.fecha_programada), selectedDate)),
-    [actividades, selectedDate]
+    () =>
+      actividades.filter(
+        (a) => a.fecha_programada && a.fecha_programada === selectedKey
+      ),
+    [actividades, selectedKey]
   );
 
   const actividadesByDateMap = useMemo(() => {
     const map = new Map<string, number>();
     for (const a of actividades) {
-      const key = new Date(a.fecha_programada).toISOString().substring(0, 10);
+      if (!a.fecha_programada) continue;
+      const key = a.fecha_programada; // ya viene como "YYYY-MM-DD"
       map.set(key, (map.get(key) ?? 0) + 1);
     }
     return map;
@@ -262,6 +287,7 @@ export default function EmpresaTrackerPage() {
     const contactosInRange = contactos.filter(
       (c) => new Date(c.created_at) >= start
     );
+
 
     const propiedadesInRange = propiedades.filter((p) => {
       if (!p.fecha_cierre) return false;
@@ -1201,7 +1227,7 @@ export default function EmpresaTrackerPage() {
                         const isCurrentMonth =
                           day.getMonth() === currentMonth.getMonth();
                         const isSelected = isSameDay(day, selectedDate);
-                        const key = day.toISOString().substring(0, 10);
+                        const key = toDateKey(day); // en lugar de day.toISOString().substring(0, 10)
                         const count = actividadesByDateMap.get(key) ?? 0;
 
                         return (

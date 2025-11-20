@@ -240,6 +240,11 @@ export default function EmpresaTrackerPage() {
 
   const [mensaje, setMensaje] = useState<string | null>(null);
 
+  // Flags para evitar doble submit y duplicados
+  const [savingContacto, setSavingContacto] = useState(false);
+  const [savingActividad, setSavingActividad] = useState(false);
+  const [savingPropiedad, setSavingPropiedad] = useState(false);
+
   const [formContacto, setFormContacto] = useState({
     nombre: "",
     apellido: "",
@@ -283,7 +288,7 @@ export default function EmpresaTrackerPage() {
   const hoy = startOfDay(new Date());
   const manana = addDays(hoy, 1);
 
-  // Claves normalizadas YYYY-MM-DD para comparar con lo que viene de la BD
+  // Claves normalizadas YYYY-MM-DD
   const hoyKey = toDateKey(hoy);
   const mananaKey = toDateKey(manana);
   const selectedKey = toDateKey(selectedDate);
@@ -316,7 +321,7 @@ export default function EmpresaTrackerPage() {
     const map = new Map<string, number>();
     for (const a of actividades) {
       if (!a.fecha_programada) continue;
-      const key = a.fecha_programada; // ya viene como "YYYY-MM-DD"
+      const key = a.fecha_programada; // viene como YYYY-MM-DD
       map.set(key, (map.get(key) ?? 0) + 1);
     }
     return map;
@@ -340,16 +345,29 @@ export default function EmpresaTrackerPage() {
       return new Date(p.fecha_cierre) >= start;
     });
 
-    // Prelisting: contactos que tuvieron al menos UNA actividad de tipo prelisting en el período
-    const contactosConPrelisting = new Set<string>();
+    // ---- PRELISTING ----
+    // 1) contactos que HOY están en estado prelisting
+    const idsPrelistingEstado = contactosInRange
+      .filter((c) => c.estado === "prelisting")
+      .map((c) => c.id);
+
+    // 2) contactos que tuvieron al menos una actividad tipo prelisting en el período
+    const idsPrelistingActividad = new Set<string>();
     for (const act of actividadesInRange) {
       if (act.tipo === "prelisting" && act.contacto_id) {
-        contactosConPrelisting.add(act.contacto_id);
+        idsPrelistingActividad.add(act.contacto_id);
       }
     }
-    const prelistingCount = contactosConPrelisting.size;
 
-    // Captaciones: estado actual "captado" (no afecta al Prelisting)
+    // 3) Unión: si alguna vez estuvo en prelisting (por estado o actividad),
+    // cuenta como prelisting aunque hoy esté en "captado".
+    const prelistingSet = new Set<string>(idsPrelistingEstado);
+    for (const id of idsPrelistingActividad) {
+      prelistingSet.add(id);
+    }
+    const prelistingCount = prelistingSet.size;
+
+    // Captaciones: estado actual captado
     const captacionesCount = contactosInRange.filter(
       (c) => c.estado === "captado"
     ).length;
@@ -368,7 +386,10 @@ export default function EmpresaTrackerPage() {
   // Buscar empresa_id desde profile
   useEffect(() => {
     const fetchEmpresa = async () => {
-      if (!user?.id) return;
+      if (!user?.id) {
+        setLoading(false);
+        return;
+      }
 
       const { data, error } = await supabase
         .from("empresas")
@@ -384,6 +405,7 @@ export default function EmpresaTrackerPage() {
       }
 
       setEmpresaId(data?.id ?? null);
+      setLoading(false);
     };
 
     fetchEmpresa();
@@ -391,10 +413,7 @@ export default function EmpresaTrackerPage() {
 
   // Carga inicial (contactos + actividades + propiedades)
   useEffect(() => {
-    if (!empresaId) {
-      if (!loading) setLoading(false);
-      return;
-    }
+    if (!empresaId) return;
 
     const fetchAll = async () => {
       try {
@@ -486,7 +505,7 @@ export default function EmpresaTrackerPage() {
     };
 
     fetchAll();
-  }, [empresaId, loading]);
+  }, [empresaId]);
 
   const showMessage = (text: string) => {
     setMensaje(text);
@@ -555,7 +574,8 @@ export default function EmpresaTrackerPage() {
   };
 
   const guardarContacto = async () => {
-    if (!empresaId) return;
+    if (!empresaId || savingContacto) return;
+    setSavingContacto(true);
 
     try {
       if (editingContacto) {
@@ -623,6 +643,8 @@ export default function EmpresaTrackerPage() {
     } catch (err) {
       console.error("Error guardando contacto:", err);
       showMessage("❌ Error inesperado al guardar contacto.");
+    } finally {
+      setSavingContacto(false);
     }
   };
 
@@ -683,7 +705,8 @@ export default function EmpresaTrackerPage() {
   };
 
   const guardarActividad = async () => {
-    if (!empresaId) return;
+    if (!empresaId || savingActividad) return;
+    setSavingActividad(true);
 
     try {
       if (editingActividad) {
@@ -737,6 +760,8 @@ export default function EmpresaTrackerPage() {
     } catch (err) {
       console.error("Error guardando actividad:", err);
       showMessage("❌ Error inesperado al guardar actividad.");
+    } finally {
+      setSavingActividad(false);
     }
   };
 
@@ -766,8 +791,7 @@ export default function EmpresaTrackerPage() {
   };
 
   // ----- CRUD PROPIEDADES -----
-
-  const openNuevaPropiedad = (contactoId?: string) => {
+    const openNuevaPropiedad = (contactoId?: string) => {
     setEditingPropiedad(null);
     setFormPropiedad({
       contacto_id: contactoId ?? "",
@@ -816,7 +840,8 @@ export default function EmpresaTrackerPage() {
   };
 
   const guardarPropiedad = async () => {
-    if (!empresaId) return;
+    if (!empresaId || savingPropiedad) return;
+    setSavingPropiedad(true);
 
     const payload = {
       empresa_id: empresaId,
@@ -827,9 +852,7 @@ export default function EmpresaTrackerPage() {
       zona: formPropiedad.zona || null,
       m2_lote: parseNumberOrNull(formPropiedad.m2_lote),
       m2_cubiertos: parseNumberOrNull(formPropiedad.m2_cubiertos),
-      precio_lista_inicial: parseNumberOrNull(
-        formPropiedad.precio_lista_inicial
-      ),
+      precio_lista_inicial: parseNumberOrNull(formPropiedad.precio_lista_inicial),
       precio_actual: parseNumberOrNull(formPropiedad.precio_actual),
       precio_cierre: parseNumberOrNull(formPropiedad.precio_cierre),
       moneda: formPropiedad.moneda || null,
@@ -855,9 +878,9 @@ export default function EmpresaTrackerPage() {
           return;
         }
       } else {
-        const { error } = await supabase
-          .from("tracker_propiedades")
-          .insert(payload);
+        const { error } = await supabase.from("tracker_propiedades").insert(
+          payload
+        );
 
         if (error) {
           console.error("Error creando propiedad:", error);
@@ -934,6 +957,8 @@ export default function EmpresaTrackerPage() {
     } catch (err) {
       console.error("Error guardando propiedad:", err);
       showMessage("❌ Error inesperado al guardar propiedad.");
+    } finally {
+      setSavingPropiedad(false);
     }
   };
 
@@ -1029,14 +1054,14 @@ export default function EmpresaTrackerPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="max-w-7xl mx-auto px-6 py-6 space-y-6">
+      <div className="max-w-6xl xl:max-w-7xl mx-auto px-4 py-6 space-y-6">
         {/* Encabezado principal */}
         <header className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
-            <h1 className="text-2xl font-semibold text-slate-900">
+            <h1 className="text-2xl md:text-3xl font-semibold text-slate-900">
               Tracker de trabajo inmobiliario
             </h1>
-            <p className="mt-1 text-sm text-slate-600 max-w-xl">
+            <p className="mt-1 text-sm md:text-base text-slate-600 max-w-xl">
               Tu tablero de mando diario para medir prospección, prelisting,
               captaciones y cierres. Todo alineado con tus informes VAI y
               factibilidades.
@@ -1054,7 +1079,7 @@ export default function EmpresaTrackerPage() {
                   {formatDateShort(hoy)}
                 </span>
               </div>
-              <div className="mt-1 text-2xl font-semibold text-slate-900">
+              <div className="mt-1 text-2xl md:text-3xl font-semibold text-slate-900">
                 {actividadesHoy.length}
               </div>
               <div className="mt-1 text-[11px] text-slate-500">
@@ -1091,7 +1116,7 @@ export default function EmpresaTrackerPage() {
                   {formatDateShort(manana)}
                 </span>
               </div>
-              <div className="mt-1 text-2xl font-semibold text-slate-900">
+              <div className="mt-1 text-2xl md:text-3xl font-semibold text-slate-900">
                 {actividadesManana.length}
               </div>
               <div className="mt-1 text-[11px] text-slate-500">
@@ -1125,7 +1150,7 @@ export default function EmpresaTrackerPage() {
         <section className="rounded-2xl bg-white border border-gray-200 shadow-sm p-4">
           <div className="flex items-center justify-between gap-3 mb-4">
             <div>
-              <h2 className="text-sm font-semibold text-slate-900">
+              <h2 className="text-sm md:text-base font-semibold text-slate-900">
                 Resumen de actividad
               </h2>
               <p className="text-xs text-slate-500">
@@ -1150,7 +1175,7 @@ export default function EmpresaTrackerPage() {
           <div className="grid gap-4 md:grid-cols-4">
             <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
               <p className="text-xs text-slate-500">Prospectos / Clientes</p>
-              <p className="mt-1 text-2xl font-semibold text-slate-900">
+              <p className="mt-1 text-2xl md:text-3xl font-semibold text-slate-900">
                 {kpis.prospectos}
               </p>
               <p className="mt-1 text-[11px] text-slate-500">
@@ -1159,7 +1184,7 @@ export default function EmpresaTrackerPage() {
             </div>
             <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
               <p className="text-xs text-slate-500">Prelisting</p>
-              <p className="mt-1 text-2xl font-semibold text-slate-900">
+              <p className="mt-1 text-2xl md:text-3xl font-semibold text-slate-900">
                 {kpis.prelisting}
               </p>
               <p className="mt-1 text-[11px] text-slate-500">
@@ -1168,7 +1193,7 @@ export default function EmpresaTrackerPage() {
             </div>
             <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
               <p className="text-xs text-slate-500">Captaciones</p>
-              <p className="mt-1 text-2xl font-semibold text-slate-900">
+              <p className="mt-1 text-2xl md:text-3xl font-semibold text-slate-900">
                 {kpis.captaciones}
               </p>
               <p className="mt-1 text-[11px] text-slate-500">
@@ -1177,7 +1202,7 @@ export default function EmpresaTrackerPage() {
             </div>
             <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
               <p className="text-xs text-slate-500">Cierres</p>
-              <p className="mt-1 text-2xl font-semibold text-slate-900">
+              <p className="mt-1 text-2xl md:text-3xl font-semibold text-slate-900">
                 {kpis.cierres}
               </p>
               <p className="mt-1 text-[11px] text-slate-500">
@@ -1668,7 +1693,6 @@ export default function EmpresaTrackerPage() {
             </div>
           </section>
         )}
-
         {/* Mensaje flotante */}
         {mensaje && (
           <div className="fixed bottom-4 right-4 rounded-full bg-black text-white px-4 py-2 text-xs shadow-lg">
@@ -1958,9 +1982,12 @@ export default function EmpresaTrackerPage() {
                 </button>
                 <button
                   onClick={guardarContacto}
-                  className="rounded-full bg-black px-4 py-1.5 text-xs font-medium text-white hover:bg-slate-900"
+                  disabled={savingContacto}
+                  className={`rounded-full bg-black px-4 py-1.5 text-xs font-medium text-white hover:bg-slate-900 ${
+                    savingContacto ? "opacity-60 cursor-not-allowed" : ""
+                  }`}
                 >
-                  Guardar
+                  {savingContacto ? "Guardando..." : "Guardar"}
                 </button>
               </div>
             </div>
@@ -2111,9 +2138,12 @@ export default function EmpresaTrackerPage() {
                 </button>
                 <button
                   onClick={guardarActividad}
-                  className="rounded-full bg-black px-4 py-1.5 text-xs font-medium text-white hover:bg-slate-900"
+                  disabled={savingActividad}
+                  className={`rounded-full bg-black px-4 py-1.5 text-xs font-medium text-white hover:bg-slate-900 ${
+                    savingActividad ? "opacity-60 cursor-not-allowed" : ""
+                  }`}
                 >
-                  Guardar
+                  {savingActividad ? "Guardando..." : "Guardar"}
                 </button>
               </div>
             </div>
@@ -2390,9 +2420,12 @@ export default function EmpresaTrackerPage() {
                 </button>
                 <button
                   onClick={guardarPropiedad}
-                  className="rounded-full bg-black px-4 py-1.5 text-xs font-medium text-white hover:bg-slate-900"
+                  disabled={savingPropiedad}
+                  className={`rounded-full bg-black px-4 py-1.5 text-xs font-medium text-white hover:bg-slate-900 ${
+                    savingPropiedad ? "opacity-60 cursor-not-allowed" : ""
+                  }`}
                 >
-                  Guardar
+                  {savingPropiedad ? "Guardando..." : "Guardar"}
                 </button>
               </div>
             </div>
@@ -2402,3 +2435,4 @@ export default function EmpresaTrackerPage() {
     </div>
   );
 }
+

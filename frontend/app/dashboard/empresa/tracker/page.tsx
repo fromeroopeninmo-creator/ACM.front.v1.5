@@ -284,7 +284,7 @@ export default function EmpresaTrackerPage() {
     fecha_cierre: "",
   });
 
-  // Referencias de hoy y mañana (hora local, sin mezclar TZ de toISOString)
+    // Referencias de hoy y mañana (hora local, sin mezclar TZ)
   const hoy = startOfDay(new Date());
   const manana = addDays(hoy, 1);
 
@@ -293,11 +293,15 @@ export default function EmpresaTrackerPage() {
   const mananaKey = toDateKey(manana);
   const selectedKey = toDateKey(selectedDate);
 
-   const actividadesHoy = useMemo(
+  // Helper: tomar siempre solo "YYYY-MM-DD" de la fecha programada
+  const actividadDateKey = (a: TrackerActividad) =>
+    a.fecha_programada ? a.fecha_programada.substring(0, 10) : "";
+
+  const actividadesHoy = useMemo(
     () =>
       actividades.filter((a) => {
         if (!a.fecha_programada) return false;
-        const key = toDateKey(new Date(a.fecha_programada));
+        const key = actividadDateKey(a);
         return key === hoyKey;
       }),
     [actividades, hoyKey]
@@ -307,7 +311,7 @@ export default function EmpresaTrackerPage() {
     () =>
       actividades.filter((a) => {
         if (!a.fecha_programada) return false;
-        const key = toDateKey(new Date(a.fecha_programada));
+        const key = actividadDateKey(a);
         return key === mananaKey;
       }),
     [actividades, mananaKey]
@@ -317,72 +321,60 @@ export default function EmpresaTrackerPage() {
     () =>
       actividades.filter((a) => {
         if (!a.fecha_programada) return false;
-        const key = toDateKey(new Date(a.fecha_programada));
+        const key = actividadDateKey(a);
         return key === selectedKey;
       }),
     [actividades, selectedKey]
   );
 
-
-    const actividadesByDateMap = useMemo(() => {
+  const actividadesByDateMap = useMemo(() => {
     const map = new Map<string, number>();
     for (const a of actividades) {
       if (!a.fecha_programada) continue;
-      const key = toDateKey(new Date(a.fecha_programada)); // 👈 normalizamos
+      const key = actividadDateKey(a); // siempre "YYYY-MM-DD" sin TZ
       map.set(key, (map.get(key) ?? 0) + 1);
     }
     return map;
   }, [actividades]);
 
-
-    const startKpiDate = useMemo(() => kpiStartDate(kpiRange), [kpiRange]);
+  const startKpiDate = useMemo(() => kpiStartDate(kpiRange), [kpiRange]);
 
   const kpis = useMemo(() => {
     const start = startKpiDate;
+    const startKey = toDateKey(start);
 
+    // Contactos creados dentro del período
     const contactosInRange = contactos.filter((c) => {
       const created = new Date(c.created_at);
       return created >= start;
     });
 
+    // Propiedades cerradas dentro del período
     const propiedadesInRange = propiedades.filter((p) => {
       if (!p.fecha_cierre) return false;
-      const cierre = new Date(p.fecha_cierre);
-      return cierre >= start;
+      const key = p.fecha_cierre.substring(0, 10);
+      return key >= startKey;
     });
 
-    // PRELISTING: cuenta cualquier contacto que haya llegado a
-    // prelisting, VAI/Factibilidad, captación o cierre
-    const prelistingCount = contactosInRange.filter((c) =>
-      ["prelisting", "vai_factibilidad", "captado", "cierre"].includes(
-        c.estado
-      )
-    ).length;
-
-    // CAPTACIONES: solo los que están actualmente en captado
-    const captacionesCount = contactosInRange.filter(
-      (c) => c.estado === "captado"
-    ).length;
-
-    // CIERRES: propiedades con fecha_cierre en el rango
-    const cierresCount = propiedadesInRange.length;
-
-    return {
-      prospectos: contactosInRange.length,
-      prelisting: prelistingCount,
-      captaciones: captacionesCount,
-      cierres: cierresCount,
-    };
-  }, [contactos, propiedades, startKpiDate]);
-
+    // Actividades dentro del período (por fecha_programada)
+    const actividadesInRange = actividades.filter((a) => {
+      if (!a.fecha_programada) return false;
+      const key = actividadDateKey(a);
+      return key >= startKey;
+    });
 
     // ---- PRELISTING ----
-    // 1) contactos que HOY están en estado prelisting
+    // 1) contactos que (en algún momento del circuito) llegaron al tramo
+    //    prelisting / vai_factibilidad / captado / cierre
     const idsPrelistingEstado = contactosInRange
-      .filter((c) => c.estado === "prelisting")
+      .filter((c) =>
+        ["prelisting", "vai_factibilidad", "captado", "cierre"].includes(
+          c.estado
+        )
+      )
       .map((c) => c.id);
 
-    // 2) contactos que tuvieron al menos una actividad tipo prelisting en el período
+    // 2) contactos que tuvieron al menos una actividad tipo "prelisting"
     const idsPrelistingActividad = new Set<string>();
     for (const act of actividadesInRange) {
       if (act.tipo === "prelisting" && act.contacto_id) {
@@ -391,19 +383,19 @@ export default function EmpresaTrackerPage() {
     }
 
     // 3) Unión: si alguna vez estuvo en prelisting (por estado o actividad),
-    // cuenta como prelisting aunque hoy esté en "captado".
+    // cuenta como prelisting aunque hoy esté en "captado" o "cierre"
     const prelistingSet = new Set<string>(idsPrelistingEstado);
     for (const id of idsPrelistingActividad) {
       prelistingSet.add(id);
     }
     const prelistingCount = prelistingSet.size;
 
-    // Captaciones: estado actual captado
+    // CAPTACIONES: estado actual captado
     const captacionesCount = contactosInRange.filter(
       (c) => c.estado === "captado"
     ).length;
 
-    // Cierres: propiedades cerradas en el período
+    // CIERRES: propiedades con fecha_cierre en el período
     const cierresCount = propiedadesInRange.length;
 
     return {
@@ -441,6 +433,7 @@ export default function EmpresaTrackerPage() {
 
     fetchEmpresa();
   }, [user]);
+
 
   // Carga inicial (contactos + actividades + propiedades)
   useEffect(() => {

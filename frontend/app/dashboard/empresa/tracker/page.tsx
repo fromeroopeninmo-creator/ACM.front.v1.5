@@ -335,32 +335,36 @@ export default function EmpresaTrackerPage() {
   }, [actividades]);
 
 
-  const startKpiDate = useMemo(() => kpiStartDate(kpiRange), [kpiRange]);
+    const startKpiDate = useMemo(() => kpiStartDate(kpiRange), [kpiRange]);
 
-    const kpis = useMemo(() => {
+  const kpis = useMemo(() => {
     const start = startKpiDate;
 
-    const contactosInRange = contactos.filter(
-      (c) => new Date(c.created_at) >= start
-    );
+    const contactosInRange = contactos.filter((c) => {
+      const created = new Date(c.created_at);
+      return created >= start;
+    });
 
     const propiedadesInRange = propiedades.filter((p) => {
       if (!p.fecha_cierre) return false;
-      return new Date(p.fecha_cierre) >= start;
+      const cierre = new Date(p.fecha_cierre);
+      return cierre >= start;
     });
 
-    // PRELISTING:
-    // cuenta cualquier contacto que esté en una etapa >= prelisting
+    // PRELISTING: cuenta cualquier contacto que haya llegado a
+    // prelisting, VAI/Factibilidad, captación o cierre
     const prelistingCount = contactosInRange.filter((c) =>
-      ["prelisting", "vai_factibilidad", "captado", "cierre"].includes(c.estado)
+      ["prelisting", "vai_factibilidad", "captado", "cierre"].includes(
+        c.estado
+      )
     ).length;
 
-    // Captaciones: sólo estado actual captado (mantenemos tu lógica actual)
+    // CAPTACIONES: solo los que están actualmente en captado
     const captacionesCount = contactosInRange.filter(
       (c) => c.estado === "captado"
     ).length;
 
-    // Cierres: propiedades cerradas en el período (como ya te funcionaba)
+    // CIERRES: propiedades con fecha_cierre en el rango
     const cierresCount = propiedadesInRange.length;
 
     return {
@@ -370,6 +374,7 @@ export default function EmpresaTrackerPage() {
       cierres: cierresCount,
     };
   }, [contactos, propiedades, startKpiDate]);
+
 
     // ---- PRELISTING ----
     // 1) contactos que HOY están en estado prelisting

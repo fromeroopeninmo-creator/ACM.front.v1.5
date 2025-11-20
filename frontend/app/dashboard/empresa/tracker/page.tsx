@@ -1083,12 +1083,11 @@ export default function EmpresaTrackerPage() {
         <header className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
             <h1 className="text-2xl md:text-3xl font-semibold text-slate-900">
-              Tracker de trabajo inmobiliario
+              Agenda de Actividades
             </h1>
             <p className="mt-1 text-sm md:text-base text-slate-600 max-w-xl">
               Tu tablero de mando diario para medir prospección, prelisting,
-              captaciones y cierres. Todo alineado con tus informes VAI y
-              factibilidades.
+              captaciones y cierres. 
             </p>
           </div>
 
@@ -1423,7 +1422,7 @@ export default function EmpresaTrackerPage() {
                                 onClick={() => openEditarActividad(a)}
                                 className="text-[11px] text-slate-600 hover:text-black"
                               >
-                                Editar
+                                Ver / Editar
                               </button>
                               <button
                                 onClick={() => eliminarActividad(a.id)}
@@ -1662,7 +1661,7 @@ export default function EmpresaTrackerPage() {
 
                     const rowBase =
                       "border-b border-gray-100 hover:bg-gray-50";
-                    const rowClosed = isCerrada ? "bg-emerald-50/40" : "";
+                    const rowClosed = isCerrada ? "bg-emerald-200" : "";
 
                     return (
                       <tr key={p.id} className={`${rowBase} ${rowClosed}`}>

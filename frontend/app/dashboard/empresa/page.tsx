@@ -196,45 +196,91 @@ export default function EmpresaDashboardPage() {
         <div className="flex justify-between flex-wrap gap-4">
           {/* 🧮 Herramientas (lado izquierdo, en columna) */}
           <div className="flex flex-col gap-3">
-            {/* Valuador */}
-            <Link
-              href="/vai/acmforms"
-              className="px-5 py-2 text-white font-semibold rounded-lg shadow transition"
-              style={{
-                backgroundColor: primaryColor,
-                boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
-              }}
-              onMouseEnter={(e) => {
-                (e.currentTarget as HTMLAnchorElement).style.filter =
-                  "brightness(1.1)";
-              }}
-              onMouseLeave={(e) => {
-                (e.currentTarget as HTMLAnchorElement).style.filter =
-                  "brightness(1)";
-              }}
-            >
-              🏠 Valuador de Activos Inmobiliarios
-            </Link>
+            {/* Fila 1: Valuador + Agenda de Actividades */}
+            <div className="flex flex-wrap gap-3">
+              {/* Valuador */}
+              <Link
+                href="/vai/acmforms"
+                className="px-5 py-2 text-white font-semibold rounded-lg shadow transition"
+                style={{
+                  backgroundColor: primaryColor,
+                  boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
+                }}
+                onMouseEnter={(e) => {
+                  (e.currentTarget as HTMLAnchorElement).style.filter =
+                    "brightness(1.1)";
+                }}
+                onMouseLeave={(e) => {
+                  (e.currentTarget as HTMLAnchorElement).style.filter =
+                    "brightness(1)";
+                }}
+              >
+                🏠 Valuador de Activos Inmobiliarios
+              </Link>
 
-            {/* Factibilidad Constructiva (mismo estilo/color) */}
-            <Link
-              href="/dashboard/empresa/factibilidad"
-              className="px-5 py-2 text-white font-semibold rounded-lg shadow transition"
-              style={{
-                backgroundColor: primaryColor,
-                boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
-              }}
-              onMouseEnter={(e) => {
-                (e.currentTarget as HTMLAnchorElement).style.filter =
-                  "brightness(1.1)";
-              }}
-              onMouseLeave={(e) => {
-                (e.currentTarget as HTMLAnchorElement).style.filter =
-                  "brightness(1)";
-              }}
-            >
-              📐 Factibilidad Constructiva
-            </Link>
+              {/* Agenda de Actividades (usa el tracker actual) */}
+              <Link
+                href="/dashboard/empresa/tracker"
+                className="px-5 py-2 text-white font-semibold rounded-lg shadow transition"
+                style={{
+                  backgroundColor: primaryColor,
+                  boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
+                }}
+                onMouseEnter={(e) => {
+                  (e.currentTarget as HTMLAnchorElement).style.filter =
+                    "brightness(1.1)";
+                }}
+                onMouseLeave={(e) => {
+                  (e.currentTarget as HTMLAnchorElement).style.filter =
+                    "brightness(1)";
+                }}
+              >
+                📅 Agenda de Actividades
+              </Link>
+            </div>
+
+            {/* Fila 2: Factibilidad + Tracker (analítico futuro, por ahora mismo link) */}
+            <div className="flex flex-wrap gap-3">
+              {/* Factibilidad Constructiva */}
+              <Link
+                href="/dashboard/empresa/factibilidad"
+                className="px-5 py-2 text-white font-semibold rounded-lg shadow transition"
+                style={{
+                  backgroundColor: primaryColor,
+                  boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
+                }}
+                onMouseEnter={(e) => {
+                  (e.currentTarget as HTMLAnchorElement).style.filter =
+                    "brightness(1.1)";
+                }}
+                onMouseLeave={(e) => {
+                  (e.currentTarget as HTMLAnchorElement).style.filter =
+                    "brightness(1)";
+                }}
+              >
+                📐 Factibilidad Constructiva
+              </Link>
+
+              {/* Tracker (para métricas / market share, luego podemos cambiar el href) */}
+              <Link
+                href="/dashboard/empresa/tracker"
+                className="px-5 py-2 text-white font-semibold rounded-lg shadow transition"
+                style={{
+                  backgroundColor: primaryColor,
+                  boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
+                }}
+                onMouseEnter={(e) => {
+                  (e.currentTarget as HTMLAnchorElement).style.filter =
+                    "brightness(1.1)";
+                }}
+                onMouseLeave={(e) => {
+                  (e.currentTarget as HTMLAnchorElement).style.filter =
+                    "brightness(1)";
+                }}
+              >
+                📊 Tracker
+              </Link>
+            </div>
           </div>
 
           {/* 🟩 Acciones (lado derecho, también en columna) */}

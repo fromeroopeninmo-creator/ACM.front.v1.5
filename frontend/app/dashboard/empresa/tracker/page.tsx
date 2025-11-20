@@ -130,7 +130,6 @@ function toDateKey(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
-
 function getMonthMatrix(currentMonth: Date) {
   const year = currentMonth.getFullYear();
   const month = currentMonth.getMonth();
@@ -140,7 +139,9 @@ function getMonthMatrix(currentMonth: Date) {
 
   const startWeekDay = firstDayOfMonth.getDay();
   const start = new Date(firstDayOfMonth);
-  start.setDate(firstDayOfMonth.getDate() - (startWeekDay === 0 ? 6 : startWeekDay - 1));
+  start.setDate(
+    firstDayOfMonth.getDate() - (startWeekDay === 0 ? 6 : startWeekDay - 1)
+  );
 
   const endWeekDay = lastDayOfMonth.getDay();
   const end = new Date(lastDayOfMonth);
@@ -170,6 +171,42 @@ function kpiStartDate(range: KpiRange): Date {
   return d;
 }
 
+function diasEntreFechas(
+  inicio: string | null,
+  fin: string | null
+): number | null {
+  if (!inicio) return null;
+  const start = new Date(inicio);
+  const end = fin ? new Date(fin) : new Date();
+  const diffMs = end.getTime() - start.getTime();
+  if (Number.isNaN(diffMs)) return null;
+  const dias = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  return dias < 0 ? 0 : dias;
+}
+
+function labelTipoActividad(tipo: TrackerActividadTipo): string {
+  switch (tipo) {
+    case "seguimiento":
+      return "Seguimiento";
+    case "reunion":
+      return "Reunión";
+    case "muestra":
+      return "Muestra";
+    case "prelisting":
+      return "Prelisting";
+    case "vai":
+      return "VAI";
+    case "factibilidad":
+      return "Factibilidad";
+    case "reserva":
+      return "Reserva";
+    case "cierre":
+      return "Cierre";
+    default:
+      return tipo;
+  }
+}
+
 export default function EmpresaTrackerPage() {
   const { user } = useAuth();
 
@@ -187,13 +224,19 @@ export default function EmpresaTrackerPage() {
   const [selectedDate, setSelectedDate] = useState<Date>(startOfDay(new Date()));
 
   const [showContactoModal, setShowContactoModal] = useState(false);
-  const [editingContacto, setEditingContacto] = useState<TrackerContacto | null>(null);
+  const [editingContacto, setEditingContacto] = useState<TrackerContacto | null>(
+    null
+  );
 
   const [showActividadModal, setShowActividadModal] = useState(false);
-  const [editingActividad, setEditingActividad] = useState<TrackerActividad | null>(null);
+  const [editingActividad, setEditingActividad] = useState<TrackerActividad | null>(
+    null
+  );
 
   const [showPropiedadModal, setShowPropiedadModal] = useState(false);
-  const [editingPropiedad, setEditingPropiedad] = useState<TrackerPropiedad | null>(null);
+  const [editingPropiedad, setEditingPropiedad] = useState<TrackerPropiedad | null>(
+    null
+  );
 
   const [mensaje, setMensaje] = useState<string | null>(null);
 
@@ -236,7 +279,7 @@ export default function EmpresaTrackerPage() {
     fecha_cierre: "",
   });
 
-   // Referencias de hoy y mañana (hora local, sin mezclar TZ de toISOString)
+  // Referencias de hoy y mañana (hora local, sin mezclar TZ de toISOString)
   const hoy = startOfDay(new Date());
   const manana = addDays(hoy, 1);
 
@@ -288,20 +331,30 @@ export default function EmpresaTrackerPage() {
       (c) => new Date(c.created_at) >= start
     );
 
+    const actividadesInRange = actividades.filter(
+      (a) => new Date(a.created_at) >= start
+    );
 
     const propiedadesInRange = propiedades.filter((p) => {
       if (!p.fecha_cierre) return false;
       return new Date(p.fecha_cierre) >= start;
     });
 
-    const prelistingCount = contactosInRange.filter(
-      (c) => c.estado === "prelisting"
-    ).length;
+    // Prelisting: contactos que tuvieron al menos UNA actividad de tipo prelisting en el período
+    const contactosConPrelisting = new Set<string>();
+    for (const act of actividadesInRange) {
+      if (act.tipo === "prelisting" && act.contacto_id) {
+        contactosConPrelisting.add(act.contacto_id);
+      }
+    }
+    const prelistingCount = contactosConPrelisting.size;
 
+    // Captaciones: estado actual "captado" (no afecta al Prelisting)
     const captacionesCount = contactosInRange.filter(
       (c) => c.estado === "captado"
     ).length;
 
+    // Cierres: propiedades cerradas en el período
     const cierresCount = propiedadesInRange.length;
 
     return {
@@ -310,7 +363,8 @@ export default function EmpresaTrackerPage() {
       captaciones: captacionesCount,
       cierres: cierresCount,
     };
-  }, [contactos, propiedades, startKpiDate]);
+  }, [contactos, actividades, propiedades, startKpiDate]);
+
   // Buscar empresa_id desde profile
   useEffect(() => {
     const fetchEmpresa = async () => {
@@ -409,8 +463,7 @@ export default function EmpresaTrackerPage() {
               precio_actual: row.precio_actual,
               precio_cierre: row.precio_cierre,
               moneda: row.moneda,
-              fecha_inicio_comercializacion:
-                row.fecha_inicio_comercializacion,
+              fecha_inicio_comercializacion: row.fecha_inicio_comercializacion,
               fecha_cierre: row.fecha_cierre,
               created_at: row.created_at,
               updated_at: row.updated_at,
@@ -433,12 +486,35 @@ export default function EmpresaTrackerPage() {
     };
 
     fetchAll();
-  }, [empresaId]);
+  }, [empresaId, loading]);
 
   const showMessage = (text: string) => {
     setMensaje(text);
     setTimeout(() => setMensaje(null), 3200);
   };
+
+  // Helpers de contacto / actividades por contacto
+  const contactoNombreCorto = (
+    c: { nombre?: string | null; apellido?: string | null } | null | undefined
+  ) => {
+    if (!c) return "Sin contacto";
+    const nom = [c.nombre, c.apellido].filter(Boolean).join(" ");
+    return nom || "Sin nombre";
+  };
+
+  const contactoPorId = (id: string | null) => {
+    if (!id) return null;
+    return contactos.find((c) => c.id === id) ?? null;
+  };
+
+  const actividadesDeContacto = (contactoId: string) =>
+    actividades
+      .filter((a) => a.contacto_id === contactoId)
+      .sort(
+        (a, b) =>
+          new Date(b.fecha_programada).getTime() -
+          new Date(a.fecha_programada).getTime()
+      );
 
   // ----- CRUD CONTACTOS -----
 
@@ -585,7 +661,7 @@ export default function EmpresaTrackerPage() {
     setFormActividad({
       titulo: "",
       tipo: "seguimiento",
-      fecha_programada: baseDate.toISOString().substring(0, 10),
+      fecha_programada: toDateKey(baseDate),
       hora: "",
       contacto_id: "",
       notas: "",
@@ -751,7 +827,9 @@ export default function EmpresaTrackerPage() {
       zona: formPropiedad.zona || null,
       m2_lote: parseNumberOrNull(formPropiedad.m2_lote),
       m2_cubiertos: parseNumberOrNull(formPropiedad.m2_cubiertos),
-      precio_lista_inicial: parseNumberOrNull(formPropiedad.precio_lista_inicial),
+      precio_lista_inicial: parseNumberOrNull(
+        formPropiedad.precio_lista_inicial
+      ),
       precio_actual: parseNumberOrNull(formPropiedad.precio_actual),
       precio_cierre: parseNumberOrNull(formPropiedad.precio_cierre),
       moneda: formPropiedad.moneda || null,
@@ -777,9 +855,9 @@ export default function EmpresaTrackerPage() {
           return;
         }
       } else {
-        const { error } = await supabase.from("tracker_propiedades").insert(
-          payload
-        );
+        const { error } = await supabase
+          .from("tracker_propiedades")
+          .insert(payload);
 
         if (error) {
           console.error("Error creando propiedad:", error);
@@ -838,8 +916,7 @@ export default function EmpresaTrackerPage() {
             precio_actual: row.precio_actual,
             precio_cierre: row.precio_cierre,
             moneda: row.moneda,
-            fecha_inicio_comercializacion:
-              row.fecha_inicio_comercializacion,
+            fecha_inicio_comercializacion: row.fecha_inicio_comercializacion,
             fecha_cierre: row.fecha_cierre,
             created_at: row.created_at,
             updated_at: row.updated_at,
@@ -940,18 +1017,6 @@ export default function EmpresaTrackerPage() {
     }).format(n);
   };
 
-  const contactoNombreCorto = (
-    c: { nombre?: string | null; apellido?: string | null } | null | undefined
-  ) => {
-    if (!c) return "Sin contacto";
-    const nom = [c.nombre, c.apellido].filter(Boolean).join(" ");
-    return nom || "Sin nombre";
-  };
-
-  const contactoPorId = (id: string | null) => {
-    if (!id) return null;
-    return contactos.find((c) => c.id === id) ?? null;
-  };
   if (loading && !empresaId) {
     return (
       <div className="flex items-center justify-center h-[60vh] text-gray-500">
@@ -964,7 +1029,7 @@ export default function EmpresaTrackerPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="max-w-6xl mx-auto px-4 py-6 space-y-6">
+      <div className="max-w-7xl mx-auto px-6 py-6 space-y-6">
         {/* Encabezado principal */}
         <header className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
@@ -1227,7 +1292,7 @@ export default function EmpresaTrackerPage() {
                         const isCurrentMonth =
                           day.getMonth() === currentMonth.getMonth();
                         const isSelected = isSameDay(day, selectedDate);
-                        const key = toDateKey(day); // en lugar de day.toISOString().substring(0, 10)
+                        const key = toDateKey(day);
                         const count = actividadesByDateMap.get(key) ?? 0;
 
                         return (
@@ -1402,13 +1467,7 @@ export default function EmpresaTrackerPage() {
                     </tr>
                   )}
                   {contactos.map((c) => {
-                    const ultAct = actividades
-                      .filter((a) => a.contacto_id === c.id)
-                      .sort(
-                        (a, b) =>
-                          new Date(b.fecha_programada).getTime() -
-                          new Date(a.fecha_programada).getTime()
-                      )[0];
+                    const ultAct = actividadesDeContacto(c.id)[0];
 
                     return (
                       <tr
@@ -1522,7 +1581,7 @@ export default function EmpresaTrackerPage() {
                       Precio actual
                     </th>
                     <th className="px-3 py-2 text-left font-medium">
-                      Inicio / Cierre
+                      Inicio / Días en venta
                     </th>
                     <th className="px-3 py-2 text-right font-medium">
                       Acciones
@@ -1546,11 +1605,18 @@ export default function EmpresaTrackerPage() {
                         ? contactoPorId(p.contacto_id)
                         : p.contacto ?? null;
 
+                    const isCerrada = !!p.fecha_cierre;
+                    const diasVenta = diasEntreFechas(
+                      p.fecha_inicio_comercializacion,
+                      p.fecha_cierre
+                    );
+
+                    const rowBase =
+                      "border-b border-gray-100 hover:bg-gray-50";
+                    const rowClosed = isCerrada ? "bg-emerald-50/40" : "";
+
                     return (
-                      <tr
-                        key={p.id}
-                        className="border-b border-gray-100 hover:bg-gray-50"
-                      >
+                      <tr key={p.id} className={`${rowBase} ${rowClosed}`}>
                         <td className="px-3 py-2 align-top">
                           <div className="font-medium text-slate-900">
                             {contacto
@@ -1576,9 +1642,7 @@ export default function EmpresaTrackerPage() {
                             ? p.fecha_inicio_comercializacion.substring(0, 10)
                             : "—"}{" "}
                           /{" "}
-                          {p.fecha_cierre
-                            ? p.fecha_cierre.substring(0, 10)
-                            : "—"}
+                          {diasVenta != null ? `${diasVenta} días` : "—"}
                         </td>
                         <td className="px-3 py-2 align-top text-right">
                           <div className="flex justify-end gap-2">
@@ -1830,6 +1894,58 @@ export default function EmpresaTrackerPage() {
                         }))
                       }
                     />
+                  </div>
+                )}
+
+                {/* Historial de actividades del contacto */}
+                {editingContacto && (
+                  <div className="border-t border-gray-200 pt-3 mt-2">
+                    <h4 className="text-[11px] font-semibold text-slate-700 mb-1">
+                      Historial de actividades
+                    </h4>
+                    {(() => {
+                      const historial = actividadesDeContacto(
+                        editingContacto.id
+                      );
+                      if (historial.length === 0) {
+                        return (
+                          <p className="text-[11px] text-slate-500">
+                            Este contacto todavía no tiene actividades
+                            registradas en el tracker.
+                          </p>
+                        );
+                      }
+                      const ultima = historial[0];
+                      return (
+                        <div className="space-y-2">
+                          <p className="text-[11px] text-slate-600">
+                            <span className="font-semibold">
+                              Última actividad:
+                            </span>{" "}
+                            {labelTipoActividad(ultima.tipo)} ·{" "}
+                            {ultima.fecha_programada}{" "}
+                            {ultima.hora ? `· ${formatTime(ultima.hora)}` : ""}
+                          </p>
+                          <ul className="space-y-1 max-h-32 overflow-y-auto">
+                            {historial.map((a) => (
+                              <li
+                                key={a.id}
+                                className="text-[11px] text-slate-600 flex justify-between gap-2"
+                              >
+                                <span className="truncate">
+                                  {labelTipoActividad(a.tipo)} · {a.titulo}
+                                </span>
+                                <span className="shrink-0 text-slate-400">
+                                  {a.fecha_programada.substring(8, 10)}/
+                                  {a.fecha_programada.substring(5, 7)}{" "}
+                                  {a.hora ? `· ${formatTime(a.hora)}` : ""}
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      );
+                    })()}
                   </div>
                 )}
               </div>

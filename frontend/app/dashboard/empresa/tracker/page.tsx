@@ -88,10 +88,29 @@ interface TrackerPropiedad {
   } | null;
 }
 
-interface AsesorItem {
+interface Asesor {
   id: string;
   nombre: string | null;
   apellido: string | null;
+}
+
+interface FormPropiedadState {
+  contacto_id: string;
+  tipologia: string;
+  dormitorios: string;
+  tipo_operacion: string;
+  direccion: string;
+  zona: string;
+  m2_lote: string;
+  m2_cubiertos: string;
+  precio_lista_inicial: string;
+  precio_actual: string;
+  precio_cierre: string;
+  moneda: string;
+  fecha_inicio_comercializacion: string;
+  fecha_cierre: string;
+  honorarios_pct_vendedor: string;
+  honorarios_pct_comprador: string;
 }
 
 function startOfDay(date: Date) {
@@ -218,10 +237,6 @@ function labelTipoActividad(tipo: TrackerActividadTipo): string {
   }
 }
 
-// Helper: tomar siempre solo "YYYY-MM-DD" de la fecha programada
-const actividadDateKey = (a: TrackerActividad) =>
-  a.fecha_programada ? a.fecha_programada.substring(0, 10) : "";
-
 export default function EmpresaTrackerPage() {
   const { user } = useAuth();
 
@@ -231,13 +246,13 @@ export default function EmpresaTrackerPage() {
   const [contactos, setContactos] = useState<TrackerContacto[]>([]);
   const [actividades, setActividades] = useState<TrackerActividad[]>([]);
   const [propiedades, setPropiedades] = useState<TrackerPropiedad[]>([]);
-  const [asesores, setAsesores] = useState<AsesorItem[]>([]);
-
-  const [scope, setScope] = useState<TrackerScope>("empresa");
-  const [selectedAsesorId, setSelectedAsesorId] = useState<string>("");
+  const [asesores, setAsesores] = useState<Asesor[]>([]);
 
   const [activeTab, setActiveTab] = useState<TrackerTab>("calendario");
   const [kpiRange, setKpiRange] = useState<KpiRange>("30d");
+
+  const [scope, setScope] = useState<TrackerScope>("empresa");
+  const [selectedAsesorId, setSelectedAsesorId] = useState<string>("");
 
   const [currentMonth, setCurrentMonth] = useState<Date>(new Date());
   const [selectedDate, setSelectedDate] = useState<Date>(startOfDay(new Date()));
@@ -248,14 +263,12 @@ export default function EmpresaTrackerPage() {
   );
 
   const [showActividadModal, setShowActividadModal] = useState(false);
-  const [editingActividad, setEditingActividad] = useState<TrackerActividad | null>(
-    null
-  );
+  const [editingActividad, setEditingActividad] =
+    useState<TrackerActividad | null>(null);
 
   const [showPropiedadModal, setShowPropiedadModal] = useState(false);
-  const [editingPropiedad, setEditingPropiedad] = useState<TrackerPropiedad | null>(
-    null
-  );
+  const [editingPropiedad, setEditingPropiedad] =
+    useState<TrackerPropiedad | null>(null);
 
   const [mensaje, setMensaje] = useState<string | null>(null);
 
@@ -287,15 +300,15 @@ export default function EmpresaTrackerPage() {
     notas: "",
   });
 
-  const [formPropiedad, setFormPropiedad] = useState({
+  const [formPropiedad, setFormPropiedad] = useState<FormPropiedadState>({
     contacto_id: "",
     tipologia: "",
+    dormitorios: "",
     tipo_operacion: "",
     direccion: "",
     zona: "",
     m2_lote: "",
     m2_cubiertos: "",
-    dormitorios: "",
     precio_lista_inicial: "",
     precio_actual: "",
     precio_cierre: "",
@@ -315,88 +328,39 @@ export default function EmpresaTrackerPage() {
   const mananaKey = toDateKey(manana);
   const selectedKey = toDateKey(selectedDate);
 
-  // ---- FILTROS POR SCOPE (Empresa / Asesores / Global) ----
+  // Helper: tomar siempre solo "YYYY-MM-DD" de la fecha programada
+  const actividadDateKey = (a: TrackerActividad) =>
+    a.fecha_programada ? a.fecha_programada.substring(0, 10) : "";
 
+  // Filtrado por scope (empresa / asesores / global)
   const actividadesFiltradas = useMemo(() => {
     if (scope === "global") return actividades;
 
     if (scope === "empresa") {
-      // Actividades sin asesor asignado
       return actividades.filter((a) => !a.asesor_id);
     }
 
     // scope === "asesores"
-    if (selectedAsesorId) {
-      return actividades.filter((a) => a.asesor_id === selectedAsesorId);
+    if (!selectedAsesorId) {
+      // Todos los asesores (cualquier actividad con asesor_id)
+      return actividades.filter((a) => !!a.asesor_id);
     }
-    // Todas las actividades con asesor asignado
-    return actividades.filter((a) => !!a.asesor_id);
+    return actividades.filter((a) => a.asesor_id === selectedAsesorId);
   }, [actividades, scope, selectedAsesorId]);
 
   const propiedadesFiltradas = useMemo(() => {
     if (scope === "global") return propiedades;
 
     if (scope === "empresa") {
-      // Propiedades sin asesor asignado
       return propiedades.filter((p) => !p.asesor_id);
     }
 
     // scope === "asesores"
-    if (selectedAsesorId) {
-      return propiedades.filter((p) => p.asesor_id === selectedAsesorId);
+    if (!selectedAsesorId) {
+      return propiedades.filter((p) => !!p.asesor_id);
     }
-    // Todas las propiedades asignadas a algún asesor
-    return propiedades.filter((p) => !!p.asesor_id);
+    return propiedades.filter((p) => p.asesor_id === selectedAsesorId);
   }, [propiedades, scope, selectedAsesorId]);
-
-  // Contactos filtrados sólo para KPIs / Prospectos
-  const contactosFiltrados = useMemo(() => {
-    if (scope === "global") return contactos;
-
-    const contactosEmpresa = new Set<string>();
-    const contactosPorAsesor = new Map<string, Set<string>>();
-
-    // Por defecto todos pertenecen a empresa
-    contactos.forEach((c) => contactosEmpresa.add(c.id));
-
-    // Propiedades: si tienen asesor, pasan al bucket de ese asesor
-    for (const p of propiedades) {
-      if (!p.contacto_id || !p.asesor_id) continue;
-      if (!contactosPorAsesor.has(p.asesor_id)) {
-        contactosPorAsesor.set(p.asesor_id, new Set());
-      }
-      contactosPorAsesor.get(p.asesor_id)!.add(p.contacto_id);
-      contactosEmpresa.delete(p.contacto_id);
-    }
-
-    // Actividades: también definen relación asesor-contacto
-    for (const a of actividades) {
-      if (!a.contacto_id || !a.asesor_id) continue;
-      if (!contactosPorAsesor.has(a.asesor_id)) {
-        contactosPorAsesor.set(a.asesor_id, new Set());
-      }
-      contactosPorAsesor.get(a.asesor_id)!.add(a.contacto_id);
-      contactosEmpresa.delete(a.contacto_id);
-    }
-
-    if (scope === "empresa") {
-      return contactos.filter((c) => contactosEmpresa.has(c.id));
-    }
-
-    // scope === "asesores"
-    if (selectedAsesorId) {
-      const setIds = contactosPorAsesor.get(selectedAsesorId);
-      if (!setIds) return [];
-      return contactos.filter((c) => setIds.has(c.id));
-    }
-
-    // Todos los asesores
-    const allAsesoresIds = new Set<string>();
-    for (const set of contactosPorAsesor.values()) {
-      set.forEach((id) => allAsesoresIds.add(id));
-    }
-    return contactos.filter((c) => allAsesoresIds.has(c.id));
-  }, [contactos, propiedades, actividades, scope, selectedAsesorId]);
 
   const actividadesHoy = useMemo(
     () =>
@@ -432,7 +396,7 @@ export default function EmpresaTrackerPage() {
     const map = new Map<string, number>();
     for (const a of actividadesFiltradas) {
       if (!a.fecha_programada) continue;
-      const key = actividadDateKey(a);
+      const key = actividadDateKey(a); // siempre "YYYY-MM-DD" sin TZ
       map.set(key, (map.get(key) ?? 0) + 1);
     }
     return map;
@@ -444,25 +408,38 @@ export default function EmpresaTrackerPage() {
     const start = startKpiDate;
     const startKey = toDateKey(start);
 
-    // Contactos creados dentro del período (filtrados por scope)
-    const contactosInRange = contactosFiltrados.filter((c) => {
+    // Contactos creados dentro del período (base)
+    const contactosInRangeBase = contactos.filter((c) => {
       const created = new Date(c.created_at);
       return created >= start;
     });
 
-    // Propiedades cerradas dentro del período (filtradas por scope)
+    // Propiedades cerradas dentro del período (ya filtradas por scope)
     const propiedadesInRange = propiedadesFiltradas.filter((p) => {
       if (!p.fecha_cierre) return false;
       const key = p.fecha_cierre.substring(0, 10);
       return key >= startKey;
     });
 
-    // Actividades dentro del período (filtradas por scope)
+    // Actividades dentro del período (ya filtradas por scope)
     const actividadesInRange = actividadesFiltradas.filter((a) => {
       if (!a.fecha_programada) return false;
       const key = actividadDateKey(a);
       return key >= startKey;
     });
+
+    // Para scope empresa/asesores: contactos con al menos una actividad en este scope
+    let contactosInRange = contactosInRangeBase;
+    if (scope !== "global") {
+      const contactoIdsConActividad = new Set(
+        actividadesInRange
+          .map((a) => a.contacto_id)
+          .filter((id): id is string => !!id)
+      );
+      contactosInRange = contactosInRangeBase.filter((c) =>
+        contactoIdsConActividad.has(c.id)
+      );
+    }
 
     // ---- PRELISTING ----
     // 1) contactos que (en algún momento del circuito) llegaron al tramo
@@ -491,12 +468,12 @@ export default function EmpresaTrackerPage() {
     }
     const prelistingCount = prelistingSet.size;
 
-    // CAPTACIONES: estado actual captado
+    // CAPTACIONES: estado actual captado (en contactosInRange ya filtrados)
     const captacionesCount = contactosInRange.filter(
       (c) => c.estado === "captado"
     ).length;
 
-    // CIERRES: propiedades con fecha_cierre en el período
+    // CIERRES: propiedades con fecha_cierre en el período (ya filtradas por scope)
     const cierresCount = propiedadesInRange.length;
 
     return {
@@ -506,10 +483,11 @@ export default function EmpresaTrackerPage() {
       cierres: cierresCount,
     };
   }, [
-    contactosFiltrados,
+    contactos,
     actividadesFiltradas,
     propiedadesFiltradas,
     startKpiDate,
+    scope,
   ]);
 
   // Buscar empresa_id desde profile
@@ -540,7 +518,7 @@ export default function EmpresaTrackerPage() {
     fetchEmpresa();
   }, [user]);
 
-  // Carga inicial (contactos + actividades + propiedades + asesores)
+  // Carga inicial (contactos + actividades + propiedades)
   useEffect(() => {
     if (!empresaId) return;
 
@@ -548,58 +526,49 @@ export default function EmpresaTrackerPage() {
       try {
         setLoading(true);
 
-        const [
-          { data: cData },
-          { data: aData },
-          { data: pData },
-          { data: asesoresData },
-        ] = await Promise.all([
-          supabase
-            .from("tracker_contactos")
-            .select("*")
-            .eq("empresa_id", empresaId)
-            .order("created_at", { ascending: false }),
-          supabase
-            .from("tracker_actividades")
-            .select("*")
-            .eq("empresa_id", empresaId)
-            .order("fecha_programada", { ascending: true }),
-          supabase
-            .from("tracker_propiedades")
-            .select(
-              `
-                id,
-                empresa_id,
-                contacto_id,
-                tipologia,
-                tipo_operacion,
-                direccion,
-                zona,
-                m2_lote,
-                m2_cubiertos,
-                dormitorios,
-                precio_lista_inicial,
-                precio_actual,
-                precio_cierre,
-                moneda,
-                fecha_inicio_comercializacion,
-                fecha_cierre,
-                honorarios_pct_vendedor,
-                honorarios_pct_comprador,
-                asesor_id,
-                created_at,
-                updated_at,
-                contacto:tracker_contactos (nombre, apellido)
-              `
-            )
-            .eq("empresa_id", empresaId)
-            .order("created_at", { ascending: false }),
-          supabase
-            .from("asesores")
-            .select("id, nombre, apellido")
-            .eq("empresa_id", empresaId)
-            .order("nombre", { ascending: true }),
-        ]);
+        const [{ data: cData }, { data: aData }, { data: pData }] =
+          await Promise.all([
+            supabase
+              .from("tracker_contactos")
+              .select("*")
+              .eq("empresa_id", empresaId)
+              .order("created_at", { ascending: false }),
+            supabase
+              .from("tracker_actividades")
+              .select("*")
+              .eq("empresa_id", empresaId)
+              .order("fecha_programada", { ascending: true }),
+            supabase
+              .from("tracker_propiedades")
+              .select(
+                `
+                  id,
+                  empresa_id,
+                  contacto_id,
+                  tipologia,
+                  tipo_operacion,
+                  direccion,
+                  zona,
+                  m2_lote,
+                  m2_cubiertos,
+                  dormitorios,
+                  precio_lista_inicial,
+                  precio_actual,
+                  precio_cierre,
+                  moneda,
+                  fecha_inicio_comercializacion,
+                  fecha_cierre,
+                  honorarios_pct_vendedor,
+                  honorarios_pct_comprador,
+                  asesor_id,
+                  created_at,
+                  updated_at,
+                  contacto:tracker_contactos (nombre, apellido)
+                `
+              )
+              .eq("empresa_id", empresaId)
+              .order("created_at", { ascending: false }),
+          ]);
 
         setContactos((cData as TrackerContacto[]) ?? []);
         setActividades((aData as TrackerActividad[]) ?? []);
@@ -643,14 +612,6 @@ export default function EmpresaTrackerPage() {
         );
 
         setPropiedades(propsNormalizadas);
-
-        setAsesores(
-          ((asesoresData ?? []) as any[]).map((a) => ({
-            id: a.id,
-            nombre: a.nombre ?? null,
-            apellido: a.apellido ?? null,
-          }))
-        );
       } catch (err) {
         console.error("Error cargando tracker:", err);
       } finally {
@@ -659,6 +620,32 @@ export default function EmpresaTrackerPage() {
     };
 
     fetchAll();
+  }, [empresaId]);
+
+  // Cargar asesores para el filtro
+  useEffect(() => {
+    if (!empresaId) return;
+
+    const fetchAsesores = async () => {
+      try {
+        const { data, error } = await supabase
+          .from("asesores")
+          .select("id, nombre, apellido")
+          .eq("empresa_id", empresaId)
+          .order("nombre", { ascending: true });
+
+        if (error) {
+          console.error("Error cargando asesores para filtro:", error);
+          return;
+        }
+
+        setAsesores((data as Asesor[]) ?? []);
+      } catch (err) {
+        console.error("Error inesperado cargando asesores:", err);
+      }
+    };
+
+    fetchAsesores();
   }, [empresaId]);
 
   const showMessage = (text: string) => {
@@ -951,12 +938,12 @@ export default function EmpresaTrackerPage() {
     setFormPropiedad({
       contacto_id: contactoId ?? "",
       tipologia: "",
+      dormitorios: "",
       tipo_operacion: "",
       direccion: "",
       zona: "",
       m2_lote: "",
       m2_cubiertos: "",
-      dormitorios: "",
       precio_lista_inicial: "",
       precio_actual: "",
       precio_cierre: "",
@@ -974,12 +961,12 @@ export default function EmpresaTrackerPage() {
     setFormPropiedad({
       contacto_id: p.contacto_id ?? "",
       tipologia: p.tipologia ?? "",
+      dormitorios: p.dormitorios != null ? String(p.dormitorios) : "",
       tipo_operacion: p.tipo_operacion ?? "",
       direccion: p.direccion ?? "",
       zona: p.zona ?? "",
       m2_lote: p.m2_lote != null ? String(p.m2_lote) : "",
       m2_cubiertos: p.m2_cubiertos != null ? String(p.m2_cubiertos) : "",
-      dormitorios: p.dormitorios != null ? String(p.dormitorios) : "",
       precio_lista_inicial:
         p.precio_lista_inicial != null ? String(p.precio_lista_inicial) : "",
       precio_actual: p.precio_actual != null ? String(p.precio_actual) : "",
@@ -1006,6 +993,43 @@ export default function EmpresaTrackerPage() {
     return isNaN(parsed) ? null : parsed;
   };
 
+  // Cálculo de honorarios estimados en base al precio de cierre y los % cargados
+  const honorariosEstimados = useMemo(() => {
+    const precioCierre = parseNumberOrNull(formPropiedad.precio_cierre);
+    if (precioCierre == null) {
+      return {
+        vendedor: null as number | null,
+        comprador: null as number | null,
+        total: null as number | null,
+      };
+    }
+
+    const pctVendedor = parseNumberOrNull(
+      formPropiedad.honorarios_pct_vendedor
+    );
+    const pctComprador = parseNumberOrNull(
+      formPropiedad.honorarios_pct_comprador
+    );
+
+    const vendedor =
+      pctVendedor != null ? (precioCierre * pctVendedor) / 100 : null;
+    const comprador =
+      pctComprador != null ? (precioCierre * pctComprador) / 100 : null;
+
+    const totalRaw = (vendedor ?? 0) + (comprador ?? 0);
+    const total = totalRaw > 0 ? totalRaw : null;
+
+    return {
+      vendedor,
+      comprador,
+      total,
+    };
+  }, [
+    formPropiedad.precio_cierre,
+    formPropiedad.honorarios_pct_vendedor,
+    formPropiedad.honorarios_pct_comprador,
+  ]);
+
   const guardarPropiedad = async () => {
     if (!empresaId || savingPropiedad) return;
     setSavingPropiedad(true);
@@ -1014,12 +1038,12 @@ export default function EmpresaTrackerPage() {
       empresa_id: empresaId,
       contacto_id: formPropiedad.contacto_id || null,
       tipologia: formPropiedad.tipologia || null,
+      dormitorios: parseNumberOrNull(formPropiedad.dormitorios),
       tipo_operacion: formPropiedad.tipo_operacion || null,
       direccion: formPropiedad.direccion || null,
       zona: formPropiedad.zona || null,
       m2_lote: parseNumberOrNull(formPropiedad.m2_lote),
       m2_cubiertos: parseNumberOrNull(formPropiedad.m2_cubiertos),
-      dormitorios: parseNumberOrNull(formPropiedad.dormitorios),
       precio_lista_inicial: parseNumberOrNull(
         formPropiedad.precio_lista_inicial
       ),
@@ -1250,46 +1274,51 @@ export default function EmpresaTrackerPage() {
               captaciones y cierres.
             </p>
 
-            {/* Filtro por scope (Empresa / Asesores / Global) */}
-            <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
-              <span className="text-slate-500">Vista:</span>
-              <select
-                value={scope}
-                onChange={(e) => {
-                  const value = e.target.value as TrackerScope;
-                  setScope(value);
-                  if (value !== "asesores") {
-                    setSelectedAsesorId("");
-                  }
-                }}
-                className="rounded-full border border-gray-300 bg-white px-3 py-1 text-xs text-slate-700"
-              >
-                <option value="empresa">Empresa</option>
-                <option value="asesores">Asesores</option>
-                <option value="global">Global</option>
-              </select>
+            {/* Filtro de vista: Empresa / Asesores / Global */}
+            <div className="mt-3 flex flex-wrap items-center gap-3 text-xs">
+              <div className="flex items-center gap-2">
+                <span className="text-slate-500">Vista:</span>
+                <div className="inline-flex rounded-full border border-gray-300 bg-white p-0.5">
+                  {[
+                    { id: "empresa" as TrackerScope, label: "Empresa" },
+                    { id: "asesores" as TrackerScope, label: "Asesores" },
+                    { id: "global" as TrackerScope, label: "Global" },
+                  ].map((opt) => {
+                    const active = scope === opt.id;
+                    return (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => setScope(opt.id)}
+                        className={`px-3 py-1 rounded-full text-xs font-medium transition ${
+                          active
+                            ? "bg-black text-white"
+                            : "text-slate-700 hover:bg-gray-100"
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
 
               {scope === "asesores" && (
-                <>
+                <div className="flex items-center gap-2">
                   <span className="text-slate-500">Asesor:</span>
                   <select
+                    className="rounded-full border border-gray-300 bg-white px-3 py-1 text-xs text-slate-700"
                     value={selectedAsesorId}
                     onChange={(e) => setSelectedAsesorId(e.target.value)}
-                    className="rounded-full border border-gray-300 bg-white px-3 py-1 text-xs text-slate-700"
                   >
                     <option value="">Todos</option>
                     {asesores.map((a) => (
                       <option key={a.id} value={a.id}>
-                        {[
-                          a.nombre ?? "",
-                          a.apellido ?? "",
-                        ]
-                          .filter(Boolean)
-                          .join(" ")}
+                        {contactoNombreCorto(a)}
                       </option>
                     ))}
                   </select>
-                </>
+                </div>
               )}
             </div>
           </div>
@@ -1380,7 +1409,8 @@ export default function EmpresaTrackerPage() {
                 Resumen de actividad
               </h2>
               <p className="text-xs text-slate-500">
-                Visualizá cuántos contactos avanzan en cada etapa del circuito.
+                Visualizá cuántos contactos avanzan en cada etapa del circuito
+                según la vista seleccionada.
               </p>
             </div>
             <div className="flex items-center gap-2 text-xs">
@@ -1867,18 +1897,18 @@ export default function EmpresaTrackerPage() {
                       "border-b border-gray-100 hover:bg-gray-50";
                     const rowClosed = isCerrada ? "bg-emerald-200" : "";
 
-                    let gapLabel = "—";
+                    let gapTexto = "—";
                     if (
                       p.precio_lista_inicial != null &&
                       p.precio_lista_inicial > 0 &&
                       p.precio_cierre != null
                     ) {
-                      const diff = Math.abs(
-                        p.precio_cierre - p.precio_lista_inicial
-                      );
-                      const pct = (diff / p.precio_lista_inicial) * 100;
-                      const pctRounded = Math.round(pct);
-                      gapLabel = `${pctRounded}%`;
+                      const diff =
+                        ((p.precio_lista_inicial - p.precio_cierre) /
+                          p.precio_lista_inicial) *
+                        100;
+                      const gap = Math.abs(Math.round(diff));
+                      if (!isNaN(gap)) gapTexto = `${gap}%`;
                     }
 
                     return (
@@ -1911,7 +1941,7 @@ export default function EmpresaTrackerPage() {
                           {diasVenta != null ? `${diasVenta} días` : "—"}
                         </td>
                         <td className="px-3 py-2 align-top text-slate-700">
-                          {gapLabel}
+                          {gapTexto}
                         </td>
                         <td className="px-3 py-2 align-top text-right">
                           <div className="flex justify-end gap-2">
@@ -1951,9 +1981,7 @@ export default function EmpresaTrackerPage() {
             <div className="w-full max-w-lg rounded-2xl bg-white shadow-xl border border-gray-200">
               <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
                 <h3 className="text-sm font-semibold text-slate-900">
-                  {editingContacto
-                    ? "Editar contacto"
-                    : "Nuevo prospecto / cliente"}
+                  {editingContacto ? "Editar contacto" : "Nuevo prospecto / cliente"}
                 </h3>
                 <button
                   onClick={() => setShowContactoModal(false)}
@@ -2679,16 +2707,16 @@ export default function EmpresaTrackerPage() {
                   </div>
                 </div>
 
-                {/* Honorarios Vendedor / Comprador */}
-                <div>
-                  <label className="block text-[11px] text-slate-500 mb-1">
+                {/* Honorarios */}
+                <div className="border-t border-gray-200 pt-3 mt-2 space-y-2">
+                  <p className="text-[11px] font-semibold text-slate-700">
                     Honorarios
-                  </label>
+                  </p>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <p className="text-[11px] text-slate-600 mb-1">
-                        Vendedor (% sobre precio de cierre)
-                      </p>
+                      <label className="block text-[11px] text-slate-500 mb-1">
+                        Vendedor (%)
+                      </label>
                       <input
                         className="w-full rounded-lg border border-gray-300 px-2 py-1 text-xs"
                         placeholder="Ej: 3"
@@ -2708,9 +2736,9 @@ export default function EmpresaTrackerPage() {
                       </p>
                     </div>
                     <div>
-                      <p className="text-[11px] text-slate-600 mb-1">
-                        Comprador (% sobre precio de cierre)
-                      </p>
+                      <label className="block text-[11px] text-slate-500 mb-1">
+                        Comprador (%)
+                      </label>
                       <input
                         className="w-full rounded-lg border border-gray-300 px-2 py-1 text-xs"
                         placeholder="Ej: 3"
@@ -2730,14 +2758,11 @@ export default function EmpresaTrackerPage() {
                       </p>
                     </div>
                   </div>
-                  <p className="mt-2 text-[11px] text-slate-600">
-                    Total honorarios estimados:{" "}
+                  <p className="text-[11px] text-slate-500">
+                    Total estimado:{" "}
                     {honorariosEstimados.total != null
                       ? fmtCurrency(honorariosEstimados.total)
                       : "—"}
-                  </p>
-                  <p className="mt-1 text-[10px] text-slate-400">
-                    Calculado sobre el precio de cierre cargado.
                   </p>
                 </div>
               </div>

@@ -26,10 +26,8 @@ type TrackerActividadTipo =
   | "cierre";
 
 type TrackerTab = "calendario" | "contactos" | "propiedades";
-
 type KpiRange = "30d" | "90d" | "180d" | "365d";
-
-type ViewScope = "empresa" | "asesores" | "global";
+type TrackerScope = "empresa" | "asesores" | "global";
 
 interface TrackerContacto {
   id: string;
@@ -59,7 +57,7 @@ interface TrackerActividad {
   notas: string | null;
   created_at: string;
   updated_at: string;
-  asesor_id?: string | null;
+  asesor_id: string | null;
 }
 
 interface TrackerPropiedad {
@@ -70,27 +68,27 @@ interface TrackerPropiedad {
   tipo_operacion: string | null;
   direccion: string | null;
   zona: string | null;
-  dormitorios: number | null;
   m2_lote: number | null;
   m2_cubiertos: number | null;
+  dormitorios: number | null;
   precio_lista_inicial: number | null;
   precio_actual: number | null;
   precio_cierre: number | null;
   moneda: string | null;
   fecha_inicio_comercializacion: string | null;
   fecha_cierre: string | null;
-  created_at: string;
-  updated_at: string;
   honorarios_pct_vendedor: number | null;
   honorarios_pct_comprador: number | null;
-  asesor_id?: string | null;
+  asesor_id: string | null;
+  created_at: string;
+  updated_at: string;
   contacto?: {
     nombre: string | null;
     apellido: string | null;
   } | null;
 }
 
-interface Asesor {
+interface AsesorItem {
   id: string;
   nombre: string | null;
   apellido: string | null;
@@ -220,6 +218,10 @@ function labelTipoActividad(tipo: TrackerActividadTipo): string {
   }
 }
 
+// Helper: tomar siempre solo "YYYY-MM-DD" de la fecha programada
+const actividadDateKey = (a: TrackerActividad) =>
+  a.fecha_programada ? a.fecha_programada.substring(0, 10) : "";
+
 export default function EmpresaTrackerPage() {
   const { user } = useAuth();
 
@@ -229,13 +231,13 @@ export default function EmpresaTrackerPage() {
   const [contactos, setContactos] = useState<TrackerContacto[]>([]);
   const [actividades, setActividades] = useState<TrackerActividad[]>([]);
   const [propiedades, setPropiedades] = useState<TrackerPropiedad[]>([]);
-  const [asesores, setAsesores] = useState<Asesor[]>([]);
+  const [asesores, setAsesores] = useState<AsesorItem[]>([]);
+
+  const [scope, setScope] = useState<TrackerScope>("empresa");
+  const [selectedAsesorId, setSelectedAsesorId] = useState<string>("");
 
   const [activeTab, setActiveTab] = useState<TrackerTab>("calendario");
   const [kpiRange, setKpiRange] = useState<KpiRange>("30d");
-
-  const [viewScope, setViewScope] = useState<ViewScope>("empresa");
-  const [selectedAsesorId, setSelectedAsesorId] = useState<string>("");
 
   const [currentMonth, setCurrentMonth] = useState<Date>(new Date());
   const [selectedDate, setSelectedDate] = useState<Date>(startOfDay(new Date()));
@@ -246,12 +248,14 @@ export default function EmpresaTrackerPage() {
   );
 
   const [showActividadModal, setShowActividadModal] = useState(false);
-  const [editingActividad, setEditingActividad] =
-    useState<TrackerActividad | null>(null);
+  const [editingActividad, setEditingActividad] = useState<TrackerActividad | null>(
+    null
+  );
 
   const [showPropiedadModal, setShowPropiedadModal] = useState(false);
-  const [editingPropiedad, setEditingPropiedad] =
-    useState<TrackerPropiedad | null>(null);
+  const [editingPropiedad, setEditingPropiedad] = useState<TrackerPropiedad | null>(
+    null
+  );
 
   const [mensaje, setMensaje] = useState<string | null>(null);
 
@@ -286,12 +290,12 @@ export default function EmpresaTrackerPage() {
   const [formPropiedad, setFormPropiedad] = useState({
     contacto_id: "",
     tipologia: "",
-    dormitorios: "",
     tipo_operacion: "",
     direccion: "",
     zona: "",
     m2_lote: "",
     m2_cubiertos: "",
+    dormitorios: "",
     precio_lista_inicial: "",
     precio_actual: "",
     precio_cierre: "",
@@ -311,42 +315,88 @@ export default function EmpresaTrackerPage() {
   const mananaKey = toDateKey(manana);
   const selectedKey = toDateKey(selectedDate);
 
-  // Helper: tomar siempre solo "YYYY-MM-DD" de la fecha programada
-  const actividadDateKey = (a: TrackerActividad) =>
-    a.fecha_programada ? a.fecha_programada.substring(0, 10) : "";
+  // ---- FILTROS POR SCOPE (Empresa / Asesores / Global) ----
 
-  // Filtrado por scope (empresa / asesores / global) para actividades y propiedades
   const actividadesFiltradas = useMemo(() => {
-    return actividades.filter((a) => {
-      const asesorId = a.asesor_id ?? null;
-      if (viewScope === "empresa") {
-        return !asesorId;
-      }
-      if (viewScope === "asesores") {
-        if (!asesorId) return false;
-        if (selectedAsesorId && asesorId !== selectedAsesorId) return false;
-        return true;
-      }
-      // global
-      return true;
-    });
-  }, [actividades, viewScope, selectedAsesorId]);
+    if (scope === "global") return actividades;
+
+    if (scope === "empresa") {
+      // Actividades sin asesor asignado
+      return actividades.filter((a) => !a.asesor_id);
+    }
+
+    // scope === "asesores"
+    if (selectedAsesorId) {
+      return actividades.filter((a) => a.asesor_id === selectedAsesorId);
+    }
+    // Todas las actividades con asesor asignado
+    return actividades.filter((a) => !!a.asesor_id);
+  }, [actividades, scope, selectedAsesorId]);
 
   const propiedadesFiltradas = useMemo(() => {
-    return propiedades.filter((p) => {
-      const asesorId = p.asesor_id ?? null;
-      if (viewScope === "empresa") {
-        return !asesorId;
+    if (scope === "global") return propiedades;
+
+    if (scope === "empresa") {
+      // Propiedades sin asesor asignado
+      return propiedades.filter((p) => !p.asesor_id);
+    }
+
+    // scope === "asesores"
+    if (selectedAsesorId) {
+      return propiedades.filter((p) => p.asesor_id === selectedAsesorId);
+    }
+    // Todas las propiedades asignadas a algún asesor
+    return propiedades.filter((p) => !!p.asesor_id);
+  }, [propiedades, scope, selectedAsesorId]);
+
+  // Contactos filtrados sólo para KPIs / Prospectos
+  const contactosFiltrados = useMemo(() => {
+    if (scope === "global") return contactos;
+
+    const contactosEmpresa = new Set<string>();
+    const contactosPorAsesor = new Map<string, Set<string>>();
+
+    // Por defecto todos pertenecen a empresa
+    contactos.forEach((c) => contactosEmpresa.add(c.id));
+
+    // Propiedades: si tienen asesor, pasan al bucket de ese asesor
+    for (const p of propiedades) {
+      if (!p.contacto_id || !p.asesor_id) continue;
+      if (!contactosPorAsesor.has(p.asesor_id)) {
+        contactosPorAsesor.set(p.asesor_id, new Set());
       }
-      if (viewScope === "asesores") {
-        if (!asesorId) return false;
-        if (selectedAsesorId && asesorId !== selectedAsesorId) return false;
-        return true;
+      contactosPorAsesor.get(p.asesor_id)!.add(p.contacto_id);
+      contactosEmpresa.delete(p.contacto_id);
+    }
+
+    // Actividades: también definen relación asesor-contacto
+    for (const a of actividades) {
+      if (!a.contacto_id || !a.asesor_id) continue;
+      if (!contactosPorAsesor.has(a.asesor_id)) {
+        contactosPorAsesor.set(a.asesor_id, new Set());
       }
-      // global
-      return true;
-    });
-  }, [propiedades, viewScope, selectedAsesorId]);
+      contactosPorAsesor.get(a.asesor_id)!.add(a.contacto_id);
+      contactosEmpresa.delete(a.contacto_id);
+    }
+
+    if (scope === "empresa") {
+      return contactos.filter((c) => contactosEmpresa.has(c.id));
+    }
+
+    // scope === "asesores"
+    if (selectedAsesorId) {
+      const setIds = contactosPorAsesor.get(selectedAsesorId);
+      if (!setIds) return [];
+      return contactos.filter((c) => setIds.has(c.id));
+    }
+
+    // Todos los asesores
+    const allAsesoresIds = new Set<string>();
+    for (const set of contactosPorAsesor.values()) {
+      set.forEach((id) => allAsesoresIds.add(id));
+    }
+    return contactos.filter((c) => allAsesoresIds.has(c.id));
+  }, [contactos, propiedades, actividades, scope, selectedAsesorId]);
 
   const actividadesHoy = useMemo(
     () =>
@@ -382,7 +432,7 @@ export default function EmpresaTrackerPage() {
     const map = new Map<string, number>();
     for (const a of actividadesFiltradas) {
       if (!a.fecha_programada) continue;
-      const key = actividadDateKey(a); // siempre "YYYY-MM-DD" sin TZ
+      const key = actividadDateKey(a);
       map.set(key, (map.get(key) ?? 0) + 1);
     }
     return map;
@@ -394,8 +444,8 @@ export default function EmpresaTrackerPage() {
     const start = startKpiDate;
     const startKey = toDateKey(start);
 
-    // Contactos creados dentro del período
-    const contactosInRange = contactos.filter((c) => {
+    // Contactos creados dentro del período (filtrados por scope)
+    const contactosInRange = contactosFiltrados.filter((c) => {
       const created = new Date(c.created_at);
       return created >= start;
     });
@@ -407,7 +457,7 @@ export default function EmpresaTrackerPage() {
       return key >= startKey;
     });
 
-    // Actividades dentro del período (por fecha_programada y scope)
+    // Actividades dentro del período (filtradas por scope)
     const actividadesInRange = actividadesFiltradas.filter((a) => {
       if (!a.fecha_programada) return false;
       const key = actividadDateKey(a);
@@ -446,7 +496,7 @@ export default function EmpresaTrackerPage() {
       (c) => c.estado === "captado"
     ).length;
 
-    // CIERRES: propiedades con fecha_cierre en el período (ya filtradas por scope)
+    // CIERRES: propiedades con fecha_cierre en el período
     const cierresCount = propiedadesInRange.length;
 
     return {
@@ -455,7 +505,12 @@ export default function EmpresaTrackerPage() {
       captaciones: captacionesCount,
       cierres: cierresCount,
     };
-  }, [contactos, actividadesFiltradas, propiedadesFiltradas, startKpiDate]);
+  }, [
+    contactosFiltrados,
+    actividadesFiltradas,
+    propiedadesFiltradas,
+    startKpiDate,
+  ]);
 
   // Buscar empresa_id desde profile
   useEffect(() => {
@@ -485,7 +540,7 @@ export default function EmpresaTrackerPage() {
     fetchEmpresa();
   }, [user]);
 
-  // Carga inicial (contactos + actividades + propiedades)
+  // Carga inicial (contactos + actividades + propiedades + asesores)
   useEffect(() => {
     if (!empresaId) return;
 
@@ -493,49 +548,58 @@ export default function EmpresaTrackerPage() {
       try {
         setLoading(true);
 
-        const [{ data: cData }, { data: aData }, { data: pData }] =
-          await Promise.all([
-            supabase
-              .from("tracker_contactos")
-              .select("*")
-              .eq("empresa_id", empresaId)
-              .order("created_at", { ascending: false }),
-            supabase
-              .from("tracker_actividades")
-              .select("*")
-              .eq("empresa_id", empresaId)
-              .order("fecha_programada", { ascending: true }),
-            supabase
-              .from("tracker_propiedades")
-              .select(
-                `
-                  id,
-                  empresa_id,
-                  contacto_id,
-                  tipologia,
-                  tipo_operacion,
-                  direccion,
-                  zona,
-                  dormitorios,
-                  m2_lote,
-                  m2_cubiertos,
-                  precio_lista_inicial,
-                  precio_actual,
-                  precio_cierre,
-                  moneda,
-                  fecha_inicio_comercializacion,
-                  fecha_cierre,
-                  created_at,
-                  updated_at,
-                  honorarios_pct_vendedor,
-                  honorarios_pct_comprador,
-                  asesor_id,
-                  contacto:tracker_contactos (nombre, apellido)
-                `
-              )
-              .eq("empresa_id", empresaId)
-              .order("created_at", { ascending: false }),
-          ]);
+        const [
+          { data: cData },
+          { data: aData },
+          { data: pData },
+          { data: asesoresData },
+        ] = await Promise.all([
+          supabase
+            .from("tracker_contactos")
+            .select("*")
+            .eq("empresa_id", empresaId)
+            .order("created_at", { ascending: false }),
+          supabase
+            .from("tracker_actividades")
+            .select("*")
+            .eq("empresa_id", empresaId)
+            .order("fecha_programada", { ascending: true }),
+          supabase
+            .from("tracker_propiedades")
+            .select(
+              `
+                id,
+                empresa_id,
+                contacto_id,
+                tipologia,
+                tipo_operacion,
+                direccion,
+                zona,
+                m2_lote,
+                m2_cubiertos,
+                dormitorios,
+                precio_lista_inicial,
+                precio_actual,
+                precio_cierre,
+                moneda,
+                fecha_inicio_comercializacion,
+                fecha_cierre,
+                honorarios_pct_vendedor,
+                honorarios_pct_comprador,
+                asesor_id,
+                created_at,
+                updated_at,
+                contacto:tracker_contactos (nombre, apellido)
+              `
+            )
+            .eq("empresa_id", empresaId)
+            .order("created_at", { ascending: false }),
+          supabase
+            .from("asesores")
+            .select("id, nombre, apellido")
+            .eq("empresa_id", empresaId)
+            .order("nombre", { ascending: true }),
+        ]);
 
         setContactos((cData as TrackerContacto[]) ?? []);
         setActividades((aData as TrackerActividad[]) ?? []);
@@ -554,20 +618,20 @@ export default function EmpresaTrackerPage() {
               tipo_operacion: row.tipo_operacion,
               direccion: row.direccion,
               zona: row.zona,
-              dormitorios: row.dormitorios,
               m2_lote: row.m2_lote,
               m2_cubiertos: row.m2_cubiertos,
+              dormitorios: row.dormitorios,
               precio_lista_inicial: row.precio_lista_inicial,
               precio_actual: row.precio_actual,
               precio_cierre: row.precio_cierre,
               moneda: row.moneda,
               fecha_inicio_comercializacion: row.fecha_inicio_comercializacion,
               fecha_cierre: row.fecha_cierre,
-              created_at: row.created_at,
-              updated_at: row.updated_at,
               honorarios_pct_vendedor: row.honorarios_pct_vendedor,
               honorarios_pct_comprador: row.honorarios_pct_comprador,
-              asesor_id: row.asesor_id ?? null,
+              asesor_id: row.asesor_id,
+              created_at: row.created_at,
+              updated_at: row.updated_at,
               contacto: contactoRaw
                 ? {
                     nombre: contactoRaw.nombre ?? null,
@@ -579,6 +643,14 @@ export default function EmpresaTrackerPage() {
         );
 
         setPropiedades(propsNormalizadas);
+
+        setAsesores(
+          ((asesoresData ?? []) as any[]).map((a) => ({
+            id: a.id,
+            nombre: a.nombre ?? null,
+            apellido: a.apellido ?? null,
+          }))
+        );
       } catch (err) {
         console.error("Error cargando tracker:", err);
       } finally {
@@ -587,28 +659,6 @@ export default function EmpresaTrackerPage() {
     };
 
     fetchAll();
-  }, [empresaId]);
-
-  // Cargar asesores para filtros de vista
-  useEffect(() => {
-    if (!empresaId) return;
-
-    const fetchAsesores = async () => {
-      const { data, error } = await supabase
-        .from("asesores")
-        .select("id, nombre, apellido")
-        .eq("empresa_id", empresaId)
-        .order("nombre", { ascending: true });
-
-      if (error) {
-        console.error("Error cargando asesores para tracker:", error);
-        return;
-      }
-
-      setAsesores((data as Asesor[]) ?? []);
-    };
-
-    fetchAsesores();
   }, [empresaId]);
 
   const showMessage = (text: string) => {
@@ -778,6 +828,7 @@ export default function EmpresaTrackerPage() {
       showMessage("❌ Error inesperado al eliminar.");
     }
   };
+
   // ----- CRUD ACTIVIDADES -----
 
   const openNuevaActividad = (date?: Date) => {
@@ -894,17 +945,18 @@ export default function EmpresaTrackerPage() {
   };
 
   // ----- CRUD PROPIEDADES -----
+
   const openNuevaPropiedad = (contactoId?: string) => {
     setEditingPropiedad(null);
     setFormPropiedad({
       contacto_id: contactoId ?? "",
       tipologia: "",
-      dormitorios: "",
       tipo_operacion: "",
       direccion: "",
       zona: "",
       m2_lote: "",
       m2_cubiertos: "",
+      dormitorios: "",
       precio_lista_inicial: "",
       precio_actual: "",
       precio_cierre: "",
@@ -922,12 +974,12 @@ export default function EmpresaTrackerPage() {
     setFormPropiedad({
       contacto_id: p.contacto_id ?? "",
       tipologia: p.tipologia ?? "",
-      dormitorios: p.dormitorios != null ? String(p.dormitorios) : "",
       tipo_operacion: p.tipo_operacion ?? "",
       direccion: p.direccion ?? "",
       zona: p.zona ?? "",
       m2_lote: p.m2_lote != null ? String(p.m2_lote) : "",
       m2_cubiertos: p.m2_cubiertos != null ? String(p.m2_cubiertos) : "",
+      dormitorios: p.dormitorios != null ? String(p.dormitorios) : "",
       precio_lista_inicial:
         p.precio_lista_inicial != null ? String(p.precio_lista_inicial) : "",
       precio_actual: p.precio_actual != null ? String(p.precio_actual) : "",
@@ -954,30 +1006,6 @@ export default function EmpresaTrackerPage() {
     return isNaN(parsed) ? null : parsed;
   };
 
-  const calcularHonorariosDesdeForm = () => {
-    const precioCierre = parseNumberOrNull(formPropiedad.precio_cierre);
-    const pctVendedor = parseNumberOrNull(formPropiedad.honorarios_pct_vendedor);
-    const pctComprador = parseNumberOrNull(
-      formPropiedad.honorarios_pct_comprador
-    );
-
-    if (!precioCierre || precioCierre <= 0) {
-      return { vendedor: null as number | null, comprador: null as number | null, total: null as number | null };
-    }
-
-    const vendedor =
-      pctVendedor != null ? (precioCierre * pctVendedor) / 100 : null;
-    const comprador =
-      pctComprador != null ? (precioCierre * pctComprador) / 100 : null;
-
-    const total =
-      vendedor != null || comprador != null
-        ? (vendedor ?? 0) + (comprador ?? 0)
-        : null;
-
-    return { vendedor, comprador, total };
-  };
-
   const guardarPropiedad = async () => {
     if (!empresaId || savingPropiedad) return;
     setSavingPropiedad(true);
@@ -986,13 +1014,15 @@ export default function EmpresaTrackerPage() {
       empresa_id: empresaId,
       contacto_id: formPropiedad.contacto_id || null,
       tipologia: formPropiedad.tipologia || null,
-      dormitorios: parseNumberOrNull(formPropiedad.dormitorios),
       tipo_operacion: formPropiedad.tipo_operacion || null,
       direccion: formPropiedad.direccion || null,
       zona: formPropiedad.zona || null,
       m2_lote: parseNumberOrNull(formPropiedad.m2_lote),
       m2_cubiertos: parseNumberOrNull(formPropiedad.m2_cubiertos),
-      precio_lista_inicial: parseNumberOrNull(formPropiedad.precio_lista_inicial),
+      dormitorios: parseNumberOrNull(formPropiedad.dormitorios),
+      precio_lista_inicial: parseNumberOrNull(
+        formPropiedad.precio_lista_inicial
+      ),
       precio_actual: parseNumberOrNull(formPropiedad.precio_actual),
       precio_cierre: parseNumberOrNull(formPropiedad.precio_cierre),
       moneda: formPropiedad.moneda || null,
@@ -1024,9 +1054,9 @@ export default function EmpresaTrackerPage() {
           return;
         }
       } else {
-        const { error } = await supabase.from("tracker_propiedades").insert(
-          payload
-        );
+        const { error } = await supabase
+          .from("tracker_propiedades")
+          .insert(payload);
 
         if (error) {
           console.error("Error creando propiedad:", error);
@@ -1049,20 +1079,20 @@ export default function EmpresaTrackerPage() {
             tipo_operacion,
             direccion,
             zona,
-            dormitorios,
             m2_lote,
             m2_cubiertos,
+            dormitorios,
             precio_lista_inicial,
             precio_actual,
             precio_cierre,
             moneda,
             fecha_inicio_comercializacion,
             fecha_cierre,
-            created_at,
-            updated_at,
             honorarios_pct_vendedor,
             honorarios_pct_comprador,
             asesor_id,
+            created_at,
+            updated_at,
             contacto:tracker_contactos (nombre, apellido)
           `
         )
@@ -1083,20 +1113,20 @@ export default function EmpresaTrackerPage() {
             tipo_operacion: row.tipo_operacion,
             direccion: row.direccion,
             zona: row.zona,
-            dormitorios: row.dormitorios,
             m2_lote: row.m2_lote,
             m2_cubiertos: row.m2_cubiertos,
+            dormitorios: row.dormitorios,
             precio_lista_inicial: row.precio_lista_inicial,
             precio_actual: row.precio_actual,
             precio_cierre: row.precio_cierre,
             moneda: row.moneda,
             fecha_inicio_comercializacion: row.fecha_inicio_comercializacion,
             fecha_cierre: row.fecha_cierre,
-            created_at: row.created_at,
-            updated_at: row.updated_at,
             honorarios_pct_vendedor: row.honorarios_pct_vendedor,
             honorarios_pct_comprador: row.honorarios_pct_comprador,
-            asesor_id: row.asesor_id ?? null,
+            asesor_id: row.asesor_id,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
             contacto: contactoRaw
               ? {
                   nombre: contactoRaw.nombre ?? null,
@@ -1196,8 +1226,6 @@ export default function EmpresaTrackerPage() {
     }).format(n);
   };
 
-  const honorariosEstimados = calcularHonorariosDesdeForm();
-
   if (loading && !empresaId) {
     return (
       <div className="flex items-center justify-center h-[60vh] text-gray-500">
@@ -1222,35 +1250,46 @@ export default function EmpresaTrackerPage() {
               captaciones y cierres.
             </p>
 
-            {/* Filtro de vista: Empresa / Asesores / Global */}
+            {/* Filtro por scope (Empresa / Asesores / Global) */}
             <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
               <span className="text-slate-500">Vista:</span>
               <select
-                value={viewScope}
+                value={scope}
                 onChange={(e) => {
-                  const value = e.target.value as ViewScope;
-                  setViewScope(value);
+                  const value = e.target.value as TrackerScope;
+                  setScope(value);
+                  if (value !== "asesores") {
+                    setSelectedAsesorId("");
+                  }
                 }}
                 className="rounded-full border border-gray-300 bg-white px-3 py-1 text-xs text-slate-700"
               >
                 <option value="empresa">Empresa</option>
                 <option value="asesores">Asesores</option>
-                <option value="global">Global (empresa + asesores)</option>
+                <option value="global">Global</option>
               </select>
 
-              {viewScope === "asesores" && (
-                <select
-                  value={selectedAsesorId}
-                  onChange={(e) => setSelectedAsesorId(e.target.value)}
-                  className="rounded-full border border-gray-300 bg-white px-3 py-1 text-xs text-slate-700"
-                >
-                  <option value="">Todos los asesores</option>
-                  {asesores.map((a) => (
-                    <option key={a.id} value={a.id}>
-                      {contactoNombreCorto(a)}
-                    </option>
-                  ))}
-                </select>
+              {scope === "asesores" && (
+                <>
+                  <span className="text-slate-500">Asesor:</span>
+                  <select
+                    value={selectedAsesorId}
+                    onChange={(e) => setSelectedAsesorId(e.target.value)}
+                    className="rounded-full border border-gray-300 bg-white px-3 py-1 text-xs text-slate-700"
+                  >
+                    <option value="">Todos</option>
+                    {asesores.map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {[
+                          a.nombre ?? "",
+                          a.apellido ?? "",
+                        ]
+                          .filter(Boolean)
+                          .join(" ")}
+                      </option>
+                    ))}
+                  </select>
+                </>
               )}
             </div>
           </div>
@@ -1828,18 +1867,18 @@ export default function EmpresaTrackerPage() {
                       "border-b border-gray-100 hover:bg-gray-50";
                     const rowClosed = isCerrada ? "bg-emerald-200" : "";
 
-                    const precioLista = p.precio_lista_inicial;
-                    const precioCierre = p.precio_cierre;
                     let gapLabel = "—";
                     if (
-                      precioLista != null &&
-                      precioLista !== 0 &&
-                      precioCierre != null
+                      p.precio_lista_inicial != null &&
+                      p.precio_lista_inicial > 0 &&
+                      p.precio_cierre != null
                     ) {
-                      const diff = Math.abs(precioCierre - precioLista);
-                      const pct =
-                        Math.abs(diff / Math.abs(precioLista)) * 100;
-                      gapLabel = `${Math.round(pct)}%`;
+                      const diff = Math.abs(
+                        p.precio_cierre - p.precio_lista_inicial
+                      );
+                      const pct = (diff / p.precio_lista_inicial) * 100;
+                      const pctRounded = Math.round(pct);
+                      gapLabel = `${pctRounded}%`;
                     }
 
                     return (
@@ -1898,6 +1937,7 @@ export default function EmpresaTrackerPage() {
             </div>
           </section>
         )}
+
         {/* Mensaje flotante */}
         {mensaje && (
           <div className="fixed bottom-4 right-4 rounded-full bg-black text-white px-4 py-2 text-xs shadow-lg">

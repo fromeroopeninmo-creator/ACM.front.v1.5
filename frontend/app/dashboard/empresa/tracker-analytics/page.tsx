@@ -5,7 +5,7 @@ import { supabase } from "#lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
 
 type Scope = "empresa" | "asesores" | "global";
-type DateRangeKey = "90d" | "180d" | "365d";
+type DateRangeKey = "30d" | "90d" | "180d" | "365d";
 
 interface TrackerPropiedad {
   id: string;
@@ -20,12 +20,14 @@ interface TrackerPropiedad {
   honorarios_pct_comprador: number | null;
   honorarios_pct_vendedor: number | null;
   porcentaje_asesor: number | null;
+  precio_lista_inicial: number | null;
 }
 
 interface TrackerActividad {
   id: string;
   empresa_id: string;
   asesor_id: string | null;
+  contacto_id: string | null;
   tipo: string;
   fecha_programada: string | null;
   created_at: string;
@@ -50,6 +52,7 @@ function subDays(date: Date, days: number) {
 
 function rangeStart(key: DateRangeKey): Date {
   const today = startOfDay(new Date());
+  if (key === "30d") return subDays(today, 30);
   if (key === "90d") return subDays(today, 90);
   if (key === "180d") return subDays(today, 180);
   return subDays(today, 365);
@@ -66,7 +69,7 @@ function daysBetween(startStr: string | null, endStr: string | null): number | n
 
 // Helpers labels
 function labelTipologia(t: string | null): string {
-  if (!t) return "Sin tipología";
+  if (!t || t === "sin_tipologia") return "Sin tipología";
   switch (t) {
     case "casa":
       return "Casa";
@@ -82,8 +85,6 @@ function labelTipologia(t: string | null): string {
       return "Cochera";
     case "campo":
       return "Campo";
-    case "sin_tipologia":
-      return "Sin tipología";
     default:
       return t;
   }
@@ -142,11 +143,29 @@ export default function EmpresaTrackerAnaliticoPage() {
   const [selectedAsesorId, setSelectedAsesorId] = useState<string>("");
   const [rangeKey, setRangeKey] = useState<DateRangeKey>("90d");
 
-  // % honorarios netos (empresa / asesor) – siempre suman 100
+  // % honorarios netos (empresa / asesores)
   const [empresaPctInput, setEmpresaPctInput] = useState<string>("60");
   const [asesorPctInput, setAsesorPctInput] = useState<string>("40");
 
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // Cargar configuración de honorarios desde localStorage
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const storedEmpresa = localStorage.getItem("vai_honorarios_empresa_pct");
+    const storedAsesor = localStorage.getItem("vai_honorarios_asesor_pct");
+
+    if (storedEmpresa !== null && storedAsesor !== null) {
+      const e = Math.min(100, Math.max(0, Number(storedEmpresa) || 0));
+      const a = Math.min(100, Math.max(0, Number(storedAsesor) || 0));
+      const total = e + a || 1;
+      const normE = (e / total) * 100;
+      const normA = (a / total) * 100;
+      setEmpresaPctInput(String(Math.round(normE)));
+      setAsesorPctInput(String(Math.round(normA)));
+    }
+  }, []);
 
   // ==== Cargar empresa_id a partir del user (EMPRESA) ====
   useEffect(() => {
@@ -205,7 +224,8 @@ export default function EmpresaTrackerAnaliticoPage() {
               fecha_inicio_comercializacion,
               honorarios_pct_comprador,
               honorarios_pct_vendedor,
-              porcentaje_asesor
+              porcentaje_asesor,
+              precio_lista_inicial
             `
             )
             .eq("empresa_id", empresaId),
@@ -216,6 +236,7 @@ export default function EmpresaTrackerAnaliticoPage() {
               id,
               empresa_id,
               asesor_id,
+              contacto_id,
               tipo,
               fecha_programada,
               created_at
@@ -258,7 +279,7 @@ export default function EmpresaTrackerAnaliticoPage() {
     if (scope === "global") return true;
 
     if (scope === "empresa") {
-      // Operaciones sin asesor_id => las consideramos "Empresa"
+      // Operaciones sin asesor_id => "Empresa"
       return !p.asesor_id;
     }
 
@@ -372,24 +393,22 @@ export default function EmpresaTrackerAnaliticoPage() {
       bucket.sumCierre += precioCierre;
       bucket.count += 1;
 
-      // GAP (%)
-      if (p.precio_cierre != null && p.precio_cierre > 0 && p.precio_cierre && p.precio_cierre !== 0 && p.precio_cierre && p.precio_cierre !== null && p.precio_cierre !== undefined) {
-        if (p.precio_cierre && p.precio_cierre !== null) {
-          // placeholder para evitar TS gritando por chequeos, el GAP real depende de precio_lista_inicial
-        }
+      // GAP real si hay precio de lista
+      if (p.precio_lista_inicial != null && p.precio_lista_inicial > 0) {
+        const gapPct =
+          ((p.precio_lista_inicial - precioCierre) / p.precio_lista_inicial) *
+          100;
+        bucket.sumGapPct += gapPct;
+        bucket.countGap += 1;
+        globalGapSum += gapPct;
+        globalGapCount += 1;
       }
 
-      // GAP real (si tuviera precio_lista_inicial en este contexto no está; lo asumimos fuera)
-      // Como en el analítico original, el GAP se calculará en base a un porcentaje estimado si estuviera disponible.
-      // Para mantener compatibilidad, asumimos que el GAP se calculará afuera donde corresponda
-      // (en este archivo solo consolidamos cuando esté seteado).
-      // En este contexto dejaremos el GAP calculado con la fórmula del % entre lista y cierre,
-      // usando honorarios_pct_* como referencia si existiera precio_lista_inicial.
-      // Para no inventar más datos, por ahora ignoramos GAP a nivel propiedad
-      // y dejamos los acumuladores en 0 si no hay datos cargados.
-
       // Días de venta
-      const dias = daysBetween(p.fecha_inicio_comercializacion, p.fecha_cierre);
+      const dias = daysBetween(
+        p.fecha_inicio_comercializacion,
+        p.fecha_cierre
+      );
       if (dias != null) {
         bucket.sumDias += dias;
         bucket.countDias += 1;
@@ -497,7 +516,7 @@ export default function EmpresaTrackerAnaliticoPage() {
   ) => {
     if (!segments.length) return null;
 
-    const radius = 32; // % del radio para ubicar el texto dentro de la “porción”
+    const radius = 32; // % del radio para ubicar el texto dentro de la porción
 
     return segments.map((seg) => {
       const mid = (seg.start + seg.end) / 2; // 0-100
@@ -524,7 +543,7 @@ export default function EmpresaTrackerAnaliticoPage() {
     });
   };
 
-  // ==== Honorarios brutos totales (sin discriminar empresa/asesor todavía) ====
+  // ==== Honorarios brutos totales (1 o 2 puntas) ====
   const honorariosBrutosTotal = useMemo(() => {
     let total = 0;
 
@@ -572,6 +591,20 @@ export default function EmpresaTrackerAnaliticoPage() {
   const barHeight = (value: number) =>
     `${Math.max(8, (value / maxIngreso) * 140)}px`;
 
+  // ==== Ticket promedio por tipología ====
+  const globalAvgTicket =
+    propiedadesFiltradas.filter((p) => p.precio_cierre && p.fecha_cierre)
+      .length > 0
+      ? tipologiaCierreStats.reduce(
+          (acc, row) => acc + (row.sumCierre || 0),
+          0
+        ) /
+        tipologiaCierreStats.reduce(
+          (acc, row) => acc + (row.count || 0),
+          0
+        )
+      : null;
+
   // ==== Actividades por tipo ====
   const actividadesPorTipo = useMemo(() => {
     const map = new Map<string, number>();
@@ -606,6 +639,63 @@ export default function EmpresaTrackerAnaliticoPage() {
     return nombre || "Sin nombre";
   };
 
+  // ==== Funnel comercial (prospectos → prelisting → captación → cierres) ====
+  const {
+    prospectosCount,
+    prelistingCount,
+    captacionesCount,
+    cierresCount,
+    conversionProspectoCierre,
+    conversionProspectoPrelisting,
+    conversionPrelistingCaptacion,
+  } = useMemo(() => {
+    // Prospectos = cantidad de contactos con al menos una actividad en el período
+    const contactosSet = new Set<string>();
+    const contactosPrelistingSet = new Set<string>();
+
+    for (const a of actividadesFiltradas) {
+      if (a.contacto_id) {
+        contactosSet.add(a.contacto_id);
+        if (a.tipo === "prelisting") {
+          contactosPrelistingSet.add(a.contacto_id);
+        }
+      }
+    }
+
+    const prospectosCount = contactosSet.size;
+    const prelistingCount = contactosPrelistingSet.size;
+
+    const captacionesCount = propiedadesFiltradas.length;
+    const cierresCount = propiedadesFiltradas.filter(
+      (p) => p.fecha_cierre && p.precio_cierre
+    ).length;
+
+    const conversionProspectoCierre =
+      prospectosCount > 0
+        ? (cierresCount / prospectosCount) * 100
+        : null;
+
+    const conversionProspectoPrelisting =
+      prospectosCount > 0
+        ? (prelistingCount / prospectosCount) * 100
+        : null;
+
+    const conversionPrelistingCaptacion =
+      prelistingCount > 0
+        ? (captacionesCount / prelistingCount) * 100
+        : null;
+
+    return {
+      prospectosCount,
+      prelistingCount,
+      captacionesCount,
+      cierresCount,
+      conversionProspectoCierre,
+      conversionProspectoPrelisting,
+      conversionPrelistingCaptacion,
+    };
+  }, [actividadesFiltradas, propiedadesFiltradas]);
+
   // ==== KPIs generales ====
   const totalCaptaciones = propiedadesFiltradas.length;
   const totalCierres = propiedadesFiltradas.filter(
@@ -615,7 +705,7 @@ export default function EmpresaTrackerAnaliticoPage() {
     (acc, row) => acc + (row.sumCierre || 0),
     0
   );
-  const totalActividades = actividadesFiltradas.length; // lo usamos en texto de actividades
+  const totalActividades = actividadesFiltradas.length;
 
   if (loading && !empresaId) {
     return (
@@ -625,7 +715,7 @@ export default function EmpresaTrackerAnaliticoPage() {
     );
   }
 
-  // Máximos para barras horizontales
+  // Máximos para mini barras
   const maxActTipo = Math.max(
     1,
     ...actividadesPorTipo.map((x) => x.count || 0)
@@ -633,6 +723,23 @@ export default function EmpresaTrackerAnaliticoPage() {
   const maxActAsesor = Math.max(
     1,
     ...actividadesPorAsesor.map((x) => x.count || 0)
+  );
+
+  const totalActividadesAsesores = actividadesPorAsesor.reduce(
+    (acc, row) => acc + row.count,
+    0
+  );
+  const totalActividadesTipos = actividadesPorTipo.reduce(
+    (acc, row) => acc + row.count,
+    0
+  );
+
+  // Ordenar para cards
+  const actividadesPorAsesorSorted = [...actividadesPorAsesor].sort(
+    (a, b) => b.count - a.count
+  );
+  const actividadesPorTipoSorted = [...actividadesPorTipo].sort(
+    (a, b) => b.count - a.count
   );
 
   return (
@@ -658,6 +765,7 @@ export default function EmpresaTrackerAnaliticoPage() {
                 onChange={(e) => setRangeKey(e.target.value as DateRangeKey)}
                 className="rounded-full border border-gray-300 bg-white px-3 py-1 text-xs text-slate-700"
               >
+                <option value="30d">Últimos 30 días</option>
                 <option value="90d">Últimos 3 meses</option>
                 <option value="180d">Últimos 6 meses</option>
                 <option value="365d">Último año</option>
@@ -713,7 +821,7 @@ export default function EmpresaTrackerAnaliticoPage() {
               {totalCaptaciones}
             </p>
             <p className="mt-1 text-[11px] text-slate-500">
-              Propiedades captadas en el período (empresa + asesores según filtro).
+              Propiedades captadas en el período (según filtro de vista).
             </p>
           </div>
           <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
@@ -740,7 +848,7 @@ export default function EmpresaTrackerAnaliticoPage() {
               {formatNumber(honorariosBrutosTotal)}
             </p>
             <p className="mt-1 text-[11px] text-slate-500">
-              Suma de honorarios brutos calculados (1 o 2 puntas de la operación).
+              Suma de honorarios brutos calculados (1 o 2 puntas).
             </p>
           </div>
         </section>
@@ -968,204 +1076,416 @@ export default function EmpresaTrackerAnaliticoPage() {
           </div>
         </section>
 
-        {/* Honorarios empresa vs asesores */}
+        {/* Honorarios + Ticket promedio (2 columnas) */}
+        <section className="grid gap-6 md:grid-cols-2 items-start">
+          {/* Honorarios empresa vs asesores */}
+          <div className="rounded-2xl bg-white border border-gray-200 shadow-sm p-4">
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <h2 className="text-sm font-semibold text-slate-900">
+                  Ingresos por honorarios
+                </h2>
+                <p className="text-[11px] text-slate-500">
+                  Ajustá el reparto de honorarios netos entre la empresa y los
+                  asesores para ver el impacto económico.
+                </p>
+              </div>
+              <div className="flex flex-col items-end gap-1 text-[11px]">
+                <div className="flex items-center gap-1">
+                  <span className="text-slate-500">Empresa %</span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    value={empresaPctInput}
+                    onChange={(e) => {
+                      const raw = e.target.value.replace(/[^0-9]/g, "");
+                      const value = Math.max(
+                        0,
+                        Math.min(100, Number(raw) || 0)
+                      );
+                      const complement = 100 - value;
+                      setEmpresaPctInput(String(value));
+                      setAsesorPctInput(String(complement));
+                      if (typeof window !== "undefined") {
+                        localStorage.setItem(
+                          "vai_honorarios_empresa_pct",
+                          String(value)
+                        );
+                        localStorage.setItem(
+                          "vai_honorarios_asesor_pct",
+                          String(complement)
+                        );
+                      }
+                      // TODO: Persistir en BD (ej: columnas en empresas) si se quiere compartir entre dispositivos.
+                    }}
+                    className="w-14 rounded-full border border-gray-300 px-2 py-0.5 text-right"
+                  />
+                </div>
+                <div className="flex items-center gap-1">
+                  <span className="text-slate-500">Asesores %</span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    value={asesorPctInput}
+                    onChange={(e) => {
+                      const raw = e.target.value.replace(/[^0-9]/g, "");
+                      const value = Math.max(
+                        0,
+                        Math.min(100, Number(raw) || 0)
+                      );
+                      const complement = 100 - value;
+                      setAsesorPctInput(String(value));
+                      setEmpresaPctInput(String(complement));
+                      if (typeof window !== "undefined") {
+                        localStorage.setItem(
+                          "vai_honorarios_asesor_pct",
+                          String(value)
+                        );
+                        localStorage.setItem(
+                          "vai_honorarios_empresa_pct",
+                          String(complement)
+                        );
+                      }
+                    }}
+                    className="w-14 rounded-full border border-gray-300 px-2 py-0.5 text-right"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {honorariosBrutosTotal <= 0 ? (
+              <p className="text-xs text-slate-500">
+                Cargá precios de cierre y porcentajes de honorarios para ver
+                esta gráfica.
+              </p>
+            ) : (
+              <div className="flex flex-col items-end justify-around h-48 gap-4">
+                <div className="flex justify-around w-full gap-4 items-end">
+                  <div className="flex flex-col items-center gap-1">
+                    <div
+                      className="w-8 rounded-t-lg bg-slate-900"
+                      style={{ height: barHeight(honorariosBrutosTotal) }}
+                    />
+                    <span className="text-[11px] text-slate-700 text-center">
+                      Total
+                    </span>
+                    <span className="text-[10px] text-slate-500">
+                      {formatNumber(honorariosBrutosTotal)}
+                    </span>
+                  </div>
+
+                  <div className="flex flex-col items-center gap-1">
+                    <div
+                      className="w-8 rounded-t-lg"
+                      style={{
+                        height: barHeight(netoEmpresa),
+                        background:
+                          "linear-gradient(to top, rgba(34,197,94,0.9), rgba(34,197,94,0.4))",
+                      }}
+                    />
+                    <span className="text-[11px] text-slate-700 text-center">
+                      Empresa ({empresaPct.toFixed(0)}%)
+                    </span>
+                    <span className="text-[10px] text-slate-500">
+                      {formatNumber(netoEmpresa)}
+                    </span>
+                  </div>
+
+                  <div className="flex flex-col items-center gap-1">
+                    <div
+                      className="w-8 rounded-t-lg"
+                      style={{
+                        height: barHeight(netoAsesor),
+                        background:
+                          "linear-gradient(to top, rgba(56,189,248,0.9), rgba(56,189,248,0.4))",
+                      }}
+                    />
+                    <span className="text-[11px] text-slate-700 text-center">
+                      Asesores ({asesorPct.toFixed(0)}%)
+                    </span>
+                    <span className="text-[10px] text-slate-500">
+                      {formatNumber(netoAsesor)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <p className="mt-3 text-[10px] text-slate-400">
+              ⚠️ Por ahora no se convierten monedas (ARS / USD), se suman los
+              montos nominales según el precio de cierre.
+            </p>
+          </div>
+
+          {/* Ticket Promedio por tipología */}
+          <div className="rounded-2xl bg-white border border-gray-200 shadow-sm p-4">
+            <div className="flex items-center justify-between mb-2">
+              <div>
+                <h2 className="text-sm font-semibold text-slate-900">
+                  Ticket promedio por tipología
+                </h2>
+                <p className="text-[11px] text-slate-500">
+                  Promedio de precio de cierre por tipo de propiedad.
+                </p>
+              </div>
+              {globalAvgTicket != null && (
+                <div className="text-right">
+                  <p className="text-[10px] text-slate-500">
+                    Ticket promedio general
+                  </p>
+                  <p className="text-xs font-semibold text-slate-900">
+                    {formatNumber(globalAvgTicket)}
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {tipologiaCierreStats.length === 0 ? (
+              <p className="text-xs text-slate-500">
+                Todavía no hay cierres suficientes para calcular tickets.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {tipologiaCierreStats.map((row) => {
+                  const avgTicket =
+                    row.count > 0 ? row.sumCierre / row.count : 0;
+                  return (
+                    <div
+                      key={row.tipologia}
+                      className="flex items-center justify-between gap-2 text-[11px]"
+                    >
+                      <span className="w-28 text-slate-700 truncate">
+                        {labelTipologia(row.tipologia)}
+                      </span>
+                      <div className="flex-1 mx-2 h-1.5 rounded-full bg-gray-100 overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-[rgba(37,99,235,0.9)]"
+                          style={{
+                            width: `${
+                              globalAvgTicket && globalAvgTicket > 0
+                                ? Math.min(
+                                    100,
+                                    (avgTicket / globalAvgTicket) * 100
+                                  )
+                                : 0
+                            }%`,
+                          }}
+                        />
+                      </div>
+                      <span className="w-20 text-right text-slate-500">
+                        {formatNumber(avgTicket)}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </section>
+
+        {/* Funnel comercial grande */}
         <section className="rounded-2xl bg-white border border-gray-200 shadow-sm p-4">
           <div className="flex items-center justify-between mb-3">
             <div>
               <h2 className="text-sm font-semibold text-slate-900">
-                Ingresos por honorarios
+                Funnel comercial: Prospección → Cierre
               </h2>
               <p className="text-[11px] text-slate-500">
-                Ajustá el reparto de honorarios netos entre la empresa y los
-                asesores para ver el impacto económico.
+                Cantidades y tasas de conversión por etapa. En real estate se
+                conoce como{" "}
+                <span className="font-semibold">
+                  tasa de conversión comercial
+                </span>{" "}
+                (del pipeline de ventas).
               </p>
             </div>
-            <div className="flex flex-col items-end gap-1 text-[11px]">
-              <div className="flex items-center gap-1">
-                <span className="text-slate-500">Empresa %</span>
-                <input
-                  type="number"
-                  min={0}
-                  max={100}
-                  value={empresaPctInput}
-                  onChange={(e) => {
-                    const raw = e.target.value.replace(/[^0-9]/g, "");
-                    const value = Math.max(
-                      0,
-                      Math.min(100, Number(raw) || 0)
-                    );
-                    setEmpresaPctInput(String(value));
-                    setAsesorPctInput(String(100 - value));
-                  }}
-                  className="w-14 rounded-full border border-gray-300 px-2 py-0.5 text-right"
-                />
+            {avgDiasGlobal != null && (
+              <div className="text-right">
+                <p className="text-[10px] text-slate-500">
+                  Tiempo promedio de venta (cierres)
+                </p>
+                <p className="text-xs font-semibold text-slate-900">
+                  {avgDiasGlobal.toFixed(0)} días
+                </p>
               </div>
-              <div className="flex items-center gap-1">
-                <span className="text-slate-500">Asesores %</span>
-                <input
-                  type="number"
-                  min={0}
-                  max={100}
-                  value={asesorPctInput}
-                  onChange={(e) => {
-                    const raw = e.target.value.replace(/[^0-9]/g, "");
-                    const value = Math.max(
-                      0,
-                      Math.min(100, Number(raw) || 0)
-                    );
-                    setAsesorPctInput(String(value));
-                    setEmpresaPctInput(String(100 - value));
-                  }}
-                  className="w-14 rounded-full border border-gray-300 px-2 py-0.5 text-right"
-                />
-              </div>
-            </div>
+            )}
           </div>
 
-          {honorariosBrutosTotal <= 0 ? (
-            <p className="text-xs text-slate-500">
-              Cargá precios de cierre y porcentajes de honorarios para ver
-              esta gráfica.
-            </p>
-          ) : (
-            <div className="flex flex-col sm:flex-row items-end justify-around h-48 gap-4">
-              <div className="flex flex-col items-center gap-1">
-                <div
-                  className="w-10 rounded-t-lg bg-slate-900"
-                  style={{ height: barHeight(honorariosBrutosTotal) }}
-                />
-                <span className="text-[11px] text-slate-700 text-center">
-                  Total<br />honorarios
-                </span>
-                <span className="text-[10px] text-slate-500">
-                  {formatNumber(honorariosBrutosTotal)}
-                </span>
-              </div>
-
-              <div className="flex flex-col items-center gap-1">
-                <div
-                  className="w-10 rounded-t-lg"
-                  style={{
-                    height: barHeight(netoEmpresa),
-                    background:
-                      "linear-gradient(to top, rgba(34,197,94,0.9), rgba(34,197,94,0.4))",
-                  }}
-                />
-                <span className="text-[11px] text-slate-700 text-center">
-                  Neto<br />empresa ({empresaPct.toFixed(0)}%)
-                </span>
-                <span className="text-[10px] text-slate-500">
-                  {formatNumber(netoEmpresa)}
-                </span>
-              </div>
-
-              <div className="flex flex-col items-center gap-1">
-                <div
-                  className="w-10 rounded-t-lg"
-                  style={{
-                    height: barHeight(netoAsesor),
-                    background:
-                      "linear-gradient(to top, rgba(56,189,248,0.9), rgba(56,189,248,0.4))",
-                  }}
-                />
-                <span className="text-[11px] text-slate-700 text-center">
-                  Neto<br />asesores ({asesorPct.toFixed(0)}%)
-                </span>
-                <span className="text-[10px] text-slate-500">
-                  {formatNumber(netoAsesor)}
-                </span>
-              </div>
+          <div className="grid gap-4 md:grid-cols-4 text-xs">
+            <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2">
+              <p className="text-[11px] text-slate-500">Prospección</p>
+              <p className="mt-1 text-xl font-semibold text-slate-900">
+                {prospectosCount}
+              </p>
+              <p className="mt-1 text-[11px] text-slate-500">
+                Contactos con actividades en el período.
+              </p>
             </div>
-          )}
-
-          <p className="mt-3 text-[10px] text-slate-400">
-            ⚠️ Por ahora no se convierten monedas (ARS / USD), se suman los
-            montos nominales según el precio de cierre.
-          </p>
+            <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2">
+              <p className="text-[11px] text-slate-500">Prelisting</p>
+              <p className="mt-1 text-xl font-semibold text-slate-900">
+                {prelistingCount}
+              </p>
+              <p className="mt-1 text-[11px] text-slate-500">
+                Contactos que alcanzaron etapa de prelisting.
+              </p>
+              {conversionProspectoPrelisting != null && (
+                <p className="mt-1 text-[10px] text-emerald-700">
+                  {conversionProspectoPrelisting.toFixed(1)}% de los
+                  prospectos.
+                </p>
+              )}
+            </div>
+            <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2">
+              <p className="text-[11px] text-slate-500">Captación</p>
+              <p className="mt-1 text-xl font-semibold text-slate-900">
+                {captacionesCount}
+              </p>
+              <p className="mt-1 text-[11px] text-slate-500">
+                Propiedades efectivamente captadas.
+              </p>
+              {conversionPrelistingCaptacion != null && (
+                <p className="mt-1 text-[10px] text-emerald-700">
+                  {conversionPrelistingCaptacion.toFixed(1)}% desde prelisting.
+                </p>
+              )}
+            </div>
+            <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2">
+              <p className="text-[11px] text-slate-500">Cierres</p>
+              <p className="mt-1 text-xl font-semibold text-slate-900">
+                {cierresCount}
+              </p>
+              <p className="mt-1 text-[11px] text-slate-500">
+                Operaciones cerradas con precio de cierre.
+              </p>
+              {conversionProspectoCierre != null && (
+                <p className="mt-1 text-[10px] text-emerald-700">
+                  {conversionProspectoCierre.toFixed(1)}% de conversión total
+                  (prospecto → cierre).
+                </p>
+              )}
+            </div>
+          </div>
         </section>
 
-        {/* Actividades (última parte) */}
+        {/* Actividades (cards) */}
         <section className="space-y-4">
-          {/* Actividad por asesor (barras horizontales, comparativa) */}
-          <div className="rounded-2xl bg-white border border-gray-200 shadow-sm p-4">
-            <div className="flex items-center justify-between mb-2">
-              <h2 className="text-sm font-semibold text-slate-900">
-                Actividad por asesor
-              </h2>
-              <p className="text-[11px] text-slate-500">
-                Total de actividades registradas en el período:{" "}
-                <span className="font-semibold">{totalActividades}</span>
-              </p>
+          <div className="grid gap-6 md:grid-cols-2">
+            {/* Actividad por asesor: cards compactas */}
+            <div className="rounded-2xl bg-white border border-gray-200 shadow-sm p-4">
+              <div className="flex items-center justify-between mb-2">
+                <h2 className="text-sm font-semibold text-slate-900">
+                  Actividad por asesor
+                </h2>
+                <p className="text-[11px] text-slate-500">
+                  Total actividades:{" "}
+                  <span className="font-semibold">
+                    {totalActividadesAsesores}
+                  </span>
+                </p>
+              </div>
+              {actividadesPorAsesorSorted.length === 0 ? (
+                <p className="text-xs text-slate-500">
+                  No hay actividades registradas en este período.
+                </p>
+              ) : (
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {actividadesPorAsesorSorted.map((row) => {
+                    const pct =
+                      totalActividadesAsesores > 0
+                        ? (row.count / totalActividadesAsesores) * 100
+                        : 0;
+                    return (
+                      <div
+                        key={row.id}
+                        className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 flex flex-col gap-1"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[11px] font-semibold text-slate-800 truncate">
+                            {nombreAsesor(row.id)}
+                          </span>
+                          <span className="text-[11px] text-slate-600">
+                            {row.count} act.
+                          </span>
+                        </div>
+                        <div className="h-1.5 rounded-full bg-gray-200 overflow-hidden">
+                          <div
+                            className="h-full rounded-full bg-[rgba(230,169,48,0.9)]"
+                            style={{
+                              width: `${
+                                (row.count / maxActAsesor) * 100
+                              }%`,
+                            }}
+                          />
+                        </div>
+                        <span className="text-[10px] text-slate-500">
+                          {pct.toFixed(1)}% del total del período.
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
-            {actividadesPorAsesor.length === 0 ? (
-              <p className="text-xs text-slate-500">
-                No hay actividades registradas en este período.
-              </p>
-            ) : (
-              <div className="space-y-2">
-                {actividadesPorAsesor.map((row) => (
-                  <div
-                    key={row.id}
-                    className="flex items-center gap-2 text-[11px]"
-                  >
-                    <span className="w-40 shrink-0 text-slate-700 truncate">
-                      {nombreAsesor(row.id)}
-                    </span>
-                    <div className="flex-1 h-2 rounded-full bg-gray-100 overflow-hidden">
-                      <div
-                        className="h-full rounded-full bg-[rgba(230,169,48,0.9)]"
-                        style={{
-                          width: `${
-                            (row.count / maxActAsesor) * 100
-                          }%`,
-                        }}
-                      />
-                    </div>
-                    <span className="w-8 text-right text-slate-500">
-                      {row.count}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
 
-          {/* Actividades por tipo */}
-          <div className="rounded-2xl bg-white border border-gray-200 shadow-sm p-4">
-            <h2 className="text-sm font-semibold text-slate-900 mb-2">
-              Actividades por tipo
-            </h2>
-            {actividadesPorTipo.length === 0 ? (
-              <p className="text-xs text-slate-500">
-                No hay actividades registradas en este período.
-              </p>
-            ) : (
-              <div className="space-y-2">
-                {actividadesPorTipo.map((item) => (
-                  <div
-                    key={item.tipo}
-                    className="flex items-center justify-between gap-2 text-[11px]"
-                  >
-                    <span className="w-32 text-slate-700 truncate">
-                      {labelTipoActividad(item.tipo)}
-                    </span>
-                    <div className="flex-1 mx-2 h-1.5 rounded-full bg-gray-100 overflow-hidden">
-                      <div
-                        className="h-full rounded-full bg-slate-900"
-                        style={{
-                          width: `${
-                            (item.count / maxActTipo) * 100
-                          }%`,
-                        }}
-                      />
-                    </div>
-                    <span className="w-8 text-right text-slate-500">
-                      {item.count}
-                    </span>
-                  </div>
-                ))}
+            {/* Actividades por tipo: cards compactas */}
+            <div className="rounded-2xl bg-white border border-gray-200 shadow-sm p-4">
+              <div className="flex items-center justify-between mb-2">
+                <h2 className="text-sm font-semibold text-slate-900">
+                  Actividades por tipo
+                </h2>
+                <p className="text-[11px] text-slate-500">
+                  Total actividades:{" "}
+                  <span className="font-semibold">
+                    {totalActividadesTipos}
+                  </span>
+                </p>
               </div>
-            )}
+              {actividadesPorTipoSorted.length === 0 ? (
+                <p className="text-xs text-slate-500">
+                  No hay actividades registradas en este período.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {actividadesPorTipoSorted.map((item) => {
+                    const pct =
+                      totalActividadesTipos > 0
+                        ? (item.count / totalActividadesTipos) * 100
+                        : 0;
+                    return (
+                      <div
+                        key={item.tipo}
+                        className="flex flex-col gap-1 text-[11px]"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-slate-700">
+                            {labelTipoActividad(item.tipo)}
+                          </span>
+                          <span className="text-slate-600">
+                            {item.count} act.
+                          </span>
+                        </div>
+                        <div className="h-1.5 rounded-full bg-gray-100 overflow-hidden">
+                          <div
+                            className="h-full rounded-full bg-slate-900"
+                            style={{
+                              width: `${
+                                (item.count / maxActTipo) * 100
+                              }%`,
+                            }}
+                          />
+                        </div>
+                        <span className="text-[10px] text-slate-500">
+                          {pct.toFixed(1)}% del total.
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </div>
         </section>
       </div>

@@ -20,6 +20,7 @@ interface TrackerPropiedad {
   honorarios_pct_comprador: number | null;
   honorarios_pct_vendedor: number | null;
   porcentaje_asesor: number | null; // % del honorario que va al asesor (ej: 60)
+  precio_lista_inicial: number | null; // para calcular GAP
 }
 
 interface TrackerActividad {
@@ -127,7 +128,7 @@ export default function EmpresaTrackerAnaliticoPage() {
   const [actividades, setActividades] = useState<TrackerActividad[]>([]);
   const [asesores, setAsesores] = useState<Asesor[]>([]);
 
-  const [scope, setScope] = useState<Scope>("global");
+  const [scope, setScope] = useState<Scope>("empresa");
   const [selectedAsesorId, setSelectedAsesorId] = useState<string>("");
   const [rangeKey, setRangeKey] = useState<DateRangeKey>("90d");
 
@@ -170,12 +171,15 @@ export default function EmpresaTrackerAnaliticoPage() {
         setLoading(true);
         setErrorMsg(null);
 
-        const [{ data: pData, error: pErr }, { data: aData, error: aErr }, { data: asData, error: asErr }] =
-          await Promise.all([
-            supabase
-              .from("tracker_propiedades")
-              .select(
-                `
+        const [
+          { data: pData, error: pErr },
+          { data: aData, error: aErr },
+          { data: asData, error: asErr },
+        ] = await Promise.all([
+          supabase
+            .from("tracker_propiedades")
+            .select(
+              `
                 id,
                 empresa_id,
                 asesor_id,
@@ -187,14 +191,15 @@ export default function EmpresaTrackerAnaliticoPage() {
                 fecha_inicio_comercializacion,
                 honorarios_pct_comprador,
                 honorarios_pct_vendedor,
-                porcentaje_asesor
+                porcentaje_asesor,
+                precio_lista_inicial
               `
-              )
-              .eq("empresa_id", empresaId),
-            supabase
-              .from("tracker_actividades")
-              .select(
-                `
+            )
+            .eq("empresa_id", empresaId),
+          supabase
+            .from("tracker_actividades")
+            .select(
+              `
                 id,
                 empresa_id,
                 asesor_id,
@@ -202,13 +207,13 @@ export default function EmpresaTrackerAnaliticoPage() {
                 fecha_programada,
                 created_at
               `
-              )
-              .eq("empresa_id", empresaId),
-            supabase
-              .from("asesores")
-              .select("id, nombre, apellido")
-              .eq("empresa_id", empresaId),
-          ]);
+            )
+            .eq("empresa_id", empresaId),
+          supabase
+            .from("asesores")
+            .select("id, nombre, apellido")
+            .eq("empresa_id", empresaId),
+        ]);
 
         if (pErr || aErr || asErr) {
           console.error("Errores cargando tracker analítico:", {
@@ -313,7 +318,7 @@ export default function EmpresaTrackerAnaliticoPage() {
       const totalPct = pctComprador + pctVendedor;
       if (totalPct <= 0) continue;
 
-      const bruto = (p.precio_cierre * totalPct) / 100;
+      const bruto = (Number(p.precio_cierre) * totalPct) / 100;
 
       const pctAsesor =
         p.porcentaje_asesor != null ? Number(p.porcentaje_asesor) / 100 : 0.6;
@@ -389,6 +394,79 @@ export default function EmpresaTrackerAnaliticoPage() {
           )
           .join(", ")})`;
 
+  // ==== Marketshare por tipología por volumen de cierre + GAP ====
+  const {
+    tipologiaCierreStats,
+    avgGapGlobal,
+  }: {
+    tipologiaCierreStats: {
+      tipologia: string;
+      sumCierre: number;
+      sharePct: number;
+      avgGap: number | null;
+    }[];
+    avgGapGlobal: number | null;
+  } = useMemo(() => {
+    const map = new Map<
+      string,
+      { sumCierre: number; sumGapPct: number; countGap: number }
+    >();
+    let globalGapSum = 0;
+    let globalGapCount = 0;
+
+    for (const p of propiedadesFiltradas) {
+      if (!p.fecha_cierre || !p.precio_cierre) continue;
+
+      const key = p.tipologia || "sin_tipologia";
+      const current = map.get(key) ?? {
+        sumCierre: 0,
+        sumGapPct: 0,
+        countGap: 0,
+      };
+
+      current.sumCierre += Number(p.precio_cierre);
+
+      if (
+        p.precio_lista_inicial != null &&
+        p.precio_lista_inicial > 0 &&
+        p.precio_cierre != null
+      ) {
+        const gapPct =
+          ((Number(p.precio_lista_inicial) - Number(p.precio_cierre)) /
+            Number(p.precio_lista_inicial)) *
+          100;
+
+        if (!Number.isNaN(gapPct)) {
+          current.sumGapPct += gapPct;
+          current.countGap += 1;
+
+          globalGapSum += gapPct;
+          globalGapCount += 1;
+        }
+      }
+
+      map.set(key, current);
+    }
+
+    const entries = Array.from(map.entries());
+    const totalCierre =
+      entries.reduce((acc, [, v]) => acc + v.sumCierre, 0) || 1;
+
+    const stats = entries
+      .map(([tipologia, v]) => ({
+        tipologia,
+        sumCierre: v.sumCierre,
+        sharePct: (v.sumCierre / totalCierre) * 100,
+        avgGap: v.countGap > 0 ? v.sumGapPct / v.countGap : null,
+      }))
+      .sort((a, b) => b.sharePct - a.sharePct);
+
+    const avgGapGlobal =
+      globalGapCount > 0 ? globalGapSum / globalGapCount : null;
+
+    return { tipologiaCierreStats: stats, avgGapGlobal };
+  }, [propiedadesFiltradas]);
+
   // ==== Actividades por tipo ====
   const actividadesPorTipo = useMemo(() => {
     const map = new Map<string, number>();
@@ -438,6 +516,12 @@ export default function EmpresaTrackerAnaliticoPage() {
     );
   }
 
+  // Para el donut interior: top 3 tipologías + "Otros"
+  const topPieSegments = pieSegments.slice(0, 3);
+  const otrosPct =
+    pieSegments.reduce((acc, s) => acc + s.porcentaje, 0) -
+    topPieSegments.reduce((acc, s) => acc + s.porcentaje, 0);
+
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-6xl mx-auto px-4 py-6 space-y-6">
@@ -449,7 +533,7 @@ export default function EmpresaTrackerAnaliticoPage() {
             </h1>
             <p className="mt-1 text-sm text-slate-600 max-w-xl">
               Tablero tipo Power BI para ver marketshare por tipología,
-              honorarios estimados y nivel de actividad de tu equipo.
+              honorarios estimados, GAP y nivel de actividad de tu equipo.
             </p>
           </div>
           <div className="flex flex-wrap gap-3 items-center justify-start md:justify-end text-xs">
@@ -458,9 +542,7 @@ export default function EmpresaTrackerAnaliticoPage() {
               <span className="text-slate-500">Período:</span>
               <select
                 value={rangeKey}
-                onChange={(e) =>
-                  setRangeKey(e.target.value as DateRangeKey)
-                }
+                onChange={(e) => setRangeKey(e.target.value as DateRangeKey)}
                 className="rounded-full border border-gray-300 bg-white px-3 py-1 text-xs text-slate-700"
               >
                 <option value="90d">Últimos 3 meses</option>
@@ -474,9 +556,7 @@ export default function EmpresaTrackerAnaliticoPage() {
               <span className="text-slate-500">Vista:</span>
               <select
                 value={scope}
-                onChange={(e) =>
-                  setScope(e.target.value as Scope)
-                }
+                onChange={(e) => setScope(e.target.value as Scope)}
                 className="rounded-full border border-gray-300 bg-white px-3 py-1 text-xs text-slate-700"
               >
                 <option value="empresa">Empresa</option>
@@ -573,10 +653,36 @@ export default function EmpresaTrackerAnaliticoPage() {
               </p>
             ) : (
               <div className="flex flex-col sm:flex-row items-center gap-4">
-                <div
-                  className="w-40 h-40 rounded-full border border-gray-200 shadow-inner"
-                  style={{ backgroundImage: pieBackground }}
-                />
+                {/* Donut con porcentajes dentro */}
+                <div className="relative w-40 h-40 flex-shrink-0">
+                  <div
+                    className="absolute inset-0 rounded-full border border-gray-200 shadow-inner"
+                    style={{ backgroundImage: pieBackground }}
+                  />
+                  <div className="absolute inset-5 rounded-full bg-white/85 flex flex-col items-center justify-center text-[10px] text-slate-700 px-2 text-center">
+                    <p className="font-semibold mb-1 text-[11px]">
+                      % por tipología
+                    </p>
+                    {topPieSegments.map((seg) => (
+                      <div key={seg.tipologia} className="leading-tight">
+                        {labelTipologia(seg.tipologia)}{" "}
+                        <span className="font-semibold">
+                          {seg.porcentaje.toFixed(1)}%
+                        </span>
+                      </div>
+                    ))}
+                    {otrosPct > 0.5 && (
+                      <div className="mt-1 leading-tight text-slate-500">
+                        Otros{" "}
+                        <span className="font-semibold">
+                          {otrosPct.toFixed(1)}%
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Leyenda lado derecho */}
                 <div className="flex-1 space-y-1">
                   {pieSegments.map((seg) => (
                     <div
@@ -629,7 +735,9 @@ export default function EmpresaTrackerAnaliticoPage() {
                     style={{ height: barHeight(ingresos.total) }}
                   />
                   <span className="text-[11px] text-slate-700 text-center">
-                    Total<br />honorarios
+                    Total
+                    <br />
+                    honorarios
                   </span>
                   <span className="text-[10px] text-slate-500">
                     {formatNumber(ingresos.total)}
@@ -646,7 +754,9 @@ export default function EmpresaTrackerAnaliticoPage() {
                     }}
                   />
                   <span className="text-[11px] text-slate-700 text-center">
-                    Neto<br />asesor
+                    Neto
+                    <br />
+                    asesor
                   </span>
                   <span className="text-[10px] text-slate-500">
                     {formatNumber(ingresos.asesor)}
@@ -663,7 +773,9 @@ export default function EmpresaTrackerAnaliticoPage() {
                     }}
                   />
                   <span className="text-[11px] text-slate-700 text-center">
-                    Neto<br />empresa
+                    Neto
+                    <br />
+                    empresa
                   </span>
                   <span className="text-[10px] text-slate-500">
                     {formatNumber(ingresos.empresa)}
@@ -677,6 +789,81 @@ export default function EmpresaTrackerAnaliticoPage() {
               montos nominales según el precio de cierre.
             </p>
           </div>
+        </section>
+
+        {/* NUEVO: Marketshare por precios de cierre + GAP */}
+        <section className="rounded-2xl bg-white border border-gray-200 shadow-sm p-4 space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-semibold text-slate-900">
+                Marketshare por Tipología (volumen de cierre) + GAP
+              </h2>
+              <p className="text-[11px] text-slate-500 max-w-xl">
+                Distribución del volumen de precios de cierre por tipología y
+                GAP promedio (diferencia entre precio de lista inicial y precio
+                de cierre).
+              </p>
+            </div>
+            {avgGapGlobal != null && (
+              <div className="rounded-full bg-amber-50 px-3 py-1 text-[11px] text-amber-900 border border-amber-200">
+                GAP promedio global:{" "}
+                <span className="font-semibold">
+                  {avgGapGlobal.toFixed(1)}%
+                </span>
+              </div>
+            )}
+          </div>
+
+          {tipologiaCierreStats.length === 0 ? (
+            <p className="text-xs text-slate-500">
+              No hay operaciones con precio de cierre para analizar volumen y
+              GAP en este período.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {tipologiaCierreStats.map((row) => {
+                const maxSum = Math.max(
+                  ...tipologiaCierreStats.map((x) => x.sumCierre),
+                  1
+                );
+                const widthPct = Math.min(
+                  100,
+                  (row.sumCierre / maxSum) * 100
+                );
+
+                return (
+                  <div
+                    key={row.tipologia}
+                    className="flex flex-col gap-1 text-[11px]"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-700">
+                        {labelTipologia(row.tipologia)}
+                      </span>
+                      <span className="text-slate-500">
+                        {row.sharePct.toFixed(1)}% del volumen ·{" "}
+                        {row.avgGap != null
+                          ? `GAP prom. ${row.avgGap.toFixed(1)}%`
+                          : "GAP sin datos"}
+                      </span>
+                    </div>
+                    <div className="w-full h-2 rounded-full bg-gray-100 overflow-hidden">
+                      <div
+                        className="h-full rounded-full bg-[rgba(230,169,48,0.9)]"
+                        style={{ width: `${widthPct.toFixed(1)}%` }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          <p className="mt-2 text-[10px] text-slate-400">
+            GAP = (Precio lista inicial – Precio de cierre) / Precio lista
+            inicial. Valores positivos indican cierres por debajo del precio
+            inicial publicado.
+          </p>
         </section>
 
         {/* Actividad por tipo + por asesor */}

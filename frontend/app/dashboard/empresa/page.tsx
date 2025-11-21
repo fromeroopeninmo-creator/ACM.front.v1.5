@@ -217,26 +217,6 @@ export default function EmpresaDashboardPage() {
               >
                 🏠 Valuador de Activos Inmobiliarios
               </Link>
-
-              {/* Agenda de Actividades (usa el tracker actual) */}
-              <Link
-                href="/dashboard/empresa/tracker"
-                className="px-5 py-2 text-white font-semibold rounded-lg shadow transition"
-                style={{
-                  backgroundColor: primaryColor,
-                  boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
-                }}
-                onMouseEnter={(e) => {
-                  (e.currentTarget as HTMLAnchorElement).style.filter =
-                    "brightness(1.1)";
-                }}
-                onMouseLeave={(e) => {
-                  (e.currentTarget as HTMLAnchorElement).style.filter =
-                    "brightness(1)";
-                }}
-              >
-                📅 Agenda de Actividades
-              </Link>
             </div>
 
             {/* Fila 2: Factibilidad + Tracker (analítico futuro, por ahora mismo link) */}
@@ -259,26 +239,6 @@ export default function EmpresaDashboardPage() {
                 }}
               >
                 📐 Factibilidad Constructiva
-              </Link>
-
-              {/* Tracker (para métricas / market share, luego podemos cambiar el href) */}
-              <Link
-                href="/dashboard/empresa/tracker"
-                className="px-5 py-2 text-white font-semibold rounded-lg shadow transition"
-                style={{
-                  backgroundColor: primaryColor,
-                  boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
-                }}
-                onMouseEnter={(e) => {
-                  (e.currentTarget as HTMLAnchorElement).style.filter =
-                    "brightness(1.1)";
-                }}
-                onMouseLeave={(e) => {
-                  (e.currentTarget as HTMLAnchorElement).style.filter =
-                    "brightness(1)";
-                }}
-              >
-                📊 Tracker
               </Link>
             </div>
           </div>

@@ -29,6 +29,8 @@ type TrackerTab = "calendario" | "contactos" | "propiedades";
 
 type KpiRange = "30d" | "90d" | "180d" | "365d";
 
+type ViewScope = "empresa" | "asesores" | "global";
+
 interface TrackerContacto {
   id: string;
   empresa_id: string;
@@ -57,6 +59,7 @@ interface TrackerActividad {
   notas: string | null;
   created_at: string;
   updated_at: string;
+  asesor_id?: string | null;
 }
 
 interface TrackerPropiedad {
@@ -67,6 +70,7 @@ interface TrackerPropiedad {
   tipo_operacion: string | null;
   direccion: string | null;
   zona: string | null;
+  dormitorios: number | null;
   m2_lote: number | null;
   m2_cubiertos: number | null;
   precio_lista_inicial: number | null;
@@ -77,10 +81,19 @@ interface TrackerPropiedad {
   fecha_cierre: string | null;
   created_at: string;
   updated_at: string;
+  honorarios_pct_vendedor: number | null;
+  honorarios_pct_comprador: number | null;
+  asesor_id?: string | null;
   contacto?: {
     nombre: string | null;
     apellido: string | null;
   } | null;
+}
+
+interface Asesor {
+  id: string;
+  nombre: string | null;
+  apellido: string | null;
 }
 
 function startOfDay(date: Date) {
@@ -216,9 +229,13 @@ export default function EmpresaTrackerPage() {
   const [contactos, setContactos] = useState<TrackerContacto[]>([]);
   const [actividades, setActividades] = useState<TrackerActividad[]>([]);
   const [propiedades, setPropiedades] = useState<TrackerPropiedad[]>([]);
+  const [asesores, setAsesores] = useState<Asesor[]>([]);
 
   const [activeTab, setActiveTab] = useState<TrackerTab>("calendario");
   const [kpiRange, setKpiRange] = useState<KpiRange>("30d");
+
+  const [viewScope, setViewScope] = useState<ViewScope>("empresa");
+  const [selectedAsesorId, setSelectedAsesorId] = useState<string>("");
 
   const [currentMonth, setCurrentMonth] = useState<Date>(new Date());
   const [selectedDate, setSelectedDate] = useState<Date>(startOfDay(new Date()));
@@ -229,14 +246,12 @@ export default function EmpresaTrackerPage() {
   );
 
   const [showActividadModal, setShowActividadModal] = useState(false);
-  const [editingActividad, setEditingActividad] = useState<TrackerActividad | null>(
-    null
-  );
+  const [editingActividad, setEditingActividad] =
+    useState<TrackerActividad | null>(null);
 
   const [showPropiedadModal, setShowPropiedadModal] = useState(false);
-  const [editingPropiedad, setEditingPropiedad] = useState<TrackerPropiedad | null>(
-    null
-  );
+  const [editingPropiedad, setEditingPropiedad] =
+    useState<TrackerPropiedad | null>(null);
 
   const [mensaje, setMensaje] = useState<string | null>(null);
 
@@ -271,6 +286,7 @@ export default function EmpresaTrackerPage() {
   const [formPropiedad, setFormPropiedad] = useState({
     contacto_id: "",
     tipologia: "",
+    dormitorios: "",
     tipo_operacion: "",
     direccion: "",
     zona: "",
@@ -282,9 +298,11 @@ export default function EmpresaTrackerPage() {
     moneda: "ARS",
     fecha_inicio_comercializacion: "",
     fecha_cierre: "",
+    honorarios_pct_vendedor: "",
+    honorarios_pct_comprador: "",
   });
 
-    // Referencias de hoy y mañana (hora local, sin mezclar TZ)
+  // Referencias de hoy y mañana (hora local, sin mezclar TZ)
   const hoy = startOfDay(new Date());
   const manana = addDays(hoy, 1);
 
@@ -297,45 +315,78 @@ export default function EmpresaTrackerPage() {
   const actividadDateKey = (a: TrackerActividad) =>
     a.fecha_programada ? a.fecha_programada.substring(0, 10) : "";
 
+  // Filtrado por scope (empresa / asesores / global) para actividades y propiedades
+  const actividadesFiltradas = useMemo(() => {
+    return actividades.filter((a) => {
+      const asesorId = a.asesor_id ?? null;
+      if (viewScope === "empresa") {
+        return !asesorId;
+      }
+      if (viewScope === "asesores") {
+        if (!asesorId) return false;
+        if (selectedAsesorId && asesorId !== selectedAsesorId) return false;
+        return true;
+      }
+      // global
+      return true;
+    });
+  }, [actividades, viewScope, selectedAsesorId]);
+
+  const propiedadesFiltradas = useMemo(() => {
+    return propiedades.filter((p) => {
+      const asesorId = p.asesor_id ?? null;
+      if (viewScope === "empresa") {
+        return !asesorId;
+      }
+      if (viewScope === "asesores") {
+        if (!asesorId) return false;
+        if (selectedAsesorId && asesorId !== selectedAsesorId) return false;
+        return true;
+      }
+      // global
+      return true;
+    });
+  }, [propiedades, viewScope, selectedAsesorId]);
+
   const actividadesHoy = useMemo(
     () =>
-      actividades.filter((a) => {
+      actividadesFiltradas.filter((a) => {
         if (!a.fecha_programada) return false;
         const key = actividadDateKey(a);
         return key === hoyKey;
       }),
-    [actividades, hoyKey]
+    [actividadesFiltradas, hoyKey]
   );
 
   const actividadesManana = useMemo(
     () =>
-      actividades.filter((a) => {
+      actividadesFiltradas.filter((a) => {
         if (!a.fecha_programada) return false;
         const key = actividadDateKey(a);
         return key === mananaKey;
       }),
-    [actividades, mananaKey]
+    [actividadesFiltradas, mananaKey]
   );
 
   const actividadesSelectedDate = useMemo(
     () =>
-      actividades.filter((a) => {
+      actividadesFiltradas.filter((a) => {
         if (!a.fecha_programada) return false;
         const key = actividadDateKey(a);
         return key === selectedKey;
       }),
-    [actividades, selectedKey]
+    [actividadesFiltradas, selectedKey]
   );
 
   const actividadesByDateMap = useMemo(() => {
     const map = new Map<string, number>();
-    for (const a of actividades) {
+    for (const a of actividadesFiltradas) {
       if (!a.fecha_programada) continue;
       const key = actividadDateKey(a); // siempre "YYYY-MM-DD" sin TZ
       map.set(key, (map.get(key) ?? 0) + 1);
     }
     return map;
-  }, [actividades]);
+  }, [actividadesFiltradas]);
 
   const startKpiDate = useMemo(() => kpiStartDate(kpiRange), [kpiRange]);
 
@@ -349,15 +400,15 @@ export default function EmpresaTrackerPage() {
       return created >= start;
     });
 
-    // Propiedades cerradas dentro del período
-    const propiedadesInRange = propiedades.filter((p) => {
+    // Propiedades cerradas dentro del período (filtradas por scope)
+    const propiedadesInRange = propiedadesFiltradas.filter((p) => {
       if (!p.fecha_cierre) return false;
       const key = p.fecha_cierre.substring(0, 10);
       return key >= startKey;
     });
 
-    // Actividades dentro del período (por fecha_programada)
-    const actividadesInRange = actividades.filter((a) => {
+    // Actividades dentro del período (por fecha_programada y scope)
+    const actividadesInRange = actividadesFiltradas.filter((a) => {
       if (!a.fecha_programada) return false;
       const key = actividadDateKey(a);
       return key >= startKey;
@@ -395,7 +446,7 @@ export default function EmpresaTrackerPage() {
       (c) => c.estado === "captado"
     ).length;
 
-    // CIERRES: propiedades con fecha_cierre en el período
+    // CIERRES: propiedades con fecha_cierre en el período (ya filtradas por scope)
     const cierresCount = propiedadesInRange.length;
 
     return {
@@ -404,7 +455,7 @@ export default function EmpresaTrackerPage() {
       captaciones: captacionesCount,
       cierres: cierresCount,
     };
-  }, [contactos, actividades, propiedades, startKpiDate]);
+  }, [contactos, actividadesFiltradas, propiedadesFiltradas, startKpiDate]);
 
   // Buscar empresa_id desde profile
   useEffect(() => {
@@ -433,7 +484,6 @@ export default function EmpresaTrackerPage() {
 
     fetchEmpresa();
   }, [user]);
-
 
   // Carga inicial (contactos + actividades + propiedades)
   useEffect(() => {
@@ -466,6 +516,7 @@ export default function EmpresaTrackerPage() {
                   tipo_operacion,
                   direccion,
                   zona,
+                  dormitorios,
                   m2_lote,
                   m2_cubiertos,
                   precio_lista_inicial,
@@ -476,6 +527,9 @@ export default function EmpresaTrackerPage() {
                   fecha_cierre,
                   created_at,
                   updated_at,
+                  honorarios_pct_vendedor,
+                  honorarios_pct_comprador,
+                  asesor_id,
                   contacto:tracker_contactos (nombre, apellido)
                 `
               )
@@ -500,6 +554,7 @@ export default function EmpresaTrackerPage() {
               tipo_operacion: row.tipo_operacion,
               direccion: row.direccion,
               zona: row.zona,
+              dormitorios: row.dormitorios,
               m2_lote: row.m2_lote,
               m2_cubiertos: row.m2_cubiertos,
               precio_lista_inicial: row.precio_lista_inicial,
@@ -510,6 +565,9 @@ export default function EmpresaTrackerPage() {
               fecha_cierre: row.fecha_cierre,
               created_at: row.created_at,
               updated_at: row.updated_at,
+              honorarios_pct_vendedor: row.honorarios_pct_vendedor,
+              honorarios_pct_comprador: row.honorarios_pct_comprador,
+              asesor_id: row.asesor_id ?? null,
               contacto: contactoRaw
                 ? {
                     nombre: contactoRaw.nombre ?? null,
@@ -529,6 +587,28 @@ export default function EmpresaTrackerPage() {
     };
 
     fetchAll();
+  }, [empresaId]);
+
+  // Cargar asesores para filtros de vista
+  useEffect(() => {
+    if (!empresaId) return;
+
+    const fetchAsesores = async () => {
+      const { data, error } = await supabase
+        .from("asesores")
+        .select("id, nombre, apellido")
+        .eq("empresa_id", empresaId)
+        .order("nombre", { ascending: true });
+
+      if (error) {
+        console.error("Error cargando asesores para tracker:", error);
+        return;
+      }
+
+      setAsesores((data as Asesor[]) ?? []);
+    };
+
+    fetchAsesores();
   }, [empresaId]);
 
   const showMessage = (text: string) => {
@@ -698,7 +778,6 @@ export default function EmpresaTrackerPage() {
       showMessage("❌ Error inesperado al eliminar.");
     }
   };
-
   // ----- CRUD ACTIVIDADES -----
 
   const openNuevaActividad = (date?: Date) => {
@@ -815,11 +894,12 @@ export default function EmpresaTrackerPage() {
   };
 
   // ----- CRUD PROPIEDADES -----
-    const openNuevaPropiedad = (contactoId?: string) => {
+  const openNuevaPropiedad = (contactoId?: string) => {
     setEditingPropiedad(null);
     setFormPropiedad({
       contacto_id: contactoId ?? "",
       tipologia: "",
+      dormitorios: "",
       tipo_operacion: "",
       direccion: "",
       zona: "",
@@ -831,6 +911,8 @@ export default function EmpresaTrackerPage() {
       moneda: "ARS",
       fecha_inicio_comercializacion: "",
       fecha_cierre: "",
+      honorarios_pct_vendedor: "",
+      honorarios_pct_comprador: "",
     });
     setShowPropiedadModal(true);
   };
@@ -840,6 +922,7 @@ export default function EmpresaTrackerPage() {
     setFormPropiedad({
       contacto_id: p.contacto_id ?? "",
       tipologia: p.tipologia ?? "",
+      dormitorios: p.dormitorios != null ? String(p.dormitorios) : "",
       tipo_operacion: p.tipo_operacion ?? "",
       direccion: p.direccion ?? "",
       zona: p.zona ?? "",
@@ -853,6 +936,14 @@ export default function EmpresaTrackerPage() {
       fecha_inicio_comercializacion:
         p.fecha_inicio_comercializacion?.substring(0, 10) ?? "",
       fecha_cierre: p.fecha_cierre?.substring(0, 10) ?? "",
+      honorarios_pct_vendedor:
+        p.honorarios_pct_vendedor != null
+          ? String(p.honorarios_pct_vendedor)
+          : "",
+      honorarios_pct_comprador:
+        p.honorarios_pct_comprador != null
+          ? String(p.honorarios_pct_comprador)
+          : "",
     });
     setShowPropiedadModal(true);
   };
@@ -863,6 +954,30 @@ export default function EmpresaTrackerPage() {
     return isNaN(parsed) ? null : parsed;
   };
 
+  const calcularHonorariosDesdeForm = () => {
+    const precioCierre = parseNumberOrNull(formPropiedad.precio_cierre);
+    const pctVendedor = parseNumberOrNull(formPropiedad.honorarios_pct_vendedor);
+    const pctComprador = parseNumberOrNull(
+      formPropiedad.honorarios_pct_comprador
+    );
+
+    if (!precioCierre || precioCierre <= 0) {
+      return { vendedor: null as number | null, comprador: null as number | null, total: null as number | null };
+    }
+
+    const vendedor =
+      pctVendedor != null ? (precioCierre * pctVendedor) / 100 : null;
+    const comprador =
+      pctComprador != null ? (precioCierre * pctComprador) / 100 : null;
+
+    const total =
+      vendedor != null || comprador != null
+        ? (vendedor ?? 0) + (comprador ?? 0)
+        : null;
+
+    return { vendedor, comprador, total };
+  };
+
   const guardarPropiedad = async () => {
     if (!empresaId || savingPropiedad) return;
     setSavingPropiedad(true);
@@ -871,6 +986,7 @@ export default function EmpresaTrackerPage() {
       empresa_id: empresaId,
       contacto_id: formPropiedad.contacto_id || null,
       tipologia: formPropiedad.tipologia || null,
+      dormitorios: parseNumberOrNull(formPropiedad.dormitorios),
       tipo_operacion: formPropiedad.tipo_operacion || null,
       direccion: formPropiedad.direccion || null,
       zona: formPropiedad.zona || null,
@@ -883,6 +999,12 @@ export default function EmpresaTrackerPage() {
       fecha_inicio_comercializacion:
         formPropiedad.fecha_inicio_comercializacion || null,
       fecha_cierre: formPropiedad.fecha_cierre || null,
+      honorarios_pct_vendedor: parseNumberOrNull(
+        formPropiedad.honorarios_pct_vendedor
+      ),
+      honorarios_pct_comprador: parseNumberOrNull(
+        formPropiedad.honorarios_pct_comprador
+      ),
     };
 
     try {
@@ -927,6 +1049,7 @@ export default function EmpresaTrackerPage() {
             tipo_operacion,
             direccion,
             zona,
+            dormitorios,
             m2_lote,
             m2_cubiertos,
             precio_lista_inicial,
@@ -937,6 +1060,9 @@ export default function EmpresaTrackerPage() {
             fecha_cierre,
             created_at,
             updated_at,
+            honorarios_pct_vendedor,
+            honorarios_pct_comprador,
+            asesor_id,
             contacto:tracker_contactos (nombre, apellido)
           `
         )
@@ -957,6 +1083,7 @@ export default function EmpresaTrackerPage() {
             tipo_operacion: row.tipo_operacion,
             direccion: row.direccion,
             zona: row.zona,
+            dormitorios: row.dormitorios,
             m2_lote: row.m2_lote,
             m2_cubiertos: row.m2_cubiertos,
             precio_lista_inicial: row.precio_lista_inicial,
@@ -967,6 +1094,9 @@ export default function EmpresaTrackerPage() {
             fecha_cierre: row.fecha_cierre,
             created_at: row.created_at,
             updated_at: row.updated_at,
+            honorarios_pct_vendedor: row.honorarios_pct_vendedor,
+            honorarios_pct_comprador: row.honorarios_pct_comprador,
+            asesor_id: row.asesor_id ?? null,
             contacto: contactoRaw
               ? {
                   nombre: contactoRaw.nombre ?? null,
@@ -1066,6 +1196,8 @@ export default function EmpresaTrackerPage() {
     }).format(n);
   };
 
+  const honorariosEstimados = calcularHonorariosDesdeForm();
+
   if (loading && !empresaId) {
     return (
       <div className="flex items-center justify-center h-[60vh] text-gray-500">
@@ -1087,8 +1219,40 @@ export default function EmpresaTrackerPage() {
             </h1>
             <p className="mt-1 text-sm md:text-base text-slate-600 max-w-xl">
               Tu tablero de mando diario para medir prospección, prelisting,
-              captaciones y cierres. 
+              captaciones y cierres.
             </p>
+
+            {/* Filtro de vista: Empresa / Asesores / Global */}
+            <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+              <span className="text-slate-500">Vista:</span>
+              <select
+                value={viewScope}
+                onChange={(e) => {
+                  const value = e.target.value as ViewScope;
+                  setViewScope(value);
+                }}
+                className="rounded-full border border-gray-300 bg-white px-3 py-1 text-xs text-slate-700"
+              >
+                <option value="empresa">Empresa</option>
+                <option value="asesores">Asesores</option>
+                <option value="global">Global (empresa + asesores)</option>
+              </select>
+
+              {viewScope === "asesores" && (
+                <select
+                  value={selectedAsesorId}
+                  onChange={(e) => setSelectedAsesorId(e.target.value)}
+                  className="rounded-full border border-gray-300 bg-white px-3 py-1 text-xs text-slate-700"
+                >
+                  <option value="">Todos los asesores</option>
+                  {asesores.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {contactoNombreCorto(a)}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
           </div>
 
           {/* Hoy / Mañana resumen */}
@@ -1631,23 +1795,24 @@ export default function EmpresaTrackerPage() {
                     <th className="px-3 py-2 text-left font-medium">
                       Inicio / Días en venta
                     </th>
+                    <th className="px-3 py-2 text-left font-medium">GAP</th>
                     <th className="px-3 py-2 text-right font-medium">
                       Acciones
                     </th>
                   </tr>
                 </thead>
                 <tbody>
-                  {propiedades.length === 0 && (
+                  {propiedadesFiltradas.length === 0 && (
                     <tr>
                       <td
-                        colSpan={7}
+                        colSpan={8}
                         className="px-3 py-6 text-center text-xs text-slate-500"
                       >
                         Todavía no cargaste propiedades captadas.
                       </td>
                     </tr>
                   )}
-                  {propiedades.map((p) => {
+                  {propiedadesFiltradas.map((p) => {
                     const contacto =
                       p.contacto_id && contactoPorId(p.contacto_id)
                         ? contactoPorId(p.contacto_id)
@@ -1662,6 +1827,20 @@ export default function EmpresaTrackerPage() {
                     const rowBase =
                       "border-b border-gray-100 hover:bg-gray-50";
                     const rowClosed = isCerrada ? "bg-emerald-200" : "";
+
+                    const precioLista = p.precio_lista_inicial;
+                    const precioCierre = p.precio_cierre;
+                    let gapLabel = "—";
+                    if (
+                      precioLista != null &&
+                      precioLista !== 0 &&
+                      precioCierre != null
+                    ) {
+                      const diff = Math.abs(precioCierre - precioLista);
+                      const pct =
+                        Math.abs(diff / Math.abs(precioLista)) * 100;
+                      gapLabel = `${Math.round(pct)}%`;
+                    }
 
                     return (
                       <tr key={p.id} className={`${rowBase} ${rowClosed}`}>
@@ -1691,6 +1870,9 @@ export default function EmpresaTrackerPage() {
                             : "—"}{" "}
                           /{" "}
                           {diasVenta != null ? `${diasVenta} días` : "—"}
+                        </td>
+                        <td className="px-3 py-2 align-top text-slate-700">
+                          {gapLabel}
                         </td>
                         <td className="px-3 py-2 align-top text-right">
                           <div className="flex justify-end gap-2">
@@ -1729,7 +1911,9 @@ export default function EmpresaTrackerPage() {
             <div className="w-full max-w-lg rounded-2xl bg-white shadow-xl border border-gray-200">
               <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
                 <h3 className="text-sm font-semibold text-slate-900">
-                  {editingContacto ? "Editar contacto" : "Nuevo prospecto / cliente"}
+                  {editingContacto
+                    ? "Editar contacto"
+                    : "Nuevo prospecto / cliente"}
                 </h3>
                 <button
                   onClick={() => setShowContactoModal(false)}
@@ -2179,7 +2363,9 @@ export default function EmpresaTrackerPage() {
             <div className="w-full max-w-lg rounded-2xl bg-white shadow-xl border border-gray-200">
               <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
                 <h3 className="text-sm font-semibold text-slate-900">
-                  {editingPropiedad ? "Editar propiedad captada" : "Nueva propiedad captada"}
+                  {editingPropiedad
+                    ? "Editar propiedad captada"
+                    : "Nueva propiedad captada"}
                 </h3>
                 <button
                   onClick={() => setShowPropiedadModal(false)}
@@ -2237,6 +2423,25 @@ export default function EmpresaTrackerPage() {
                       <option value="campo">Campo</option>
                     </select>
                   </div>
+                  <div>
+                    <label className="block text-[11px] text-slate-500 mb-1">
+                      Dormitorios
+                    </label>
+                    <input
+                      className="w-full rounded-lg border border-gray-300 px-2 py-1 text-xs"
+                      placeholder="Ej: 3"
+                      value={formPropiedad.dormitorios}
+                      onChange={(e) =>
+                        setFormPropiedad((f) => ({
+                          ...f,
+                          dormitorios: e.target.value,
+                        }))
+                      }
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-[11px] text-slate-500 mb-1">
                       Operación
@@ -2433,6 +2638,68 @@ export default function EmpresaTrackerPage() {
                     />
                   </div>
                 </div>
+
+                {/* Honorarios Vendedor / Comprador */}
+                <div>
+                  <label className="block text-[11px] text-slate-500 mb-1">
+                    Honorarios
+                  </label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <p className="text-[11px] text-slate-600 mb-1">
+                        Vendedor (% sobre precio de cierre)
+                      </p>
+                      <input
+                        className="w-full rounded-lg border border-gray-300 px-2 py-1 text-xs"
+                        placeholder="Ej: 3"
+                        value={formPropiedad.honorarios_pct_vendedor}
+                        onChange={(e) =>
+                          setFormPropiedad((f) => ({
+                            ...f,
+                            honorarios_pct_vendedor: e.target.value,
+                          }))
+                        }
+                      />
+                      <p className="mt-1 text-[11px] text-slate-500">
+                        Neto estimado:{" "}
+                        {honorariosEstimados.vendedor != null
+                          ? fmtCurrency(honorariosEstimados.vendedor)
+                          : "—"}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-[11px] text-slate-600 mb-1">
+                        Comprador (% sobre precio de cierre)
+                      </p>
+                      <input
+                        className="w-full rounded-lg border border-gray-300 px-2 py-1 text-xs"
+                        placeholder="Ej: 3"
+                        value={formPropiedad.honorarios_pct_comprador}
+                        onChange={(e) =>
+                          setFormPropiedad((f) => ({
+                            ...f,
+                            honorarios_pct_comprador: e.target.value,
+                          }))
+                        }
+                      />
+                      <p className="mt-1 text-[11px] text-slate-500">
+                        Neto estimado:{" "}
+                        {honorariosEstimados.comprador != null
+                          ? fmtCurrency(honorariosEstimados.comprador)
+                          : "—"}
+                      </p>
+                    </div>
+                  </div>
+                  <p className="mt-2 text-[11px] text-slate-600">
+                    Total honorarios estimados:{" "}
+                    {honorariosEstimados.total != null
+                      ? fmtCurrency(honorariosEstimados.total)
+                      : "—"}
+                  </p>
+                  <p className="mt-1 text-[10px] text-slate-400">
+                    Calculado sobre el precio de cierre cargado.
+                  </p>
+                </div>
               </div>
               <div className="flex items-center justify-end gap-2 border-t border-gray-200 px-4 py-3">
                 <button
@@ -2458,4 +2725,3 @@ export default function EmpresaTrackerPage() {
     </div>
   );
 }
-

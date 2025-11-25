@@ -456,7 +456,7 @@ export default function LandingPage() {
                     playsInline
                   >
                     <source
-                      src="/landing/videos/video_vai.mp4"
+                      src="/landing/videos/video_vai2.mp4"
                       type="video/mp4"
                     />
                     Tu navegador no soporta la reproducción de video.

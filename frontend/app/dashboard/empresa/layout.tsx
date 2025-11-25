@@ -35,6 +35,18 @@ type BillingEstadoResponse = {
   estado?: BillingEstadoFlags | null;
 };
 
+function isPathExempt(pathname: string | null): boolean {
+  if (!pathname) return false;
+
+  // Rutas que se permiten aún con cuenta suspendida / vencida:
+  // - Pantalla de cuenta suspendida
+  // - Pantalla de planes (y subrutas) para poder pagar / cambiar plan
+  if (pathname.startsWith("/dashboard/empresa/suspendido")) return true;
+  if (pathname.startsWith("/dashboard/empresa/planes")) return true;
+
+  return false;
+}
+
 export default function EmpresaLayout({
   children,
 }: {
@@ -50,8 +62,8 @@ export default function EmpresaLayout({
 
     const checkEstado = async () => {
       try {
-        // Si ya estamos en la página de suspendido, no chequeamos para evitar loops
-        if (pathname?.includes("/dashboard/empresa/suspendido")) {
+        // Si estamos en una ruta "exenta", no chequeamos nada para evitar loops
+        if (isPathExempt(pathname)) {
           if (!cancelled) setChecking(false);
           return;
         }
@@ -104,6 +116,6 @@ export default function EmpresaLayout({
     );
   }
 
-  // Si todo ok, renderizamos normalmente el dashboard de empresa
+  // Si todo ok (o ruta exenta), renderizamos normalmente el dashboard de empresa
   return <div className="w-full h-full">{children}</div>;
 }

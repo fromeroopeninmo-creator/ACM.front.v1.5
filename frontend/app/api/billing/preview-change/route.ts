@@ -107,13 +107,34 @@ export async function GET(req: Request) {
       );
     }
 
-    const sim = calcularDeltaProrrateo({
+    // 👇 NUEVO: tratar trial/free o ciclo vencido como ciclo completo nuevo
+    const isTrialOrFree = precioActual <= 0;
+
+    const simBase = calcularDeltaProrrateo({
       cicloInicioISO: ciclo_inicio,
       cicloFinISO: ciclo_fin,
       precioActualNeto: precioActual,
       precioNuevoNeto: precioNuevo,
       alicuotaIVA: 0.21,
     });
+
+    let sim = simBase;
+
+    if (isTrialOrFree || simBase.diasRestantes <= 0) {
+      const diasCiclo = simBase.diasCiclo ?? null;
+      const deltaNeto = round2(precioNuevo);
+      const iva = round2(deltaNeto * 0.21);
+      const total = round2(deltaNeto + iva);
+
+      sim = {
+        ...simBase,
+        diasCiclo,
+        diasRestantes: diasCiclo,
+        deltaNeto,
+        iva,
+        total,
+      };
+    }
 
     let tipo: "upgrade" | "downgrade" | "sin_cambio" = "sin_cambio";
     if (precioNuevo > precioActual) tipo = "upgrade";
@@ -124,13 +145,18 @@ export async function GET(req: Request) {
     let aplicar_desde: string | null = null;
 
     if (tipo === "upgrade") {
-      nota =
-        "Se cobrará solo la diferencia prorrateada por los días restantes del ciclo actual.";
-      aplicar_desde = ciclo_inicio; // el nuevo precio rige desde ahora (visual)
+      if (isTrialOrFree || sim.diasRestantes <= 0) {
+        nota =
+          "Como tu plan actual es gratuito o ya venció, se cobrará el valor completo del nuevo ciclo.";
+      } else {
+        nota =
+          "Se cobrará solo la diferencia prorrateada por los días restantes del ciclo actual.";
+      }
+      aplicar_desde = ciclo_inicio; // visual: se muestra desde el ciclo actual
     } else if (tipo === "downgrade") {
       nota =
         "El downgrade se aplicará desde el próximo ciclo; sin reembolsos ni créditos.";
-      aplicar_desde = ciclo_fin; // se aplica al fin del ciclo
+      aplicar_desde = ciclo_fin;
     }
 
     return NextResponse.json(
@@ -146,14 +172,14 @@ export async function GET(req: Request) {
 
         plan_nuevo: {
           id: nuevoPlanId,
-          nombre: "", // no es obligatorio para el cálculo; la UI puede mostrar solo el nombre del card
+          nombre: "", // la UI usa el nombre del card, acá no es obligatorio
           precio_neto: round2(precioNuevo),
         },
 
         dias_ciclo: sim.diasCiclo,
         dias_restantes: sim.diasRestantes,
 
-        // Montos prorrateados
+        // Montos prorrateados o ciclo completo (según corresponda)
         delta_neto: round2(sim.deltaNeto),
         iva: round2(sim.iva),
         total: round2(sim.total),

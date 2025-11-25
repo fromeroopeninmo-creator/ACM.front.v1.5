@@ -105,35 +105,35 @@ async function crearPreferenciaMercadoPago(params: {
   const amountTotal = round2(params.totalConIVA);
 
   const prefBody = {
-  items: [
-    {
-      title: "Upgrade de plan VAI",
-      quantity: 1,
-      currency_id: "ARS",
-      unit_price: amountTotal,
+    items: [
+      {
+        title: "Upgrade de plan VAI",
+        quantity: 1,
+        currency_id: "ARS",
+        unit_price: amountTotal,
+      },
+    ],
+    external_reference: params.movimientoId,
+    back_urls: baseUrl
+      ? {
+          success: `${baseUrl}/dashboard/empresa/planes?mp_status=success`,
+          failure: `${baseUrl}/dashboard/empresa/planes?mp_status=failure`,
+          pending: `${baseUrl}/dashboard/empresa/planes?mp_status=pending`,
+        }
+      : undefined,
+    auto_return: "approved",
+
+    // 👇 máximo 1 cuota
+    payment_methods: {
+      installments: 1,
     },
-  ],
-  external_reference: params.movimientoId,
-  back_urls: baseUrl
-    ? {
-        success: `${baseUrl}/dashboard/empresa/planes?mp_status=success`,
-        failure: `${baseUrl}/dashboard/empresa/planes?mp_status=failure`,
-        pending: `${baseUrl}/dashboard/empresa/planes?mp_status=pending`,
-      }
-    : undefined,
-  auto_return: "approved",
 
-  // 👇 ESTO ES LO NUEVO
-  payment_methods: {
-    installments: 1, // máximo 1 cuota
-  },
-
-  metadata: {
-    movimiento_id: params.movimientoId,
-    empresa_id: params.empresaId,
-    tipo: "upgrade_plan",
-  },
-};
+    metadata: {
+      movimiento_id: params.movimientoId,
+      empresa_id: params.empresaId,
+      tipo: "upgrade_plan",
+    },
+  };
 
   try {
     const mpRes = await fetch(
@@ -311,18 +311,32 @@ export async function POST(req: Request) {
 
     const isUpgrade = precioNuevo > precioActual;
     const isDowngrade = precioNuevo < precioActual;
+    const isTrialOrFree = precioActual <= 0;
 
     // -------------------------
     // UPGRADE → crear movimiento financiero 'ajuste' (subtipo upgrade_prorrateo)
     // -------------------------
     if (isUpgrade) {
-      const sim = calcularDeltaProrrateo({
+      const simBase = calcularDeltaProrrateo({
         cicloInicioISO: ciclo_inicio,
         cicloFinISO: ciclo_fin,
         precioActualNeto: precioActual,
         precioNuevoNeto: precioNuevo,
         alicuotaIVA: 0.21,
       });
+
+      const needsFullCycle = isTrialOrFree || simBase.diasRestantes <= 0;
+
+      const sim = needsFullCycle
+        ? {
+            ...simBase,
+            diasCiclo: simBase.diasCiclo,
+            diasRestantes: simBase.diasCiclo,
+            deltaNeto: round2(precioNuevo),
+            iva: round2(precioNuevo * 0.21),
+            total: round2(precioNuevo * 1.21),
+          }
+        : simBase;
 
       // Idempotencia: buscamos un movimiento pending del ciclo con este subtipo
       // ⚠️ Usamos supabaseAdmin para evitar RLS en movimientos_financieros
@@ -403,7 +417,7 @@ export async function POST(req: Request) {
         ciclo_fin,
         dias_ciclo: sim.diasCiclo,
         dias_restantes: sim.diasRestantes,
-        factor: round2(sim.factor),
+        factor: sim.factor,
         iva: round2(sim.iva),
         total: round2(sim.total),
       };
@@ -424,7 +438,9 @@ export async function POST(req: Request) {
             monto_neto: round2(sim.deltaNeto),
             iva: round2(sim.iva),
             total: round2(sim.total),
-            descripcion: "Upgrade de plan prorrateado",
+            descripcion: needsFullCycle
+              ? "Upgrade de plan (ciclo completo)"
+              : "Upgrade de plan prorrateado",
             metadata,
           },
         ])
@@ -480,7 +496,9 @@ export async function POST(req: Request) {
           },
           nota: SIMULAR_PAGO_OK
             ? "Simulación: el pago se marcó como 'paid' y el nuevo plan ya está activo."
-            : "Al completar el pago en Mercado Pago, el nuevo plan se activará vía webhook.",
+            : needsFullCycle
+            ? "Al completar el pago en Mercado Pago, el nuevo plan se activará por el valor completo del ciclo."
+            : "Al completar el pago en Mercado Pago, el nuevo plan se activará con el prorrateo de la diferencia.",
         },
         { status: 200 }
       );

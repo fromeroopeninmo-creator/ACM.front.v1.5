@@ -606,11 +606,11 @@ export default function LandingPage() {
                   Próximamente
                 </div>
                 <h3 className="mt-2 text-sm font-semibold text-neutral-50">
-                  Tracker de trabajo
+                  Business Tracker
                 </h3>
                 <p className="mt-2 text-xs text-neutral-300">
-                  Seguimiento diario de tareas, visitas, llamadas y avances de
-                  cada propiedad, para que nada quede perdido en chats.
+                 Todas las estadísticas, métricas y acciones de tu empresa. Una herramienta de análisis 
+                  de datos para la toma de desiciones.
                 </p>
               </div>
 
@@ -620,11 +620,10 @@ export default function LandingPage() {
                   Próximamente
                 </div>
                 <h3 className="mt-2 text-sm font-semibold text-neutral-50">
-                  Agente con IA
+                  Agente de IA
                 </h3>
                 <p className="mt-2 text-xs text-neutral-300">
-                  Un asistente entrenado en tu cartera y procesos para acelerar
-                  respuestas, generar descripciones y ayudarte con el día a día.
+                  El asistente automatizado para gestionar la atención de tus clientes.
                 </p>
               </div>
 
@@ -634,11 +633,11 @@ export default function LandingPage() {
                   Próximamente
                 </div>
                 <h3 className="mt-2 text-sm font-semibold text-neutral-50">
-                  Manual del Inmobiliario
+                  Manual de Ventas Inmobiliarias
                 </h3>
                 <p className="mt-2 text-xs text-neutral-300">
                   Buenas prácticas comerciales, guías para formar asesores y
-                  recursos para estandarizar la calidad del servicio.
+                  recursos para estandarizar la calidad del servicio y optimizar tus resultados.
                 </p>
               </div>
             </div>

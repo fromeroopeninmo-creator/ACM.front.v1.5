@@ -5,27 +5,6 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { useTheme } from "@/context/ThemeContext";
-import { supabase } from "#lib/supabaseClient";
-
-/** Resuelve empresas.id para el usuario actual (dueño directo o perfil ligado) */
-async function resolveEmpresaIdForUser(userId: string): Promise<string | null> {
-  // 1) Empresa donde el usuario es dueño directo
-  const { data: emp } = await supabase
-    .from("empresas")
-    .select("id")
-    .eq("user_id", userId)
-    .maybeSingle();
-  if (emp?.id) return emp.id as string;
-
-  // 2) Perfil con empresa asociada
-  const { data: prof } = await supabase
-    .from("profiles")
-    .select("empresa_id")
-    .eq("user_id", userId)
-    .maybeSingle();
-
-  return (prof?.empresa_id as string) ?? null;
-}
 
 export default function CuentaSuspendidaPage() {
   const { user, loading } = useAuth();
@@ -39,39 +18,55 @@ export default function CuentaSuspendidaPage() {
   // Si el usuario no está logueado → redirigir a login
   useEffect(() => {
     if (loading) return; // esperamos a que termine Auth
-    if (!user) router.replace("/auth/login");
+    if (!user) {
+      router.replace("/auth/login");
+    }
   }, [user, loading, router]);
 
-  // 🚦 Verificar si la empresa volvió a tener plan activo
+  // 🚦 Verificar estado de billing usando /api/billing/estado
+  // Si YA NO debe estar suspendido → volver al dashboard empresa
   useEffect(() => {
     if (loading || !user?.id) return;
 
+    let cancelled = false;
+
     const checkPlan = async () => {
       try {
-        const empresaId =
-          (user as any)?.empresa_id || (await resolveEmpresaIdForUser(user.id));
+        const res = await fetch("/api/billing/estado", { cache: "no-store" });
 
-        if (!empresaId) {
-          setChecking(false);
+        if (!res.ok) {
+          console.error(
+            "Error al consultar /api/billing/estado (suspendido):",
+            res.status
+          );
+          if (!cancelled) setChecking(false);
           return;
         }
 
-        const { data: planActivo, error } = await supabase
-          .from("empresas_planes")
-          .select("id")
-          .eq("empresa_id", empresaId)
-          .eq("activo", true)
-          .maybeSingle();
+        const data: any = await res.json();
+        const estado = data?.estado;
 
-        if (!error && planActivo) {
-          // ✅ Tiene plan activo → redirigir al dashboard empresa
-          router.replace("/dashboard/empresa");
+        if (!estado) {
+          if (!cancelled) setChecking(false);
           return;
         }
+
+        const debeSuspender =
+          estado.suspendida ||
+          (estado.plan_vencido && !estado.en_periodo_gracia);
+
+        if (!debeSuspender) {
+          // ✅ La cuenta ya no debería estar suspendida → volvemos al dashboard
+          if (!cancelled) {
+            router.replace("/dashboard/empresa");
+          }
+          return;
+        }
+
+        if (!cancelled) setChecking(false);
       } catch (err) {
-        console.error("Error verificando plan activo:", err);
-      } finally {
-        setChecking(false);
+        console.error("Error verificando estado de suscripción (suspendido):", err);
+        if (!cancelled) setChecking(false);
       }
     };
 
@@ -79,7 +74,10 @@ export default function CuentaSuspendidaPage() {
 
     // chequeo suave cada 45s por si el pago se acreditó y el webhook activó el plan
     const t = setInterval(checkPlan, 45000);
-    return () => clearInterval(t);
+    return () => {
+      cancelled = true;
+      clearInterval(t);
+    };
   }, [user, loading, router]);
 
   // Cargando estado

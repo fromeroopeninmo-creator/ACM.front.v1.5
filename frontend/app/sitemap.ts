@@ -7,17 +7,13 @@ export default function sitemap(): MetadataRoute.Sitemap {
   const lastModified = new Date();
 
   return [
-    // Home (por si tenés contenido o redirección)
+    // Landing principal (home)
     {
       url: `${baseUrl}/`,
       lastModified,
     },
-    // Landing principal
-    {
-      url: `${baseUrl}/landing`,
-      lastModified,
-    },
-    // Auth públicas
+
+    // Auth públicas (si querés que Google sepa que existen)
     {
       url: `${baseUrl}/auth/login`,
       lastModified,
@@ -26,5 +22,11 @@ export default function sitemap(): MetadataRoute.Sitemap {
       url: `${baseUrl}/auth/register`,
       lastModified,
     },
+
+    // Acá podrías agregar otras páginas públicas futuras:
+    // - /precios
+    // - /faqs
+    // - /contacto
+    // etc.
   ];
 }

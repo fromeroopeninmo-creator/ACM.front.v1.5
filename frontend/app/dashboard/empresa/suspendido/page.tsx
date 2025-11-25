@@ -28,7 +28,7 @@ async function resolveEmpresaIdForUser(userId: string): Promise<string | null> {
 }
 
 export default function CuentaSuspendidaPage() {
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
   const { primaryColor, logoUrl } = useTheme();
   const router = useRouter();
 
@@ -38,18 +38,18 @@ export default function CuentaSuspendidaPage() {
 
   // Si el usuario no está logueado → redirigir a login
   useEffect(() => {
+    if (loading) return; // esperamos a que termine Auth
     if (!user) router.replace("/auth/login");
-  }, [user, router]);
+  }, [user, loading, router]);
 
   // 🚦 Verificar si la empresa volvió a tener plan activo
   useEffect(() => {
-    const checkPlan = async () => {
-      if (!user?.id) return;
+    if (loading || !user?.id) return;
 
+    const checkPlan = async () => {
       try {
         const empresaId =
-          (user as any)?.empresa_id ||
-          (await resolveEmpresaIdForUser(user.id));
+          (user as any)?.empresa_id || (await resolveEmpresaIdForUser(user.id));
 
         if (!empresaId) {
           setChecking(false);
@@ -80,7 +80,7 @@ export default function CuentaSuspendidaPage() {
     // chequeo suave cada 45s por si el pago se acreditó y el webhook activó el plan
     const t = setInterval(checkPlan, 45000);
     return () => clearInterval(t);
-  }, [user, router]);
+  }, [user, loading, router]);
 
   // Cargando estado
   if (checking) {

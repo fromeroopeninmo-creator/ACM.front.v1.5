@@ -461,7 +461,7 @@ const contactosInRange = contactosInRangeBase;
       const { data, error } = await supabase
         .from("asesores")
         .select("id, empresa_id")
-        .eq("email", user.email)
+        .eq("user_id", user.id)
         .maybeSingle();
 
       if (error || !data) {

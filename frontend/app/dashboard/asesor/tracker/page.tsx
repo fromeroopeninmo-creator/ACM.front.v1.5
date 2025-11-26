@@ -405,18 +405,9 @@ export default function AsesorTrackerPage() {
       return key >= startKey;
     });
 
-    // Para scope empresa/asesores: contactos con al menos una actividad en este scope
-    let contactosInRange = contactosInRangeBase;
-    if (scope !== "global") {
-      const contactoIdsConActividad = new Set(
-        actividadesInRange
-          .map((a) => a.contacto_id)
-          .filter((id): id is string => !!id)
-      );
-      contactosInRange = contactosInRangeBase.filter((c) =>
-        contactoIdsConActividad.has(c.id)
-      );
-    }
+   // Para el asesor: tomamos directamente los contactos creados en el período
+const contactosInRange = contactosInRangeBase;
+
 
     // ---- PRELISTING ----
     const idsPrelistingEstado = contactosInRange

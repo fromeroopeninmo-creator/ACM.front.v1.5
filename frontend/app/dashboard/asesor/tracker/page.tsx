@@ -27,7 +27,7 @@ type TrackerActividadTipo =
 
 type TrackerTab = "calendario" | "contactos" | "propiedades";
 type KpiRange = "30d" | "90d" | "180d" | "365d";
-type TrackerScope = "empresa" | "asesores" | "global";
+
 
 interface TrackerContacto {
   id: string;
@@ -246,11 +246,6 @@ export default function AsesorTrackerPage() {
   const [activeTab, setActiveTab] = useState<TrackerTab>("calendario");
   const [kpiRange, setKpiRange] = useState<KpiRange>("30d");
 
-  // Para reutilizar la lógica de filtrado / KPIs del tracker de empresa,
-  // fijamos el "scope" en modo "asesores" y selectedAsesorId = asesor logueado.
-  const scope: TrackerScope = "asesores";
-  const selectedAsesorId = asesorId ?? "";
-
   const [currentMonth, setCurrentMonth] = useState<Date>(new Date());
   const [selectedDate, setSelectedDate] = useState<Date>(startOfDay(new Date()));
 
@@ -329,35 +324,20 @@ export default function AsesorTrackerPage() {
   const actividadDateKey = (a: TrackerActividad) =>
     a.fecha_programada ? a.fecha_programada.substring(0, 10) : "";
 
-  // Filtrado por scope (reutilizamos la misma lógica, pero el scope
-  // siempre es "asesores" y el selectedAsesorId es el asesor logueado).
-  const actividadesFiltradas = useMemo(() => {
-    if (scope === "global") return actividades;
+ // En el dashboard del asesor no hay scope: siempre ve SOLO sus propias actividades
+// (ya vienen filtradas por RLS / consulta).
 
-    if (scope === "empresa") {
-      return actividades.filter((a) => !a.asesor_id);
-    }
+  const actividadesFiltradas = useMemo(
+  () => actividades,
+  [actividades]
+);
 
-    // scope === "asesores"
-    if (!selectedAsesorId) {
-      return actividades.filter((a) => !!a.asesor_id);
-    }
-    return actividades.filter((a) => a.asesor_id === selectedAsesorId);
-  }, [actividades, scope, selectedAsesorId]);
 
-  const propiedadesFiltradas = useMemo(() => {
-    if (scope === "global") return propiedades;
+ const propiedadesFiltradas = useMemo(
+  () => propiedades,
+  [propiedades]
+);
 
-    if (scope === "empresa") {
-      return propiedades.filter((p) => !p.asesor_id);
-    }
-
-    // scope === "asesores"
-    if (!selectedAsesorId) {
-      return propiedades.filter((p) => !!p.asesor_id);
-    }
-    return propiedades.filter((p) => p.asesor_id === selectedAsesorId);
-  }, [propiedades, scope, selectedAsesorId]);
 
   const actividadesHoy = useMemo(
     () =>
@@ -1255,11 +1235,11 @@ export default function AsesorTrackerPage() {
         <header className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
             <h1 className="text-2xl md:text-3xl font-semibold text-slate-900">
-              Mi agenda de actividades
+              Tracker de Actividades
             </h1>
             <p className="mt-1 text-sm md:text-base text-slate-600 max-w-xl">
-              Tu tablero de mando diario como asesor para medir prospección,
-              prelisting, captaciones y cierres personales.
+              Tu tablero de actividades diarias para llevar el control de tus prospecciones,
+             captaciones y cierres personales.
             </p>
           </div>
 

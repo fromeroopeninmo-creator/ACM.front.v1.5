@@ -453,16 +453,18 @@ const contactosInRange = contactosInRangeBase;
   // Buscar empresa_id y asesor_id desde la tabla asesores usando el email del profile
   useEffect(() => {
   const fetchAsesor = async () => {
-    // Necesitamos el email del usuario logueado
     if (!user?.email) {
-      console.error("No hay email en el perfil del usuario para el tracker.");
+      console.error("No hay email en el usuario autenticado");
       setLoading(false);
       return;
     }
 
+    // DEBUG opcional: ver qué email está usando el front
+    console.log("Tracker asesor - email actual:", user.email);
+
     const { data, error } = await supabase
       .from("asesores")
-      .select("id, empresa_id")
+      .select("id, empresa_id, email")
       .eq("email", user.email)
       .maybeSingle();
 
@@ -473,14 +475,11 @@ const contactosInRange = contactosInRangeBase;
     }
 
     if (!data) {
-      console.error(
-        "No se encontró un asesor con ese email en la tabla asesores."
-      );
+      console.error("Error buscando asesor para tracker: sin datos");
       setLoading(false);
       return;
     }
 
-    // acá seteás el asesor y la empresa para el resto del tracker
     setAsesorId(data.id);
     setEmpresaId(data.empresa_id);
     setLoading(false);

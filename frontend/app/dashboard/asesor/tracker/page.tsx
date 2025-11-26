@@ -448,7 +448,6 @@ const contactosInRange = contactosInRangeBase;
     actividadesFiltradas,
     propiedadesFiltradas,
     startKpiDate,
-    scope,
   ]);
 
   // Buscar empresa_id y asesor_id desde la tabla asesores usando el email del profile

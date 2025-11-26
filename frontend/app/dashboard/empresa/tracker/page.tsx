@@ -531,12 +531,12 @@ export default function EmpresaTrackerPage() {
             supabase
               .from("tracker_contactos")
               .select("*")
-              .eq("empresa_id", empresaId)
+             
               .order("created_at", { ascending: false }),
             supabase
               .from("tracker_actividades")
               .select("*")
-              .eq("empresa_id", empresaId)
+              
               .order("fecha_programada", { ascending: true }),
             supabase
               .from("tracker_propiedades")
@@ -566,7 +566,7 @@ export default function EmpresaTrackerPage() {
                   contacto:tracker_contactos (nombre, apellido)
                 `
               )
-              .eq("empresa_id", empresaId)
+              
               .order("created_at", { ascending: false }),
           ]);
 

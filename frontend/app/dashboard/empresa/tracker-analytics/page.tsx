@@ -749,11 +749,10 @@ export default function EmpresaTrackerAnaliticoPage() {
         <header className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
             <h1 className="text-2xl font-semibold text-slate-900">
-              Tracker de ventas y actividad
+              Business Tracker
             </h1>
             <p className="mt-1 text-sm text-slate-600 max-w-xl">
-              Tablero tipo Power BI para ver marketshare captado vs vendido,
-              GAP, días de venta y honorarios por empresa y asesores.
+              Centralizá la información de tu empresa y tus asesores en un solo lugar: medí actividad, detectá oportunidades y apoyá tus decisiones en datos concretos. 
             </p>
           </div>
           <div className="flex flex-wrap gap-3 items-center justify-start md:justify-end text-xs">
@@ -1214,8 +1213,7 @@ export default function EmpresaTrackerAnaliticoPage() {
             )}
 
             <p className="mt-3 text-[10px] text-slate-400">
-              ⚠️ Por ahora no se convierten monedas (ARS / USD), se suman los
-              montos nominales según el precio de cierre.
+             
             </p>
           </div>
 
@@ -1290,15 +1288,15 @@ export default function EmpresaTrackerAnaliticoPage() {
           <div className="flex items-center justify-between mb-3">
             <div>
               <h2 className="text-sm font-semibold text-slate-900">
-                Funnel comercial: Prospección → Cierre
+                Funnel Comercial: Prospección → Cierre
               </h2>
               <p className="text-[11px] text-slate-500">
-                Cantidades y tasas de conversión por etapa. En real estate se
+                 En Real Estate se le 
                 conoce como{" "}
                 <span className="font-semibold">
-                  tasa de conversión comercial
+                  Tasa de Conversión Comercial
                 </span>{" "}
-                (del pipeline de ventas).
+                
               </p>
             </div>
             {avgDiasGlobal != null && (

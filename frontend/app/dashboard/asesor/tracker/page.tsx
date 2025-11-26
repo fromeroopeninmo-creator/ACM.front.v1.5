@@ -452,33 +452,43 @@ const contactosInRange = contactosInRangeBase;
 
   // Buscar empresa_id y asesor_id desde la tabla asesores usando el email del profile
   useEffect(() => {
-    const fetchAsesor = async () => {
-      if (!user?.email) {
-        setLoading(false);
-        return;
-      }
-
-      const { data, error } = await supabase
-        .from("asesores")
-        .select("id, empresa_id")
-        .eq("user_id", user.id)
-        .maybeSingle();
-
-      if (error || !data) {
-        console.error("Error buscando asesor para tracker:", error || "sin datos");
-        setEmpresaId(null);
-        setAsesorId(null);
-        setLoading(false);
-        return;
-      }
-
-      setEmpresaId(data.empresa_id);
-      setAsesorId(data.id);
+  const fetchAsesor = async () => {
+    // Necesitamos el email del usuario logueado
+    if (!user?.email) {
+      console.error("No hay email en el perfil del usuario para el tracker.");
       setLoading(false);
-    };
+      return;
+    }
 
-    fetchAsesor();
-  }, [user]);
+    const { data, error } = await supabase
+      .from("asesores")
+      .select("id, empresa_id")
+      .eq("email", user.email)
+      .maybeSingle();
+
+    if (error) {
+      console.error("Error buscando asesor para tracker:", error);
+      setLoading(false);
+      return;
+    }
+
+    if (!data) {
+      console.error(
+        "No se encontró un asesor con ese email en la tabla asesores."
+      );
+      setLoading(false);
+      return;
+    }
+
+    // acá seteás el asesor y la empresa para el resto del tracker
+    setAsesorId(data.id);
+    setEmpresaId(data.empresa_id);
+    setLoading(false);
+  };
+
+  fetchAsesor();
+}, [user]);
+
 
   // Carga inicial (contactos + actividades + propiedades) del asesor
   useEffect(() => {

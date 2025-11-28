@@ -52,7 +52,7 @@ export default function LandingPage() {
           .neq("nombre", "Trial")
           .neq("nombre", "Desarrollo");
 
-        if (error) {
+      if (error) {
           console.error("Error cargando planes para landing:", error);
           return;
         }
@@ -112,7 +112,7 @@ export default function LandingPage() {
               <div className="relative h-9 w-9 md:h-10 md:w-10">
                 <Image
                   src="/landing/images/logo-vai7.png"
-                  alt="VAI Prop logo"
+                  alt="VAI Prop logo, software inmobiliario"
                   fill
                   sizes="40px"
                   className="object-contain"
@@ -123,7 +123,7 @@ export default function LandingPage() {
                   VAI PROP
                 </div>
                 <div className="text-[11px] uppercase text-neutral-400">
-                  Soluciones Digitales para Real Estate
+                  Soluciones digitales para el Real Estate
                 </div>
               </div>
             </Link>
@@ -260,15 +260,16 @@ export default function LandingPage() {
               </span>
 
               <h1 className="text-balance text-3xl font-semibold tracking-tight text-neutral-50 sm:text-4xl lg:text-[2.75rem]">
-                Soluciones Digitales para el{" "}
+                Software de valuación y gestión inmobiliaria para el{" "}
                 <span style={{ color: accent }}>Real Estate</span>
               </h1>
 
               <p className="max-w-xl text-sm leading-relaxed text-neutral-300 sm:text-base">
-                Centralizá tus valuaciones, estudios de factibilidad y gestión de
-                asesores en una sola plataforma. Menos Excel y WhatsApp, más{" "}
-                <span className="font-semibold">informes profesionales</span> y
-                decisiones rápidas.
+                Centralizá tus valuaciones y tasaciones, estudios de factibilidad
+                constructiva y gestión de asesores en una sola plataforma. Menos
+                Excel y WhatsApp, más{" "}
+                <span className="font-semibold">informes profesionales</span>,
+                tracker de negocio y decisiones rápidas.
               </p>
 
               {/* CTA */}
@@ -307,7 +308,7 @@ export default function LandingPage() {
                 <div className="relative overflow-hidden rounded-[1.4rem] bg-black">
                   <Image
                     src="/landing/hero/hero-desktop.webp"
-                    alt="Vista de la plataforma VAI Prop"
+                    alt="Vista de la plataforma VAI Prop con valuaciones y tracker"
                     width={960}
                     height={640}
                     className="h-full w-full object-cover"
@@ -323,7 +324,8 @@ export default function LandingPage() {
                     Informes VAI
                   </div>
                   <div className="mt-1 text-[13px] text-neutral-100">
-                    Comparables, fotos e informes listos para enviar a tu cliente.
+                    Comparables, fotos e informes de valuación listos para enviar
+                    a tu cliente.
                   </div>
                 </div>
               </div>
@@ -340,12 +342,13 @@ export default function LandingPage() {
             <div className="mb-8 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
               <div>
                 <h2 className="text-xl font-semibold text-neutral-50 md:text-2xl">
-                  Herramientas que resuelven el día a día inmobiliario
+                  Herramientas que resuelven el día a día de tu inmobiliaria
                 </h2>
                 <p className="mt-2 max-w-2xl text-sm text-neutral-300">
                   Diseñamos VAI Prop junto a inmobiliarias y desarrollistas para
-                  cubrir los procesos clave: valuación de activos inmobiliarios,
-                  factibilidad constructiva y gestión del equipo comercial.
+                  cubrir los procesos clave: valuación y tasación de activos
+                  inmobiliarios, factibilidad constructiva y gestión del equipo
+                  comercial con métricas y seguimiento.
                 </p>
               </div>
             </div>
@@ -357,17 +360,17 @@ export default function LandingPage() {
                   Valuador de Activos Inmobiliarios
                 </div>
                 <h3 className="text-sm font-semibold text-neutral-50">
-                  Informes VAI claros y listos para enviar
+                  Informes VAI claros, listos para enviar
                 </h3>
                 <p className="mt-2 text-xs leading-relaxed text-neutral-300">
                   Cargá datos del inmueble, comparables, fotos y notas. Generá un
-                  informe prolijo en minutos y dejá de trabajar con Excel y armar
-                  PDFs manualmente.
+                  informe prolijo de valuación por método comparativo en minutos
+                  y dejá de trabajar con Excel y PDFs armados manualmente.
                 </p>
                 <div className="mt-4 h-28 overflow-hidden rounded-xl border border-neutral-800 bg-black/60">
                   <Image
                     src="/landing/images/vai_propiedad_principal.svg"
-                    alt="Valuador de activos inmobiliarios"
+                    alt="Valuador de activos inmobiliarios y tasaciones"
                     width={600}
                     height={400}
                     className="h-full w-full object-cover"
@@ -385,13 +388,13 @@ export default function LandingPage() {
                 </h3>
                 <p className="mt-2 text-xs leading-relaxed text-neutral-300">
                   Simulá superficie construible, usos permitidos y escenarios de
-                  negocio para tomar decisiones rápidas sobre la viabilidad del
-                  proyecto.
+                  negocio para tomar decisiones rápidas sobre la viabilidad y
+                  factibilidad constructiva de cada proyecto.
                 </p>
                 <div className="mt-4 h-28 overflow-hidden rounded-xl border border-neutral-800 bg-black/60">
                   <Image
                     src="/landing/images/sugerido_venta.svg"
-                    alt="Informe de factibilidad constructiva"
+                    alt="Informe de factibilidad constructiva inmobiliaria"
                     width={600}
                     height={400}
                     className="h-full w-full object-cover"
@@ -410,12 +413,12 @@ export default function LandingPage() {
                 <p className="mt-2 text-xs leading-relaxed text-neutral-300">
                   Creá usuarios para tus asesores, definí quién puede ver y
                   editar cada informe y centralizá la información en un único
-                  panel.
+                  panel con tracker de actividades, contactos y propiedades.
                 </p>
                 <div className="mt-4 h-28 overflow-hidden rounded-xl border border-neutral-800 bg-black/60">
                   <Image
                     src="/landing/images/asesores.svg"
-                    alt="Panel de gestión de asesores"
+                    alt="Panel de gestión y tracker de asesores"
                     width={600}
                     height={400}
                     className="h-full w-full object-cover"
@@ -436,12 +439,12 @@ export default function LandingPage() {
                 </h2>
                 <p className="mt-3 max-w-xl text-sm text-neutral-300">
                   Te mostramos el flujo completo: desde el registro del inmueble,
-                  hasta la generación del informe y la gestión dentro del
-                  dashboard. Ideal para presentar a tu equipo y definir si se
-                  ajusta a tu forma de trabajar.
+                  hasta la generación del informe de valuación y la gestión
+                  dentro del dashboard con tu tracker. Ideal para presentar a tu
+                  equipo y definir si se ajusta a tu forma de trabajar.
                 </p>
                 <ul className="mt-4 space-y-2 text-sm text-neutral-300">
-                  <li>• Crear valuaciones paso a paso.</li>
+                  <li>• Crear valuaciones y tasaciones paso a paso.</li>
                   <li>• Cargar comparables y fotos en segundos.</li>
                   <li>• Compartir informes con tu marca y logo.</li>
                 </ul>
@@ -479,7 +482,8 @@ export default function LandingPage() {
               </h2>
               <p className="mt-2 text-sm text-neutral-300">
                 Arrancá con el plan Trial y cuando tu equipo crezca, cambiá de
-                plan directamente desde la plataforma.
+                plan directamente desde la plataforma para seguir escalando tus
+                valuaciones, tasaciones y gestión comercial.
               </p>
             </div>
 
@@ -494,7 +498,8 @@ export default function LandingPage() {
                 </div>
                 <p className="mt-2 text-xs text-neutral-300">
                   Explorá las funciones clave de VAI Prop antes de decidir un
-                  plan pago.
+                  plan pago y validá si el valuador, la factibilidad y el tracker
+                  se ajustan a tu operación.
                 </p>
                 <ul className="mt-4 space-y-2 text-xs text-neutral-200">
                   <li>• Acceso al Valuador de Activos Inmobiliarios.</li>
@@ -525,7 +530,9 @@ export default function LandingPage() {
                   Diseñado para equipos en crecimiento
                 </div>
                 <p className="mt-2 text-xs text-neutral-200">
-                 Ordená tu operación, centralizá la información y presentá tus informes con una imagen profesional.
+                  Ordená tu operación, centralizá la información y presentá tus
+                  informes de valuación, factibilidad y seguimiento comercial con
+                  una imagen profesional.
                 </p>
 
                 {/* Precio dinámico Plan Inicial */}
@@ -563,7 +570,8 @@ export default function LandingPage() {
                 </div>
                 <p className="mt-2 text-xs text-neutral-300">
                   Más asesores, más informes y más control. Adaptamos el plan a
-                  la estructura de tu empresa.
+                  la estructura de tu empresa para acompañar tu crecimiento
+                  inmobiliario.
                 </p>
                 <ul className="mt-4 space-y-2 text-xs text-neutral-200">
                   <li>• Desde 10 hasta 50 asesores.</li>
@@ -595,7 +603,8 @@ export default function LandingPage() {
               </h2>
               <p className="mt-2 text-sm text-neutral-300">
                 VAI Prop es una plataforma viva. Estas son algunas de las
-                funcionalidades en nuestro roadmap.
+                funcionalidades en nuestro roadmap para profundizar el análisis
+                de datos de tu negocio inmobiliario.
               </p>
             </div>
 
@@ -609,8 +618,9 @@ export default function LandingPage() {
                   Business Tracker
                 </h3>
                 <p className="mt-2 text-xs text-neutral-300">
-                 Todas las estadísticas, métricas y acciones de tu empresa. Una herramienta de análisis 
-                  de datos para la toma de desiciones.
+                  Todas las estadísticas, métricas y acciones de tu empresa en un
+                  solo tracker analítico. Una herramienta de análisis de datos
+                  para la toma de decisiones estratégicas en tu inmobiliaria.
                 </p>
               </div>
 
@@ -623,7 +633,9 @@ export default function LandingPage() {
                   Agente de IA
                 </h3>
                 <p className="mt-2 text-xs text-neutral-300">
-                  El asistente automatizado para gestionar la atención de tus clientes.
+                  El asistente automatizado para gestionar la atención de tus
+                  clientes, responder consultas frecuentes y mantener actualizada
+                  la información de tus propiedades.
                 </p>
               </div>
 
@@ -637,7 +649,8 @@ export default function LandingPage() {
                 </h3>
                 <p className="mt-2 text-xs text-neutral-300">
                   Buenas prácticas comerciales, guías para formar asesores y
-                  recursos para estandarizar la calidad del servicio y optimizar tus resultados.
+                  recursos para estandarizar la calidad del servicio y optimizar
+                  tus resultados de captación y cierre.
                 </p>
               </div>
             </div>
@@ -681,8 +694,9 @@ export default function LandingPage() {
                 </h3>
                 <p className="mt-2 text-xs text-neutral-300">
                   Hoy VAI Prop se enfoca en informes de valuación, factibilidad y
-                  gestión de asesores. Podés usarlo junto a tu CRM actual o como
-                  base para estandarizar procesos.
+                  gestión de asesores con un enfoque de tracker analítico. Podés
+                  usarlo junto a tu CRM actual o como base para estandarizar
+                  procesos.
                 </p>
               </div>
 
@@ -710,11 +724,11 @@ export default function LandingPage() {
               </h2>
               <p className="mx-auto mt-3 max-w-2xl text-sm text-neutral-300">
                 VAI Prop no reemplaza una tasación oficial, pero te permite
-                generar una valuación por método comparativo de mercado para
-                respaldar tus tasaciones y presentaciones con clientes. Además,
-                te ayuda a ordenar tu operación, hablar con datos y entregar una
-                experiencia profesional a cada cliente.
-                Comienza tu prueba GRATIS hoy mismo.
+                generar una valuación online por método comparativo de mercado
+                para respaldar tus tasaciones y presentaciones con clientes.
+                Además, te ayuda a ordenar tu operación, hablar con datos,
+                analizar métricas con el tracker y entregar una experiencia
+                profesional a cada cliente. Comenzá tu prueba GRATIS hoy mismo.
               </p>
               <div className="mt-6 flex flex-col justify-center gap-3 sm:flex-row">
                 <Link

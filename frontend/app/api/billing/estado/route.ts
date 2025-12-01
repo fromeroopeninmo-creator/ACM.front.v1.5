@@ -5,16 +5,18 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { supabaseServer } from "#lib/supabaseServer";
-import {
-  assertAuthAndGetContext,
-  getEmpresaIdForActor,
-} from "#lib/billing/utils";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE);
 
-type Role = "empresa" | "asesor" | "soporte" | "super_admin" | "super_admin_root" | string;
+type Role =
+  | "empresa"
+  | "asesor"
+  | "soporte"
+  | "super_admin"
+  | "super_admin_root"
+  | string;
 
 function toNum(x: any): number {
   if (x === null || x === undefined) return 0;
@@ -43,7 +45,9 @@ export async function GET(req: Request) {
 
     if (!empresaId) {
       const needsParam =
-        role === "super_admin_root" || role === "super_admin" || role === "soporte";
+        role === "super_admin_root" ||
+        role === "super_admin" ||
+        role === "soporte";
       return NextResponse.json(
         {
           error: needsParam
@@ -67,13 +71,18 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: empErr.message }, { status: 400 });
     }
     if (!empRow) {
-      return NextResponse.json({ error: "Empresa no encontrada." }, { status: 404 });
+      return NextResponse.json(
+        { error: "Empresa no encontrada." },
+        { status: 404 }
+      );
     }
 
     // 4) Plan activo o último por fecha_inicio
     const { data: activo } = await supabaseAdmin
       .from("empresas_planes")
-      .select("id, plan_id, fecha_inicio, fecha_fin, activo, max_asesores_override")
+      .select(
+        "id, plan_id, fecha_inicio, fecha_fin, activo, max_asesores_override"
+      )
       .eq("empresa_id", empresaId)
       .eq("activo", true)
       .maybeSingle();
@@ -82,7 +91,9 @@ export async function GET(req: Request) {
     if (!planEP) {
       const { data: ultimo } = await supabaseAdmin
         .from("empresas_planes")
-        .select("id, plan_id, fecha_inicio, fecha_fin, activo, max_asesores_override")
+        .select(
+          "id, plan_id, fecha_inicio, fecha_fin, activo, max_asesores_override"
+        )
         .eq("empresa_id", empresaId)
         .order("fecha_inicio", { ascending: false })
         .limit(1)
@@ -159,15 +170,23 @@ export async function GET(req: Request) {
             dias_desde_vencimiento: null,
             en_periodo_gracia: false,
           },
+          // Nuevo bloque: features por defecto cuando no hay plan
+          features: {
+            tipo_plan: null,
+            incluye_valuador: false,
+            incluye_tracker: false,
+          },
         },
         { status: 200 }
       );
     }
 
-    // 6) Datos del plan (precio)
+    // 6) Datos del plan (precio + tipo_plan / features)
     const { data: planRow, error: planErr } = await supabaseAdmin
       .from("planes")
-      .select("id, nombre, precio, duracion_dias, max_asesores, precio_extra_por_asesor")
+      .select(
+        "id, nombre, precio, duracion_dias, max_asesores, precio_extra_por_asesor, tipo_plan, incluye_valuador, incluye_tracker, es_trial"
+      )
       .eq("id", planEP.plan_id)
       .maybeSingle();
 
@@ -182,7 +201,9 @@ export async function GET(req: Request) {
     // 7) Última suscripción si existe
     const { data: susRow } = await supabaseAdmin
       .from("suscripciones")
-      .select("estado, inicio, fin, externo_customer_id, externo_subscription_id")
+      .select(
+        "estado, inicio, fin, externo_customer_id, externo_subscription_id"
+      )
       .eq("empresa_id", empresaId)
       .order("inicio", { ascending: false })
       .limit(1)
@@ -204,6 +225,11 @@ export async function GET(req: Request) {
       }
     }
 
+    // Normalizamos flags de features para que siempre haya algo consistente
+    const tipoPlan = planRow?.tipo_plan ?? null;
+    const incluyeValuador = !!planRow?.incluye_valuador;
+    const incluyeTracker = !!planRow?.incluye_tracker;
+
     return NextResponse.json(
       {
         plan: planRow
@@ -212,6 +238,11 @@ export async function GET(req: Request) {
               nombre: planRow.nombre,
               precioNeto,
               totalConIVA,
+              // NUEVO: info del tipo de plan / features
+              tipo_plan: tipoPlan, // "core" | "combo" | "tracker_only" | "trial"
+              incluye_valuador: incluyeValuador,
+              incluye_tracker: incluyeTracker,
+              es_trial: !!planRow.es_trial,
             }
           : null,
         ciclo: {
@@ -241,6 +272,12 @@ export async function GET(req: Request) {
           dias_desde_vencimiento,
           en_periodo_gracia,
         },
+        // NUEVO: bloque explícito de features del plan actual
+        features: {
+          tipo_plan: tipoPlan,
+          incluye_valuador: incluyeValuador,
+          incluye_tracker: incluyeTracker,
+        },
       },
       { status: 200 }
     );
@@ -252,3 +289,9 @@ export async function GET(req: Request) {
     );
   }
 }
+
+// IMPORTS que este archivo ya usaba desde utils (se mantienen igual)
+import {
+  assertAuthAndGetContext,
+  getEmpresaIdForActor,
+} from "#lib/billing/utils";

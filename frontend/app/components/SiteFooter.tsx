@@ -114,7 +114,7 @@ export default function SiteFooter() {
           <div className="flex items-center gap-4 text-neutral-500">
             {/* Instagram */}
             <a
-              href="https://www.instagram.com/tu_cuenta"
+              href="https://www.instagram.com/vaiprop_app?igsh=MXNtYTcxcmtlY3MyaA=="
               target="_blank"
               rel="noreferrer"
               className="hover:text-neutral-300 transition"

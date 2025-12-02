@@ -6,7 +6,9 @@ import { supabase } from "#lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
 
 interface EmpresaPlan {
+  plan_id: string;
   plan_nombre: string;
+  tipo_plan?: string | null;
   fecha_inicio: string;
   fecha_fin: string;
   activo: boolean;
@@ -15,7 +17,10 @@ interface EmpresaPlan {
 
 interface Plan {
   id: string;
-  nombre: string;
+  nombre: string; // nombre "crudo" de BD
+  tipo_plan?: string | null; // core | combo | tracker_only | trial
+  incluye_valuador?: boolean | null;
+  incluye_tracker?: boolean | null;
   max_asesores: number;
   precio?: number | string | null;
   duracion_dias?: number | null;
@@ -50,6 +55,61 @@ type PreviewResult = {
     moneda?: string;
   };
 };
+
+type TipoPlanKind = "combo" | "core" | "tracker_only";
+
+// ---------- HELPERS GENERALES ----------
+
+function tierFromMaxAsesores(max: number): "Inicial" | "Pro" | "Premium" | "Personalizado" {
+  if (!max || max <= 4) return "Inicial";
+  if (max <= 10) return "Pro";
+  if (max <= 20) return "Premium";
+  return "Personalizado";
+}
+
+function tierDisplayName(tier: "Inicial" | "Pro" | "Premium" | "Personalizado"): string {
+  if (tier === "Pro") return "Profesional";
+  return tier;
+}
+
+// Renombre visual “Pro” → “Profesional” (fallback)
+const displayPlanName = (n: string) => (n === "Pro" ? "Profesional" : n);
+
+// Nombre comercial para cards según tipo_plan + tier
+function getPlanUiName(plan: Plan): string {
+  const tipo = (plan.tipo_plan || "").toLowerCase();
+  const tier = tierFromMaxAsesores(plan.max_asesores);
+  const tierLabel = tierDisplayName(tier);
+
+  if (tipo === "combo") return `Full ${tierLabel}`;
+  if (tipo === "core") return `Core ${tierLabel}`;
+  if (tipo === "tracker_only") return `Tracker ${tierLabel}`;
+
+  // Fallback: comportamiento anterior
+  return displayPlanName(plan.nombre);
+}
+
+// Nombre comercial para el plan actual (encabezado)
+function getEmpresaPlanUiName(ep: EmpresaPlan | null): string {
+  if (!ep) return "Sin plan";
+  const tipo = (ep.tipo_plan || "").toLowerCase();
+  const tier = tierFromMaxAsesores(ep.max_asesores || 0);
+  const tierLabel = tierDisplayName(tier);
+
+  if (tipo === "combo") return `Full ${tierLabel}`;
+  if (tipo === "core") return `Core ${tierLabel}`;
+  if (tipo === "tracker_only") return `Tracker ${tierLabel}`;
+
+  return displayPlanName(ep.plan_nombre);
+}
+
+// Filtrado de planes que no deben verse en el front
+function isHiddenPlan(plan: Plan): boolean {
+  const tipo = (plan.tipo_plan || "").toLowerCase();
+  if (tipo === "trial") return true;
+  if (plan.nombre === "Desarrollo") return true;
+  return false;
+}
 
 export default function EmpresaPlanesPage() {
   const { user } = useAuth();
@@ -86,51 +146,31 @@ export default function EmpresaPlanesPage() {
   const previewDiasCiclo = useMemo<number | null>(() => {
     if (!preview) return null;
     const anyPrev = preview as any;
-    return (
-      anyPrev.dias_ciclo ??
-      anyPrev.ciclo?.dias_ciclo ??
-      null
-    );
+    return anyPrev.dias_ciclo ?? anyPrev.ciclo?.dias_ciclo ?? null;
   }, [preview]);
 
   const previewDiasRestantes = useMemo<number | null>(() => {
     if (!preview) return null;
     const anyPrev = preview as any;
-    return (
-      anyPrev.dias_restantes ??
-      anyPrev.ciclo?.dias_restantes ??
-      null
-    );
+    return anyPrev.dias_restantes ?? anyPrev.ciclo?.dias_restantes ?? null;
   }, [preview]);
 
   const previewDeltaNeto = useMemo<number>(() => {
     if (!preview) return 0;
     const anyPrev = preview as any;
-    return (
-      anyPrev.delta_neto ??
-      anyPrev.delta?.neto ??
-      0
-    );
+    return anyPrev.delta_neto ?? anyPrev.delta?.neto ?? 0;
   }, [preview]);
 
   const previewIva = useMemo<number>(() => {
     if (!preview) return 0;
     const anyPrev = preview as any;
-    return (
-      anyPrev.iva ??
-      anyPrev.delta?.iva ??
-      0
-    );
+    return anyPrev.iva ?? anyPrev.delta?.iva ?? 0;
   }, [preview]);
 
   const previewTotal = useMemo<number>(() => {
     if (!preview) return 0;
     const anyPrev = preview as any;
-    return (
-      anyPrev.total ??
-      anyPrev.delta?.total ??
-      0
-    );
+    return anyPrev.total ?? anyPrev.delta?.total ?? 0;
   }, [preview]);
 
   // 🔎 Resolver empresas.id
@@ -161,17 +201,19 @@ export default function EmpresaPlanesPage() {
       }
       setLoading(true);
       try {
-        // Plan actual (traemos override)
+        // Plan actual (traemos override y tipo_plan)
         const { data: empresaPlan, error: errorEmpresaPlan } = await supabase
           .from("empresas_planes")
-          .select(`
+          .select(
+            `
             plan_id,
             fecha_inicio,
             fecha_fin,
             activo,
             max_asesores_override,
-            planes:plan_id (nombre, max_asesores)
-          `)
+            planes:plan_id (nombre, max_asesores, tipo_plan)
+          `
+          )
           .eq("empresa_id", empresaId)
           .eq("activo", true)
           .maybeSingle();
@@ -184,27 +226,32 @@ export default function EmpresaPlanesPage() {
           const planData = Array.isArray(planDataRaw) ? planDataRaw[0] : planDataRaw;
           const baseMax = planData?.max_asesores ?? 0;
           const override = (empresaPlan as any)?.max_asesores_override as number | null;
+
           setPlanActual({
+            plan_id: (empresaPlan as any).plan_id as string,
             plan_nombre: planData?.nombre || "Sin plan",
+            tipo_plan: planData?.tipo_plan ?? null,
             fecha_inicio: empresaPlan.fecha_inicio,
             fecha_fin: empresaPlan.fecha_fin,
             activo: empresaPlan.activo,
             max_asesores: override ?? baseMax, // ← usa override si está seteado
           });
+
           // si el plan activo es Personalizado, inicializamos el slider con el override o 21
-          if ((planData?.nombre || "").toLowerCase() === "personalizado") {
+          const tier = tierFromMaxAsesores(override ?? baseMax);
+          if (tier === "Personalizado") {
             setPersonalCount(Math.max(21, Math.min(50, override ?? 21)));
           }
         } else {
           setPlanActual(null);
         }
 
-        // Planes (ocultamos Trial y Desarrollo)
+        // Planes: traemos todos y filtramos en la capa UI
         const { data: planes, error: errorPlanes } = await supabase
           .from("planes")
-          .select("id, nombre, max_asesores, precio, duracion_dias, precio_extra_por_asesor")
-          .neq("nombre", "Trial")
-          .neq("nombre", "Desarrollo")
+          .select(
+            "id, nombre, tipo_plan, incluye_valuador, incluye_tracker, max_asesores, precio, duracion_dias, precio_extra_por_asesor"
+          )
           .order("max_asesores", { ascending: true });
 
         if (errorPlanes) {
@@ -221,6 +268,39 @@ export default function EmpresaPlanesPage() {
 
     fetchPlanes();
   }, [empresaId]);
+
+  // Agrupaciones por tipo_plan (ya filtrados los ocultos)
+  const visiblePlanes = useMemo(
+    () => planesDisponibles.filter((p) => !isHiddenPlan(p)),
+    [planesDisponibles]
+  );
+
+  const planesFull = useMemo(
+    () =>
+      visiblePlanes
+        .filter((p) => (p.tipo_plan || "").toLowerCase() === "combo")
+        .slice()
+        .sort((a, b) => a.max_asesores - b.max_asesores),
+    [visiblePlanes]
+  );
+
+  const planesCore = useMemo(
+    () =>
+      visiblePlanes
+        .filter((p) => (p.tipo_plan || "").toLowerCase() === "core")
+        .slice()
+        .sort((a, b) => a.max_asesores - b.max_asesores),
+    [visiblePlanes]
+  );
+
+  const planesTracker = useMemo(
+    () =>
+      visiblePlanes
+        .filter((p) => (p.tipo_plan || "").toLowerCase() === "tracker_only")
+        .slice()
+        .sort((a, b) => a.max_asesores - b.max_asesores),
+    [visiblePlanes]
+  );
 
   // 🚀 Upgrade/Downgrade → Primero PREVIEW, luego CONFIRM
   const handleUpgrade = async (planId: string, opts?: { personalizadoCount?: number }) => {
@@ -364,14 +444,22 @@ export default function EmpresaPlanesPage() {
     return Math.round(n * (1 + IVA_PCT));
   };
 
-  // Premium base y extra unitario (para Personalizado)
+  // Premium base y extra unitario (para Personalizado core)
   const premiumPrecio = useMemo(() => {
-    const p = planesDisponibles.find((pl) => pl.nombre === "Premium");
+    const p = planesDisponibles.find(
+      (pl) =>
+        (pl.tipo_plan || "").toLowerCase() === "core" &&
+        tierFromMaxAsesores(pl.max_asesores) === "Premium"
+    );
     return num(p?.precio);
   }, [planesDisponibles]);
 
   const extraUnitPrice = useMemo(() => {
-    const p = planesDisponibles.find((pl) => pl.nombre === "Personalizado");
+    const p = planesDisponibles.find(
+      (pl) =>
+        (pl.tipo_plan || "").toLowerCase() === "core" &&
+        tierFromMaxAsesores(pl.max_asesores) === "Personalizado"
+    );
     return num(p?.precio_extra_por_asesor);
   }, [planesDisponibles]);
 
@@ -386,12 +474,9 @@ export default function EmpresaPlanesPage() {
   );
 
   const planActualNombre = useMemo(
-    () => (planActual?.plan_nombre ? planActual.plan_nombre : "Sin plan"),
+    () => getEmpresaPlanUiName(planActual),
     [planActual]
   );
-
-  // Renombre visual “Pro” → “Profesional”
-  const displayPlanName = (n: string) => (n === "Pro" ? "Profesional" : n);
 
   if (loading) {
     return (
@@ -403,18 +488,175 @@ export default function EmpresaPlanesPage() {
 
   const esTrial = planActual?.plan_nombre === "Trial";
 
+  // ---------- RENDER CARD GENERICO POR SECCIÓN ----------
+
+  const renderPlanCard = (plan: Plan, sectionKind: TipoPlanKind) => {
+    const uiName = getPlanUiName(plan);
+    const tier = tierFromMaxAsesores(plan.max_asesores);
+    const isPersonalizadoTier = tier === "Personalizado";
+    const isActive = planActual?.plan_id === plan.id;
+
+    // Neto y total con IVA (precio tal cual está en BD)
+    const neto = num(plan.precio);
+    const totalConIVA = withIVA(neto);
+
+    const capAsesores = isPersonalizadoTier ? personalCount : plan.max_asesores;
+
+    const handleClick = () => {
+      if (isPersonalizadoTier) {
+        handleUpgrade(plan.id, { personalizadoCount: personalCount });
+      } else {
+        handleUpgrade(plan.id);
+      }
+    };
+
+    const disabled =
+      isActive &&
+      (!isPersonalizadoTier || planActual?.max_asesores === personalCount);
+
+    return (
+      <div
+        key={plan.id}
+        className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm hover:shadow transition flex flex-col"
+      >
+        <div className="mb-4">
+          <div className="flex items-baseline justify-between">
+            <h3 className="text-xl font-semibold text-blue-700">{uiName}</h3>
+            <span className="text-sm text-gray-500">
+              {plan.duracion_dias ? `${plan.duracion_dias} días` : ""}
+            </span>
+          </div>
+
+          {/* BLOQUE PRECIO */}
+          {sectionKind === "combo" && isPersonalizadoTier ? (
+            // Personalizado FULL → usa cálculo dinámico
+            <div className="mt-3">
+              <div className="text-2xl font-bold">
+                Total: {fmtPrice(personalizadoNeto)}{" "}
+                <span className="text-base font-semibold">+ IVA</span>
+              </div>
+              <div className="text-xs text-gray-600">
+                Total: {fmtPrice(personalizadoTotalConIVA ?? 0)}
+              </div>
+            </div>
+          ) : (
+            <div className="mt-2">
+              <div className="text-2xl font-bold">
+                {fmtPrice(neto)}{" "}
+                <span className="text-base font-semibold">+ IVA</span>
+              </div>
+              <div className="text-xs text-gray-600">
+                Total: {totalConIVA != null ? fmtPrice(totalConIVA) : "—"}
+              </div>
+            </div>
+          )}
+
+          {/* Slider solo en Full Personalizado */}
+          {sectionKind === "combo" && isPersonalizadoTier && (
+            <div className="mt-4">
+              <label className="block text-sm text-gray-600 mb-1">
+                Cantidad de asesores
+              </label>
+              <div className="flex items-center gap-3">
+                <input
+                  type="range"
+                  min={21}
+                  max={50}
+                  value={personalCount}
+                  onChange={(e) =>
+                    setPersonalCount(parseInt(e.target.value || "21", 10))
+                  }
+                  className="w-full"
+                />
+                <input
+                  type="number"
+                  min={21}
+                  max={50}
+                  value={personalCount}
+                  onChange={(e) => {
+                    const v = Math.max(
+                      21,
+                      Math.min(50, parseInt(e.target.value || "21", 10))
+                    );
+                    setPersonalCount(v);
+                  }}
+                  className="w-20 border rounded-lg px-2 py-1"
+                />
+              </div>
+              <div className="text-xs text-gray-500 mt-1">
+                De 21 a 50 asesores (configurable).
+              </div>
+            </div>
+          )}
+
+          {/* Bullets según sección */}
+          {sectionKind === "combo" && (
+            <ul className="mt-4 text-sm text-gray-700 space-y-1">
+              <li>
+                <strong>• Hasta {capAsesores} asesores</strong>
+              </li>
+              <li>• Valuador de Activos Inmobiliarios</li>
+              <li>• Análisis de Factibilidad Constructiva</li>
+              <li>• Sin límites de informes</li>
+              <li>• Guarda / Carga / Edita tus informes</li>
+              <li>• Informe descargable en PDF</li>
+              <li>• Registra tus actividades diarias</li>
+              <li>• Carga tus captaciones y cierres</li>
+              <li>• Maneja tus métricas y gráficos</li>
+            </ul>
+          )}
+
+          {sectionKind === "core" && (
+            <ul className="mt-4 text-sm text-gray-700 space-y-1">
+              <li>
+                <strong>• Hasta {capAsesores} asesores</strong>
+              </li>
+              <li>• Valuador de Activos Inmobiliarios</li>
+              <li>• Análisis de Factibilidad Constructiva</li>
+              <li>• Sin límites de informes</li>
+              <li>• Guarda / Carga / Edita tus informes</li>
+              <li>• Informe descargable en PDF</li>
+            </ul>
+          )}
+
+          {sectionKind === "tracker_only" && (
+            <ul className="mt-4 text-sm text-gray-700 space-y-1">
+              <li>
+                <strong>• Hasta {capAsesores} asesores</strong>
+              </li>
+              <li>• Registra las actividades de tus asesores</li>
+              <li>• Carga tus captaciones y cierres</li>
+              <li>• Maneja tus métricas y gráficos de desempeño</li>
+              <li>• Vista unificada para la empresa</li>
+            </ul>
+          )}
+        </div>
+
+        {/* Botón */}
+        <button
+          onClick={handleClick}
+          disabled={disabled}
+          className={`mt-auto w-full py-2.5 rounded-lg text-sm font-medium transition ${
+            disabled
+              ? "bg-gray-300 text-gray-600 cursor-not-allowed"
+              : "bg-blue-600 hover:bg-blue-700 text-white"
+          }`}
+        >
+          {disabled ? "Plan actual" : "Seleccionar plan"}
+        </button>
+      </div>
+    );
+  };
+
   return (
     <div className="p-6 space-y-6">
       {/* Encabezado */}
       <section className="bg-white shadow-sm rounded-xl p-6">
         <h1 className="text-2xl font-semibold">Suscripción Mensual</h1>
         <p className="text-gray-600 mt-1">
-          Plan actual:{" "}
-          <span className="font-semibold">{planActualNombre}</span>{" "}
+          Plan actual: <span className="font-semibold">{planActualNombre}</span>{" "}
           {planActual?.max_asesores ? (
-            <span className="text-gray-500">
-              ({planActual.max_asesores} asesores)
-            </span>
+            <span className="text-gray-500">({planActual.max_asesores} asesores)</span>
           ) : null}
         </p>
       </section>
@@ -424,12 +666,9 @@ export default function EmpresaPlanesPage() {
         <section className="bg-white shadow-sm rounded-xl p-6 border border-gray-200">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
             <div>
-              <h2 className="text-lg font-semibold">
-                {planActual.plan_nombre}
-              </h2>
+              <h2 className="text-lg font-semibold">{planActualNombre}</h2>
               <p className="text-sm text-gray-600">
-                Asesores permitidos:{" "}
-                <strong>{planActual.max_asesores}</strong>
+                Asesores permitidos: <strong>{planActual.max_asesores}</strong>
               </p>
               <p className="text-sm text-gray-600">
                 Inicio:{" "}
@@ -465,182 +704,66 @@ export default function EmpresaPlanesPage() {
         </section>
       )}
 
-      {/* Planes */}
-      <section>
-        <h2 className="text-lg font-semibold mb-3">Planes disponibles</h2>
+      {/* SECCIÓN 1: PLANES FULL (COMBO) */}
+      {planesFull.length > 0 && (
+        <section className="space-y-4">
+          <div>
+            <h2 className="text-lg font-semibold">Planes Full VAI (todo incluido)</h2>
+            <p className="text-sm text-gray-600 mt-1">
+              Tené el <strong>Valuador de Activos Inmobiliarios</strong>, el{" "}
+              <strong>módulo de Factibilidad</strong>, el{" "}
+              <strong>Business Tracker</strong> y el{" "}
+              <strong>Business Analytics</strong> en un solo plan mensual.
+              Pagás un extra fijo por el Tracker y lo disfrutás con todos los
+              asesores de tu equipo, ya sean 4 o 10: el valor del Tracker es
+              siempre el mismo.
+            </p>
+          </div>
 
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {planesDisponibles.map((plan) => {
-            const isActive = plan.nombre === planActual?.plan_nombre;
-            const isPersonalizado = plan.nombre === "Personalizado";
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {planesFull.map((plan) => renderPlanCard(plan, "combo"))}
+          </div>
+        </section>
+      )}
 
-            // Neto y total con IVA para planes no personalizados
-            const neto = num(plan.precio);
-            const totalConIVA = withIVA(neto);
+      {/* SECCIÓN 2: PLANES CORE */}
+      {planesCore.length > 0 && (
+        <section className="space-y-4">
+          <div>
+            <h2 className="text-lg font-semibold">Planes Core VAI</h2>
+            <p className="text-sm text-gray-600 mt-1">
+              Incluyen el <strong>Valuador de Activos Inmobiliarios</strong> y
+              el <strong>Análisis de Factibilidad Constructiva</strong>. Ideales
+              si querés empezar por la valuación profesional y el estudio de
+              proyectos, y más adelante sumar el Business Tracker.
+            </p>
+          </div>
 
-            return (
-              <div
-                key={plan.id}
-                className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm hover:shadow transition flex flex-col"
-              >
-                <div className="mb-4">
-                  <div className="flex items-baseline justify-between">
-                    <h3 className="text-xl font-semibold text-blue-700">
-                      {displayPlanName(plan.nombre)}
-                    </h3>
-                    <span className="text-sm text-gray-500">
-                      {plan.duracion_dias
-                        ? `${plan.duracion_dias} días`
-                        : ""}
-                    </span>
-                  </div>
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {planesCore.map((plan) => renderPlanCard(plan, "core"))}
+          </div>
+        </section>
+      )}
 
-                  {!isPersonalizado ? (
-                    <>
-                      {/* Precio grande: neto + IVA (literal) */}
-                      <div className="mt-2">
-                        <div className="text-2xl font-bold">
-                          {fmtPrice(neto)}{" "}
-                          <span className="text-base font-semibold">
-                            + IVA
-                          </span>
-                        </div>
-                        {/* Debajo: total final */}
-                        <div className="text-xs text-gray-600">
-                          Total:{" "}
-                          {totalConIVA != null ? fmtPrice(totalConIVA) : "—"}
-                        </div>
-                      </div>
+      {/* SECCIÓN 3: PLANES BUSINESS TRACKER */}
+      {planesTracker.length > 0 && (
+        <section className="space-y-4">
+          <div>
+            <h2 className="text-lg font-semibold">Planes Business Tracker</h2>
+            <p className="text-sm text-gray-600 mt-1">
+              Centralizá la información de tu empresa y tus asesores en un solo
+              lugar. Medí la <strong>actividad</strong>, detectá{" "}
+              <strong>oportunidades</strong> y apoyá tus decisiones en{" "}
+              <strong>datos concretos</strong>, sin depender de hojas de cálculo
+              dispersas.
+            </p>
+          </div>
 
-                      {/* Bullets visuales (incluye “Hasta X asesores”) */}
-                      <ul className="mt-3 text-sm text-gray-700 space-y-1">
-                        <li>
-                          <strong>
-                            • Hasta {plan.max_asesores} asesores
-                          </strong>
-                        </li>
-                        <li>• Sin límites de informes</li>
-                        <li>• Guarda / Carga / Edita tus informes</li>
-                        <li>• Informe descargable en PDF</li>
-                      </ul>
-                    </>
-                  ) : (
-                    <>
-                      {/* Card especial Personalizado */}
-                      <div className="mt-2 space-y-2">
-                        <div className="mt-3">
-                          <label className="block text-sm text-gray-600 mb-1">
-                            Cantidad de asesores
-                          </label>
-                          <div className="flex items-center gap-3">
-                            <input
-                              type="range"
-                              min={21}
-                              max={50}
-                              value={personalCount}
-                              onChange={(e) =>
-                                setPersonalCount(
-                                  parseInt(e.target.value || "21", 10)
-                                )
-                              }
-                              className="w-full"
-                            />
-                            <input
-                              type="number"
-                              min={21}
-                              max={50}
-                              value={personalCount}
-                              onChange={(e) => {
-                                const v = Math.max(
-                                  21,
-                                  Math.min(
-                                    50,
-                                    parseInt(e.target.value || "21", 10)
-                                  )
-                                );
-                                setPersonalCount(v);
-                              }}
-                              className="w-20 border rounded-lg px-2 py-1"
-                            />
-                          </div>
-                          <div className="text-xs text-gray-500 mt-1">
-                            De 21 a 50 asesores (incluidos).
-                          </div>
-                        </div>
-
-                        {/* Precio personalizado: grande “Total: $neto + IVA”, abajo total final */}
-                        <div className="mt-3">
-                          <div className="text-2xl font-bold">
-                            Total: {fmtPrice(personalizadoNeto)}{" "}
-                            <span className="text-base font-semibold">
-                              + IVA
-                            </span>
-                          </div>
-                          <div className="text-xs text-gray-600">
-                            Total:{" "}
-                            {fmtPrice(personalizadoTotalConIVA ?? 0)}
-                          </div>
-                        </div>
-
-                        {/* Bullets */}
-                        <ul className="mt-3 text-sm text-gray-700 space-y-1">
-                          <li>
-                            <strong>
-                              • Hasta {personalCount} asesores
-                            </strong>
-                          </li>
-                          <li>• Sin límites de informes</li>
-                          <li>• Guarda / Carga / Edita tus informes</li>
-                          <li>• Informe descargable en PDF</li>
-                        </ul>
-                      </div>
-                    </>
-                  )}
-                </div>
-
-                {/* Botón */}
-                {!isPersonalizado ? (
-                  <button
-                    onClick={() => handleUpgrade(plan.id)}
-                    disabled={isActive}
-                    className={`mt-auto w-full py-2.5 rounded-lg text-sm font-medium transition ${
-                      isActive
-                        ? "bg-gray-300 text-gray-600 cursor-not-allowed"
-                        : "bg-blue-600 hover:bg-blue-700 text-white"
-                    }`}
-                  >
-                    {isActive ? "Plan actual" : "Seleccionar plan"}
-                  </button>
-                ) : (
-                  <button
-                    onClick={() =>
-                      handleUpgrade(plan.id, {
-                        personalizadoCount: personalCount,
-                      })
-                    }
-                    disabled={
-                      isActive &&
-                      planActual?.max_asesores === personalCount
-                    }
-                    className={`mt-auto w-full py-2.5 rounded-lg text-sm font-medium transition ${
-                      isActive &&
-                      planActual?.max_asesores === personalCount
-                        ? "bg-gray-300 text-gray-600 cursor-not-allowed"
-                        : "bg-blue-600 hover:bg-blue-700 text-white"
-                    }`}
-                  >
-                    {isActive
-                      ? planActual?.max_asesores === personalCount
-                        ? "Plan actual"
-                        : "Actualizar cupo"
-                      : "Seleccionar plan"}
-                  </button>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </section>
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {planesTracker.map((plan) => renderPlanCard(plan, "tracker_only"))}
+          </div>
+        </section>
+      )}
 
       {/* Mensaje temporal */}
       {mensaje && (
@@ -662,11 +785,9 @@ export default function EmpresaPlanesPage() {
                   <strong>{preview.plan_nuevo.nombre}</strong>
                 </p>
               ) : null}
-              {previewDiasRestantes !== null &&
-              previewDiasCiclo !== null ? (
+              {previewDiasRestantes !== null && previewDiasCiclo !== null ? (
                 <p>
-                  Días restantes:{" "}
-                  <strong>{previewDiasRestantes}</strong> de{" "}
+                  Días restantes: <strong>{previewDiasRestantes}</strong> de{" "}
                   {previewDiasCiclo}
                 </p>
               ) : null}
@@ -702,16 +823,14 @@ export default function EmpresaPlanesPage() {
                   </strong>
                 </p>
                 <p className="text-xs text-gray-600">
-                  No se generan créditos ni reembolsos. Seguirás usando tu
-                  plan actual hasta esa fecha.
+                  No se generan créditos ni reembolsos. Seguirás usando tu plan
+                  actual hasta esa fecha.
                 </p>
               </div>
             )}
 
             {preview.nota && (
-              <p className="text-xs text-gray-500 mb-2">
-                {preview.nota}
-              </p>
+              <p className="text-xs text-gray-500 mb-2">{preview.nota}</p>
             )}
 
             <div className="flex gap-3 justify-end pt-2">

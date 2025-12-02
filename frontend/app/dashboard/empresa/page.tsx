@@ -1,3 +1,4 @@
+// frontend/app/dashboard/empresa/page.tsx
 "use client";
 
 import useSWR from "swr";
@@ -6,11 +7,16 @@ import { useTheme } from "@/context/ThemeContext";
 import Link from "next/link";
 import PlanStatusBanner from "./components/PlanStatusBanner";
 import { supabase } from "#lib/supabaseClient";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 
 export default function EmpresaDashboardPage() {
   const { user } = useAuth();
   const { setPrimaryColor, setLogoUrl, primaryColor } = useTheme();
+  const router = useRouter();
+
+  const [puedeUsarTracker, setPuedeUsarTracker] = useState<boolean | null>(null);
+  const [billingLoading, setBillingLoading] = useState<boolean>(true);
 
   // 🔹 Función para obtener datos de empresa (incluye updated_at para bust)
   const fetchEmpresa = async (userId: string) => {
@@ -145,6 +151,40 @@ export default function EmpresaDashboardPage() {
     }
   }, [empresa, setPrimaryColor, setLogoUrl]);
 
+  // 🔎 Billing: saber si el plan permite usar Tracker (Trial o planes con incluye_tracker)
+  useEffect(() => {
+    if (!user?.id) return;
+
+    (async () => {
+      try {
+        const res = await fetch("/api/billing/estado", { cache: "no-store" });
+        if (!res.ok) {
+          setPuedeUsarTracker(null);
+          return;
+        }
+
+        const data: any = await res.json().catch(() => null);
+        const plan = data?.plan || null;
+
+        const nombrePlan: string | null = plan?.nombre ?? null;
+        const esTrialFlag: boolean = plan?.es_trial === true;
+        const esTrialNombre = nombrePlan === "Trial";
+        const incluyeTracker: boolean = plan?.incluye_tracker === true;
+
+        if (esTrialFlag || esTrialNombre || incluyeTracker) {
+          setPuedeUsarTracker(true);
+        } else {
+          setPuedeUsarTracker(false);
+        }
+      } catch (e) {
+        console.error("Error obteniendo /api/billing/estado en dashboard:", e);
+        setPuedeUsarTracker(null);
+      } finally {
+        setBillingLoading(false);
+      }
+    })();
+  }, [user]);
+
   if (isLoading)
     return (
       <div className="p-6 text-center text-gray-500">
@@ -180,6 +220,18 @@ export default function EmpresaDashboardPage() {
         }`
       : "/images/default-logo.png";
 
+  const handleTrackerClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
+    if (billingLoading) return; // dejamos pasar mientras se carga para no molestar
+
+    if (puedeUsarTracker === false) {
+      e.preventDefault();
+      alert(
+        "Para usar Business Tracker necesitás un plan Full o un plan Business Tracker. Te llevamos al portal de planes para actualizar tu suscripción."
+      );
+      router.push("/dashboard/empresa/planes");
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* 🧭 Banner del plan */}
@@ -189,19 +241,19 @@ export default function EmpresaDashboardPage() {
       <section className="bg-white shadow-sm rounded-xl p-6">
         <h1 className="text-2xl font-bold mb-2">Bienvenid@, {nombre}</h1>
         <p className="text-gray-600 mb-4">
-          Desde este Dashboard podes gestionar toda tu empresa.
+          Desde este Dashboard podés gestionar toda tu empresa.
         </p>
 
         {/* 🔹 Botones principales */}
         <div className="flex justify-between flex-wrap gap-4">
-          {/* 🧮 Herramientas (lado izquierdo, 2 filas x 2 columnas) */}
+          {/* 🧮 Herramientas (lado izquierdo, en dos filas) */}
           <div className="flex flex-col gap-3">
             {/* Fila 1: Valuador + Business Tracker */}
             <div className="flex flex-wrap gap-3">
               {/* Valuador */}
               <Link
                 href="/vai/acmforms"
-                className="px-5 py-2 text-white font-semibold rounded-lg shadow transition min-w-[320px]"
+                className="px-5 py-2 text-white font-semibold rounded-lg shadow transition"
                 style={{
                   backgroundColor: primaryColor,
                   boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
@@ -221,11 +273,12 @@ export default function EmpresaDashboardPage() {
               {/* Business Tracker */}
               <Link
                 href="/dashboard/empresa/tracker"
-                className="px-5 py-2 text-white font-semibold rounded-lg shadow transition min-w-[320px]"
+                className="px-5 py-2 text-white font-semibold rounded-lg shadow transition"
                 style={{
                   backgroundColor: primaryColor,
                   boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
                 }}
+                onClick={handleTrackerClick}
                 onMouseEnter={(e) => {
                   (e.currentTarget as HTMLAnchorElement).style.filter =
                     "brightness(1.1)";
@@ -244,7 +297,7 @@ export default function EmpresaDashboardPage() {
               {/* Factibilidad Constructiva */}
               <Link
                 href="/dashboard/empresa/factibilidad"
-                className="px-5 py-2 text-white font-semibold rounded-lg shadow transition min-w-[320px]"
+                className="px-5 py-2 text-white font-semibold rounded-lg shadow transition"
                 style={{
                   backgroundColor: primaryColor,
                   boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
@@ -261,14 +314,15 @@ export default function EmpresaDashboardPage() {
                 📐 Factibilidad Constructiva
               </Link>
 
-              {/* Business Analytics */}
+              {/* Business Analytics (mismo gating que Tracker) */}
               <Link
-                href="/dashboard/empresa/tracker-analytics"
-                className="px-5 py-2 text-white font-semibold rounded-lg shadow transition min-w-[320px]"
+                href="/dashboard/empresa/tracker/analytics"
+                className="px-5 py-2 text-white font-semibold rounded-lg shadow transition"
                 style={{
                   backgroundColor: primaryColor,
                   boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
                 }}
+                onClick={handleTrackerClick}
                 onMouseEnter={(e) => {
                   (e.currentTarget as HTMLAnchorElement).style.filter =
                     "brightness(1.1)";

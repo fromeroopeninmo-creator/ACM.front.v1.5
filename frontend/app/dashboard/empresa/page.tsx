@@ -285,7 +285,7 @@ export default function EmpresaDashboardPage() {
           {/* 🏠 Valuador de Activos Inmobiliarios */}
           <Link
             href="/vai/acmforms"
-            className="w-full px-5 py-2.5 text-sm text-white font-semibold rounded-lg shadow transition"
+            className="w-full px-5 py-2.5 text-base text-white font-semibold rounded-lg shadow transition"
             style={{
               backgroundColor: primaryColor,
               boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
@@ -305,7 +305,7 @@ export default function EmpresaDashboardPage() {
           {/* 📊 Business Tracker */}
           <Link
             href="/dashboard/empresa/tracker"
-            className="w-full px-5 py-2.5 text-sm text-white font-semibold rounded-lg shadow transition"
+            className="w-full px-5 py-2.5 text-base text-white font-semibold rounded-lg shadow transition"
             style={{
               backgroundColor: primaryColor,
               boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
@@ -326,7 +326,7 @@ export default function EmpresaDashboardPage() {
           {/* 📐 Factibilidad Constructiva */}
           <Link
             href="/dashboard/empresa/factibilidad"
-            className="w-full px-5 py-2.5 text-sm text-white font-semibold rounded-lg shadow transition"
+            className="w-full px-5 py-2.5 text-base text-white font-semibold rounded-lg shadow transition"
             style={{
               backgroundColor: primaryColor,
               boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
@@ -346,7 +346,7 @@ export default function EmpresaDashboardPage() {
           {/* 📈 Business Analytics */}
           <Link
             href="/dashboard/empresa/tracker/analytics"
-            className="w-full px-5 py-2.5 text-sm text-white font-semibold rounded-lg shadow transition"
+            className="w-full px-5 py-2.5 text-base text-white font-semibold rounded-lg shadow transition"
             style={{
               backgroundColor: primaryColor,
               boxShadow: "0 2px 6px rgba(0,0,0,0.15)",

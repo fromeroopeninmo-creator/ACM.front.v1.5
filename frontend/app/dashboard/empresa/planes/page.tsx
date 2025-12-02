@@ -325,7 +325,6 @@ export default function EmpresaPlanesPage() {
       const data: any = await res.json();
 
       if (res.ok && data) {
-        // Log simple para ver shape en consola (te ayuda a debuggear si algo falla)
         console.log("preview-change response:", data);
         setPreview(data as PreviewResult);
         setPreviewTarget({ planId, personalizadoCount: opts?.personalizadoCount });
@@ -334,12 +333,10 @@ export default function EmpresaPlanesPage() {
         return;
       }
 
-      // Fallback: si aún no está el endpoint, usamos el flujo anterior (solicitud-upgrade)
       console.warn("preview-change no disponible. Fallback a /api/solicitud-upgrade");
       await legacyUpgrade(planId, opts);
     } catch (err) {
       console.error("Error en preview-change:", err);
-      // Fallback seguro
       await legacyUpgrade(planId, opts);
     } finally {
       setTimeout(() => setMensaje(null), 2500);
@@ -403,13 +400,11 @@ export default function EmpresaPlanesPage() {
         return;
       }
 
-      // Caso upgrade → eventualmente redirigirá a checkout (cuando tengas pasarela real)
       if (data.checkoutUrl) {
         window.location.href = data.checkoutUrl as string;
         return;
       }
 
-      // Caso downgrade programado (o sin cobro) → refrescar
       setMensaje("✅ Cambio aplicado.");
       setPreviewVisible(false);
       setTimeout(() => window.location.reload(), 800);
@@ -460,9 +455,11 @@ export default function EmpresaPlanesPage() {
         (pl.tipo_plan || "").toLowerCase() === "core" &&
         tierFromMaxAsesores(pl.max_asesores) === "Personalizado"
     );
-    return num(p?.precio_extra_por_asesor);
+    const raw = num(p?.precio_extra_por_asesor);
+    return raw > 0 ? raw : 1800; // fallback 1.800 por asesor extra
   }, [planesDisponibles]);
 
+  // Neto para Core Personalizado (base: Core Premium + extra por asesor > 20)
   const personalizadoNeto = useMemo(() => {
     const extra = Math.max(0, personalCount - 20);
     return premiumPrecio + extra * extraUnitPrice;
@@ -472,6 +469,35 @@ export default function EmpresaPlanesPage() {
     () => withIVA(personalizadoNeto),
     [personalizadoNeto]
   );
+
+  // Bases Premium para Tracker y Full (combo)
+  const trackerPremiumPrecio = useMemo(() => {
+    const p = planesDisponibles.find(
+      (pl) =>
+        (pl.tipo_plan || "").toLowerCase() === "tracker_only" &&
+        tierFromMaxAsesores(pl.max_asesores) === "Premium"
+    );
+    return num(p?.precio);
+  }, [planesDisponibles]);
+
+  // Tracker Inicial (para regla FULL = CORE + TRACKER INICIAL)
+  const trackerInitialPrecio = useMemo(() => {
+    const p = planesDisponibles.find(
+      (pl) =>
+        (pl.tipo_plan || "").toLowerCase() === "tracker_only" &&
+        tierFromMaxAsesores(pl.max_asesores) === "Inicial"
+    );
+    return num(p?.precio);
+  }, [planesDisponibles]);
+
+  const fullPremiumPrecio = useMemo(() => {
+    const p = planesDisponibles.find(
+      (pl) =>
+        (pl.tipo_plan || "").toLowerCase() === "combo" &&
+        tierFromMaxAsesores(pl.max_asesores) === "Premium"
+    );
+    return num(p?.precio);
+  }, [planesDisponibles]);
 
   const planActualNombre = useMemo(
     () => getEmpresaPlanUiName(planActual),
@@ -496,11 +522,44 @@ export default function EmpresaPlanesPage() {
     const isPersonalizadoTier = tier === "Personalizado";
     const isActive = planActual?.plan_id === plan.id;
 
-    // Neto y total con IVA (precio tal cual está en BD)
+    // Neto y total con IVA (precio tal cual está en BD por defecto)
     const neto = num(plan.precio);
     const totalConIVA = withIVA(neto);
 
     const capAsesores = isPersonalizadoTier ? personalCount : plan.max_asesores;
+
+    const extraAsesores = Math.max(0, personalCount - 20);
+
+    // Neto dinámico para planes Personalizados según sección
+    let netoPersonalizado: number | null = null;
+    let totalPersonalizadoConIVA: number | null = null;
+
+    if (isPersonalizadoTier) {
+      if (sectionKind === "core") {
+        // Core Personalizado → usa cálculo basado en Core Premium
+        netoPersonalizado = personalizadoNeto;
+        totalPersonalizadoConIVA =
+          personalizadoTotalConIVA ?? withIVA(personalizadoNeto);
+      } else if (sectionKind === "tracker_only") {
+        // Tracker Personalizado → base Tracker Premium + extra por asesor
+        if (trackerPremiumPrecio > 0) {
+          netoPersonalizado =
+            trackerPremiumPrecio + extraAsesores * extraUnitPrice;
+          totalPersonalizadoConIVA = withIVA(netoPersonalizado);
+        }
+      } else if (sectionKind === "combo") {
+        // Full Personalizado → base Full Premium (o Core Premium + Tracker Inicial) + extra por asesor
+        let baseFull = fullPremiumPrecio;
+        if (!baseFull || baseFull <= 0) {
+          const fallback = premiumPrecio + trackerInitialPrecio;
+          baseFull = fallback > 0 ? fallback : 0;
+        }
+        if (baseFull > 0) {
+          netoPersonalizado = baseFull + extraAsesores * extraUnitPrice;
+          totalPersonalizadoConIVA = withIVA(netoPersonalizado);
+        }
+      }
+    }
 
     const handleClick = () => {
       if (isPersonalizadoTier) {
@@ -528,15 +587,17 @@ export default function EmpresaPlanesPage() {
           </div>
 
           {/* BLOQUE PRECIO */}
-          {sectionKind === "combo" && isPersonalizadoTier ? (
-            // Personalizado FULL → usa cálculo dinámico
+          {isPersonalizadoTier && netoPersonalizado !== null ? (
             <div className="mt-3">
               <div className="text-2xl font-bold">
-                Total: {fmtPrice(personalizadoNeto)}{" "}
+                Total: {fmtPrice(netoPersonalizado)}{" "}
                 <span className="text-base font-semibold">+ IVA</span>
               </div>
               <div className="text-xs text-gray-600">
-                Total: {fmtPrice(personalizadoTotalConIVA ?? 0)}
+                Total:{" "}
+                {totalPersonalizadoConIVA != null
+                  ? fmtPrice(totalPersonalizadoConIVA)
+                  : "—"}
               </div>
             </div>
           ) : (
@@ -551,8 +612,8 @@ export default function EmpresaPlanesPage() {
             </div>
           )}
 
-          {/* Slider solo en Full Personalizado */}
-          {sectionKind === "combo" && isPersonalizadoTier && (
+          {/* Slider en TODOS los planes Personalizados (Core / Full / Tracker) */}
+          {isPersonalizadoTier && (
             <div className="mt-4">
               <label className="block text-sm text-gray-600 mb-1">
                 Cantidad de asesores
@@ -656,7 +717,9 @@ export default function EmpresaPlanesPage() {
         <p className="text-gray-600 mt-1">
           Plan actual: <span className="font-semibold">{planActualNombre}</span>{" "}
           {planActual?.max_asesores ? (
-            <span className="text-gray-500">({planActual.max_asesores} asesores)</span>
+            <span className="text-gray-500">
+              ({planActual.max_asesores} asesores)
+            </span>
           ) : null}
         </p>
       </section>
@@ -760,7 +823,9 @@ export default function EmpresaPlanesPage() {
           </div>
 
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {planesTracker.map((plan) => renderPlanCard(plan, "tracker_only"))}
+            {planesTracker.map((plan) =>
+              renderPlanCard(plan, "tracker_only")
+            )}
           </div>
         </section>
       )}
@@ -781,8 +846,8 @@ export default function EmpresaPlanesPage() {
             <div className="text-sm text-gray-700 space-y-1 mb-3">
               {preview.plan_actual?.nombre && preview.plan_nuevo?.nombre ? (
                 <p>
-                  {preview.plan_actual.nombre} →{" "}
-                  <strong>{preview.plan_nuevo.nombre}</strong>
+                  {preview.plan_actual.nombre}{" "}
+                  → <strong>{preview.plan_nuevo.nombre}</strong>
                 </p>
               ) : null}
               {previewDiasRestantes !== null && previewDiasCiclo !== null ? (

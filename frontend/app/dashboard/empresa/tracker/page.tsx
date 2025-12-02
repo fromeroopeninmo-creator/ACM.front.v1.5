@@ -2,7 +2,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
 import { supabase } from "#lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
 
@@ -240,14 +239,9 @@ function labelTipoActividad(tipo: TrackerActividadTipo): string {
 
 export default function EmpresaTrackerPage() {
   const { user } = useAuth();
-  const router = useRouter();
 
   const [empresaId, setEmpresaId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-
-  // 🔐 Gating por plan (Trial o incluye_tracker)
-  const [puedeUsarTracker, setPuedeUsarTracker] = useState<boolean | null>(null);
-  const [billingLoading, setBillingLoading] = useState(true);
 
   const [contactos, setContactos] = useState<TrackerContacto[]>([]);
   const [actividades, setActividades] = useState<TrackerActividad[]>([]);
@@ -277,9 +271,6 @@ export default function EmpresaTrackerPage() {
     useState<TrackerPropiedad | null>(null);
 
   const [mensaje, setMensaje] = useState<string | null>(null);
-
-  // 🔎 Filtro texto propiedades captadas
-  const [propiedadesSearch, setPropiedadesSearch] = useState("");
 
   // Flags para evitar doble submit y duplicados
   const [savingContacto, setSavingContacto] = useState(false);
@@ -341,41 +332,6 @@ export default function EmpresaTrackerPage() {
   const actividadDateKey = (a: TrackerActividad) =>
     a.fecha_programada ? a.fecha_programada.substring(0, 10) : "";
 
-  // 🔐 Verificar estado de plan para habilitar Tracker
-  useEffect(() => {
-    const fetchEstadoPlan = async () => {
-      try {
-        const res = await fetch("/api/billing/estado", { cache: "no-store" });
-        if (!res.ok) {
-          throw new Error("Respuesta no OK de /api/billing/estado");
-        }
-        const data = await res.json();
-        const plan = data?.plan;
-
-        const incluyeTracker = plan?.incluye_tracker === true;
-        const esTrial =
-          plan?.es_trial === true || plan?.nombre === "Trial";
-
-        const habilitado = incluyeTracker || esTrial;
-
-        setPuedeUsarTracker(habilitado);
-
-        if (!habilitado) {
-          // Redirigimos a planes si el plan no incluye el tracker
-          router.replace("/dashboard/empresa/planes");
-        }
-      } catch (error) {
-        console.error("Error consultando plan para Tracker:", error);
-        setPuedeUsarTracker(false);
-        router.replace("/dashboard/empresa/planes");
-      } finally {
-        setBillingLoading(false);
-      }
-    };
-
-    fetchEstadoPlan();
-  }, [router]);
-
   // Filtrado por scope (empresa / asesores / global)
   const actividadesFiltradas = useMemo(() => {
     if (scope === "global") return actividades;
@@ -405,84 +361,6 @@ export default function EmpresaTrackerPage() {
     }
     return propiedades.filter((p) => p.asesor_id === selectedAsesorId);
   }, [propiedades, scope, selectedAsesorId]);
-
-  // 🔎 Filtro por texto sobre propiedadesFiltradas
-  const propiedadesFiltradasPorTexto = useMemo(() => {
-    const term = propiedadesSearch.trim().toLowerCase();
-    if (!term) return propiedadesFiltradas;
-
-    return propiedadesFiltradas.filter((p) => {
-      const contacto =
-        p.contacto_id && contactoPorId(p.contacto_id)
-          ? contactoPorId(p.contacto_id)
-          : p.contacto ?? null;
-
-      const nombreCliente = contacto
-        ? contactoNombreCorto(contacto).toLowerCase()
-        : "";
-
-      const tipologia = (p.tipologia ?? "").toLowerCase();
-      const operacion = (p.tipo_operacion ?? "").toLowerCase();
-      const direccion = (p.direccion ?? "").toLowerCase();
-      const zona = (p.zona ?? "").toLowerCase();
-
-      const precioActual =
-        p.precio_actual != null
-          ? String(p.precio_actual)
-          : p.precio_lista_inicial != null
-          ? String(p.precio_lista_inicial)
-          : "";
-
-      const fechaInicio =
-        p.fecha_inicio_comercializacion?.substring(0, 10) ?? "";
-      const fechaCierre = p.fecha_cierre?.substring(0, 10) ?? "";
-
-      let gapTexto = "";
-      if (
-        p.precio_lista_inicial != null &&
-        p.precio_lista_inicial > 0 &&
-        p.precio_cierre != null
-      ) {
-        const diff =
-          ((p.precio_lista_inicial - p.precio_cierre) /
-            p.precio_lista_inicial) *
-          100;
-        const gap = Math.abs(Math.round(diff));
-        if (!isNaN(gap)) gapTexto = `${gap}%`;
-      }
-
-      const diasVenta = diasEntreFechas(
-        p.fecha_inicio_comercializacion,
-        p.fecha_cierre
-      );
-      const diasVentaTexto =
-        diasVenta != null ? `${diasVenta} días` : "";
-
-      const blob = (
-        nombreCliente +
-        " " +
-        tipologia +
-        " " +
-        operacion +
-        " " +
-        direccion +
-        " " +
-        zona +
-        " " +
-        precioActual +
-        " " +
-        fechaInicio +
-        " " +
-        fechaCierre +
-        " " +
-        gapTexto +
-        " " +
-        diasVentaTexto
-      ).toLowerCase();
-
-      return blob.includes(term);
-    });
-  }, [propiedadesFiltradas, propiedadesSearch, contactos]);
 
   const actividadesHoy = useMemo(
     () =>
@@ -536,6 +414,13 @@ export default function EmpresaTrackerPage() {
       return created >= start;
     });
 
+    // Propiedades cerradas dentro del período (ya filtradas por scope)
+    const propiedadesInRange = propiedadesFiltradas.filter((p) => {
+      if (!p.fecha_cierre) return false;
+      const key = p.fecha_cierre.substring(0, 10);
+      return key >= startKey;
+    });
+
     // Actividades dentro del período (ya filtradas por scope)
     const actividadesInRange = actividadesFiltradas.filter((a) => {
       if (!a.fecha_programada) return false;
@@ -583,19 +468,13 @@ export default function EmpresaTrackerPage() {
     }
     const prelistingCount = prelistingSet.size;
 
-    // CAPTACIONES: contactos que hoy están en "captado" o "cierre"
-    const captacionesSet = new Set<string>();
-    for (const c of contactosInRange) {
-      if (c.estado === "captado" || c.estado === "cierre") {
-        captacionesSet.add(c.id);
-      }
-    }
-    const captacionesCount = captacionesSet.size;
-
-    // CIERRES: contactos que hoy están en "cierre"
-    const cierresCount = contactosInRange.filter(
-      (c) => c.estado === "cierre"
+    // CAPTACIONES: estado actual captado (en contactosInRange ya filtrados)
+    const captacionesCount = contactosInRange.filter(
+      (c) => c.estado === "captado"
     ).length;
+
+    // CIERRES: propiedades con fecha_cierre en el período (ya filtradas por scope)
+    const cierresCount = propiedadesInRange.length;
 
     return {
       prospectos: contactosInRange.length,
@@ -606,9 +485,11 @@ export default function EmpresaTrackerPage() {
   }, [
     contactos,
     actividadesFiltradas,
+    propiedadesFiltradas,
     startKpiDate,
     scope,
   ]);
+
   // Buscar empresa_id desde profile
   useEffect(() => {
     const fetchEmpresa = async () => {
@@ -1369,20 +1250,6 @@ export default function EmpresaTrackerPage() {
     }).format(n);
   };
 
-  // 🔐 Guardas de carga / plan
-  if (billingLoading || puedeUsarTracker === null) {
-    return (
-      <div className="flex items-center justify-center h-[60vh] text-gray-500">
-        Cargando tracker de trabajo…
-      </div>
-    );
-  }
-
-  if (puedeUsarTracker === false) {
-    // Ya redirigimos a /dashboard/empresa/planes
-    return null;
-  }
-
   if (loading && !empresaId) {
     return (
       <div className="flex items-center justify-center h-[60vh] text-gray-500">
@@ -1601,7 +1468,7 @@ export default function EmpresaTrackerPage() {
           </div>
         </section>
 
-        {/* Tabs + botón hacia Business Analytics */}
+        {/* Tabs */}
         <nav className="flex flex-wrap gap-2 text-sm">
           {[
             { id: "calendario", label: "Calendario" },
@@ -1623,15 +1490,6 @@ export default function EmpresaTrackerPage() {
               </button>
             );
           })}
-          <button
-            type="button"
-            onClick={() =>
-              router.push("/dashboard/empresa/tracker-analytics")
-            }
-            className="rounded-full px-4 py-1.5 border text-sm transition bg-white text-slate-700 border-gray-300 hover:bg-gray-100"
-          >
-            Business Analytics
-          </button>
         </nav>
 
         {/* CONTENIDO DE TABS */}
@@ -1977,22 +1835,13 @@ export default function EmpresaTrackerPage() {
                   fechas de cierre para calcular tu tasa de absorción real.
                 </p>
               </div>
-              <div className="flex flex-col sm:flex-row gap-2 sm:items-center w-full md:w-auto">
-                <button
-                  onClick={() => openNuevaPropiedad()}
-                  className="inline-flex items-center justify-center gap-1 rounded-full bg-black text-white px-3 py-1.5 text-xs font-medium hover:bg-slate-900"
-                >
-                  <span className="text-sm">＋</span>
-                  Nueva propiedad captada
-                </button>
-                <input
-                  type="text"
-                  value={propiedadesSearch}
-                  onChange={(e) => setPropiedadesSearch(e.target.value)}
-                  placeholder="Filtrar por cliente, tipología, operación, zona..."
-                  className="w-full sm:w-64 rounded-full border border-gray-300 px-3 py-1.5 text-xs text-slate-700 focus:outline-none focus:ring-1 focus:ring-[rgba(230,169,48,0.9)]"
-                />
-              </div>
+              <button
+                onClick={() => openNuevaPropiedad()}
+                className="inline-flex items-center gap-1 rounded-full bg-black text-white px-3 py-1.5 text-xs font-medium hover:bg-slate-900"
+              >
+                <span className="text-sm">＋</span>
+                Nueva propiedad captada
+              </button>
             </div>
 
             <div className="overflow-x-auto">
@@ -2022,7 +1871,7 @@ export default function EmpresaTrackerPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {propiedadesFiltradasPorTexto.length === 0 && (
+                  {propiedadesFiltradas.length === 0 && (
                     <tr>
                       <td
                         colSpan={8}
@@ -2032,7 +1881,7 @@ export default function EmpresaTrackerPage() {
                       </td>
                     </tr>
                   )}
-                  {propiedadesFiltradasPorTexto.map((p) => {
+                  {propiedadesFiltradas.map((p) => {
                     const contacto =
                       p.contacto_id && contactoPorId(p.contacto_id)
                         ? contactoPorId(p.contacto_id)
@@ -2125,6 +1974,7 @@ export default function EmpresaTrackerPage() {
             {mensaje}
           </div>
         )}
+
         {/* MODAL CONTACTO */}
         {showContactoModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
@@ -2231,10 +2081,7 @@ export default function EmpresaTrackerPage() {
                       <option value="departamento">Departamento</option>
                       <option value="duplex">Dúplex</option>
                       <option value="local">Local</option>
-                      <option value="oficina">Oficina</option>
-                      <option value="galpon">Galpón</option>
-                      <option value="ph">PH</option>
-                      <option value="terreno">Terreno / Lote</option>
+                      <option value="terreno">Terreno</option>
                       <option value="cochera">Cochera</option>
                       <option value="campo">Campo</option>
                     </select>
@@ -2639,10 +2486,7 @@ export default function EmpresaTrackerPage() {
                       <option value="departamento">Departamento</option>
                       <option value="duplex">Dúplex</option>
                       <option value="local">Local</option>
-                      <option value="oficina">Oficina</option>
-                      <option value="galpon">Galpón</option>
-                      <option value="ph">PH</option>
-                      <option value="terreno">Terreno / Lote</option>
+                      <option value="terreno">Terreno</option>
                       <option value="cochera">Cochera</option>
                       <option value="campo">Campo</option>
                     </select>

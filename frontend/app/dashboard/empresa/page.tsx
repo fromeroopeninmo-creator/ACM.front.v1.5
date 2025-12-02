@@ -194,14 +194,14 @@ export default function EmpresaDashboardPage() {
 
         {/* 🔹 Botones principales */}
         <div className="flex justify-between flex-wrap gap-4">
-          {/* 🧮 Herramientas (lado izquierdo, en columna) */}
+          {/* 🧮 Herramientas (lado izquierdo, 2 filas x 2 columnas) */}
           <div className="flex flex-col gap-3">
-            {/* Fila 1: Valuador + Agenda de Actividades */}
+            {/* Fila 1: Valuador + Business Tracker */}
             <div className="flex flex-wrap gap-3">
               {/* Valuador */}
               <Link
                 href="/vai/acmforms"
-                className="px-5 py-2 text-white font-semibold rounded-lg shadow transition"
+                className="px-5 py-2 text-white font-semibold rounded-lg shadow transition min-w-[320px]"
                 style={{
                   backgroundColor: primaryColor,
                   boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
@@ -217,14 +217,34 @@ export default function EmpresaDashboardPage() {
               >
                 🏠 Valuador de Activos Inmobiliarios
               </Link>
+
+              {/* Business Tracker */}
+              <Link
+                href="/dashboard/empresa/tracker"
+                className="px-5 py-2 text-white font-semibold rounded-lg shadow transition min-w-[320px]"
+                style={{
+                  backgroundColor: primaryColor,
+                  boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
+                }}
+                onMouseEnter={(e) => {
+                  (e.currentTarget as HTMLAnchorElement).style.filter =
+                    "brightness(1.1)";
+                }}
+                onMouseLeave={(e) => {
+                  (e.currentTarget as HTMLAnchorElement).style.filter =
+                    "brightness(1)";
+                }}
+              >
+                📊 Business Tracker
+              </Link>
             </div>
 
-            {/* Fila 2: Factibilidad + Tracker (analítico futuro, por ahora mismo link) */}
+            {/* Fila 2: Factibilidad + Business Analytics */}
             <div className="flex flex-wrap gap-3">
               {/* Factibilidad Constructiva */}
               <Link
                 href="/dashboard/empresa/factibilidad"
-                className="px-5 py-2 text-white font-semibold rounded-lg shadow transition"
+                className="px-5 py-2 text-white font-semibold rounded-lg shadow transition min-w-[320px]"
                 style={{
                   backgroundColor: primaryColor,
                   boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
@@ -239,6 +259,26 @@ export default function EmpresaDashboardPage() {
                 }}
               >
                 📐 Factibilidad Constructiva
+              </Link>
+
+              {/* Business Analytics */}
+              <Link
+                href="/dashboard/empresa/tracker-analytics"
+                className="px-5 py-2 text-white font-semibold rounded-lg shadow transition min-w-[320px]"
+                style={{
+                  backgroundColor: primaryColor,
+                  boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
+                }}
+                onMouseEnter={(e) => {
+                  (e.currentTarget as HTMLAnchorElement).style.filter =
+                    "brightness(1.1)";
+                }}
+                onMouseLeave={(e) => {
+                  (e.currentTarget as HTMLAnchorElement).style.filter =
+                    "brightness(1)";
+                }}
+              >
+                📈 Business Analytics
               </Link>
             </div>
           </div>

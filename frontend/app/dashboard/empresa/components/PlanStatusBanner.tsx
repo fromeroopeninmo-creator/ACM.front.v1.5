@@ -7,9 +7,39 @@ import { useAuth } from "@/context/AuthContext";
 import { useRouter } from "next/navigation";
 
 type BillingEstado = {
-  plan: { id: string; nombre: string; precioNeto: number | null; totalConIVA: number | null } | null;
-  ciclo: { inicio: string | null; fin: string | null; proximoCobro: string | null };
-  suscripcion: { estado: "activa" | "suspendida" | "cancelada" | "pendiente"; externoCustomerId: string | null; externoSubscriptionId: string | null } | null;
+  estado?: {
+    empresaId: string;
+    tienePlan: boolean;
+    esTrial: boolean;
+    tipoPlan: "core" | "combo" | "tracker_only" | null;
+    incluyeValuador: boolean;
+    incluyeTracker: boolean;
+    suspendida: boolean;
+    planVencido: boolean;
+    enPeriodoGracia: boolean;
+    diasRestantes: number | null;
+    diasGraciaRestantes: number | null;
+  } | null;
+  plan: {
+    id: string;
+    nombre: string;
+    precioNeto: number | null;
+    totalConIVA: number | null;
+  } | null;
+  ciclo: {
+    inicio: string | null;
+    fin: string | null;
+    proximoCobro: string | null;
+  } | null;
+  suscripcion?: {
+    estado:
+      | "activa"
+      | "suspendida"
+      | "cancelada"
+      | "pendiente";
+    externoCustomerId: string | null;
+    externoSubscriptionId: string | null;
+  } | null;
   proximoPlan?: { id: string; nombre: string | null } | null;
   cambioProgramadoPara?: string | null;
 };
@@ -42,6 +72,7 @@ export default function PlanStatusBanner() {
   const [fechaFin, setFechaFin] = useState<Date | null>(null);
   const [diasRestantes, setDiasRestantes] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
+  const [tieneTracker, setTieneTracker] = useState<boolean | null>(null);
 
   const hoursLeftWithinGrace = useMemo(() => {
     if (diasRestantes === null) return null;
@@ -74,10 +105,27 @@ export default function PlanStatusBanner() {
         const fin = finIso ? new Date(finIso) : null;
         setFechaFin(fin);
 
-        if (fin) {
+        // 🧩 Flags de estado (incluyeTracker, esTrial, etc.)
+        const flags = data?.estado;
+        if (flags) {
+          const trackerHabilitado = !!flags.incluyeTracker || !!flags.esTrial;
+          setTieneTracker(trackerHabilitado);
+        } else {
+          setTieneTracker(null);
+        }
+
+        // Cálculo de días restantes: usamos el valor del backend si viene, o caemos al cálculo tradicional
+        let diff: number | null = null;
+        if (flags && typeof flags.diasRestantes === "number") {
+          diff = flags.diasRestantes;
+        } else if (fin) {
           const hoy = new Date();
-          // Diferencia en días redondeando hacia arriba (como en el original)
-          const diff = Math.ceil((fin.getTime() - hoy.getTime()) / (1000 * 60 * 60 * 24));
+          diff = Math.ceil(
+            (fin.getTime() - hoy.getTime()) / (1000 * 60 * 60 * 24)
+          );
+        }
+
+        if (diff !== null) {
           setDiasRestantes(diff);
 
           // 🚨 bloqueo si plan pago vencido +2 días
@@ -134,7 +182,10 @@ export default function PlanStatusBanner() {
           {diasRestantes} día{diasRestantes !== 1 ? "s" : ""}
         </strong>{" "}
         ({fechaFin?.toLocaleDateString("es-AR")}).{" "}
-        <a href="/dashboard/empresa/planes" className="underline hover:text-blue-100 ml-1">
+        <a
+          href="/dashboard/empresa/planes"
+          className="underline hover:text-blue-100 ml-1"
+        >
           Actualizá tu plan
         </a>
       </div>
@@ -145,21 +196,46 @@ export default function PlanStatusBanner() {
   if (planNombre !== "Trial" && diasRestantes !== null && diasRestantes >= 0) {
     return (
       <div className="p-3 text-sm text-white bg-blue-600 text-center font-medium">
-        💼 Plan actual: <strong>{planNombre}</strong> — Vigente hasta{" "}
-        {fechaFin?.toLocaleDateString("es-AR")}.
+        <div>
+          💼 Plan actual: <strong>{planNombre}</strong> — Vigente hasta{" "}
+          {fechaFin?.toLocaleDateString("es-AR")}.
+        </div>
+
+        {/* 🔔 Upsell específico para Business Tracker / Analytics cuando el plan NO lo incluye */}
+        {tieneTracker === false && (
+          <div className="mt-1 text-xs sm:text-sm">
+            📊 Para usar <strong>Business Tracker</strong> y{" "}
+            <strong>Business Analytics</strong> necesitás un plan{" "}
+            <strong>Full</strong> o <strong>Business Tracker</strong>.{" "}
+            <a
+              href="/dashboard/empresa/planes"
+              className="underline font-semibold hover:text-blue-100 ml-1"
+            >
+              Ver planes disponibles
+            </a>
+          </div>
+        )}
       </div>
     );
   }
 
   // 🧩 BANNER PARA PLANES PAGOS VENCIDOS (DENTRO DE 48HS)
-  if (planNombre !== "Trial" && diasRestantes !== null && diasRestantes < 0 && diasRestantes >= -2) {
+  if (
+    planNombre !== "Trial" &&
+    diasRestantes !== null &&
+    diasRestantes < 0 &&
+    diasRestantes >= -2
+  ) {
     return (
       <div className="p-3 text-sm text-white bg-red-700 text-center font-medium">
         ⚠️ Su plan <strong>{planNombre}</strong> se encuentra vencido. Por favor
         regularice su pago dentro de las próximas{" "}
         <strong>{hoursLeftWithinGrace ?? 0} horas</strong> para evitar la suspensión del
         servicio.{" "}
-        <a href="/dashboard/empresa/planes" className="underline hover:text-blue-100 ml-1">
+        <a
+          href="/dashboard/empresa/planes"
+          className="underline hover:text-blue-100 ml-1"
+        >
           Ir al portal de pago
         </a>
       </div>

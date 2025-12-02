@@ -250,18 +250,18 @@ export default function EmpresaDashboardPage() {
             </p>
           </div>
 
-          {/* Acciones de gestión (alineadas a la derecha) */}
+          {/* Acciones de gestión (alineadas a la derecha, mismo ancho) */}
           <div className="flex flex-col gap-3 md:items-end">
             <Link
               href="/dashboard/empresa/planes"
-              className="px-5 py-2 bg-green-600 text-white font-semibold rounded-lg shadow hover:bg-green-700 transition w-full md:w-auto"
+              className="px-5 py-2 bg-green-600 text-white font-semibold rounded-lg shadow hover:bg-green-700 transition w-full md:w-[230px]"
             >
               💼 Ver Planes
             </Link>
 
             <Link
               href="/dashboard/empresa/asesores"
-              className="px-5 py-2 bg-blue-600 text-white font-semibold rounded-lg shadow hover:bg-blue-700 transition w-full md:w-auto"
+              className="px-5 py-2 bg-blue-600 text-white font-semibold rounded-lg shadow hover:bg-blue-700 transition w-full md:w-[230px]"
             >
               👥 Gestionar Asesores
             </Link>
@@ -281,11 +281,11 @@ export default function EmpresaDashboardPage() {
         </p>
 
         {/* Bloque de herramientas: 4 botones en 2 filas, alineados a la izquierda */}
-        <div className="flex flex-wrap gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-xl">
           {/* 🏠 Valuador de Activos Inmobiliarios */}
           <Link
             href="/vai/acmforms"
-            className="px-5 py-2.5 text-white font-semibold rounded-lg shadow transition min-w-[260px]"
+            className="w-full px-5 py-2.5 text-white font-semibold rounded-lg shadow transition"
             style={{
               backgroundColor: primaryColor,
               boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
@@ -305,7 +305,7 @@ export default function EmpresaDashboardPage() {
           {/* 📊 Business Tracker */}
           <Link
             href="/dashboard/empresa/tracker"
-            className="px-5 py-2.5 text-white font-semibold rounded-lg shadow transition min-w-[260px]"
+            className="w-full px-5 py-2.5 text-white font-semibold rounded-lg shadow transition"
             style={{
               backgroundColor: primaryColor,
               boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
@@ -326,7 +326,7 @@ export default function EmpresaDashboardPage() {
           {/* 📐 Factibilidad Constructiva */}
           <Link
             href="/dashboard/empresa/factibilidad"
-            className="px-5 py-2.5 text-white font-semibold rounded-lg shadow transition min-w-[260px]"
+            className="w-full px-5 py-2.5 text-white font-semibold rounded-lg shadow transition"
             style={{
               backgroundColor: primaryColor,
               boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
@@ -346,7 +346,7 @@ export default function EmpresaDashboardPage() {
           {/* 📈 Business Analytics */}
           <Link
             href="/dashboard/empresa/tracker/analytics"
-            className="px-5 py-2.5 text-white font-semibold rounded-lg shadow transition min-w-[260px]"
+            className="w-full px-5 py-2.5 text-white font-semibold rounded-lg shadow transition"
             style={{
               backgroundColor: primaryColor,
               boxShadow: "0 2px 6px rgba(0,0,0,0.15)",

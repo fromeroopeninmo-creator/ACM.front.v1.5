@@ -1,6 +1,7 @@
 // app/dashboard/empresa/tracker/page.tsx
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "#lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
@@ -254,6 +255,8 @@ export default function EmpresaTrackerPage() {
   const [scope, setScope] = useState<TrackerScope>("empresa");
   const [selectedAsesorId, setSelectedAsesorId] = useState<string>("");
 
+  const [tipologiaFiltro, setTipologiaFiltro] = useState<string>("");
+
   const [currentMonth, setCurrentMonth] = useState<Date>(new Date());
   const [selectedDate, setSelectedDate] = useState<Date>(startOfDay(new Date()));
 
@@ -361,6 +364,22 @@ export default function EmpresaTrackerPage() {
     }
     return propiedades.filter((p) => p.asesor_id === selectedAsesorId);
   }, [propiedades, scope, selectedAsesorId]);
+
+  const contactosFiltrados = useMemo(
+    () =>
+      tipologiaFiltro
+        ? contactos.filter((c) => c.tipologia === tipologiaFiltro)
+        : contactos,
+    [contactos, tipologiaFiltro]
+  );
+
+  const propiedadesFiltradasPorTipologia = useMemo(
+    () =>
+      tipologiaFiltro
+        ? propiedadesFiltradas.filter((p) => p.tipologia === tipologiaFiltro)
+        : propiedadesFiltradas,
+    [propiedadesFiltradas, tipologiaFiltro]
+  );
 
   const actividadesHoy = useMemo(
     () =>
@@ -517,7 +536,6 @@ export default function EmpresaTrackerPage() {
 
     fetchEmpresa();
   }, [user]);
-
   // Carga inicial (contactos + actividades + propiedades)
   useEffect(() => {
     if (!empresaId) return;
@@ -531,12 +549,12 @@ export default function EmpresaTrackerPage() {
             supabase
               .from("tracker_contactos")
               .select("*")
-             
+              .eq("empresa_id", empresaId)
               .order("created_at", { ascending: false }),
             supabase
               .from("tracker_actividades")
               .select("*")
-              
+              .eq("empresa_id", empresaId)
               .order("fecha_programada", { ascending: true }),
             supabase
               .from("tracker_propiedades")
@@ -566,7 +584,7 @@ export default function EmpresaTrackerPage() {
                   contacto:tracker_contactos (nombre, apellido)
                 `
               )
-              
+              .eq("empresa_id", empresaId)
               .order("created_at", { ascending: false }),
           ]);
 
@@ -1258,6 +1276,15 @@ export default function EmpresaTrackerPage() {
     );
   }
 
+  // Bloqueo de acceso si no hay empresa o el usuario no es "empresa"
+  if (!loading && (!user || user.role !== "empresa" || !empresaId)) {
+    return (
+      <div className="flex items-center justify-center h-[60vh] text-gray-500">
+        No tenés acceso al tracker de empresa.
+      </div>
+    );
+  }
+
   const monthMatrix = getMonthMatrix(currentMonth);
 
   return (
@@ -1413,18 +1440,26 @@ export default function EmpresaTrackerPage() {
                 según la vista seleccionada.
               </p>
             </div>
-            <div className="flex items-center gap-2 text-xs">
-              <span className="text-slate-500">Período:</span>
-              <select
-                value={kpiRange}
-                onChange={(e) => setKpiRange(e.target.value as KpiRange)}
-                className="rounded-full border border-gray-300 bg-white px-3 py-1 text-xs text-slate-700"
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2 text-xs">
+                <span className="text-slate-500">Período:</span>
+                <select
+                  value={kpiRange}
+                  onChange={(e) => setKpiRange(e.target.value as KpiRange)}
+                  className="rounded-full border border-gray-300 bg-white px-3 py-1 text-xs text-slate-700"
+                >
+                  <option value="30d">Últimos 30 días</option>
+                  <option value="90d">Últimos 3 meses</option>
+                  <option value="180d">Últimos 6 meses</option>
+                  <option value="365d">Último año</option>
+                </select>
+              </div>
+              <Link
+                href="/dashboard/empresa/tracker-analytics"
+                className="inline-flex items-center gap-1 rounded-full bg-black text-white px-3 py-1.5 text-xs font-medium hover:bg-slate-900"
               >
-                <option value="30d">Últimos 30 días</option>
-                <option value="90d">Últimos 3 meses</option>
-                <option value="180d">Últimos 6 meses</option>
-                <option value="365d">Último año</option>
-              </select>
+                Business Analytics
+              </Link>
             </div>
           </div>
 
@@ -1711,6 +1746,29 @@ export default function EmpresaTrackerPage() {
               </button>
             </div>
 
+            {/* Filtro por tipología */}
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              <span className="text-slate-500">Filtrar por tipología:</span>
+              <select
+                className="rounded-full border border-gray-300 bg-white px-3 py-1 text-xs text-slate-700"
+                value={tipologiaFiltro}
+                onChange={(e) => setTipologiaFiltro(e.target.value)}
+              >
+                <option value="">Todas</option>
+                <option value="casa">Casa</option>
+                <option value="departamento">Departamento</option>
+                <option value="duplex">Dúplex</option>
+                <option value="ph">PH</option>
+                <option value="oficina">Oficina</option>
+                <option value="local">Local</option>
+                <option value="terreno">Terreno</option>
+                <option value="galpon">Galpón / Depósito</option>
+                <option value="cochera">Cochera</option>
+                <option value="campo">Campo</option>
+                <option value="otro">Otro</option>
+              </select>
+            </div>
+
             <div className="overflow-x-auto">
               <table className="min-w-full text-xs">
                 <thead>
@@ -1736,18 +1794,19 @@ export default function EmpresaTrackerPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {contactos.length === 0 && (
+                  {contactosFiltrados.length === 0 && (
                     <tr>
                       <td
                         colSpan={8}
                         className="px-3 py-6 text-center text-xs text-slate-500"
                       >
-                        Todavía no cargaste prospectos. Empezá agregando el
-                        próximo propietario o cliente potencial.
+                        {contactos.length === 0
+                          ? "Todavía no cargaste prospectos. Empezá agregando el próximo propietario o cliente potencial."
+                          : "No hay prospectos con la tipología seleccionada."}
                       </td>
                     </tr>
                   )}
-                  {contactos.map((c) => {
+                  {contactosFiltrados.map((c) => {
                     const ultAct = actividadesDeContacto(c.id)[0];
 
                     return (
@@ -1844,6 +1903,29 @@ export default function EmpresaTrackerPage() {
               </button>
             </div>
 
+            {/* Filtro por tipología (mismo estado global) */}
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              <span className="text-slate-500">Filtrar por tipología:</span>
+              <select
+                className="rounded-full border border-gray-300 bg-white px-3 py-1 text-xs text-slate-700"
+                value={tipologiaFiltro}
+                onChange={(e) => setTipologiaFiltro(e.target.value)}
+              >
+                <option value="">Todas</option>
+                <option value="casa">Casa</option>
+                <option value="departamento">Departamento</option>
+                <option value="duplex">Dúplex</option>
+                <option value="ph">PH</option>
+                <option value="oficina">Oficina</option>
+                <option value="local">Local</option>
+                <option value="terreno">Terreno</option>
+                <option value="galpon">Galpón / Depósito</option>
+                <option value="cochera">Cochera</option>
+                <option value="campo">Campo</option>
+                <option value="otro">Otro</option>
+              </select>
+            </div>
+
             <div className="overflow-x-auto">
               <table className="min-w-full text-xs">
                 <thead>
@@ -1871,17 +1953,19 @@ export default function EmpresaTrackerPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {propiedadesFiltradas.length === 0 && (
+                  {propiedadesFiltradasPorTipologia.length === 0 && (
                     <tr>
                       <td
                         colSpan={8}
                         className="px-3 py-6 text-center text-xs text-slate-500"
                       >
-                        Todavía no cargaste propiedades captadas.
+                        {propiedadesFiltradas.length === 0
+                          ? "Todavía no cargaste propiedades captadas."
+                          : "No hay propiedades con la tipología seleccionada."}
                       </td>
                     </tr>
                   )}
-                  {propiedadesFiltradas.map((p) => {
+                  {propiedadesFiltradasPorTipologia.map((p) => {
                     const contacto =
                       p.contacto_id && contactoPorId(p.contacto_id)
                         ? contactoPorId(p.contacto_id)
@@ -2080,10 +2164,14 @@ export default function EmpresaTrackerPage() {
                       <option value="casa">Casa</option>
                       <option value="departamento">Departamento</option>
                       <option value="duplex">Dúplex</option>
+                      <option value="ph">PH</option>
+                      <option value="oficina">Oficina</option>
                       <option value="local">Local</option>
                       <option value="terreno">Terreno</option>
+                      <option value="galpon">Galpón / Depósito</option>
                       <option value="cochera">Cochera</option>
                       <option value="campo">Campo</option>
+                      <option value="otro">Otro</option>
                     </select>
                   </div>
                   <div>
@@ -2485,10 +2573,14 @@ export default function EmpresaTrackerPage() {
                       <option value="casa">Casa</option>
                       <option value="departamento">Departamento</option>
                       <option value="duplex">Dúplex</option>
+                      <option value="ph">PH</option>
+                      <option value="oficina">Oficina</option>
                       <option value="local">Local</option>
                       <option value="terreno">Terreno</option>
+                      <option value="galpon">Galpón / Depósito</option>
                       <option value="cochera">Cochera</option>
                       <option value="campo">Campo</option>
+                      <option value="otro">Otro</option>
                     </select>
                   </div>
                   <div>

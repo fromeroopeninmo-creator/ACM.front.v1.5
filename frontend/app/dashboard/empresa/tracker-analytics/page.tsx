@@ -707,10 +707,34 @@ export default function EmpresaTrackerAnaliticoPage() {
   );
   const totalActividades = actividadesFiltradas.length;
 
+  // Tasa de absorción (nueva métrica)
+  const tasaAbsorcion =
+    totalCaptaciones > 0 ? (totalCierres / totalCaptaciones) * 100 : null;
+
   if (loading && !empresaId) {
     return (
       <div className="flex items-center justify-center h-[60vh] text-gray-500">
         Cargando tracker analítico…
+      </div>
+    );
+  }
+
+  // Blindaje de acceso: solo usuarios EMPRESA pueden ver este módulo
+  if (!loading && user && user.role !== "empresa") {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <div className="max-w-3xl mx-auto px-4 py-10">
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-6">
+            <h1 className="text-base font-semibold text-slate-900">
+              Acceso restringido
+            </h1>
+            <p className="mt-2 text-sm text-slate-600">
+              El módulo de <span className="font-semibold">Business Analytics</span> está disponible
+              únicamente para usuarios empresa. Si necesitás acceder, consultá con el administrador
+              de tu cuenta.
+            </p>
+          </div>
+        </div>
       </div>
     );
   }
@@ -813,7 +837,7 @@ export default function EmpresaTrackerAnaliticoPage() {
         )}
 
         {/* KPIs principales */}
-        <section className="grid gap-4 md:grid-cols-4">
+        <section className="grid gap-4 md:grid-cols-5">
           <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
             <p className="text-xs text-slate-500">Captaciones</p>
             <p className="mt-1 text-2xl font-semibold text-slate-900">
@@ -830,6 +854,15 @@ export default function EmpresaTrackerAnaliticoPage() {
             </p>
             <p className="mt-1 text-[11px] text-slate-500">
               Operaciones con precio de cierre cargado.
+            </p>
+          </div>
+          <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
+            <p className="text-xs text-slate-500">Tasa de absorción</p>
+            <p className="mt-1 text-2xl font-semibold text-slate-900">
+              {tasaAbsorcion != null ? `${tasaAbsorcion.toFixed(1)}%` : "—"}
+            </p>
+            <p className="mt-1 text-[11px] text-slate-500">
+              Cierres sobre captaciones del período, expresado en porcentaje.
             </p>
           </div>
           <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">

@@ -345,7 +345,7 @@ export default function EmpresaDashboardPage() {
 
           {/* 📈 Business Analytics */}
           <Link
-            href="/dashboard/empresa/tracker/analytics"
+            href="/dashboard/empresa/tracker-analytics"
             className="w-full px-5 py-2.5 text-base text-white font-semibold rounded-lg shadow transition"
             style={{
               backgroundColor: primaryColor,

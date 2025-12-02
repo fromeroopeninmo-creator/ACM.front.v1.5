@@ -267,18 +267,18 @@ export default function EmpresaDashboardPage() {
 
         {/* 🔧 Sección Herramientas */}
         <div className="mt-6">
-          <h2 className="text-lg font-semibold mb-1">VAI Tools</h2>
+          <h2 className="text-lg font-semibold mb-1">Herramientas VAI</h2>
           <p className="text-sm text-gray-600 mb-4">
             Accedé a tus soluciones digitales para valuar propiedades, analizar
             factibilidad y medir el rendimiento comercial de tu empresa y tus asesores.
           </p>
 
-          {/* Botones de herramientas (4, mismo tamaño, 2 filas) */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {/* Botones de herramientas: compactos, alineados a la izquierda, listos para crecer a 6 */}
+          <div className="flex flex-wrap gap-3">
             {/* Valuador */}
             <Link
               href="/vai/acmforms"
-              className="w-full px-5 py-3 text-white font-semibold rounded-lg shadow transition text-sm text-center"
+              className="inline-flex items-center justify-center px-4 py-2.5 text-white font-semibold rounded-lg shadow transition text-sm min-w-[210px]"
               style={{
                 backgroundColor: primaryColor,
                 boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
@@ -298,7 +298,7 @@ export default function EmpresaDashboardPage() {
             {/* Business Tracker */}
             <Link
               href="/dashboard/empresa/tracker"
-              className="w-full px-5 py-3 text-white font-semibold rounded-lg shadow transition text-sm text-center"
+              className="inline-flex items-center justify-center px-4 py-2.5 text-white font-semibold rounded-lg shadow transition text-sm min-w-[210px]"
               style={{
                 backgroundColor: primaryColor,
                 boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
@@ -319,7 +319,7 @@ export default function EmpresaDashboardPage() {
             {/* Factibilidad Constructiva */}
             <Link
               href="/dashboard/empresa/factibilidad"
-              className="w-full px-5 py-3 text-white font-semibold rounded-lg shadow transition text-sm text-center"
+              className="inline-flex items-center justify-center px-4 py-2.5 text-white font-semibold rounded-lg shadow transition text-sm min-w-[210px]"
               style={{
                 backgroundColor: primaryColor,
                 boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
@@ -339,7 +339,7 @@ export default function EmpresaDashboardPage() {
             {/* Business Analytics */}
             <Link
               href="/dashboard/empresa/tracker/analytics"
-              className="w-full px-5 py-3 text-white font-semibold rounded-lg shadow transition text-sm text-center"
+              className="inline-flex items-center justify-center px-4 py-2.5 text-white font-semibold rounded-lg shadow transition text-sm min-w-[210px]"
               style={{
                 backgroundColor: primaryColor,
                 boxShadow: "0 2px 6px rgba(0,0,0,0.15)",

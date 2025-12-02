@@ -207,7 +207,8 @@ export default function EmpresaDashboardPage() {
   const matriculado =
     empresa?.matriculado || meta.matriculado || "No especificado";
   const cpi = empresa?.cpi || meta.cpi || "No especificado";
-  const telefono = empresa?.telefono || meta.telefono || "No especificado";
+  const telefono =
+    empresa?.telefono || meta.telefono || "No especificado";
   const email = (user as any)?.email || "No especificado";
 
   // 🖼️ Logo con bust (si ThemeContext todavía no inyectó, usamos bust local)
@@ -241,122 +242,127 @@ export default function EmpresaDashboardPage() {
       <section className="bg-white shadow-sm rounded-xl p-6">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold mb-2">Bienvenid@, {nombre}</h1>
+            <h1 className="text-2xl font-bold mb-2">
+              Bienvenid@, {nombre}
+            </h1>
             <p className="text-gray-600 mb-1">
               Desde este Dashboard podés gestionar toda tu empresa.
             </p>
           </div>
 
-          {/* 🟩 Acciones (Gestión de Asesores + Planes) */}
-          <div className="flex flex-col sm:flex-row gap-3">
-            <Link
-              href="/dashboard/empresa/asesores"
-              className="px-5 py-2 bg-blue-600 text-white font-semibold rounded-lg shadow hover:bg-blue-700 transition text-sm text-center"
-            >
-              👥 Gestionar Asesores
-            </Link>
-
+          {/* Acciones de gestión (alineadas a la derecha) */}
+          <div className="flex flex-col gap-3 md:items-end">
             <Link
               href="/dashboard/empresa/planes"
-              className="px-5 py-2 bg-green-600 text-white font-semibold rounded-lg shadow hover:bg-green-700 transition text-sm text-center"
+              className="px-5 py-2 bg-green-600 text-white font-semibold rounded-lg shadow hover:bg-green-700 transition w-full md:w-auto"
             >
               💼 Ver Planes
             </Link>
+
+            <Link
+              href="/dashboard/empresa/asesores"
+              className="px-5 py-2 bg-blue-600 text-white font-semibold rounded-lg shadow hover:bg-blue-700 transition w-full md:w-auto"
+            >
+              👥 Gestionar Asesores
+            </Link>
           </div>
         </div>
+      </section>
 
-        {/* 🔧 Sección Herramientas */}
-        <div className="mt-6">
-          <h2 className="text-lg font-semibold mb-1">Herramientas VAI</h2>
-          <p className="text-sm text-gray-600 mb-4">
-            Accedé a tus soluciones digitales para valuar propiedades, analizar
-            factibilidad y medir el rendimiento comercial de tu empresa y tus asesores.
-          </p>
+      {/* 🔧 VAI TOOLS */}
+      <section className="bg-white shadow-sm rounded-xl p-6">
+        <h2 className="text-2xl font-bold tracking-tight mb-1">
+          VAI TOOLS
+        </h2>
+        <p className="text-gray-600 mb-4 text-sm md:text-base">
+          Accedé a las herramientas digitales de VAI para valuar propiedades,
+          analizar proyectos y gestionar el desempeño comercial de tu equipo
+          en un solo lugar.
+        </p>
 
-          {/* Botones de herramientas: compactos, alineados a la izquierda, listos para crecer a 6 */}
-          <div className="flex flex-wrap gap-3">
-            {/* Valuador */}
-            <Link
-              href="/vai/acmforms"
-              className="inline-flex items-center justify-center px-4 py-2.5 text-white font-semibold rounded-lg shadow transition text-sm min-w-[210px]"
-              style={{
-                backgroundColor: primaryColor,
-                boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
-              }}
-              onMouseEnter={(e) => {
-                (e.currentTarget as HTMLAnchorElement).style.filter =
-                  "brightness(1.1)";
-              }}
-              onMouseLeave={(e) => {
-                (e.currentTarget as HTMLAnchorElement).style.filter =
-                  "brightness(1)";
-              }}
-            >
-              🏠 Valuador de Activos Inmobiliarios
-            </Link>
+        {/* Bloque de herramientas: 4 botones en 2 filas, alineados a la izquierda */}
+        <div className="flex flex-wrap gap-3">
+          {/* 🏠 Valuador de Activos Inmobiliarios */}
+          <Link
+            href="/vai/acmforms"
+            className="px-5 py-2.5 text-white font-semibold rounded-lg shadow transition min-w-[260px]"
+            style={{
+              backgroundColor: primaryColor,
+              boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
+            }}
+            onMouseEnter={(e) => {
+              (e.currentTarget as HTMLAnchorElement).style.filter =
+                "brightness(1.1)";
+            }}
+            onMouseLeave={(e) => {
+              (e.currentTarget as HTMLAnchorElement).style.filter =
+                "brightness(1)";
+            }}
+          >
+            🏠 Valuador de Activos Inmobiliarios
+          </Link>
 
-            {/* Business Tracker */}
-            <Link
-              href="/dashboard/empresa/tracker"
-              className="inline-flex items-center justify-center px-4 py-2.5 text-white font-semibold rounded-lg shadow transition text-sm min-w-[210px]"
-              style={{
-                backgroundColor: primaryColor,
-                boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
-              }}
-              onClick={handleTrackerClick}
-              onMouseEnter={(e) => {
-                (e.currentTarget as HTMLAnchorElement).style.filter =
-                  "brightness(1.1)";
-              }}
-              onMouseLeave={(e) => {
-                (e.currentTarget as HTMLAnchorElement).style.filter =
-                  "brightness(1)";
-              }}
-            >
-              📊 Business Tracker
-            </Link>
+          {/* 📊 Business Tracker */}
+          <Link
+            href="/dashboard/empresa/tracker"
+            className="px-5 py-2.5 text-white font-semibold rounded-lg shadow transition min-w-[260px]"
+            style={{
+              backgroundColor: primaryColor,
+              boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
+            }}
+            onClick={handleTrackerClick}
+            onMouseEnter={(e) => {
+              (e.currentTarget as HTMLAnchorElement).style.filter =
+                "brightness(1.1)";
+            }}
+            onMouseLeave={(e) => {
+              (e.currentTarget as HTMLAnchorElement).style.filter =
+                "brightness(1)";
+            }}
+          >
+            📊 Business Tracker
+          </Link>
 
-            {/* Factibilidad Constructiva */}
-            <Link
-              href="/dashboard/empresa/factibilidad"
-              className="inline-flex items-center justify-center px-4 py-2.5 text-white font-semibold rounded-lg shadow transition text-sm min-w-[210px]"
-              style={{
-                backgroundColor: primaryColor,
-                boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
-              }}
-              onMouseEnter={(e) => {
-                (e.currentTarget as HTMLAnchorElement).style.filter =
-                  "brightness(1.1)";
-              }}
-              onMouseLeave={(e) => {
-                (e.currentTarget as HTMLAnchorElement).style.filter =
-                  "brightness(1)";
-              }}
-            >
-              📐 Factibilidad Constructiva
-            </Link>
+          {/* 📐 Factibilidad Constructiva */}
+          <Link
+            href="/dashboard/empresa/factibilidad"
+            className="px-5 py-2.5 text-white font-semibold rounded-lg shadow transition min-w-[260px]"
+            style={{
+              backgroundColor: primaryColor,
+              boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
+            }}
+            onMouseEnter={(e) => {
+              (e.currentTarget as HTMLAnchorElement).style.filter =
+                "brightness(1.1)";
+            }}
+            onMouseLeave={(e) => {
+              (e.currentTarget as HTMLAnchorElement).style.filter =
+                "brightness(1)";
+            }}
+          >
+            📐 Factibilidad Constructiva
+          </Link>
 
-            {/* Business Analytics */}
-            <Link
-              href="/dashboard/empresa/tracker/analytics"
-              className="inline-flex items-center justify-center px-4 py-2.5 text-white font-semibold rounded-lg shadow transition text-sm min-w-[210px]"
-              style={{
-                backgroundColor: primaryColor,
-                boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
-              }}
-              onClick={handleTrackerClick}
-              onMouseEnter={(e) => {
-                (e.currentTarget as HTMLAnchorElement).style.filter =
-                  "brightness(1.1)";
-              }}
-              onMouseLeave={(e) => {
-                (e.currentTarget as HTMLAnchorElement).style.filter =
-                  "brightness(1)";
-              }}
-            >
-              📈 Business Analytics
-            </Link>
-          </div>
+          {/* 📈 Business Analytics */}
+          <Link
+            href="/dashboard/empresa/tracker/analytics"
+            className="px-5 py-2.5 text-white font-semibold rounded-lg shadow transition min-w-[260px]"
+            style={{
+              backgroundColor: primaryColor,
+              boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
+            }}
+            onClick={handleTrackerClick}
+            onMouseEnter={(e) => {
+              (e.currentTarget as HTMLAnchorElement).style.filter =
+                "brightness(1.1)";
+            }}
+            onMouseLeave={(e) => {
+              (e.currentTarget as HTMLAnchorElement).style.filter =
+                "brightness(1)";
+            }}
+          >
+            📈 Business Analytics
+          </Link>
         </div>
       </section>
 
@@ -364,7 +370,9 @@ export default function EmpresaDashboardPage() {
       <section className="bg-white shadow-sm rounded-xl p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
         {/* 📋 Datos */}
         <div className="flex-1">
-          <h2 className="text-xl font-semibold mb-4">Datos de la Empresa</h2>
+          <h2 className="text-xl font-semibold mb-4">
+            Datos de la Empresa
+          </h2>
           <ul className="space-y-2 text-gray-700">
             <li>
               <strong>Nombre:</strong> {nombreEmpresa}

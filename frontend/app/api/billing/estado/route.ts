@@ -37,11 +37,31 @@ export async function GET(req: Request) {
     const empresaIdParam = url.searchParams.get("empresaId") || undefined;
 
     // Admin/soporte puede pasar empresaIdParam; empresa/asesor usa su empresa
-    const empresaId = await getEmpresaIdForActor({
+    let empresaId = await getEmpresaIdForActor({
       supabase: supabaseAdmin,
       actor,
       empresaIdParam,
     });
+
+    // 🔁 Fallback explícito para asesores:
+    // si getEmpresaIdForActor no resolvió empresa y el rol es "asesor",
+    // buscamos la empresa desde la tabla asesores (herencia de plan).
+    if (!empresaId && role === "asesor") {
+      const actorUserId =
+        (actor as any).userId ?? (actor as any).id ?? null;
+
+      if (actorUserId) {
+        const { data: asesorRow, error: asesorErr } = await supabaseAdmin
+          .from("asesores")
+          .select("empresa_id")
+          .eq("user_id", actorUserId)
+          .maybeSingle();
+
+        if (!asesorErr && asesorRow?.empresa_id) {
+          empresaId = asesorRow.empresa_id;
+        }
+      }
+    }
 
     if (!empresaId) {
       const needsParam =

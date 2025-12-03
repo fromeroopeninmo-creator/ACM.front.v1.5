@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "#lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
+import Link from "next/link";
 
 type Scope = "empresa" | "asesores" | "global";
 type DateRangeKey = "30d" | "90d" | "180d" | "365d";
@@ -794,6 +795,14 @@ export default function EmpresaTrackerAnaliticoPage() {
                 <option value="365d">Último año</option>
               </select>
             </div>
+
+            {/* Botón para volver al Tracker */}
+            <Link
+              href="/dashboard/empresa/tracker"
+              className="inline-flex items-center gap-2 rounded-full border border-gray-300 bg-white px-3 py-1 text-xs text-slate-700 hover:bg-gray-50"
+            >
+              ← Volver al Tracker
+            </Link>
 
             {/* Scope principal */}
             <div className="flex items-center gap-1">

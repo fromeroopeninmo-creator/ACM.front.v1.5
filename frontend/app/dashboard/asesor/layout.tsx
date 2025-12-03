@@ -37,6 +37,7 @@ type BillingEstadoResponse = {
   proximoPlan?: { id: string; nombre: string } | null;
   cambioProgramadoPara?: string | null;
   estado?: BillingEstadoFlags | null;
+  error?: string;
 };
 
 function esRutaTrackerAsesor(pathname: string | null): boolean {
@@ -66,15 +67,12 @@ export default function AsesorLayout({
     (user as any)?.role || (user as any)?.user_metadata?.role || null;
   const isAsesor = rawRole === "asesor";
 
-  // Chequear estado de suscripción + flags de plan
   useEffect(() => {
     let cancelled = false;
 
     const checkEstado = async () => {
-      // Si todavía se está cargando el auth, esperamos
       if (loading) return;
 
-      // Si no hay usuario logueado, redirigimos a login (por seguridad adicional)
       if (!user) {
         router.replace("/auth/login");
         return;
@@ -83,18 +81,35 @@ export default function AsesorLayout({
       try {
         const res = await fetch("/api/billing/estado", { cache: "no-store" });
 
+        // 🧱 Cambio clave: si la API falla (400, 500, etc.), por seguridad
+        // asumimos que NO tiene tracker habilitado.
         if (!res.ok) {
           console.error(
             "Error al consultar /api/billing/estado (asesor):",
             res.status
           );
-          if (!cancelled) setCheckingBilling(false);
+          if (!cancelled) {
+            setPlanIncluyeTracker(false);
+            setCheckingBilling(false);
+          }
           return;
         }
 
         const data: BillingEstadoResponse = await res.json();
         const estado = data?.estado;
         const plan = data?.plan;
+
+        // Si la API devolvió un error lógico (ej: "No se pudo resolver la empresa...")
+        // lo tratamos igual que un fallo: sin tracker.
+        if (data?.error && !cancelled) {
+          console.error(
+            "Error lógico en /api/billing/estado (asesor):",
+            data.error
+          );
+          setPlanIncluyeTracker(false);
+          setCheckingBilling(false);
+          return;
+        }
 
         // 🔒 Si la cuenta está suspendida o plan vencido sin gracia,
         // redirigimos igual que en empresa: asesores no pueden seguir usando nada.
@@ -109,7 +124,6 @@ export default function AsesorLayout({
           }
         }
 
-        // Flag de tracker: si el plan no lo tiene habilitado, NO deberían ver tracker
         const incluyeTracker = plan?.incluye_tracker === true;
 
         if (!cancelled) {
@@ -118,7 +132,11 @@ export default function AsesorLayout({
         }
       } catch (err) {
         console.error("Error verificando estado de suscripción (asesor):", err);
-        if (!cancelled) setCheckingBilling(false);
+        // En caso de error de red u otra cosa, también cerramos el grifo
+        if (!cancelled) {
+          setPlanIncluyeTracker(false);
+          setCheckingBilling(false);
+        }
       }
     };
 
@@ -129,7 +147,6 @@ export default function AsesorLayout({
     };
   }, [router, user, loading, pathname]);
 
-  // Mientras se resuelve Auth + Billing, mostramos un loader simple
   if (loading || checkingBilling) {
     return (
       <div className="w-full h-full flex items-center justify-center text-gray-500">
@@ -138,7 +155,6 @@ export default function AsesorLayout({
     );
   }
 
-  // Si no hay usuario autenticado (seguridad extra)
   if (!user) {
     return (
       <div className="w-full h-full flex items-center justify-center text-gray-500">
@@ -165,8 +181,9 @@ export default function AsesorLayout({
 
   const esTracker = esRutaTrackerAsesor(pathname);
 
-  // 🧱 Blindaje por plan: si la empresa NO tiene tracker habilitado,
-  // y el asesor intenta entrar al tracker o tracker-analytics, lo frenamos.
+  // 🧱 Blindaje por plan: si la empresa NO tiene tracker habilitado
+  // o no pudimos resolver la empresa / estado de billing,
+  // el asesor no puede entrar al tracker ni al analytics.
   if (esTracker && planIncluyeTracker === false) {
     return (
       <div className="w-full h-full flex items-center justify-center">
@@ -176,12 +193,13 @@ export default function AsesorLayout({
           </h1>
           <p className="text-sm text-slate-600 mb-4">
             El módulo de <span className="font-semibold">Business Tracker</span>{" "}
-            no está habilitado para la cuenta de tu empresa.
+            no está habilitado para la cuenta de tu empresa o no se pudo
+            validar correctamente la suscripción.
           </p>
           <p className="text-xs text-slate-500">
-            Pedile a quien administra la cuenta que active este módulo desde la
-            sección de <span className="font-semibold">Planes</span> del panel
-            de empresa.
+            Pedile a quien administra la cuenta que revise la{" "}
+            <span className="font-semibold">suscripción y los planes</span> del
+            panel de empresa.
           </p>
         </div>
       </div>

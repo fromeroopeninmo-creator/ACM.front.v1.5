@@ -27,70 +27,95 @@ function toNum(x: any): number {
 
 export async function GET(req: Request) {
   try {
-    // 1) Auth + contexto (unificado)
+    // 1) Auth + contexto
     const server = supabaseServer();
     const actor = await assertAuthAndGetContext(server);
     const role = (actor.role ?? "") as Role;
 
-    // 2) Resolver empresa objetivo
     const url = new URL(req.url);
     const empresaIdParam = url.searchParams.get("empresaId") || undefined;
 
-    // Admin/soporte puede pasar empresaIdParam; empresa/asesor usa su empresa
-    let empresaId = await getEmpresaIdForActor({
-      supabase: supabaseAdmin,
-      actor,
-      empresaIdParam,
-    });
+    const isAdminLike =
+      role === "super_admin_root" ||
+      role === "super_admin" ||
+      role === "soporte";
 
-    // 🔁 Fallback adicional: intentar leer empresa_id directamente del actor
-    if (!empresaId) {
-      const a: any = actor;
-      empresaId =
-        a.empresa_id ??
-        a.empresaId ??
-        a?.user_metadata?.empresa_id ??
-        a?.profile?.empresa_id ??
-        null;
+    let empresaId: string | null = null;
+
+    // 2) Admin / soporte: pueden pasar empresaId por querystring
+    if (isAdminLike && empresaIdParam) {
+      empresaId = empresaIdParam;
     }
 
-    // 🔁 Último fallback genérico: buscar en tabla asesores por user_id
-    if (!empresaId) {
+    // 3) Empresa / Asesor: resolver empresa propia ignorando empresaIdParam
+    if (!isAdminLike) {
+      const a: any = actor;
+
       const actorUserId =
-        (actor as any).userId ??
-        (actor as any).id ??
-        (actor as any).sub ??
+        a.userId ??
+        a.id ??
+        a.sub ??
         null;
 
-      if (actorUserId) {
-        const { data: asesorRow, error: asesorErr } = await supabaseAdmin
-          .from("asesores")
+      // 3.1: intentar siempre primero desde profiles.empresa_id
+      if (!empresaId && actorUserId) {
+        const { data: profileRow, error: profileErr } = await supabaseAdmin
+          .from("profiles")
           .select("empresa_id")
+          .eq("id", actorUserId)
+          .maybeSingle();
+
+        if (!profileErr && profileRow?.empresa_id) {
+          empresaId = profileRow.empresa_id;
+        }
+      }
+
+      // 3.2: fallback para EMPRESA → tabla empresas.user_id
+      if (!empresaId && role === "empresa" && actorUserId) {
+        const { data: empFromUser, error: empUserErr } = await supabaseAdmin
+          .from("empresas")
+          .select("id")
           .eq("user_id", actorUserId)
           .maybeSingle();
 
-        if (!asesorErr && asesorRow?.empresa_id) {
-          empresaId = asesorRow.empresa_id;
+        if (!empUserErr && empFromUser?.id) {
+          empresaId = empFromUser.id;
+        }
+      }
+
+      // 3.3: fallback para ASESOR → tabla asesores.email
+      if (!empresaId && role === "asesor") {
+        const email =
+          a.email ??
+          a.user_metadata?.email ??
+          null;
+
+        if (email) {
+          const { data: asesorRow, error: asesorErr } = await supabaseAdmin
+            .from("asesores")
+            .select("empresa_id")
+            .eq("email", email)
+            .maybeSingle();
+
+          if (!asesorErr && asesorRow?.empresa_id) {
+            empresaId = asesorRow.empresa_id;
+          }
         }
       }
     }
 
     if (!empresaId) {
-      const needsParam =
-        role === "super_admin_root" ||
-        role === "super_admin" ||
-        role === "soporte";
       return NextResponse.json(
         {
-          error: needsParam
+          error: isAdminLike
             ? "Falta 'empresaId' para consulta como admin/soporte."
             : "No se pudo resolver la empresa del usuario.",
         },
-        { status: needsParam ? 400 : 400 }
+        { status: 400 }
       );
     }
 
-    // 3) Verificar empresa existente (incluye suspensión)
+    // 4) Verificar empresa existente (incluye suspensión)
     const { data: empRow, error: empErr } = await supabaseAdmin
       .from("empresas")
       .select(
@@ -109,7 +134,7 @@ export async function GET(req: Request) {
       );
     }
 
-    // 4) Plan activo o último por fecha_inicio
+    // 5) Plan activo o último por fecha_inicio
     const { data: activo } = await supabaseAdmin
       .from("empresas_planes")
       .select(
@@ -140,7 +165,7 @@ export async function GET(req: Request) {
       .eq("empresa_id", empresaId)
       .maybeSingle();
 
-    // 5) Flags de ciclo / vencimiento
+    // 6) Flags de ciclo / vencimiento
     const now = new Date();
     let plan_vencido = false;
     let dias_desde_vencimiento: number | null = null;
@@ -213,7 +238,7 @@ export async function GET(req: Request) {
       );
     }
 
-    // 6) Datos del plan (precio + tipo_plan / features)
+    // 7) Datos del plan (precio + tipo_plan / features)
     const { data: planRow, error: planErr } = await supabaseAdmin
       .from("planes")
       .select(
@@ -230,7 +255,7 @@ export async function GET(req: Request) {
     const iva = Math.round(precioNeto * 0.21 * 100) / 100;
     const totalConIVA = Math.round((precioNeto + iva) * 100) / 100;
 
-    // 7) Última suscripción si existe
+    // 8) Última suscripción si existe
     const { data: susRow } = await supabaseAdmin
       .from("suscripciones")
       .select(
@@ -241,7 +266,7 @@ export async function GET(req: Request) {
       .limit(1)
       .maybeSingle();
 
-    // 8) Si no se calculó proximoCobro arriba, intentar de nuevo
+    // 9) Si no se calculó proximoCobro arriba, intentar de nuevo
     if (!proximoCobro) {
       if (planEP.fecha_fin) {
         proximoCobro = new Date(planEP.fecha_fin as string).toISOString();
@@ -270,7 +295,7 @@ export async function GET(req: Request) {
               nombre: planRow.nombre,
               precioNeto,
               totalConIVA,
-              // NUEVO: info del tipo de plan / features
+              // info del tipo de plan / features
               tipo_plan: tipoPlan, // "core" | "combo" | "tracker_only" | "trial"
               incluye_valuador: incluyeValuador,
               incluye_tracker: incluyeTracker,
@@ -304,7 +329,7 @@ export async function GET(req: Request) {
           dias_desde_vencimiento,
           en_periodo_gracia,
         },
-        // NUEVO: bloque explícito de features del plan actual
+        // bloque explícito de features del plan actual
         features: {
           tipo_plan: tipoPlan,
           incluye_valuador: incluyeValuador,
@@ -322,8 +347,5 @@ export async function GET(req: Request) {
   }
 }
 
-// IMPORTS que este archivo ya usaba desde utils (se mantienen igual)
-import {
-  assertAuthAndGetContext,
-  getEmpresaIdForActor,
-} from "#lib/billing/utils";
+// IMPORT que ya usabas
+import { assertAuthAndGetContext } from "#lib/billing/utils";

@@ -43,12 +43,24 @@ export async function GET(req: Request) {
       empresaIdParam,
     });
 
-    // 🔁 Fallback explícito para asesores:
-    // si getEmpresaIdForActor no resolvió empresa y el rol es "asesor",
-    // buscamos la empresa desde la tabla asesores (herencia de plan).
-    if (!empresaId && role === "asesor") {
+    // 🔁 Fallback adicional: intentar leer empresa_id directamente del actor
+    if (!empresaId) {
+      const a: any = actor;
+      empresaId =
+        a.empresa_id ??
+        a.empresaId ??
+        a?.user_metadata?.empresa_id ??
+        a?.profile?.empresa_id ??
+        null;
+    }
+
+    // 🔁 Último fallback genérico: buscar en tabla asesores por user_id
+    if (!empresaId) {
       const actorUserId =
-        (actor as any).userId ?? (actor as any).id ?? null;
+        (actor as any).userId ??
+        (actor as any).id ??
+        (actor as any).sub ??
+        null;
 
       if (actorUserId) {
         const { data: asesorRow, error: asesorErr } = await supabaseAdmin

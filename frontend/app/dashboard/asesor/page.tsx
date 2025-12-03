@@ -191,10 +191,10 @@ export default function AsesorDashboardPage() {
       <section className="bg-white shadow-sm rounded-xl p-6">
         <h2 className="text-lg md:text-xl font-semibold mb-4">Herramientas</h2>
 
-        <div className="flex flex-col gap-3 items-start">
+        <div className="flex flex-col sm:flex-row sm:flex-wrap gap-3">
           <Link
             href="/vai/acmforms"
-            className="px-6 py-3 text-white font-semibold rounded-lg shadow transition text-center"
+            className="w-full sm:w-80 px-6 py-3 text-white font-semibold rounded-lg shadow transition text-center"
             style={{
               backgroundColor: primaryColor,
               boxShadow: "0 3px 8px rgba(0,0,0,0.15)",
@@ -205,13 +205,35 @@ export default function AsesorDashboardPage() {
 
           <Link
             href="/dashboard/empresa/factibilidad"
-            className="px-6 py-3 text-white font-semibold rounded-lg shadow transition text-center"
+            className="w-full sm:w-80 px-6 py-3 text-white font-semibold rounded-lg shadow transition text-center"
             style={{
               backgroundColor: primaryColor,
               boxShadow: "0 3px 8px rgba(0,0,0,0.15)",
             }}
           >
             🧮 Factibilidad Constructiva
+          </Link>
+
+          <Link
+            href="/dashboard/asesor/tracker"
+            className="w-full sm:w-80 px-6 py-3 text-white font-semibold rounded-lg shadow transition text-center"
+            style={{
+              backgroundColor: primaryColor,
+              boxShadow: "0 3px 8px rgba(0,0,0,0.15)",
+            }}
+          >
+            📅 Business Tracker
+          </Link>
+
+          <Link
+            href="/dashboard/asesor/tracker-analytics"
+            className="w-full sm:w-80 px-6 py-3 text-white font-semibold rounded-lg shadow transition text-center"
+            style={{
+              backgroundColor: primaryColor,
+              boxShadow: "0 3px 8px rgba(0,0,0,0.15)",
+            }}
+          >
+            📊 Business Analytics
           </Link>
         </div>
       </section>

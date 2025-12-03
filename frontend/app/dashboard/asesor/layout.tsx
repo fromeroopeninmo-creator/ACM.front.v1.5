@@ -3,6 +3,7 @@
 
 import React, { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
+import { useAuth } from "@/context/AuthContext";
 
 type BillingEstadoFlags = {
   suspendida: boolean;
@@ -13,17 +14,16 @@ type BillingEstadoFlags = {
   en_periodo_gracia: boolean;
 };
 
+type BillingPlan = {
+  id: string;
+  nombre: string;
+  tipo_plan?: string | null; // FULL / CORE / TRACKER_ONLY / etc
+  incluye_valuador?: boolean | null;
+  incluye_tracker?: boolean | null;
+};
+
 type BillingEstadoResponse = {
-  plan?: {
-    id: string;
-    nombre: string;
-    precioNeto: number;
-    totalConIVA: number;
-    tipo_plan?: string | null;
-    incluye_valuador?: boolean | null;
-    incluye_tracker?: boolean | null;
-    es_trial?: boolean | null;
-  } | null;
+  plan?: BillingPlan | null;
   ciclo?: {
     inicio: string | null;
     fin: string | null;
@@ -39,98 +39,86 @@ type BillingEstadoResponse = {
   estado?: BillingEstadoFlags | null;
 };
 
-// Rutas CORE (por si en el futuro el asesor tiene pantallas de valuador/factibilidad)
-function isCoreRouteAsesor(pathname: string | null): boolean {
+function esRutaTrackerAsesor(pathname: string | null): boolean {
   if (!pathname) return false;
-  if (pathname.startsWith("/dashboard/asesor/vai")) return true;
-  if (pathname.startsWith("/dashboard/asesor/factibilidad")) return true;
-  return false;
-}
-
-// Rutas TRACKER del asesor
-function isTrackerRouteAsesor(pathname: string | null): boolean {
-  if (!pathname) return false;
+  // /dashboard/asesor/tracker y /dashboard/asesor/tracker-analytics (+ subrutas)
   if (pathname.startsWith("/dashboard/asesor/tracker")) return true;
   if (pathname.startsWith("/dashboard/asesor/tracker-analytics")) return true;
   return false;
 }
-
-type ModuloBloqueado = "core" | "tracker" | null;
 
 export default function AsesorLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const { user, loading } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
 
-  const [checking, setChecking] = useState(true);
-  const [moduloBloqueado, setModuloBloqueado] = useState<ModuloBloqueado>(null);
+  const [checkingBilling, setCheckingBilling] = useState(true);
+  const [planIncluyeTracker, setPlanIncluyeTracker] = useState<boolean | null>(
+    null
+  );
 
+  // ⚠️ Guard adicional: si el usuario NO es asesor, no debería estar en este segmento
+  const rawRole =
+    (user as any)?.role || (user as any)?.user_metadata?.role || null;
+  const isAsesor = rawRole === "asesor";
+
+  // Chequear estado de suscripción + flags de plan
   useEffect(() => {
     let cancelled = false;
 
     const checkEstado = async () => {
+      // Si todavía se está cargando el auth, esperamos
+      if (loading) return;
+
+      // Si no hay usuario logueado, redirigimos a login (por seguridad adicional)
+      if (!user) {
+        router.replace("/auth/login");
+        return;
+      }
+
       try {
         const res = await fetch("/api/billing/estado", { cache: "no-store" });
 
         if (!res.ok) {
-          console.error("Error al consultar /api/billing/estado:", res.status);
-          if (!cancelled) {
-            setChecking(false);
-            setModuloBloqueado(null);
-          }
+          console.error(
+            "Error al consultar /api/billing/estado (asesor):",
+            res.status
+          );
+          if (!cancelled) setCheckingBilling(false);
           return;
         }
 
         const data: BillingEstadoResponse = await res.json();
         const estado = data?.estado;
+        const plan = data?.plan;
 
-        if (!estado) {
-          if (!cancelled) {
-            setChecking(false);
-            setModuloBloqueado(null);
+        // 🔒 Si la cuenta está suspendida o plan vencido sin gracia,
+        // redirigimos igual que en empresa: asesores no pueden seguir usando nada.
+        if (estado) {
+          const debeSuspender =
+            estado.suspendida ||
+            (estado.plan_vencido && !estado.en_periodo_gracia);
+
+          if (debeSuspender) {
+            router.replace("/dashboard/empresa/suspendido");
+            return;
           }
-          return;
         }
 
-        const debeSuspender =
-          estado.suspendida ||
-          (estado.plan_vencido && !estado.en_periodo_gracia);
-
-        // 🔒 Si la cuenta de la empresa está suspendida / vencida, el asesor tampoco puede usar nada
-        if (debeSuspender) {
-          router.replace("/dashboard/empresa/suspendido");
-          return;
-        }
-
-        // Flags de módulos incluidos en el plan actual de la empresa
-        const incluyeValuador = data.plan?.incluye_valuador === true;
-        const incluyeTracker = data.plan?.incluye_tracker === true;
-
-        let bloqueado: ModuloBloqueado = null;
-
-        // 🔒 Bloqueo CORE (por si en el futuro el asesor tiene VAI / Factibilidad)
-        if (isCoreRouteAsesor(pathname) && !incluyeValuador) {
-          bloqueado = "core";
-        }
-
-        // 🔒 Bloqueo TRACKER
-        if (isTrackerRouteAsesor(pathname) && !incluyeTracker) {
-          bloqueado = "tracker";
-        }
+        // Flag de tracker: si el plan no lo tiene habilitado, NO deberían ver tracker
+        const incluyeTracker = plan?.incluye_tracker === true;
 
         if (!cancelled) {
-          setModuloBloqueado(bloqueado);
-          setChecking(false);
+          setPlanIncluyeTracker(incluyeTracker);
+          setCheckingBilling(false);
         }
       } catch (err) {
         console.error("Error verificando estado de suscripción (asesor):", err);
-        if (!cancelled) {
-          setChecking(false);
-          setModuloBloqueado(null);
-        }
+        if (!cancelled) setCheckingBilling(false);
       }
     };
 
@@ -139,48 +127,67 @@ export default function AsesorLayout({
     return () => {
       cancelled = true;
     };
-  }, [router, pathname]);
+  }, [router, user, loading, pathname]);
 
-  if (checking) {
+  // Mientras se resuelve Auth + Billing, mostramos un loader simple
+  if (loading || checkingBilling) {
     return (
       <div className="w-full h-full flex items-center justify-center text-gray-500">
-        Verificando estado de tu suscripción…
+        Verificando acceso a tus herramientas…
       </div>
     );
   }
 
-  // 🔒 Vista cuando el asesor intenta entrar a un módulo que su empresa no tiene habilitado
-  if (moduloBloqueado) {
-    const labelModulo =
-      moduloBloqueado === "core"
-        ? "Valuador / Factibilidad"
-        : "Tracker de Actividades";
-
+  // Si no hay usuario autenticado (seguridad extra)
+  if (!user) {
     return (
-      <div className="w-full h-full flex items-center justify-center px-4">
-        <div className="max-w-md w-full rounded-2xl border border-gray-200 bg-white shadow-sm p-6 text-center space-y-3">
-          <h1 className="text-lg font-semibold text-slate-900">
-            No tenés acceso a esta herramienta
+      <div className="w-full h-full flex items-center justify-center text-gray-500">
+        Redirigiendo al login…
+      </div>
+    );
+  }
+
+  // 🧱 Blindaje por rol: solo asesores deberían ver este segmento
+  if (!isAsesor) {
+    return (
+      <div className="w-full h-full flex items-center justify-center">
+        <div className="max-w-md rounded-2xl border border-gray-200 bg-white p-6 text-center shadow-sm">
+          <h1 className="text-lg font-semibold text-slate-900 mb-2">
+            Acceso restringido
           </h1>
           <p className="text-sm text-slate-600">
-            El plan actual de tu empresa no incluye el módulo{" "}
-            <span className="font-semibold">{labelModulo}</span>. Para
-            habilitarlo, pedile a quien administra la cuenta que lo active desde
-            la sección de <span className="font-semibold">Planes</span>.
+            No tenés acceso al panel de asesor. Volvé a tu tablero principal.
           </p>
-          <div className="mt-3 flex flex-col gap-2">
-            <button
-              onClick={() => router.push("/dashboard/asesor")}
-              className="inline-flex items-center justify-center rounded-full bg-black px-4 py-2 text-sm font-medium text-white hover:bg-slate-900"
-            >
-              Volver a mi panel
-            </button>
-          </div>
         </div>
       </div>
     );
   }
 
-  // Si todo ok, renderizamos normalmente el dashboard del asesor
+  const esTracker = esRutaTrackerAsesor(pathname);
+
+  // 🧱 Blindaje por plan: si la empresa NO tiene tracker habilitado,
+  // y el asesor intenta entrar al tracker o tracker-analytics, lo frenamos.
+  if (esTracker && planIncluyeTracker === false) {
+    return (
+      <div className="w-full h-full flex items-center justify-center">
+        <div className="max-w-md rounded-2xl border border-gray-200 bg-white p-6 text-center shadow-sm">
+          <h1 className="text-lg font-semibold text-slate-900 mb-2">
+            No tenés acceso a esta herramienta
+          </h1>
+          <p className="text-sm text-slate-600 mb-4">
+            El módulo de <span className="font-semibold">Business Tracker</span>{" "}
+            no está habilitado para la cuenta de tu empresa.
+          </p>
+          <p className="text-xs text-slate-500">
+            Pedile a quien administra la cuenta que active este módulo desde la
+            sección de <span className="font-semibold">Planes</span> del panel
+            de empresa.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // ✅ Si pasa todos los chequeos, renderizamos normalmente el dashboard de asesor
   return <div className="w-full h-full">{children}</div>;
 }

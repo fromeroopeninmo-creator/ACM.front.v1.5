@@ -28,7 +28,6 @@ type TrackerActividadTipo =
 type TrackerTab = "calendario" | "contactos" | "propiedades";
 type KpiRange = "30d" | "90d" | "180d" | "365d";
 
-
 interface TrackerContacto {
   id: string;
   empresa_id: string;
@@ -311,6 +310,9 @@ export default function AsesorTrackerPage() {
     honorarios_pct_comprador: "",
   });
 
+  // Filtro de propiedades por tipología
+  const [filtroTipologia, setFiltroTipologia] = useState<string>("");
+
   // Referencias de hoy y mañana (hora local, sin mezclar TZ)
   const hoy = startOfDay(new Date());
   const manana = addDays(hoy, 1);
@@ -324,20 +326,23 @@ export default function AsesorTrackerPage() {
   const actividadDateKey = (a: TrackerActividad) =>
     a.fecha_programada ? a.fecha_programada.substring(0, 10) : "";
 
- // En el dashboard del asesor no hay scope: siempre ve SOLO sus propias actividades
-// (ya vienen filtradas por RLS / consulta).
+  // En el dashboard del asesor no hay scope: siempre ve SOLO sus propias actividades
+  // (ya vienen filtradas por RLS / consulta).
 
   const actividadesFiltradas = useMemo(
-  () => actividades,
-  [actividades]
-);
+    () => actividades,
+    [actividades]
+  );
 
-
- const propiedadesFiltradas = useMemo(
-  () => propiedades,
-  [propiedades]
-);
-
+  const propiedadesFiltradas = useMemo(
+    () =>
+      filtroTipologia
+        ? propiedades.filter(
+            (p) => (p.tipologia || "") === filtroTipologia
+          )
+        : propiedades,
+    [propiedades, filtroTipologia]
+  );
 
   const actividadesHoy = useMemo(
     () =>
@@ -405,9 +410,8 @@ export default function AsesorTrackerPage() {
       return key >= startKey;
     });
 
-   // Para el asesor: tomamos directamente los contactos creados en el período
-const contactosInRange = contactosInRangeBase;
-
+    // Para el asesor: tomamos directamente los contactos creados en el período
+    const contactosInRange = contactosInRangeBase;
 
     // ---- PRELISTING ----
     const idsPrelistingEstado = contactosInRange
@@ -452,42 +456,53 @@ const contactosInRange = contactosInRangeBase;
 
   // Buscar empresa_id y asesor_id desde la tabla asesores usando el email del profile
   useEffect(() => {
-  const fetchAsesor = async () => {
-    if (!user?.email) {
-      console.error("No hay email en el usuario autenticado");
+    const fetchAsesor = async () => {
+      if (!user) {
+        setLoading(false);
+        return;
+      }
+
+      if (user.role !== "asesor") {
+        console.error(
+          "Usuario sin rol asesor intentando acceder al tracker de asesor"
+        );
+        setLoading(false);
+        return;
+      }
+
+      if (!user.email) {
+        console.error("No hay email en el usuario autenticado");
+        setLoading(false);
+        return;
+      }
+
+      console.log("Tracker asesor - email actual:", user.email);
+
+      const { data, error } = await supabase
+        .from("asesores")
+        .select("id, empresa_id, email")
+        .eq("email", user.email)
+        .maybeSingle();
+
+      if (error) {
+        console.error("Error buscando asesor para tracker:", error);
+        setLoading(false);
+        return;
+      }
+
+      if (!data) {
+        console.error("Error buscando asesor para tracker: sin datos");
+        setLoading(false);
+        return;
+      }
+
+      setAsesorId(data.id);
+      setEmpresaId(data.empresa_id);
       setLoading(false);
-      return;
-    }
+    };
 
-    // DEBUG opcional: ver qué email está usando el front
-    console.log("Tracker asesor - email actual:", user.email);
-
-    const { data, error } = await supabase
-      .from("asesores")
-      .select("id, empresa_id, email")
-      .eq("email", user.email)
-      .maybeSingle();
-
-    if (error) {
-      console.error("Error buscando asesor para tracker:", error);
-      setLoading(false);
-      return;
-    }
-
-    if (!data) {
-      console.error("Error buscando asesor para tracker: sin datos");
-      setLoading(false);
-      return;
-    }
-
-    setAsesorId(data.id);
-    setEmpresaId(data.empresa_id);
-    setLoading(false);
-  };
-
-  fetchAsesor();
-}, [user]);
-
+    fetchAsesor();
+  }, [user]);
 
   // Carga inicial (contactos + actividades + propiedades) del asesor
   useEffect(() => {
@@ -595,11 +610,11 @@ const contactosInRange = contactosInRangeBase;
 
     fetchAll();
   }, [empresaId, asesorId]);
+
   const showMessage = (text: string) => {
     setMensaje(text);
     setTimeout(() => setMensaje(null), 3200);
   };
-
   // Helpers de contacto / actividades por contacto
   const contactoNombreCorto = (
     c: { nombre?: string | null; apellido?: string | null } | null | undefined
@@ -1217,6 +1232,14 @@ const contactosInRange = contactosInRangeBase;
     );
   }
 
+  if (!loading && user && user.role !== "asesor") {
+    return (
+      <div className="flex items-center justify-center h-[60vh] text-gray-500">
+        Solo los usuarios con rol Asesor pueden acceder a este módulo.
+      </div>
+    );
+  }
+
   if (!empresaId || !asesorId) {
     return (
       <div className="flex items-center justify-center h-[60vh] text-gray-500">
@@ -1344,6 +1367,12 @@ const contactosInRange = contactosInRangeBase;
                 <option value="180d">Últimos 6 meses</option>
                 <option value="365d">Último año</option>
               </select>
+              <a
+                href="/tracker-analytics"
+                className="ml-2 inline-flex items-center rounded-full border border-gray-300 bg-white px-3 py-1 text-xs font-medium text-slate-700 hover:bg-gray-100"
+              >
+                Business Analytics
+              </a>
             </div>
           </div>
 
@@ -1762,6 +1791,40 @@ const contactosInRange = contactosInRangeBase;
               </button>
             </div>
 
+            {/* Filtro por tipología */}
+            <div className="flex flex-wrap items-center gap-3 text-xs">
+              <div className="flex items-center gap-2">
+                <span className="text-slate-500">Filtrar por tipología:</span>
+                <select
+                  className="rounded-full border border-gray-300 bg-white px-3 py-1 text-xs text-slate-700"
+                  value={filtroTipologia}
+                  onChange={(e) => setFiltroTipologia(e.target.value)}
+                >
+                  <option value="">Todas</option>
+                  <option value="casa">Casa</option>
+                  <option value="departamento">Departamento</option>
+                  <option value="duplex">Dúplex</option>
+                  <option value="ph">PH</option>
+                  <option value="oficina">Oficina</option>
+                  <option value="local">Local</option>
+                  <option value="terreno">Terreno</option>
+                  <option value="cochera">Cochera</option>
+                  <option value="campo">Campo</option>
+                  <option value="galpon">Galpón</option>
+                  <option value="deposito">Depósito</option>
+                </select>
+              </div>
+              {filtroTipologia && (
+                <button
+                  type="button"
+                  onClick={() => setFiltroTipologia("")}
+                  className="text-[11px] text-slate-500 hover:text-slate-700 underline"
+                >
+                  Limpiar filtro
+                </button>
+              )}
+            </div>
+
             <div className="overflow-x-auto">
               <table className="min-w-full text-xs">
                 <thead>
@@ -1892,7 +1955,6 @@ const contactosInRange = contactosInRangeBase;
             {mensaje}
           </div>
         )}
-
         {/* MODAL CONTACTO */}
         {showContactoModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
@@ -1998,10 +2060,14 @@ const contactosInRange = contactosInRangeBase;
                       <option value="casa">Casa</option>
                       <option value="departamento">Departamento</option>
                       <option value="duplex">Dúplex</option>
+                      <option value="ph">PH</option>
+                      <option value="oficina">Oficina</option>
                       <option value="local">Local</option>
                       <option value="terreno">Terreno</option>
                       <option value="cochera">Cochera</option>
                       <option value="campo">Campo</option>
+                      <option value="galpon">Galpón</option>
+                      <option value="deposito">Depósito</option>
                     </select>
                   </div>
                   <div>
@@ -2403,10 +2469,14 @@ const contactosInRange = contactosInRangeBase;
                       <option value="casa">Casa</option>
                       <option value="departamento">Departamento</option>
                       <option value="duplex">Dúplex</option>
+                      <option value="ph">PH</option>
+                      <option value="oficina">Oficina</option>
                       <option value="local">Local</option>
                       <option value="terreno">Terreno</option>
                       <option value="cochera">Cochera</option>
                       <option value="campo">Campo</option>
+                      <option value="galpon">Galpón</option>
+                      <option value="deposito">Depósito</option>
                     </select>
                   </div>
                   <div>
@@ -2708,3 +2778,4 @@ const contactosInRange = contactosInRangeBase;
     </div>
   );
 }
+	

@@ -178,6 +178,15 @@ export default function AsesorDashboardPage() {
         }`
       : "/images/default-logo.png";
 
+  // estilo base para los botones (mismo ancho, una sola línea)
+  const buttonBaseClasses =
+    "px-6 py-3 text-white font-semibold rounded-lg shadow transition text-center whitespace-nowrap";
+  const buttonStyle = {
+    backgroundColor: primaryColor,
+    boxShadow: "0 3px 8px rgba(0,0,0,0.15)",
+    minWidth: "320px",
+  };
+
   return (
     <div className="space-y-6">
       {/* 1) Bienvenida */}
@@ -185,53 +194,47 @@ export default function AsesorDashboardPage() {
         <h1 className="text-xl md:text-2xl font-bold">
           Bienvenid@, {nombreAsesor}
         </h1>
+        <p className="mt-2 text-sm text-gray-600">
+          Desde este dashboard vas a poder utilizar las herramientas de VAI PROP,
+          gestionar tus datos e informes.
+        </p>
       </section>
 
-      {/* 2) Herramientas */}
+      {/* 2) Vai Tools */}
       <section className="bg-white shadow-sm rounded-xl p-6">
-        <h2 className="text-lg md:text-xl font-semibold mb-4">Herramientas</h2>
+        <h2 className="text-lg md:text-xl font-semibold mb-4">Vai Tools</h2>
 
-        <div className="flex flex-col sm:flex-row sm:flex-wrap gap-3">
+        <div className="inline-grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {/* Fila 1: Valuador + Business Tracker */}
           <Link
             href="/vai/acmforms"
-            className="w-full sm:w-80 px-6 py-3 text-white font-semibold rounded-lg shadow transition text-center"
-            style={{
-              backgroundColor: primaryColor,
-              boxShadow: "0 3px 8px rgba(0,0,0,0.15)",
-            }}
+            className={buttonBaseClasses}
+            style={buttonStyle}
           >
             🧾 Valuador de Activos Inmobiliarios
           </Link>
 
           <Link
+            href="/dashboard/asesor/tracker"
+            className={buttonBaseClasses}
+            style={buttonStyle}
+          >
+            📅 Business Tracker
+          </Link>
+
+          {/* Fila 2: Factibilidad + Business Analytics */}
+          <Link
             href="/dashboard/empresa/factibilidad"
-            className="w-full sm:w-80 px-6 py-3 text-white font-semibold rounded-lg shadow transition text-center"
-            style={{
-              backgroundColor: primaryColor,
-              boxShadow: "0 3px 8px rgba(0,0,0,0.15)",
-            }}
+            className={buttonBaseClasses}
+            style={buttonStyle}
           >
             🧮 Factibilidad Constructiva
           </Link>
 
           <Link
-            href="/dashboard/asesor/tracker"
-            className="w-full sm:w-80 px-6 py-3 text-white font-semibold rounded-lg shadow transition text-center"
-            style={{
-              backgroundColor: primaryColor,
-              boxShadow: "0 3px 8px rgba(0,0,0,0.15)",
-            }}
-          >
-            📅 Business Tracker
-          </Link>
-
-          <Link
             href="/dashboard/asesor/tracker-analytics"
-            className="w-full sm:w-80 px-6 py-3 text-white font-semibold rounded-lg shadow transition text-center"
-            style={{
-              backgroundColor: primaryColor,
-              boxShadow: "0 3px 8px rgba(0,0,0,0.15)",
-            }}
+            className={buttonBaseClasses}
+            style={buttonStyle}
           >
             📊 Business Analytics
           </Link>

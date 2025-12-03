@@ -799,9 +799,8 @@ export default function EmpresaTrackerAnaliticoPage() {
             {/* Botón para volver al Tracker */}
             <Link
               href="/dashboard/empresa/tracker"
-              className="inline-flex items-center gap-2 rounded-full border border-gray-300 bg-white px-3 py-1 text-xs text-slate-700 hover:bg-gray-50"
-            >
-              ← Volver al Tracker
+              className="inline-flex items-center gap-1 rounded-full bg-black text-white px-3 py-1.5 text-xs font-medium hover:bg-slate-900"
+              ← Business Tracker
             </Link>
 
             {/* Scope principal */}

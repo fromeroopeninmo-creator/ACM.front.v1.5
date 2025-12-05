@@ -48,7 +48,7 @@ export default function RegisterPage() {
 
     setLoading(true);
 
-    try:
+    try {
       // URL de redirect para el mail de confirmación
       const redirectTo =
         typeof window !== "undefined"
@@ -199,7 +199,9 @@ export default function RegisterPage() {
 
           {/* 🏢 Nombre comercial */}
           <div>
-            <label style={labelStyle}>Nombre Comercial de la inmobiliaria *</label>
+            <label style={labelStyle}>
+              Nombre Comercial de la inmobiliaria *
+            </label>
             <input
               type="text"
               value={inmobiliaria}

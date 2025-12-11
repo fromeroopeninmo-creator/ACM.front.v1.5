@@ -1,3 +1,4 @@
+// app/auth/callback/page.tsx
 "use client";
 export const dynamic = "force-dynamic";
 
@@ -13,7 +14,7 @@ export default function AuthCallbackPage() {
   const [status, setStatus] = useState<Status>("idle");
   const [msg, setMsg] = useState<string>("Procesando verificación…");
 
-  // Leer posible error en el querystring del redirect de Supabase
+  // Leer posible error en el querystring del redirect de Supabase (solo para logging)
   const getErrorFromQS = () => {
     try {
       const qs = new URLSearchParams(window.location.search);
@@ -32,9 +33,11 @@ export default function AuthCallbackPage() {
       setMsg("Verificando sesión…");
 
       const qsError = getErrorFromQS();
-      let exchangeErrorMessage: string | null = null;
+      if (qsError) {
+        console.warn("[auth/callback] error en querystring:", qsError);
+      }
 
-      // 0) Intentar intercambiar el código del enlace por una sesión
+      // 0) Intentar intercambiar el código del enlace por una sesión (no es fatal si falla)
       try {
         const fullUrl =
           typeof window !== "undefined" ? window.location.href : "";
@@ -42,11 +45,14 @@ export default function AuthCallbackPage() {
           const { error: exchangeError } =
             await supabase.auth.exchangeCodeForSession(fullUrl);
           if (exchangeError) {
-            exchangeErrorMessage = exchangeError.message || null;
+            console.warn(
+              "[auth/callback] exchangeCodeForSession error:",
+              exchangeError.message || exchangeError
+            );
           }
         }
-      } catch (err: any) {
-        exchangeErrorMessage = err?.message || exchangeErrorMessage;
+      } catch (err) {
+        console.error("[auth/callback] excepción en exchangeCodeForSession:", err);
       }
 
       // 1) Esperar a que aparezca la sesión (puede tardar un poco tras el redirect)
@@ -68,63 +74,49 @@ export default function AuthCallbackPage() {
 
       if (cancelled) return;
 
+      // 🧩 Caso 1: NO hay sesión, pero igual llegamos desde el mail.
+      // En tu flujo, la cuenta ya está creada y el mail ya se verificó.
+      // Mostramos mensaje de éxito y pedimos iniciar sesión manualmente.
       if (!session) {
-        // No hay sesión: analizamos errores posibles para dar un mensaje más claro
-        const rawError = qsError || exchangeErrorMessage || null;
-
-        if (rawError) {
-          const lower = rawError.toLowerCase();
-
-          if (
-            lower.includes("expired") ||
-            lower.includes("invalid") ||
-            lower.includes("used")
-          ) {
-            setStatus("error");
-            setMsg(
-              "El enlace de verificación es inválido o ya fue usado. Si ya confirmaste tu cuenta, simplemente iniciá sesión con tu email y contraseña."
-            );
-            return;
-          }
-
-          setStatus("error");
-          setMsg(`No pudimos validar tu cuenta: ${rawError}`);
-          return;
-        }
-
-        setStatus("error");
+        setStatus("done");
         setMsg(
-          "No pudimos obtener tu sesión luego del correo de verificación. Probá iniciar sesión manualmente."
+          "Tu email ya fue verificado o está en proceso. Ahora iniciá sesión con tu email y contraseña para acceder a tu panel."
         );
         return;
       }
 
-      // 2) Llamar al backend para bootstrap (crear empresa + plan Trial si no existen)
+      // 🧩 Caso 2: SÍ hay sesión -> hacemos bootstrap como best-effort
       try {
         setStatus("bootstrapping");
         setMsg("Creando tu empresa y asignando plan de prueba…");
 
         const res = await fetch("/api/empresa/bootstrap", {
           method: "POST",
-          // no hace falta body: el backend lee el usuario desde la cookie
           cache: "no-store",
         });
 
         if (!res.ok) {
           const j = await res.json().catch(() => ({}));
-          throw new Error(
-            j?.error || `Error ${res.status} inicializando tu cuenta`
+          console.error(
+            "[auth/callback] Error en /api/empresa/bootstrap:",
+            res.status,
+            j
           );
+          // No lanzamos: no rompemos la UX aunque falle el bootstrap.
         }
-
-        setStatus("done");
-        setMsg("¡Listo! Redirigiendo a tu panel…");
-        // 3) Redirigir al panel genérico; ahí tu lógica decide empresa/asesor
-        router.replace("/dashboard");
-      } catch (e: any) {
-        setStatus("error");
-        setMsg(e?.message || "Error inicializando tu cuenta.");
+      } catch (e) {
+        console.error(
+          "[auth/callback] Excepción llamando /api/empresa/bootstrap:",
+          e
+        );
+        // Tampoco lanzamos: tu empresa ya se crea por triggers en BD.
       }
+
+      if (cancelled) return;
+
+      setStatus("done");
+      setMsg("¡Listo! Redirigiendo a tu panel…");
+      router.replace("/dashboard");
     };
 
     run();
@@ -151,14 +143,25 @@ export default function AuthCallbackPage() {
             <div className="text-2xl mb-2">✅</div>
             <h1 className="text-lg font-semibold">¡Cuenta verificada!</h1>
             <p className="text-gray-600 mt-2">{msg}</p>
+            {/* En el caso sin sesión, el usuario verá este bloque y usará el botón para ir al login */}
+            <button
+              onClick={() => router.push("/auth/login")}
+              className="mt-4 inline-flex items-center justify-center px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700"
+            >
+              Ir a Iniciar Sesión
+            </button>
           </>
         ) : (
           <>
+            {/* Este bloque debería ser ya muy poco frecuente; solo errores inesperados */}
             <div className="text-2xl mb-2">⚠️</div>
             <h1 className="text-lg font-semibold">
               No pudimos completar el proceso
             </h1>
-            <p className="text-gray-600 mt-2">{msg}</p>
+            <p className="text-gray-600 mt-2">
+              Ocurrió un error inesperado. Probá iniciar sesión manualmente con
+              tu email y contraseña. Si el problema persiste, contactanos.
+            </p>
             <button
               onClick={() => router.push("/auth/login")}
               className="mt-4 inline-flex items-center justify-center px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700"

@@ -25,6 +25,12 @@ export default function RegisterPage() {
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // 🛡️ Evitar múltiples envíos mientras ya hay uno en curso
+    if (loading) {
+      return;
+    }
+
     setErrorMsg(null);
     setInfoMsg(null);
 

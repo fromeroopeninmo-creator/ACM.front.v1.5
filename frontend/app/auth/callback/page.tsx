@@ -1,4 +1,3 @@
-// app/auth/callback/page.tsx
 "use client";
 export const dynamic = "force-dynamic";
 
@@ -32,12 +31,22 @@ export default function AuthCallbackPage() {
       setStatus("checking");
       setMsg("Verificando sesión…");
 
-      // 0) Si Supabase nos envía un error en la URL, lo mostramos
       const qsError = getErrorFromQS();
-      if (qsError) {
-        setStatus("error");
-        setMsg(`No pudimos validar tu cuenta: ${qsError}`);
-        return;
+      let exchangeErrorMessage: string | null = null;
+
+      // 0) Intentar intercambiar el código del enlace por una sesión
+      try {
+        const fullUrl =
+          typeof window !== "undefined" ? window.location.href : "";
+        if (fullUrl) {
+          const { error: exchangeError } =
+            await supabase.auth.exchangeCodeForSession(fullUrl);
+          if (exchangeError) {
+            exchangeErrorMessage = exchangeError.message || null;
+          }
+        }
+      } catch (err: any) {
+        exchangeErrorMessage = err?.message || exchangeErrorMessage;
       }
 
       // 1) Esperar a que aparezca la sesión (puede tardar un poco tras el redirect)
@@ -60,6 +69,29 @@ export default function AuthCallbackPage() {
       if (cancelled) return;
 
       if (!session) {
+        // No hay sesión: analizamos errores posibles para dar un mensaje más claro
+        const rawError = qsError || exchangeErrorMessage || null;
+
+        if (rawError) {
+          const lower = rawError.toLowerCase();
+
+          if (
+            lower.includes("expired") ||
+            lower.includes("invalid") ||
+            lower.includes("used")
+          ) {
+            setStatus("error");
+            setMsg(
+              "El enlace de verificación es inválido o ya fue usado. Si ya confirmaste tu cuenta, simplemente iniciá sesión con tu email y contraseña."
+            );
+            return;
+          }
+
+          setStatus("error");
+          setMsg(`No pudimos validar tu cuenta: ${rawError}`);
+          return;
+        }
+
         setStatus("error");
         setMsg(
           "No pudimos obtener tu sesión luego del correo de verificación. Probá iniciar sesión manualmente."

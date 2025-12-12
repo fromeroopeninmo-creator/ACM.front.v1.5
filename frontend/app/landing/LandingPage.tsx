@@ -297,6 +297,12 @@ export default function LandingPage() {
               Herramientas
             </Link>
             <Link
+              href="/landing/tutoriales"
+              className="hover:text-[rgba(230,169,48,0.9)] transition"
+            >
+              Tutoriales
+            </Link>
+            <Link
               href="#planes"
               className="hover:text-[rgba(230,169,48,0.9)] transition"
             >
@@ -306,7 +312,7 @@ export default function LandingPage() {
               href="#proximamente"
               className="hover:text-[rgba(230,169,48,0.9)] transition"
             >
-              Próximas herramientas
+              Próximamente
             </Link>
             <Link
               href="#faq"
@@ -356,6 +362,13 @@ export default function LandingPage() {
                 className="rounded-md px-2 py-2 text-neutral-200 hover:bg-neutral-900"
               >
                 Herramientas
+              </Link>
+              <Link
+                href="/landing/tutoriales"
+                onClick={() => setMobileOpen(false)}
+                className="rounded-md px-2 py-2 text-neutral-200 hover:bg-neutral-900"
+              >
+                Tutoriales
               </Link>
               <Link
                 href="#planes"

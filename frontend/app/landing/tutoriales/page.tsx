@@ -2,7 +2,6 @@
 "use client";
 
 import SiteNavbar from "@/components/SiteNavbar";
-import SiteFooter from "@/components/SiteFooter";
 
 export default function LandingTutorialesPage() {
   return (
@@ -202,9 +201,6 @@ export default function LandingTutorialesPage() {
           </div>
         </section>
       </main>
-
-      {/* FOOTER GLOBAL */}
-      <SiteFooter />
     </div>
   );
 }

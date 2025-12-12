@@ -346,7 +346,7 @@ export default function EmpresaDashboardPage() {
             }}
           >
             <span>🧮</span>
-            <span>Calculadora Créditos UVA</span>
+            <span>Calculadora Créditos UVA - Gratis</span>
           </button>
 
           {/* 📐 Factibilidad Constructiva */}

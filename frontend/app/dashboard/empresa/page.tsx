@@ -1,4 +1,3 @@
-// frontend/app/dashboard/empresa/page.tsx
 "use client";
 
 import useSWR from "swr";
@@ -9,6 +8,7 @@ import PlanStatusBanner from "./components/PlanStatusBanner";
 import { supabase } from "#lib/supabaseClient";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import UvaCalculatorModal from "@/components/UvaCalculatorModal";
 
 export default function EmpresaDashboardPage() {
   const { user } = useAuth();
@@ -17,6 +17,7 @@ export default function EmpresaDashboardPage() {
 
   const [puedeUsarTracker, setPuedeUsarTracker] = useState<boolean | null>(null);
   const [billingLoading, setBillingLoading] = useState<boolean>(true);
+  const [showUvaCalc, setShowUvaCalc] = useState(false);
 
   // 🔹 Función para obtener datos de empresa (incluye updated_at para bust)
   const fetchEmpresa = async (userId: string) => {
@@ -280,8 +281,8 @@ export default function EmpresaDashboardPage() {
           en un solo lugar.
         </p>
 
-        {/* Bloque de herramientas: 4 botones en 2 filas, alineados a la izquierda */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-3xl">
+        {/* Bloque de herramientas: 5 botones en 2 filas (3 arriba, 2 abajo en desktop) */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 max-w-3xl">
           {/* 🏠 Valuador de Activos Inmobiliarios */}
           <Link
             href="/vai/acmforms"
@@ -363,6 +364,27 @@ export default function EmpresaDashboardPage() {
           >
             📈 Business Analytics
           </Link>
+
+          {/* 🧮 Calculadora Créditos UVA */}
+          <button
+            type="button"
+            onClick={() => setShowUvaCalc(true)}
+            className="w-full px-5 py-2.5 text-base text-white font-semibold rounded-lg shadow transition"
+            style={{
+              backgroundColor: primaryColor,
+              boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
+            }}
+            onMouseEnter={(e) => {
+              (e.currentTarget as HTMLButtonElement).style.filter =
+                "brightness(1.1)";
+            }}
+            onMouseLeave={(e) => {
+              (e.currentTarget as HTMLButtonElement).style.filter =
+                "brightness(1)";
+            }}
+          >
+            🧮 Calculadora Créditos UVA
+          </button>
         </div>
       </section>
 
@@ -407,6 +429,12 @@ export default function EmpresaDashboardPage() {
           />
         </div>
       </section>
+
+      {/* 🧮 Modal Calculadora UVA */}
+      <UvaCalculatorModal
+        open={showUvaCalc}
+        onClose={() => setShowUvaCalc(false)}
+      />
     </div>
   );
 }

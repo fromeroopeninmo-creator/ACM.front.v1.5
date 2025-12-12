@@ -1,164 +1,14 @@
 // app/landing/tutoriales/page.tsx
 "use client";
 
-import Link from "next/link";
-import Image from "next/image";
-import { useState } from "react";
-
-const accent = "#E6A930";
-
-// ⚠️ IMPORTANTE:
-// Reemplazá cada VIDEO_ID_xxx por el ID real de YouTube de tus videos.
-// Ejemplo: https://www.youtube.com/watch?v=abcd1234  --> "abcd1234"
+import SiteNavbar from "@/components/SiteNavbar";
+import SiteFooter from "@/components/SiteFooter";
 
 export default function LandingTutorialesPage() {
-  const [mobileOpen, setMobileOpen] = useState(false);
-
   return (
     <div className="min-h-screen bg-black text-neutral-50 flex flex-col">
-      {/* NAVBAR */}
-      <header className="sticky top-0 z-40 border-b border-neutral-800/80 bg-black/90 backdrop-blur">
-        <nav className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3 md:py-4">
-          {/* Logo + nombre */}
-          <div className="flex items-center gap-3">
-            <Link href="/landing" className="flex items-center gap-2">
-              <div className="relative h-9 w-9 md:h-10 md:w-10">
-                <Image
-                  src="/landing/images/logo-vai7.png"
-                  alt="VAI Prop logo, software inmobiliario"
-                  fill
-                  sizes="40px"
-                  className="object-contain"
-                />
-              </div>
-              <div className="leading-tight">
-                <div className="text-sm font-semibold tracking-[0.25em] text-neutral-200">
-                  VAI PROP
-                </div>
-                <div className="text-[11px] uppercase text-neutral-400">
-                  Soluciones digitales para el Real Estate
-                </div>
-              </div>
-            </Link>
-          </div>
-
-          {/* Links desktop */}
-          <div className="hidden items-center gap-8 text-sm md:flex">
-            <Link
-              href="/landing#features"
-              className="hover:text-[rgba(230,169,48,0.9)] transition"
-            >
-              Herramientas
-            </Link>
-            <Link
-              href="/landing#planes"
-              className="hover:text-[rgba(230,169,48,0.9)] transition"
-            >
-              Planes
-            </Link>
-            <Link
-              href="/landing#proximamente"
-              className="hover:text-[rgba(230,169,48,0.9)] transition"
-            >
-              Próximas herramientas
-            </Link>
-            <Link
-              href="/landing#faq"
-              className="hover:text-[rgba(230,169,48,0.9)] transition"
-            >
-              Preguntas frecuentes
-            </Link>
-            <span className="text-[rgba(230,169,48,0.9)] text-sm font-semibold">
-              Tutoriales
-            </span>
-          </div>
-
-          {/* Botones auth desktop */}
-          <div className="hidden items-center gap-3 md:flex">
-            <Link
-              href="/auth/login"
-              className="text-sm text-neutral-200 hover:text-white transition"
-            >
-              Iniciar sesión
-            </Link>
-            <Link
-              href="/auth/register"
-              className="rounded-full border border-[rgba(230,169,48,0.8)] bg-[rgba(230,169,48,0.1)] px-4 py-2 text-sm font-semibold text-[rgba(230,169,48,0.96)] shadow-[0_0_20px_rgba(0,0,0,0.8)] hover:bg-[rgba(230,169,48,0.2)] transition"
-            >
-              Registrate
-            </Link>
-          </div>
-
-          {/* Hamburguesa mobile */}
-          <button
-            className="inline-flex items-center justify-center rounded-md border border-neutral-700 p-2 text-neutral-200 md:hidden"
-            onClick={() => setMobileOpen((v) => !v)}
-            aria-label="Abrir menú"
-          >
-            <span className="sr-only">Abrir menú</span>
-            <div className="space-y-1">
-              <span className="block h-[2px] w-5 bg-neutral-200" />
-              <span className="block h-[2px] w-5 bg-neutral-200" />
-            </div>
-          </button>
-        </nav>
-
-        {/* Menú mobile */}
-        {mobileOpen && (
-          <div className="border-t border-neutral-800 bg-black/95 px-4 pb-4 pt-2 md:hidden">
-            <div className="flex flex-col gap-2 text-sm">
-              <Link
-                href="/landing#features"
-                onClick={() => setMobileOpen(false)}
-                className="rounded-md px-2 py-2 text-neutral-200 hover:bg-neutral-900"
-              >
-                Herramientas
-              </Link>
-              <Link
-                href="/landing#planes"
-                onClick={() => setMobileOpen(false)}
-                className="rounded-md px-2 py-2 text-neutral-200 hover:bg-neutral-900"
-              >
-                Planes
-              </Link>
-              <Link
-                href="/landing#proximamente"
-                onClick={() => setMobileOpen(false)}
-                className="rounded-md px-2 py-2 text-neutral-200 hover:bg-neutral-900"
-              >
-                Próximas herramientas
-              </Link>
-              <Link
-                href="/landing#faq"
-                onClick={() => setMobileOpen(false)}
-                className="rounded-md px-2 py-2 text-neutral-200 hover:bg-neutral-900"
-              >
-                Preguntas frecuentes
-              </Link>
-              <span className="mt-1 rounded-md px-2 py-2 text-[rgba(230,169,48,0.9)]">
-                Tutoriales
-              </span>
-
-              <div className="mt-3 flex gap-2">
-                <Link
-                  href="/auth/login"
-                  onClick={() => setMobileOpen(false)}
-                  className="flex-1 rounded-full border border-neutral-700 px-3 py-2 text-center text-sm"
-                >
-                  Iniciar sesión
-                </Link>
-                <Link
-                  href="/auth/register"
-                  onClick={() => setMobileOpen(false)}
-                  className="flex-1 rounded-full border border-[rgba(230,169,48,0.85)] bg-[rgba(230,169,48,0.15)] px-3 py-2 text-center text-sm font-semibold text-[rgba(230,169,48,0.96)]"
-                >
-                  Registrate
-                </Link>
-              </div>
-            </div>
-          </div>
-        )}
-      </header>
+      {/* NAVBAR GLOBAL */}
+      <SiteNavbar />
 
       {/* CONTENIDO */}
       <main className="flex-1 bg-black">
@@ -220,7 +70,7 @@ export default function LandingTutorialesPage() {
                   <div className="aspect-video">
                     <iframe
                       className="h-full w-full"
-                      src="https://www.youtube.com/embed/VIDEO_ID_VALUADOR"
+                      src="https://www.youtube.com/embed/oMVdw8uFu2E"
                       title="Como utilizar el Valuador de Activos Inmobiliarios - VAI Prop"
                       frameBorder="0"
                       allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
@@ -258,7 +108,7 @@ export default function LandingTutorialesPage() {
                   <div className="aspect-video">
                     <iframe
                       className="h-full w-full"
-                      src="https://www.youtube.com/embed/VIDEO_ID_FACTIBILIDAD"
+                      src="https://www.youtube.com/embed/UdCCU-Axbk0"
                       title="Como valuar un lote por Factibilidad Constructiva - VAI Prop"
                       frameBorder="0"
                       allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
@@ -295,7 +145,7 @@ export default function LandingTutorialesPage() {
                   <div className="aspect-video">
                     <iframe
                       className="h-full w-full"
-                      src="https://www.youtube.com/embed/VIDEO_ID_TRACKER"
+                      src="https://www.youtube.com/embed/a-FZa9QbOSE"
                       title="Business Tracker - Seguimiento comercial en VAI Prop"
                       frameBorder="0"
                       allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
@@ -333,7 +183,7 @@ export default function LandingTutorialesPage() {
                   <div className="aspect-video">
                     <iframe
                       className="h-full w-full"
-                      src="https://www.youtube.com/embed/VIDEO_ID_ANALYTICS"
+                      src="https://www.youtube.com/embed/_KseZwDzANg"
                       title="Business Analytics - Métricas y tableros en VAI Prop"
                       frameBorder="0"
                       allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
@@ -352,6 +202,9 @@ export default function LandingTutorialesPage() {
           </div>
         </section>
       </main>
+
+      {/* FOOTER GLOBAL */}
+      <SiteFooter />
     </div>
   );
 }

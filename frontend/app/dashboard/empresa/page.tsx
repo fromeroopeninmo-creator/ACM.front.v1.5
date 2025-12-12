@@ -327,6 +327,28 @@ export default function EmpresaDashboardPage() {
             <span>Business Tracker</span>
           </Link>
 
+          {/* 🧮 Calculadora Créditos UVA */}
+          <button
+            type="button"
+            onClick={() => setShowUvaCalc(true)}
+            className="w-full px-5 py-3 text-sm sm:text-base text-white font-semibold rounded-xl shadow-md border border-black/10 text-center inline-flex items-center justify-center gap-2 hover:shadow-lg transform hover:-translate-y-0.5 active:translate-y-0 transition"
+            style={{
+              backgroundColor: primaryColor,
+              boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
+            }}
+            onMouseEnter={(e) => {
+              (e.currentTarget as HTMLButtonElement).style.filter =
+                "brightness(1.05)";
+            }}
+            onMouseLeave={(e) => {
+              (e.currentTarget as HTMLButtonElement).style.filter =
+                "brightness(1)";
+            }}
+          >
+            <span>🧮</span>
+            <span>Calculadora Créditos UVA</span>
+          </button>
+
           {/* 📐 Factibilidad Constructiva */}
           <Link
             href="/dashboard/empresa/factibilidad"
@@ -369,28 +391,6 @@ export default function EmpresaDashboardPage() {
             <span>📈</span>
             <span>Business Analytics</span>
           </Link>
-
-          {/* 🧮 Calculadora Créditos UVA */}
-          <button
-            type="button"
-            onClick={() => setShowUvaCalc(true)}
-            className="w-full px-5 py-3 text-sm sm:text-base text-white font-semibold rounded-xl shadow-md border border-black/10 text-center inline-flex items-center justify-center gap-2 hover:shadow-lg transform hover:-translate-y-0.5 active:translate-y-0 transition"
-            style={{
-              backgroundColor: primaryColor,
-              boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
-            }}
-            onMouseEnter={(e) => {
-              (e.currentTarget as HTMLButtonElement).style.filter =
-                "brightness(1.05)";
-            }}
-            onMouseLeave={(e) => {
-              (e.currentTarget as HTMLButtonElement).style.filter =
-                "brightness(1)";
-            }}
-          >
-            <span>🧮</span>
-            <span>Calculadora Créditos UVA</span>
-          </button>
         </div>
       </section>
 

@@ -22,14 +22,13 @@ export default function RegisterPage() {
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [status, setStatus] = useState<"idle" | "sending" | "sent">("idle");
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // 🛡️ Evitar múltiples envíos mientras ya hay uno en curso
-    if (loading) {
-      return;
-    }
+    // 🛑 Doble submit hard-block
+    if (loading) return;
 
     setErrorMsg(null);
     setInfoMsg(null);
@@ -53,6 +52,10 @@ export default function RegisterPage() {
     }
 
     setLoading(true);
+    setStatus("sending");
+    setInfoMsg(
+      "Estamos creando tu cuenta y enviando el email de confirmación…"
+    );
 
     try {
       // URL de redirect para el mail de confirmación
@@ -89,12 +92,15 @@ export default function RegisterPage() {
           /email/i.test(error.message || "") &&
           /(exists|registered|taken|used)/i.test(error.message || "")
         ) {
-          msg = "El email ya fue registrado.";
+          msg =
+            "Este email ya tiene una cuenta creada. Revisá tu bandeja de entrada (y spam) porque probablemente ya te enviamos un correo de confirmación.";
         }
         if (/User already registered/i.test(error.message || "")) {
-          msg = "El email ya fue registrado.";
+          msg =
+            "Este email ya tiene una cuenta creada. Revisá tu bandeja de entrada (y spam) porque probablemente ya te enviamos un correo de confirmación.";
         }
 
+        setStatus("idle");
         setErrorMsg(msg);
         return;
       }
@@ -102,18 +108,21 @@ export default function RegisterPage() {
       // Con confirmación de email activa, Supabase normalmente NO devuelve session
       // y simplemente envía el mail con el link a /auth/callback.
       if (!data.user) {
+        setStatus("sent");
         setInfoMsg(
-          "Registro exitoso. Revisá tu email para confirmar la cuenta."
+          "Registro exitoso. Te enviamos un email de confirmación a tu casilla de correo. Revisá también la carpeta de spam y seguí las instrucciones del mensaje."
         );
         return;
       }
 
       // Caso estándar con confirmación:
+      setStatus("sent");
       setInfoMsg(
-        "Registro exitoso. Revisá tu email para confirmar la cuenta."
+        "Registro exitoso. Te enviamos un email de confirmación a tu casilla de correo. Revisá también la carpeta de spam y seguí las instrucciones del mensaje."
       );
       return;
     } catch (e: any) {
+      setStatus("idle");
       setErrorMsg(e?.message || "No se pudo registrar.");
       return;
     } finally {
@@ -122,153 +131,197 @@ export default function RegisterPage() {
   };
 
   return (
-    <AuthLayout
-      title="Registro de Empresa"
-      subtitle="Completá los datos básicos para crear la cuenta de tu inmobiliaria. Más adelante podrás cargar tus datos fiscales desde Configuración."
-      variant="wide"
-    >
-      {errorMsg && <div style={alertError}>{errorMsg}</div>}
-      {infoMsg && <div style={alertInfo}>{infoMsg}</div>}
-
-      <form
-        onSubmit={handleRegister}
-        style={{ display: "grid", gap: "12px" }}
-        className="w-full text-sm sm:text-base"
+    <>
+      <AuthLayout
+        title="Registro de Empresa"
+        subtitle="Completá el registro para crear la cuenta de tu empresa. Más adelante podrás cargar todos tus datos personales desde el panel de Configuración."
+        variant="wide"
       >
-        {/* 🧩 Campos en 2 columnas (desktop) */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {/* 🧍 Datos personales */}
-          <div>
-            <label style={labelStyle}>Nombre *</label>
-            <input
-              type="text"
-              value={nombre}
-              onChange={(e) => setNombre(e.target.value)}
-              style={inputStyle}
-              required
-            />
-          </div>
-          <div>
-            <label style={labelStyle}>Apellido *</label>
-            <input
-              type="text"
-              value={apellido}
-              onChange={(e) => setApellido(e.target.value)}
-              style={inputStyle}
-              required
-            />
-          </div>
+        {errorMsg && <div style={alertError}>{errorMsg}</div>}
+        {infoMsg && <div style={alertInfo}>{infoMsg}</div>}
 
-          {/* 📧 Email */}
-          <div>
-            <label style={labelStyle}>Email *</label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value.trim())}
-              style={inputStyle}
-              required
-            />
-          </div>
-
-          {/* 🔒 Contraseña */}
-          <div>
-            <label style={labelStyle}>Contraseña *</label>
-            <div className="relative">
+        <form
+          onSubmit={handleRegister}
+          style={{ display: "grid", gap: "12px" }}
+          className="w-full text-sm sm:text-base"
+        >
+          {/* 🧩 Campos en 2 columnas (desktop) */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {/* 🧍 Datos personales */}
+            <div>
+              <label style={labelStyle}>Nombre *</label>
               <input
-                type={showPassword ? "text" : "password"}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Mínimo 6 caracteres"
-                style={{ ...inputStyle, paddingRight: 40 }}
+                type="text"
+                value={nombre}
+                onChange={(e) => setNombre(e.target.value)}
+                style={inputStyle}
                 required
               />
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                style={{
-                  position: "absolute",
-                  right: 10,
-                  top: "50%",
-                  transform: "translateY(-50%)",
-                  background: "none",
-                  border: "none",
-                  cursor: "pointer",
-                  fontSize: 13,
-                  color: "#555",
-                }}
-              >
-                {showPassword ? "Ocultar" : "Ver"}
-              </button>
+            </div>
+            <div>
+              <label style={labelStyle}>Apellido *</label>
+              <input
+                type="text"
+                value={apellido}
+                onChange={(e) => setApellido(e.target.value)}
+                style={inputStyle}
+                required
+              />
+            </div>
+
+            {/* 📧 Email */}
+            <div>
+              <label style={labelStyle}>Email *</label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value.trim())}
+                style={inputStyle}
+                required
+              />
+            </div>
+
+            {/* 🔒 Contraseña */}
+            <div>
+              <label style={labelStyle}>Contraseña *</label>
+              <div className="relative">
+                <input
+                  type={showPassword ? "text" : "password"}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Mínimo 6 caracteres"
+                  style={{ ...inputStyle, paddingRight: 40 }}
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  style={{
+                    position: "absolute",
+                    right: 10,
+                    top: "50%",
+                    transform: "translateY(-50%)",
+                    background: "none",
+                    border: "none",
+                    cursor: "pointer",
+                    fontSize: 13,
+                    color: "#555",
+                  }}
+                >
+                  {showPassword ? "Ocultar" : "Ver"}
+                </button>
+              </div>
+            </div>
+
+            {/* 🏢 Nombre comercial */}
+            <div>
+              <label style={labelStyle}>
+                Nombre Comercial *
+              </label>
+              <input
+                type="text"
+                value={inmobiliaria}
+                onChange={(e) => setInmobiliaria(e.target.value)}
+                style={inputStyle}
+                required
+              />
             </div>
           </div>
 
-          {/* 🏢 Nombre comercial */}
-          <div>
-            <label style={labelStyle}>
-              Nombre Comercial de la inmobiliaria *
-            </label>
+          {/* ✅ Aceptación de Términos y Condiciones */}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "flex-start",
+              gap: 8,
+              fontSize: 13,
+              marginTop: 4,
+            }}
+          >
             <input
-              type="text"
-              value={inmobiliaria}
-              onChange={(e) => setInmobiliaria(e.target.value)}
-              style={inputStyle}
-              required
+              type="checkbox"
+              id="acepto-tyc"
+              checked={acceptedTerms}
+              onChange={(e) => setAcceptedTerms(e.target.checked)}
+              style={{ marginTop: 3, cursor: "pointer" }}
             />
+            <label htmlFor="acepto-tyc" style={{ cursor: "pointer" }}>
+              Acepto los{" "}
+              <a
+                href="/landing/legales"
+                target="_blank"
+                className="text-sky-600 font-semibold hover:underline"
+              >
+                Términos y Condiciones
+              </a>{" "}
+              y la Política de Privacidad.
+            </label>
           </div>
-        </div>
 
-        {/* ✅ Aceptación de Términos y Condiciones */}
-        <div
-          style={{
-            display: "flex",
-            alignItems: "flex-start",
-            gap: 8,
-            fontSize: 13,
-            marginTop: 4,
-          }}
-        >
-          <input
-            type="checkbox"
-            id="acepto-tyc"
-            checked={acceptedTerms}
-            onChange={(e) => setAcceptedTerms(e.target.checked)}
-            style={{ marginTop: 3, cursor: "pointer" }}
-          />
-          <label htmlFor="acepto-tyc" style={{ cursor: "pointer" }}>
-            Acepto los{" "}
+          {/* 🔘 Botón y link ocupan todo el ancho */}
+          <button
+            type="submit"
+            disabled={loading || !acceptedTerms}
+            style={buttonStyle}
+            className="hover:opacity-90 transition-all disabled:opacity-50"
+          >
+            {loading ? "Creando cuenta..." : "Crear cuenta"}
+          </button>
+
+          <p style={{ fontSize: 14, textAlign: "center", marginTop: 6 }}>
+            ¿Ya tenés cuenta?{" "}
             <a
-              href="/landing/legales"
-              target="_blank"
+              href="/auth/login"
               className="text-sky-600 font-semibold hover:underline"
             >
-              Términos y Condiciones
-            </a>{" "}
-            y la Política de Privacidad.
-          </label>
-        </div>
+              Ingresá acá
+            </a>
+          </p>
+        </form>
+      </AuthLayout>
 
-        {/* 🔘 Botón y link ocupan todo el ancho */}
-        <button
-          type="submit"
-          disabled={loading || !acceptedTerms}
-          style={buttonStyle}
-          className="hover:opacity-90 transition-all disabled:opacity-50"
+      {/* 🧷 Mensaje flotante de estado */}
+      {status === "sending" && (
+        <div
+          style={{
+            position: "fixed",
+            bottom: 16,
+            left: "50%",
+            transform: "translateX(-50%)",
+            padding: "8px 14px",
+            borderRadius: 999,
+            background: "rgba(17, 24, 39, 0.95)",
+            color: "#f9fafb",
+            fontSize: 13,
+            boxShadow: "0 10px 25px rgba(0,0,0,0.25)",
+            zIndex: 50,
+          }}
         >
-          {loading ? "Creando cuenta..." : "Crear cuenta"}
-        </button>
+          Estamos creando tu cuenta y enviando el email de confirmación…
+        </div>
+      )}
 
-        <p style={{ fontSize: 14, textAlign: "center", marginTop: 6 }}>
-          ¿Ya tenés cuenta?{" "}
-          <a
-            href="/auth/login"
-            className="text-sky-600 font-semibold hover:underline"
-          >
-            Ingresá acá
-          </a>
-        </p>
-      </form>
-    </AuthLayout>
+      {status === "sent" && (
+        <div
+          style={{
+            position: "fixed",
+            bottom: 16,
+            left: "50%",
+            transform: "translateX(-50%)",
+            padding: "8px 14px",
+            borderRadius: 999,
+            background: "rgba(22, 163, 74, 0.98)",
+            color: "#f9fafb",
+            fontSize: 13,
+            boxShadow: "0 10px 25px rgba(0,0,0,0.25)",
+            zIndex: 50,
+          }}
+        >
+          Te enviamos un email de confirmación. Revisá tu casilla (y spam) y
+          seguí las instrucciones del mensaje.
+        </div>
+      )}
+    </>
   );
 }
 

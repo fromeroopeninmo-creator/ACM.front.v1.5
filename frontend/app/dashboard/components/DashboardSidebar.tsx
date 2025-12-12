@@ -27,6 +27,7 @@ export default function DashboardSidebar({ role, color }: SidebarProps) {
       { name: "Admins", href: "/dashboard/admin/usuarios" }, // SOLO ROOT
       { name: "Configuración", href: "/dashboard/admin/cuenta" },
       { name: "FAQs", href: "/dashboard/faqs" },
+      { name: "Tutoriales", href: "/landing/tutoriales" },
     ],
     super_admin: [
       { name: "Inicio", href: "/dashboard/admin" },
@@ -37,6 +38,7 @@ export default function DashboardSidebar({ role, color }: SidebarProps) {
       // 👇 Se quita "Admins" para super_admin (root-only)
       { name: "Configuración", href: "/dashboard/admin/cuenta" },
       { name: "FAQs", href: "/dashboard/faqs" },
+      { name: "Tutoriales", href: "/landing/tutoriales" },
     ],
     soporte: [
       { name: "Inicio", href: "/dashboard/soporte" },
@@ -44,6 +46,7 @@ export default function DashboardSidebar({ role, color }: SidebarProps) {
       { name: "Registros", href: "/dashboard/soporte/logs" },
       { name: "Configuración", href: "/dashboard/soporte/cuenta" },
       { name: "FAQs", href: "/dashboard/faqs" },
+      { name: "Tutoriales", href: "/landing/tutoriales" },
     ],
     empresa: [
       { name: "Inicio", href: "/dashboard/empresa" },
@@ -52,12 +55,14 @@ export default function DashboardSidebar({ role, color }: SidebarProps) {
       { name: "Planes", href: "/dashboard/empresa/planes" },
       { name: "Configuración", href: "/dashboard/empresa/cuenta" },
       { name: "FAQs", href: "/dashboard/faqs" },
+      { name: "Tutoriales", href: "/landing/tutoriales" },
     ],
     asesor: [
       { name: "Inicio", href: "/dashboard/asesor" },
       { name: "Mis Informes", href: "/dashboard/asesor/informes" },
       { name: "Configuración", href: "/dashboard/asesor/cuenta" },
       { name: "FAQs", href: "/dashboard/faqs" },
+      { name: "Tutoriales", href: "/landing/tutoriales" },
     ],
   };
 

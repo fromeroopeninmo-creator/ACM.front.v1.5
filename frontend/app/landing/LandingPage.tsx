@@ -13,11 +13,171 @@ interface LandingPlan {
   precio: number | string | null;
 }
 
+// 🧮 Modal de Calculadora UVA (solo front, sin guardar nada)
+function UvaCalculatorModal({
+  open,
+  onClose,
+}: {
+  open: boolean;
+  onClose: () => void;
+}) {
+  const [monto, setMonto] = useState<string>("");
+  const [tasaAnual, setTasaAnual] = useState<string>("");
+  const [anios, setAnios] = useState<string>("");
+  const [resultado, setResultado] = useState<string | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // Reutilizamos el formateador de moneda del archivo
+  const formatCurrency = (value: number) =>
+    new Intl.NumberFormat("es-AR", {
+      style: "currency",
+      currency: "ARS",
+      maximumFractionDigits: 0,
+    }).format(value);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMsg(null);
+    setResultado(null);
+
+    const montoNum = parseFloat(monto.replace(",", "."));
+    const tasaNum = parseFloat(tasaAnual.replace(",", "."));
+    const aniosNum = parseInt(anios, 10);
+
+    if (!montoNum || montoNum <= 0 || isNaN(montoNum)) {
+      setErrorMsg("Ingresá un monto de crédito válido.");
+      return;
+    }
+    if (isNaN(tasaNum) || tasaNum < 0) {
+      setErrorMsg("Ingresá una tasa anual válida (puede ser 0).");
+      return;
+    }
+    if (!aniosNum || aniosNum <= 0 || isNaN(aniosNum)) {
+      setErrorMsg("Ingresá la cantidad de años del crédito.");
+      return;
+    }
+
+    const tasaMensual = tasaNum / 100 / 12;
+    const numPagos = aniosNum * 12;
+
+    let cuota: number;
+    if (tasaMensual === 0) {
+      cuota = montoNum / numPagos;
+    } else {
+      const factor = Math.pow(1 + tasaMensual, numPagos);
+      cuota = (montoNum * tasaMensual * factor) / (factor - 1);
+    }
+
+    setResultado(`Cuota mensual aproximada: ${formatCurrency(cuota)}`);
+  };
+
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 px-4">
+      <div className="relative w-full max-w-md rounded-2xl border border-neutral-800 bg-neutral-950 p-6 shadow-[0_20px_60px_rgba(0,0,0,0.9)]">
+        <button
+          onClick={onClose}
+          className="absolute right-3 top-3 rounded-full border border-neutral-700 bg-black/60 px-2 py-1 text-xs text-neutral-300 hover:bg-neutral-800"
+        >
+          Cerrar ✕
+        </button>
+
+        <h2 className="text-lg font-semibold text-neutral-50 mb-2">
+          Calculadora de Crédito UVA (aproximada)
+        </h2>
+        <p className="text-xs text-neutral-300 mb-4">
+          Ingresá un monto, una tasa de interés anual aproximada y la cantidad
+          de años para estimar una cuota mensual de un crédito amortizable en
+          UVA. Es solo una referencia rápida para conversar con tus clientes.
+        </p>
+
+        {errorMsg && (
+          <div className="mb-3 rounded-lg border border-red-500/60 bg-red-950/60 px-3 py-2 text-xs text-red-100">
+            {errorMsg}
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} className="space-y-3 text-sm">
+          <div>
+            <label className="block text-xs font-semibold text-neutral-200 mb-1">
+              Monto del crédito (en pesos)
+            </label>
+            <input
+              type="number"
+              min={0}
+              step="1000"
+              value={monto}
+              onChange={(e) => setMonto(e.target.value)}
+              className="w-full rounded-lg border border-neutral-700 bg-black/40 px-3 py-2 text-sm text-neutral-50 outline-none focus:border-[rgba(230,169,48,0.9)] focus:ring-1 focus:ring-[rgba(230,169,48,0.7)]"
+              placeholder="Ej: 20000000"
+            />
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-neutral-200 mb-1">
+                Tasa de interés anual (%)
+              </label>
+              <input
+                type="number"
+                min={0}
+                step="0.01"
+                value={tasaAnual}
+                onChange={(e) => setTasaAnual(e.target.value)}
+                className="w-full rounded-lg border border-neutral-700 bg-black/40 px-3 py-2 text-sm text-neutral-50 outline-none focus:border-[rgba(230,169,48,0.9)] focus:ring-1 focus:ring-[rgba(230,169,48,0.7)]"
+                placeholder="Ej: 5.5"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-neutral-200 mb-1">
+                Años del crédito
+              </label>
+              <input
+                type="number"
+                min={1}
+                step={1}
+                value={anios}
+                onChange={(e) => setAnios(e.target.value)}
+                className="w-full rounded-lg border border-neutral-700 bg-black/40 px-3 py-2 text-sm text-neutral-50 outline-none focus:border-[rgba(230,169,48,0.9)] focus:ring-1 focus:ring-[rgba(230,169,48,0.7)]"
+                placeholder="Ej: 20"
+              />
+            </div>
+          </div>
+
+          <button
+            type="submit"
+            className="mt-2 inline-flex w-full items-center justify-center rounded-full border border-[rgba(230,169,48,0.95)] bg-[rgba(230,169,48,0.98)] px-4 py-2 text-sm font-semibold text-black shadow-[0_10px_30px_rgba(0,0,0,0.85)] hover:bg-[rgba(230,169,48,1)] transition"
+          >
+            Calcular cuota mensual
+          </button>
+        </form>
+
+        {resultado && (
+          <div className="mt-4 rounded-xl border border-neutral-700 bg-black/60 px-3 py-3 text-xs text-neutral-100">
+            <div className="font-semibold mb-1">Resultado estimado</div>
+            <div>{resultado}</div>
+          </div>
+        )}
+
+        <p className="mt-4 text-[11px] text-neutral-400">
+          * Este cálculo es orientativo y no incluye variaciones del índice UVA,
+          seguros ni gastos administrativos.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 export default function LandingPage() {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   // Precio neto (sin IVA) del Plan Inicial para mostrar en la card
-  const [planInicialPrecioNeto, setPlanInicialPrecioNeto] = useState<number | null>(null);
+  const [planInicialPrecioNeto, setPlanInicialPrecioNeto] =
+    useState<number | null>(null);
+
+  // Estado para el modal de calculadora UVA
+  const [uvaOpen, setUvaOpen] = useState(false);
 
   const openGmailCompose = (to: string, subject?: string) => {
     const params = new URLSearchParams();
@@ -52,7 +212,7 @@ export default function LandingPage() {
           .neq("nombre", "Trial")
           .neq("nombre", "Desarrollo");
 
-      if (error) {
+        if (error) {
           console.error("Error cargando planes para landing:", error);
           return;
         }
@@ -62,8 +222,7 @@ export default function LandingPage() {
         const planes = data as LandingPlan[];
 
         // 1) Intentar encontrar el plan que coincide con la lógica de la card: hasta 4 asesores
-        let planInicial =
-          planes.find((p) => p.max_asesores === 4) ?? null;
+        let planInicial = planes.find((p) => p.max_asesores === 4) ?? null;
 
         // 2) Si no lo encuentra, tomar el plan pago más barato como fallback
         if (!planInicial) {
@@ -429,6 +588,82 @@ export default function LandingPage() {
           </div>
         </section>
 
+        {/* CALCULADORA UVA (NUEVA SECCIÓN) */}
+        <section className="border-b border-neutral-900 bg-black">
+          <div className="mx-auto max-w-6xl px-4 py-10 md:py-14">
+            <div className="grid gap-8 md:grid-cols-[1.3fr_minmax(0,1fr)] md:items-center">
+              <div>
+                <p className="text-xs font-semibold tracking-[0.22em] uppercase text-[rgba(230,169,48,0.9)]">
+                  Herramienta complementaria
+                </p>
+                <h2 className="mt-2 text-xl md:text-2xl font-semibold text-neutral-50">
+                  Calculadora de Crédito UVA para tus conversaciones con
+                  clientes
+                </h2>
+                <p className="mt-3 max-w-xl text-sm text-neutral-300">
+                  Estimá una cuota mensual aproximada en segundos, sin salir de
+                  VAI Prop. Ideal para que inmobiliarias y desarrollistas
+                  orienten al cliente en una primera charla sobre créditos
+                  hipotecarios UVA.
+                </p>
+                <ul className="mt-4 space-y-2 text-sm text-neutral-300">
+                  <li>• Ingresás monto, tasa anual estimada y plazo en años.</li>
+                  <li>• Calculamos una cuota mensual orientativa.</li>
+                  <li>
+                    • Te ayuda a poner números rápidos sobre la mesa al hablar
+                    de financiación.
+                  </li>
+                </ul>
+
+                <button
+                  type="button"
+                  onClick={() => setUvaOpen(true)}
+                  className="mt-5 inline-flex items-center justify-center rounded-full border border-[rgba(230,169,48,0.95)] bg-[rgba(230,169,48,0.98)] px-6 py-2.5 text-sm font-semibold text-black shadow-[0_15px_40px_rgba(0,0,0,0.9)] hover:bg-[rgba(230,169,48,1)] transition"
+                >
+                  🧮 Abrir calculadora UVA
+                </button>
+              </div>
+
+              <div className="relative rounded-2xl border border-neutral-800 bg-neutral-950/80 p-5 shadow-[0_18px_50px_rgba(0,0,0,0.9)]">
+                <div className="mb-3 text-xs font-medium uppercase tracking-[0.18em] text-neutral-400">
+                  Vista rápida
+                </div>
+                <p className="text-xs text-neutral-300">
+                  La calculadora no reemplaza información bancaria oficial, pero
+                  te da un orden de magnitud inmediato para pensar valores de
+                  cuota contra ingresos del cliente y precio del inmueble.
+                </p>
+                <div className="mt-4 rounded-xl border border-neutral-800 bg-black/70 px-4 py-3 text-[11px] text-neutral-200">
+                  <div className="flex items-center justify-between">
+                    <span>Monto simulado</span>
+                    <span className="font-semibold">$ 20.000.000</span>
+                  </div>
+                  <div className="mt-1 flex items-center justify-between">
+                    <span>Tasa anual</span>
+                    <span className="font-semibold">5,5% aprox.</span>
+                  </div>
+                  <div className="mt-1 flex items-center justify-between">
+                    <span>Plazo</span>
+                    <span className="font-semibold">20 años</span>
+                  </div>
+                  <div className="mt-3 flex items-center justify-between border-t border-neutral-800 pt-2">
+                    <span className="text-[11px] text-neutral-400">
+                      Cuota mensual estimada
+                    </span>
+                    <span className="text-sm font-semibold text-[rgba(230,169,48,0.96)]">
+                      $ 138.000 aprox.
+                    </span>
+                  </div>
+                </div>
+                <p className="mt-3 text-[11px] text-neutral-500">
+                  * Cálculo orientativo, sin variaciones de UVA, seguros ni
+                  gastos administrativos.
+                </p>
+              </div>
+            </div>
+          </div>
+        </section>
+
         {/* SECCIÓN VIDEO / DEMO */}
         <section className="border-b border-neutral-900 bg-black">
           <div className="mx-auto max-w-6xl px-4 py-12 md:py-16">
@@ -448,6 +683,16 @@ export default function LandingPage() {
                   <li>• Cargar comparables y fotos en segundos.</li>
                   <li>• Compartir informes con tu marca y logo.</li>
                 </ul>
+
+                {/* CTA hacia tutoriales (la página la armamos después) */}
+                <div className="mt-5">
+                  <Link
+                    href="/landing/tutoriales"
+                    className="inline-flex items-center justify-center rounded-full border border-neutral-700 px-5 py-2.5 text-sm font-semibold text-neutral-100 hover:bg-neutral-900 transition"
+                  >
+                    🎥 Conocé todas las herramientas
+                  </Link>
+                </div>
               </div>
 
               {/* Video demo */}
@@ -750,6 +995,9 @@ export default function LandingPage() {
           </div>
         </section>
       </main>
+
+      {/* Modal de Calculadora UVA */}
+      <UvaCalculatorModal open={uvaOpen} onClose={() => setUvaOpen(false)} />
     </div>
   );
 }

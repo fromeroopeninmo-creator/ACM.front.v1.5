@@ -27,102 +27,51 @@ export default function AuthCallbackPage() {
 
   useEffect(() => {
     let cancelled = false;
+    let timeoutId: number | undefined;
 
     const run = async () => {
       setStatus("checking");
-      setMsg("Verificando sesión…");
+      setMsg("Verificando enlace de verificación…");
 
       const qsError = getErrorFromQS();
       if (qsError) {
         console.warn("[auth/callback] error en querystring:", qsError);
-      }
 
-      // 0) Intentar intercambiar el código del enlace por una sesión (no es fatal si falla)
-      try {
-        const fullUrl =
-          typeof window !== "undefined" ? window.location.href : "";
-        if (fullUrl) {
-          const { error: exchangeError } =
-            await supabase.auth.exchangeCodeForSession(fullUrl);
-          if (exchangeError) {
-            console.warn(
-              "[auth/callback] exchangeCodeForSession error:",
-              exchangeError.message || exchangeError
-            );
-          }
-        }
-      } catch (err) {
-        console.error("[auth/callback] excepción en exchangeCodeForSession:", err);
-      }
+        if (cancelled) return;
 
-      // 1) Esperar a que aparezca la sesión (puede tardar un poco tras el redirect)
-      let tries = 0;
-      let session:
-        | Awaited<
-            ReturnType<typeof supabase.auth.getSession>
-          >["data"]["session"]
-        | null = null;
-
-      while (!session && tries < 6) {
-        const { data } = await supabase.auth.getSession();
-        session = data.session;
-        if (!session) {
-          await new Promise((r) => setTimeout(r, 500));
-          tries++;
-        }
-      }
-
-      if (cancelled) return;
-
-      // 🧩 Caso 1: NO hay sesión, pero igual llegamos desde el mail.
-      // En tu flujo, la cuenta ya está creada y el mail ya se verificó.
-      // Mostramos mensaje de éxito y pedimos iniciar sesión manualmente.
-      if (!session) {
-        setStatus("done");
+        setStatus("error");
         setMsg(
-          "Tu email ya fue verificado o está en proceso. Ahora iniciá sesión con tu email y contraseña para acceder a tu panel."
+          `No pudimos validar tu cuenta: ${qsError}. Probá solicitar un nuevo enlace o iniciar sesión manualmente.`
         );
         return;
       }
 
-      // 🧩 Caso 2: SÍ hay sesión -> hacemos bootstrap como best-effort
-      try {
-        setStatus("bootstrapping");
-        setMsg("Creando tu empresa y asignando plan de prueba…");
-
-        const res = await fetch("/api/empresa/bootstrap", {
-          method: "POST",
-          cache: "no-store",
-        });
-
-        if (!res.ok) {
-          const j = await res.json().catch(() => ({}));
-          console.error(
-            "[auth/callback] Error en /api/empresa/bootstrap:",
-            res.status,
-            j
-          );
-          // No lanzamos: no rompemos la UX aunque falle el bootstrap.
-        }
-      } catch (e) {
-        console.error(
-          "[auth/callback] Excepción llamando /api/empresa/bootstrap:",
-          e
-        );
-        // Tampoco lanzamos: tu empresa ya se crea por triggers en BD.
-      }
-
+      // 🧩 En este flujo asumimos:
+      // - Si Supabase llegó hasta acá con el token OK, el email ya fue verificado.
+      // - La empresa/usuario ya se crean vía triggers en BD.
+      // Por lo tanto, NO intentamos crear sesión automática ni llamar a /api/empresa/bootstrap.
       if (cancelled) return;
 
       setStatus("done");
-      setMsg("¡Listo! Redirigiendo a tu panel…");
-      router.replace("/dashboard");
+      setMsg(
+        "Tu email fue verificado correctamente. Ahora iniciá sesión con tu email y contraseña para acceder a tu panel."
+      );
+
+      // Redirigir automáticamente al login luego de unos segundos
+      timeoutId = window.setTimeout(() => {
+        if (!cancelled) {
+          router.replace("/auth/login");
+        }
+      }, 3500);
     };
 
     run();
 
     return () => {
       cancelled = true;
+      if (timeoutId) {
+        window.clearTimeout(timeoutId);
+      }
     };
   }, [router]);
 
@@ -153,15 +102,12 @@ export default function AuthCallbackPage() {
           </>
         ) : (
           <>
-            {/* Este bloque debería ser ya muy poco frecuente; solo errores inesperados */}
+            {/* Este bloque se muestra solo si hubo un error explícito en el enlace */}
             <div className="text-2xl mb-2">⚠️</div>
             <h1 className="text-lg font-semibold">
               No pudimos completar el proceso
             </h1>
-            <p className="text-gray-600 mt-2">
-              Ocurrió un error inesperado. Probá iniciar sesión manualmente con
-              tu email y contraseña. Si el problema persiste, contactanos.
-            </p>
+            <p className="text-gray-600 mt-2">{msg}</p>
             <button
               onClick={() => router.push("/auth/login")}
               className="mt-4 inline-flex items-center justify-center px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700"

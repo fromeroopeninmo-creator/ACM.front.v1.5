@@ -42,6 +42,12 @@ export default function SiteNavbar() {
           >
             Próximamente
           </Link>
+          <Link
+            href="/landing/tutoriales"
+            className="hidden text-neutral-300 hover:text-white md:inline-block"
+          >
+            Tutoriales
+          </Link>
 
           <Link
             href="/auth/login"

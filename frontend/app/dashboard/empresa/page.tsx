@@ -1,3 +1,4 @@
+// frontend/app/dashboard/empresa/page.tsx
 "use client";
 
 import useSWR from "swr";
@@ -286,104 +287,109 @@ export default function EmpresaDashboardPage() {
           {/* 🏠 Valuador de Activos Inmobiliarios */}
           <Link
             href="/vai/acmforms"
-            className="w-full px-5 py-2.5 text-base text-white font-semibold rounded-lg shadow transition"
+            className="w-full px-5 py-3 text-sm sm:text-base text-white font-semibold rounded-xl shadow-md border border-black/10 text-center inline-flex items-center justify-center gap-2 hover:shadow-lg transform hover:-translate-y-0.5 active:translate-y-0 transition"
             style={{
               backgroundColor: primaryColor,
-              boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
+              boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
             }}
             onMouseEnter={(e) => {
               (e.currentTarget as HTMLAnchorElement).style.filter =
-                "brightness(1.1)";
+                "brightness(1.05)";
             }}
             onMouseLeave={(e) => {
               (e.currentTarget as HTMLAnchorElement).style.filter =
                 "brightness(1)";
             }}
           >
-            🏠 Valuador de Activos Inmobiliarios
+            <span>🏠</span>
+            <span>Valuador de Activos Inmobiliarios</span>
           </Link>
 
           {/* 📊 Business Tracker */}
           <Link
             href="/dashboard/empresa/tracker"
-            className="w-full px-5 py-2.5 text-base text-white font-semibold rounded-lg shadow transition"
+            className="w-full px-5 py-3 text-sm sm:text-base text-white font-semibold rounded-xl shadow-md border border-black/10 text-center inline-flex items-center justify-center gap-2 hover:shadow-lg transform hover:-translate-y-0.5 active:translate-y-0 transition"
             style={{
               backgroundColor: primaryColor,
-              boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
+              boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
             }}
             onClick={handleTrackerClick}
             onMouseEnter={(e) => {
               (e.currentTarget as HTMLAnchorElement).style.filter =
-                "brightness(1.1)";
+                "brightness(1.05)";
             }}
             onMouseLeave={(e) => {
               (e.currentTarget as HTMLAnchorElement).style.filter =
                 "brightness(1)";
             }}
           >
-            📊 Business Tracker
+            <span>📊</span>
+            <span>Business Tracker</span>
           </Link>
 
           {/* 📐 Factibilidad Constructiva */}
           <Link
             href="/dashboard/empresa/factibilidad"
-            className="w-full px-5 py-2.5 text-base text-white font-semibold rounded-lg shadow transition"
+            className="w-full px-5 py-3 text-sm sm:text-base text-white font-semibold rounded-xl shadow-md border border-black/10 text-center inline-flex items-center justify-center gap-2 hover:shadow-lg transform hover:-translate-y-0.5 active:translate-y-0 transition"
             style={{
               backgroundColor: primaryColor,
-              boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
+              boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
             }}
             onMouseEnter={(e) => {
               (e.currentTarget as HTMLAnchorElement).style.filter =
-                "brightness(1.1)";
+                "brightness(1.05)";
             }}
             onMouseLeave={(e) => {
               (e.currentTarget as HTMLAnchorElement).style.filter =
                 "brightness(1)";
             }}
           >
-            📐 Factibilidad Constructiva
+            <span>📐</span>
+            <span>Factibilidad Constructiva</span>
           </Link>
 
           {/* 📈 Business Analytics */}
           <Link
             href="/dashboard/empresa/tracker-analytics"
-            className="w-full px-5 py-2.5 text-base text-white font-semibold rounded-lg shadow transition"
+            className="w-full px-5 py-3 text-sm sm:text-base text-white font-semibold rounded-xl shadow-md border border-black/10 text-center inline-flex items-center justify-center gap-2 hover:shadow-lg transform hover:-translate-y-0.5 active:translate-y-0 transition"
             style={{
               backgroundColor: primaryColor,
-              boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
+              boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
             }}
             onClick={handleTrackerClick}
             onMouseEnter={(e) => {
               (e.currentTarget as HTMLAnchorElement).style.filter =
-                "brightness(1.1)";
+                "brightness(1.05)";
             }}
             onMouseLeave={(e) => {
               (e.currentTarget as HTMLAnchorElement).style.filter =
                 "brightness(1)";
             }}
           >
-            📈 Business Analytics
+            <span>📈</span>
+            <span>Business Analytics</span>
           </Link>
 
           {/* 🧮 Calculadora Créditos UVA */}
           <button
             type="button"
             onClick={() => setShowUvaCalc(true)}
-            className="w-full px-5 py-2.5 text-base text-white font-semibold rounded-lg shadow transition"
+            className="w-full px-5 py-3 text-sm sm:text-base text-white font-semibold rounded-xl shadow-md border border-black/10 text-center inline-flex items-center justify-center gap-2 hover:shadow-lg transform hover:-translate-y-0.5 active:translate-y-0 transition"
             style={{
               backgroundColor: primaryColor,
-              boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
+              boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
             }}
             onMouseEnter={(e) => {
               (e.currentTarget as HTMLButtonElement).style.filter =
-                "brightness(1.1)";
+                "brightness(1.05)";
             }}
             onMouseLeave={(e) => {
               (e.currentTarget as HTMLButtonElement).style.filter =
                 "brightness(1)";
             }}
           >
-            🧮 Calculadora Créditos UVA
+            <span>🧮</span>
+            <span>Calculadora Créditos UVA</span>
           </button>
         </div>
       </section>

@@ -5,6 +5,7 @@ import { useTheme } from "@/context/ThemeContext";
 import { supabase } from "#lib/supabaseClient";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import UvaCalculatorModal from "@/components/UvaCalculatorModal";
 
 export default function AsesorDashboardPage() {
   const { user } = useAuth();
@@ -12,6 +13,7 @@ export default function AsesorDashboardPage() {
 
   const [empresa, setEmpresa] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [showUvaCalc, setShowUvaCalc] = useState(false);
 
   const safeUser = user as any; // evita errores de tipo
 
@@ -178,13 +180,12 @@ export default function AsesorDashboardPage() {
         }`
       : "/images/default-logo.png";
 
-  // estilo base para los botones (mismo ancho, una sola línea)
+  // estilo base para los botones (alineado con dashboard empresa)
   const buttonBaseClasses =
-    "px-6 py-3 text-white font-semibold rounded-lg shadow transition text-center whitespace-nowrap";
+    "w-full px-5 py-3 text-sm sm:text-base text-white font-semibold rounded-xl shadow-md border border-black/10 text-center inline-flex items-center justify-center gap-2 hover:shadow-lg transform hover:-translate-y-0.5 active:translate-y-0 transition";
   const buttonStyle = {
     backgroundColor: primaryColor,
-    boxShadow: "0 3px 8px rgba(0,0,0,0.15)",
-    minWidth: "320px",
+    boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
   };
 
   return (
@@ -202,41 +203,69 @@ export default function AsesorDashboardPage() {
 
       {/* 2) Vai Tools */}
       <section className="bg-white shadow-sm rounded-xl p-6">
-        <h2 className="text-lg md:text-xl font-semibold mb-4">Vai Tools</h2>
+        <h2 className="text-lg md:text-xl font-semibold mb-4">VAI TOOLS</h2>
 
-        <div className="inline-grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {/* Fila 1: Valuador + Business Tracker */}
+        {/* 5 botones, ordenados como en empresa:
+            Fila 1: Valuador / Business Tracker / Calculadora UVA
+            Fila 2: Factibilidad / Business Analytics */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 max-w-3xl">
+          {/* 🧾 Valuador de Activos Inmobiliarios */}
           <Link
             href="/vai/acmforms"
             className={buttonBaseClasses}
             style={buttonStyle}
           >
-            🧾 Valuador de Activos Inmobiliarios
+            <span>🧾</span>
+            <span>Valuador de Activos Inmobiliarios</span>
           </Link>
 
+          {/* 📅 Business Tracker */}
           <Link
             href="/dashboard/asesor/tracker"
             className={buttonBaseClasses}
             style={buttonStyle}
           >
-            📅 Business Tracker
+            <span>📅</span>
+            <span>Business Tracker</span>
           </Link>
 
-          {/* Fila 2: Factibilidad + Business Analytics */}
+          {/* 🧮 Calculadora Créditos UVA */}
+          <button
+            type="button"
+            onClick={() => setShowUvaCalc(true)}
+            className={buttonBaseClasses}
+            style={buttonStyle}
+            onMouseEnter={(e) => {
+              (e.currentTarget as HTMLButtonElement).style.filter =
+                "brightness(1.05)";
+            }}
+            onMouseLeave={(e) => {
+              (e.currentTarget as HTMLButtonElement).style.filter =
+                "brightness(1)";
+            }}
+          >
+            <span>🧮</span>
+            <span>Calculadora Créditos UVA -Gratis</span>
+          </button>
+
+          {/* 🧮 Factibilidad Constructiva */}
           <Link
             href="/dashboard/empresa/factibilidad"
             className={buttonBaseClasses}
             style={buttonStyle}
           >
-            🧮 Factibilidad Constructiva
+            <span>📐</span>
+            <span>Factibilidad Constructiva</span>
           </Link>
 
+          {/* 📊 Business Analytics */}
           <Link
             href="/dashboard/asesor/tracker-analytics"
             className={buttonBaseClasses}
             style={buttonStyle}
           >
-            📊 Business Analytics
+            <span>📊</span>
+            <span>Business Analytics</span>
           </Link>
         </div>
       </section>
@@ -277,6 +306,12 @@ export default function AsesorDashboardPage() {
           />
         </div>
       </section>
+
+      {/* 🧮 Modal Calculadora UVA */}
+      <UvaCalculatorModal
+        open={showUvaCalc}
+        onClose={() => setShowUvaCalc(false)}
+      />
     </div>
   );
 }

@@ -432,16 +432,14 @@ export default function LandingPage() {
               </span>
 
               <h1 className="text-balance text-3xl font-semibold tracking-tight text-neutral-50 sm:text-4xl lg:text-[2.75rem]">
-                Software de valuación y gestión inmobiliaria para el{" "}
+                Software de gestión para el{" "}
                 <span style={{ color: accent }}>Real Estate</span>
               </h1>
 
               <p className="max-w-xl text-sm leading-relaxed text-neutral-300 sm:text-base">
-                Centralizá tus valuaciones y tasaciones, estudios de factibilidad
-                constructiva y gestión de asesores en una sola plataforma. Menos
-                Excel y WhatsApp, más{" "}
-                <span className="font-semibold">informes profesionales</span>,
-                tracker de negocio y decisiones rápidas.
+                Realizá valuaciones y tasaciones en minutos, estudios de factibilidad
+                constructiva, gestión de asesores y todas las métricas en una sola plataforma.{" "}
+                <span className="font-semibold">Tomá decisiones respaldadas con datos y no solo tu intuición.</span>,            
               </p>
 
               {/* CTA */}
@@ -468,7 +466,7 @@ export default function LandingPage() {
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="inline-block h-1.5 w-1.5 rounded-full bg-[rgba(230,169,48,0.9)]" />
-                  Plan Trial con funcionalidades clave
+                  Plan Trial con todas las herramientas
                 </div>
               </div>
             </div>

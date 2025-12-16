@@ -455,7 +455,30 @@ export default function AsesorTrackerAnaliticoPage() {
     return { tipologiaCierreStats, avgGapGlobal, avgDiasGlobal };
   }, [propiedadesFiltradas]);
 
-  // ==== Donuts (captadas & cierres) con % dentro de las “porciones” ====
+    // ==== Donuts (captadas & cierres) con % dentro de las “porciones” ====
+
+  // 🔹 Mapa global de colores por tipología
+  const tipologiaColorMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    let colorIdx = 0;
+
+    const assignColor = (tipologiaRaw: string | null | undefined) => {
+      if (!tipologiaRaw) return;
+      const key = tipologiaRaw; // si querés, acá podés normalizar (toLowerCase, trim, etc.)
+      if (!map[key]) {
+        map[key] = PIE_COLORS[colorIdx % PIE_COLORS.length];
+        colorIdx++;
+      }
+    };
+
+    // Primero recorremos las captadas
+    tipologiaCaptadasStats.forEach((item) => assignColor(item.tipologia));
+    // Luego recorremos las de cierre (si hay alguna tipología nueva, toma el siguiente color libre)
+    tipologiaCierreStats.forEach((item) => assignColor(item.tipologia));
+
+    return map;
+  }, [tipologiaCaptadasStats, tipologiaCierreStats]);
+
   const pieCaptadasSegments = useMemo(() => {
     let cursor = 0;
     return tipologiaCaptadasStats.map((item, idx) => {
@@ -468,10 +491,13 @@ export default function AsesorTrackerAnaliticoPage() {
         porcentaje: item.porcentaje,
         start,
         end,
-        color: PIE_COLORS[idx % PIE_COLORS.length],
+        // ✅ Color consistente por tipología en TODOS los gráficos
+        color:
+          tipologiaColorMap[item.tipologia] ??
+          PIE_COLORS[idx % PIE_COLORS.length],
       };
     });
-  }, [tipologiaCaptadasStats]);
+  }, [tipologiaCaptadasStats, tipologiaColorMap]);
 
   const pieCaptadasBackground =
     pieCaptadasSegments.length === 0
@@ -496,10 +522,13 @@ export default function AsesorTrackerAnaliticoPage() {
         porcentaje: item.sharePct,
         start,
         end,
-        color: PIE_COLORS[idx % PIE_COLORS.length],
+        // ✅ MISMO mapa de colores que el gráfico anterior
+        color:
+          tipologiaColorMap[item.tipologia] ??
+          PIE_COLORS[idx % PIE_COLORS.length],
       };
     });
-  }, [tipologiaCierreStats]);
+  }, [tipologiaCierreStats, tipologiaColorMap]);
 
   const pieCierresBackground =
     pieCierresSegments.length === 0
@@ -548,6 +577,7 @@ export default function AsesorTrackerAnaliticoPage() {
       );
     });
   };
+
 
   // ==== Honorarios brutos totales (1 o 2 puntas) ====
   const honorariosBrutosTotal = useMemo(() => {

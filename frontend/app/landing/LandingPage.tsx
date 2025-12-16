@@ -439,7 +439,7 @@ export default function LandingPage() {
               <p className="max-w-xl text-sm leading-relaxed text-neutral-300 sm:text-base">
                 Realizá valuaciones y tasaciones en minutos, estudios de factibilidad
                 constructiva, gestión de asesores y todas las métricas en una sola plataforma.{" "}
-                <span className="font-semibold">Tomá decisiones respaldadas con datos y no solo tu intuición.</span>,            
+                <span className="font-semibold">Tomá decisiones respaldadas con datos y no solo tu intuición.</span>            
               </p>
 
               {/* CTA */}
@@ -477,7 +477,7 @@ export default function LandingPage() {
                 <div className="absolute inset-0 rounded-3xl border border-[rgba(230,169,48,0.18)] pointer-events-none" />
                 <div className="relative overflow-hidden rounded-[1.4rem] bg-black">
                   <Image
-                    src="/landing/hero/hero-desktop.webp"
+                    src="/landing/hero/tablero_hero.jpg"
                     alt="Vista de la plataforma VAI Prop con valuaciones y tracker"
                     width={960}
                     height={640}

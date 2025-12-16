@@ -491,11 +491,10 @@ export default function LandingPage() {
                 {/* Mini badges sobre la tarjeta */}
                 <div className="pointer-events-none absolute -left-3 -bottom-4 hidden w-48 rounded-2xl border border-[rgba(230,169,48,0.25)] bg-black/90 px-3 py-2 text-xs text-neutral-200 shadow-[0_18px_40px_rgba(0,0,0,0.9)] sm:block">
                   <div className="text-[11px] uppercase tracking-[0.18em] text-[rgba(230,169,48,0.9)]">
-                    Informes VAI
+                    Business Analytics
                   </div>
                   <div className="mt-1 text-[13px] text-neutral-100">
-                    Comparables, fotos e informes de valuación listos para enviar
-                    a tu cliente.
+                    Medí el desempeño de tu empresa y asesores.
                   </div>
                 </div>
               </div>

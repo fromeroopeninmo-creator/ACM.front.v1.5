@@ -1368,7 +1368,7 @@ export default function AsesorTrackerPage() {
                 <option value="365d">Último año</option>
               </select>
               <a
-                href="/asesor/tracker-analytics"
+                href="/dashboard/asesor/tracker-analytics"
                 className="ml-2 inline-flex items-center rounded-full border border-gray-300 bg-white px-3 py-1 text-xs font-medium text-slate-700 hover:bg-gray-100"
               >
                 Business Analytics

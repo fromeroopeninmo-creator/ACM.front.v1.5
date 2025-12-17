@@ -26,7 +26,7 @@ type TrackerActividadTipo =
   | "reserva"
   | "cierre";
 
-type TrackerTab = "calendario" | "contactos" | "propiedades";
+type TrackerTab = "calendario" | "actividades" | "contactos" | "propiedades";
 type KpiRange = "30d" | "90d" | "180d" | "365d";
 type TrackerScope = "empresa" | "asesores" | "global";
 
@@ -112,6 +112,7 @@ interface FormPropiedadState {
   fecha_cierre: string;
   honorarios_pct_vendedor: string;
   honorarios_pct_comprador: string;
+  asesor_id: string;
 }
 
 function startOfDay(date: Date) {
@@ -301,6 +302,7 @@ export default function EmpresaTrackerPage() {
     hora: "",
     contacto_id: "" as string | "",
     notas: "",
+    asesor_id: "" as string | "",
   });
 
   const [formPropiedad, setFormPropiedad] = useState<FormPropiedadState>({
@@ -320,6 +322,7 @@ export default function EmpresaTrackerPage() {
     fecha_cierre: "",
     honorarios_pct_vendedor: "",
     honorarios_pct_comprador: "",
+    asesor_id: "",
   });
 
   // Referencias de hoy y mañana (hora local, sin mezclar TZ)
@@ -364,13 +367,60 @@ export default function EmpresaTrackerPage() {
     }
     return propiedades.filter((p) => p.asesor_id === selectedAsesorId);
   }, [propiedades, scope, selectedAsesorId]);
+  // Map de contacto -> set de asesores asociados (por actividades o propiedades)
+  const contactoAsesorMap = useMemo(() => {
+    const map = new Map<string, Set<string>>();
+
+    for (const a of actividades) {
+      if (!a.contacto_id) continue;
+      if (!a.asesor_id) continue;
+      const set = map.get(a.contacto_id) ?? new Set<string>();
+      set.add(a.asesor_id);
+      map.set(a.contacto_id, set);
+    }
+
+    for (const p of propiedades) {
+      if (!p.contacto_id) continue;
+      if (!p.asesor_id) continue;
+      const set = map.get(p.contacto_id) ?? new Set<string>();
+      set.add(p.asesor_id);
+      map.set(p.contacto_id, set);
+    }
+
+    return map;
+  }, [actividades, propiedades]);
+
+  const contactosPorScope = useMemo(() => {
+    if (scope === "global") return contactos;
+
+    if (scope === "empresa") {
+      // contactos sin asociación a asesores (según actividades/propiedades)
+      return contactos.filter((c) => {
+        const set = contactoAsesorMap.get(c.id);
+        return !set || set.size === 0;
+      });
+    }
+
+    // scope === "asesores"
+    if (!selectedAsesorId) {
+      return contactos.filter((c) => {
+        const set = contactoAsesorMap.get(c.id);
+        return !!set && set.size > 0;
+      });
+    }
+
+    return contactos.filter((c) => {
+      const set = contactoAsesorMap.get(c.id);
+      return !!set && set.has(selectedAsesorId);
+    });
+  }, [contactos, scope, selectedAsesorId, contactoAsesorMap]);
 
   const contactosFiltrados = useMemo(
     () =>
       tipologiaFiltro
-        ? contactos.filter((c) => c.tipologia === tipologiaFiltro)
-        : contactos,
-    [contactos, tipologiaFiltro]
+        ? contactosPorScope.filter((c) => c.tipologia === tipologiaFiltro)
+        : contactosPorScope,
+    [contactosPorScope, tipologiaFiltro]
   );
 
   const propiedadesFiltradasPorTipologia = useMemo(
@@ -685,6 +735,11 @@ export default function EmpresaTrackerPage() {
     return contactos.find((c) => c.id === id) ?? null;
   };
 
+  const asesorPorId = (id: string | null) => {
+    if (!id) return null;
+    return asesores.find((a) => a.id === id) ?? null;
+  };
+
   const actividadesDeContacto = (contactoId: string) =>
     actividades
       .filter((a) => a.contacto_id === contactoId)
@@ -695,7 +750,6 @@ export default function EmpresaTrackerPage() {
       );
 
   // ----- CRUD CONTACTOS -----
-
   const openNuevoContacto = () => {
     setEditingContacto(null);
     setFormContacto({
@@ -846,6 +900,7 @@ export default function EmpresaTrackerPage() {
       hora: "",
       contacto_id: "",
       notas: "",
+      asesor_id: scope === "empresa" ? "" : selectedAsesorId || "",
     });
     setShowActividadModal(true);
   };
@@ -859,6 +914,7 @@ export default function EmpresaTrackerPage() {
       hora: a.hora ?? "",
       contacto_id: a.contacto_id ?? "",
       notas: a.notas ?? "",
+      asesor_id: a.asesor_id ?? "",
     });
     setShowActividadModal(true);
   };
@@ -878,6 +934,7 @@ export default function EmpresaTrackerPage() {
             hora: formActividad.hora || null,
             contacto_id: formActividad.contacto_id || null,
             notas: formActividad.notas || null,
+            asesor_id: formActividad.asesor_id || null,
             updated_at: new Date().toISOString(),
           })
           .eq("id", editingActividad.id)
@@ -897,6 +954,7 @@ export default function EmpresaTrackerPage() {
           hora: formActividad.hora || null,
           contacto_id: formActividad.contacto_id || null,
           notas: formActividad.notas || null,
+          asesor_id: formActividad.asesor_id || null,
         });
 
         if (error) {
@@ -970,6 +1028,7 @@ export default function EmpresaTrackerPage() {
       fecha_cierre: "",
       honorarios_pct_vendedor: "",
       honorarios_pct_comprador: "",
+      asesor_id: scope === "empresa" ? "" : selectedAsesorId || "",
     });
     setShowPropiedadModal(true);
   };
@@ -1001,6 +1060,7 @@ export default function EmpresaTrackerPage() {
         p.honorarios_pct_comprador != null
           ? String(p.honorarios_pct_comprador)
           : "",
+      asesor_id: p.asesor_id ?? "",
     });
     setShowPropiedadModal(true);
   };
@@ -1077,6 +1137,7 @@ export default function EmpresaTrackerPage() {
       honorarios_pct_comprador: parseNumberOrNull(
         formPropiedad.honorarios_pct_comprador
       ),
+      asesor_id: formPropiedad.asesor_id || null,
     };
 
     try {
@@ -1316,7 +1377,10 @@ export default function EmpresaTrackerPage() {
                       <button
                         key={opt.id}
                         type="button"
-                        onClick={() => setScope(opt.id)}
+                        onClick={() => {
+                          setScope(opt.id);
+                          if (opt.id !== "asesores") setSelectedAsesorId("");
+                        }}
                         className={`px-3 py-1 rounded-full text-xs font-medium transition ${
                           active
                             ? "bg-black text-white"
@@ -1368,19 +1432,29 @@ export default function EmpresaTrackerPage() {
                 tareas programadas
               </div>
               <ul className="mt-2 space-y-1 max-h-20 overflow-y-auto">
-                {actividadesHoy.slice(0, 3).map((a) => (
-                  <li
-                    key={a.id}
-                    className="text-[11px] text-slate-700 flex items-center justify-between"
-                  >
-                    <span className="truncate">{a.titulo}</span>
-                    {a.hora && (
-                      <span className="ml-2 text-[10px] text-slate-400">
-                        {formatTime(a.hora)}
+                {actividadesHoy.slice(0, 3).map((a) => {
+                  const asr = asesorPorId(a.asesor_id);
+                  return (
+                    <li
+                      key={a.id}
+                      className="text-[11px] text-slate-700 flex items-center justify-between"
+                    >
+                      <span className="truncate">
+                        {a.titulo}
+                        {asr ? (
+                          <span className="ml-1 text-[10px] text-slate-400">
+                            · {contactoNombreCorto(asr)}
+                          </span>
+                        ) : null}
                       </span>
-                    )}
-                  </li>
-                ))}
+                      {a.hora && (
+                        <span className="ml-2 text-[10px] text-slate-400">
+                          {formatTime(a.hora)}
+                        </span>
+                      )}
+                    </li>
+                  );
+                })}
                 {actividadesHoy.length === 0 && (
                   <li className="text-[11px] text-slate-400">
                     Sin actividades para hoy.
@@ -1405,19 +1479,29 @@ export default function EmpresaTrackerPage() {
                 tareas programadas
               </div>
               <ul className="mt-2 space-y-1 max-h-20 overflow-y-auto">
-                {actividadesManana.slice(0, 3).map((a) => (
-                  <li
-                    key={a.id}
-                    className="text-[11px] text-slate-700 flex items-center justify-between"
-                  >
-                    <span className="truncate">{a.titulo}</span>
-                    {a.hora && (
-                      <span className="ml-2 text-[10px] text-slate-400">
-                        {formatTime(a.hora)}
+                {actividadesManana.slice(0, 3).map((a) => {
+                  const asr = asesorPorId(a.asesor_id);
+                  return (
+                    <li
+                      key={a.id}
+                      className="text-[11px] text-slate-700 flex items-center justify-between"
+                    >
+                      <span className="truncate">
+                        {a.titulo}
+                        {asr ? (
+                          <span className="ml-1 text-[10px] text-slate-400">
+                            · {contactoNombreCorto(asr)}
+                          </span>
+                        ) : null}
                       </span>
-                    )}
-                  </li>
-                ))}
+                      {a.hora && (
+                        <span className="ml-2 text-[10px] text-slate-400">
+                          {formatTime(a.hora)}
+                        </span>
+                      )}
+                    </li>
+                  );
+                })}
                 {actividadesManana.length === 0 && (
                   <li className="text-[11px] text-slate-400">
                     Sin actividades para mañana.
@@ -1507,6 +1591,7 @@ export default function EmpresaTrackerPage() {
         <nav className="flex flex-wrap gap-2 text-sm">
           {[
             { id: "calendario", label: "Calendario" },
+            { id: "actividades", label: "Actividades (lista)" },
             { id: "contactos", label: "Contactos / Captaciones" },
             { id: "propiedades", label: "Propiedades captadas" },
           ].map((tab) => {
@@ -1668,6 +1753,7 @@ export default function EmpresaTrackerPage() {
                   <ul className="space-y-2 max-h-[360px] overflow-y-auto">
                     {actividadesSelectedDate.map((a) => {
                       const contacto = contactoPorId(a.contacto_id);
+                      const asr = asesorPorId(a.asesor_id);
                       return (
                         <li
                           key={a.id}
@@ -1684,6 +1770,11 @@ export default function EmpresaTrackerPage() {
                           <div className="flex items-center justify-between gap-2">
                             <span className="text-[11px] text-slate-500">
                               {contactoNombreCorto(contacto)}
+                              {asr ? (
+                                <span className="ml-1 text-slate-400">
+                                  · {contactoNombreCorto(asr)}
+                                </span>
+                              ) : null}
                             </span>
                             <div className="flex items-center gap-2">
                               <button
@@ -1724,6 +1815,100 @@ export default function EmpresaTrackerPage() {
           </section>
         )}
 
+        {activeTab === "actividades" && (
+          <section className="rounded-2xl bg-white border border-gray-200 shadow-sm p-4 space-y-4">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div>
+                <h2 className="text-sm font-semibold text-slate-900">
+                  Actividades (lista)
+                </h2>
+                <p className="text-xs text-slate-500">
+                  Vista rápida de todas las actividades según la vista (Empresa / Asesores / Global).
+                </p>
+              </div>
+              <button
+                onClick={() => openNuevaActividad(new Date())}
+                className="inline-flex items-center gap-1 rounded-full bg-black text-white px-3 py-1.5 text-xs font-medium hover:bg-slate-900"
+              >
+                <span className="text-sm">＋</span>
+                Nueva actividad
+              </button>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-xs">
+                <thead>
+                  <tr className="border-b border-gray-200 bg-gray-50 text-[11px] text-slate-500">
+                    <th className="px-3 py-2 text-left font-medium">Fecha</th>
+                    <th className="px-3 py-2 text-left font-medium">Hora</th>
+                    <th className="px-3 py-2 text-left font-medium">Tipo</th>
+                    <th className="px-3 py-2 text-left font-medium">Título</th>
+                    <th className="px-3 py-2 text-left font-medium">Contacto</th>
+                    <th className="px-3 py-2 text-left font-medium">Asignado</th>
+                    <th className="px-3 py-2 text-right font-medium">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {actividadesFiltradas.length === 0 && (
+                    <tr>
+                      <td
+                        colSpan={7}
+                        className="px-3 py-6 text-center text-xs text-slate-500"
+                      >
+                        No hay actividades para la vista seleccionada.
+                      </td>
+                    </tr>
+                  )}
+                  {actividadesFiltradas.map((a) => {
+                    const contacto = contactoPorId(a.contacto_id);
+                    const asr = asesorPorId(a.asesor_id);
+                    return (
+                      <tr
+                        key={a.id}
+                        className="border-b border-gray-100 hover:bg-gray-50"
+                      >
+                        <td className="px-3 py-2 align-top text-slate-700">
+                          {a.fecha_programada?.substring(0, 10) || "—"}
+                        </td>
+                        <td className="px-3 py-2 align-top text-slate-700">
+                          {a.hora ? formatTime(a.hora) : "—"}
+                        </td>
+                        <td className="px-3 py-2 align-top text-slate-700">
+                          {labelTipoActividad(a.tipo)}
+                        </td>
+                        <td className="px-3 py-2 align-top text-slate-900 font-medium">
+                          {a.titulo}
+                        </td>
+                        <td className="px-3 py-2 align-top text-slate-700">
+                          {contactoNombreCorto(contacto)}
+                        </td>
+                        <td className="px-3 py-2 align-top text-slate-700">
+                          {asr ? contactoNombreCorto(asr) : "Empresa"}
+                        </td>
+                        <td className="px-3 py-2 align-top text-right">
+                          <div className="flex justify-end gap-2">
+                            <button
+                              onClick={() => openEditarActividad(a)}
+                              className="text-[11px] text-slate-600 hover:text-black"
+                            >
+                              Ver / Editar
+                            </button>
+                            <button
+                              onClick={() => eliminarActividad(a.id)}
+                              className="text-[11px] text-red-600 hover:text-red-700"
+                            >
+                              Eliminar
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        )}
         {activeTab === "contactos" && (
           <section className="rounded-2xl bg-white border border-gray-200 shadow-sm p-4 space-y-4">
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -1802,7 +1987,7 @@ export default function EmpresaTrackerPage() {
                       >
                         {contactos.length === 0
                           ? "Todavía no cargaste prospectos. Empezá agregando el próximo propietario o cliente potencial."
-                          : "No hay prospectos con la tipología seleccionada."}
+                          : "No hay prospectos con la tipología seleccionada o la vista actual."}
                       </td>
                     </tr>
                   )}
@@ -1971,6 +2156,8 @@ export default function EmpresaTrackerPage() {
                         ? contactoPorId(p.contacto_id)
                         : p.contacto ?? null;
 
+                    const asr = asesorPorId(p.asesor_id);
+
                     const isCerrada = !!p.fecha_cierre;
                     const diasVenta = diasEntreFechas(
                       p.fecha_inicio_comercializacion,
@@ -2002,6 +2189,9 @@ export default function EmpresaTrackerPage() {
                             {contacto
                               ? contactoNombreCorto(contacto)
                               : "Sin asignar"}
+                          </div>
+                          <div className="text-[11px] text-slate-500">
+                            {asr ? `Asesor: ${contactoNombreCorto(asr)}` : "Asesor: Empresa"}
                           </div>
                         </td>
                         <td className="px-3 py-2 align-top text-slate-700">
@@ -2439,6 +2629,30 @@ export default function EmpresaTrackerPage() {
                   </div>
                 </div>
 
+                {/* Asignación */}
+                <div>
+                  <label className="block text-[11px] text-slate-500 mb-1">
+                    Asignar a
+                  </label>
+                  <select
+                    className="w-full rounded-lg border border-gray-300 px-2 py-1 text-xs"
+                    value={formActividad.asesor_id}
+                    onChange={(e) =>
+                      setFormActividad((f) => ({
+                        ...f,
+                        asesor_id: e.target.value,
+                      }))
+                    }
+                  >
+                    <option value="">Empresa</option>
+                    {asesores.map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {contactoNombreCorto(a)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-[11px] text-slate-500 mb-1">
@@ -2549,6 +2763,30 @@ export default function EmpresaTrackerPage() {
                     {contactos.map((c) => (
                       <option key={c.id} value={c.id}>
                         {contactoNombreCorto(c)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Asignación */}
+                <div>
+                  <label className="block text-[11px] text-slate-500 mb-1">
+                    Asignar a
+                  </label>
+                  <select
+                    className="w-full rounded-lg border border-gray-300 px-2 py-1 text-xs"
+                    value={formPropiedad.asesor_id}
+                    onChange={(e) =>
+                      setFormPropiedad((f) => ({
+                        ...f,
+                        asesor_id: e.target.value,
+                      }))
+                    }
+                  >
+                    <option value="">Empresa</option>
+                    {asesores.map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {contactoNombreCorto(a)}
                       </option>
                     ))}
                   </select>

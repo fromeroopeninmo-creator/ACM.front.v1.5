@@ -1,4 +1,3 @@
-// app/dashboard/empresa/tracker/page.tsx
 "use client";
 
 import Link from "next/link";
@@ -26,7 +25,11 @@ type TrackerActividadTipo =
   | "reserva"
   | "cierre";
 
-type TrackerTab = "calendario" | "contactos" | "propiedades";
+type TrackerTab =
+  | "calendario"
+  | "contactos"
+  | "propiedades"
+  | "propiedades_terceros";
 type KpiRange = "30d" | "90d" | "180d" | "365d";
 type TrackerScope = "empresa" | "asesores" | "global";
 
@@ -89,6 +92,24 @@ interface TrackerPropiedad {
   } | null;
 }
 
+interface TrackerPropiedadTercero {
+  id: string;
+  empresa_id: string;
+  asesor_id: string | null;
+  tipologia: string | null;
+  tipo_operacion: string | null;
+  direccion: string | null;
+  zona: string | null;
+  precio_cierre: number | null;
+  moneda: string | null;
+  fecha_cierre: string | null;
+  honorarios_pct_vendedor: number | null;
+  honorarios_pct_comprador: number | null;
+  nombre_comprador: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 interface Asesor {
   id: string;
   nombre: string | null;
@@ -110,6 +131,18 @@ interface FormPropiedadState {
   moneda: string;
   fecha_inicio_comercializacion: string;
   fecha_cierre: string;
+  honorarios_pct_vendedor: string;
+  honorarios_pct_comprador: string;
+}
+
+interface FormPropiedadTerceroState {
+  nombre_comprador: string;
+  tipologia: string;
+  tipo_operacion: string;
+  direccion: string;
+  zona: string;
+  precio_cierre: string;
+  moneda: string;
   honorarios_pct_vendedor: string;
   honorarios_pct_comprador: string;
 }
@@ -238,6 +271,12 @@ function labelTipoActividad(tipo: TrackerActividadTipo): string {
   }
 }
 
+const parseNumberOrNull = (value: string) => {
+  if (!value) return null;
+  const parsed = parseFloat(value.replace(/\./g, "").replace(",", "."));
+  return isNaN(parsed) ? null : parsed;
+};
+
 export default function EmpresaTrackerPage() {
   const { user } = useAuth();
 
@@ -247,6 +286,9 @@ export default function EmpresaTrackerPage() {
   const [contactos, setContactos] = useState<TrackerContacto[]>([]);
   const [actividades, setActividades] = useState<TrackerActividad[]>([]);
   const [propiedades, setPropiedades] = useState<TrackerPropiedad[]>([]);
+  const [propiedadesTerceros, setPropiedadesTerceros] = useState<
+    TrackerPropiedadTercero[]
+  >([]);
   const [asesores, setAsesores] = useState<Asesor[]>([]);
 
   const [activeTab, setActiveTab] = useState<TrackerTab>("calendario");
@@ -273,12 +315,18 @@ export default function EmpresaTrackerPage() {
   const [editingPropiedad, setEditingPropiedad] =
     useState<TrackerPropiedad | null>(null);
 
+  const [showPropiedadTerceroModal, setShowPropiedadTerceroModal] =
+    useState(false);
+  const [editingPropiedadTercero, setEditingPropiedadTercero] =
+    useState<TrackerPropiedadTercero | null>(null);
+
   const [mensaje, setMensaje] = useState<string | null>(null);
 
   // Flags para evitar doble submit y duplicados
   const [savingContacto, setSavingContacto] = useState(false);
   const [savingActividad, setSavingActividad] = useState(false);
   const [savingPropiedad, setSavingPropiedad] = useState(false);
+  const [savingPropiedadTercero, setSavingPropiedadTercero] = useState(false);
 
   const [formContacto, setFormContacto] = useState({
     nombre: "",
@@ -322,6 +370,19 @@ export default function EmpresaTrackerPage() {
     honorarios_pct_comprador: "",
   });
 
+  const [formPropiedadTercero, setFormPropiedadTercero] =
+    useState<FormPropiedadTerceroState>({
+      nombre_comprador: "",
+      tipologia: "",
+      tipo_operacion: "",
+      direccion: "",
+      zona: "",
+      precio_cierre: "",
+      moneda: "ARS",
+      honorarios_pct_vendedor: "",
+      honorarios_pct_comprador: "",
+    });
+
   // Referencias de hoy y mañana (hora local, sin mezclar TZ)
   const hoy = startOfDay(new Date());
   const manana = addDays(hoy, 1);
@@ -334,7 +395,6 @@ export default function EmpresaTrackerPage() {
   // Helper: tomar siempre solo "YYYY-MM-DD" de la fecha programada
   const actividadDateKey = (a: TrackerActividad) =>
     a.fecha_programada ? a.fecha_programada.substring(0, 10) : "";
-
   // Filtrado por scope (empresa / asesores / global)
   const actividadesFiltradas = useMemo(() => {
     if (scope === "global") return actividades;
@@ -365,6 +425,21 @@ export default function EmpresaTrackerPage() {
     return propiedades.filter((p) => p.asesor_id === selectedAsesorId);
   }, [propiedades, scope, selectedAsesorId]);
 
+  const propiedadesTercerosFiltradas = useMemo(() => {
+    if (scope === "global") return propiedadesTerceros;
+
+    if (scope === "empresa") {
+      // Propiedades de terceros sin asesor asignado explícito
+      return propiedadesTerceros.filter((p) => !p.asesor_id);
+    }
+
+    // scope === "asesores"
+    if (!selectedAsesorId) {
+      return propiedadesTerceros.filter((p) => !!p.asesor_id);
+    }
+    return propiedadesTerceros.filter((p) => p.asesor_id === selectedAsesorId);
+  }, [propiedadesTerceros, scope, selectedAsesorId]);
+
   const contactosFiltrados = useMemo(
     () =>
       tipologiaFiltro
@@ -379,6 +454,16 @@ export default function EmpresaTrackerPage() {
         ? propiedadesFiltradas.filter((p) => p.tipologia === tipologiaFiltro)
         : propiedadesFiltradas,
     [propiedadesFiltradas, tipologiaFiltro]
+  );
+
+  const propiedadesTercerosFiltradasPorTipologia = useMemo(
+    () =>
+      tipologiaFiltro
+        ? propiedadesTercerosFiltradas.filter(
+            (p) => p.tipologia === tipologiaFiltro
+          )
+        : propiedadesTercerosFiltradas,
+    [propiedadesTercerosFiltradas, tipologiaFiltro]
   );
 
   const actividadesHoy = useMemo(
@@ -434,11 +519,20 @@ export default function EmpresaTrackerPage() {
     });
 
     // Propiedades cerradas dentro del período (ya filtradas por scope)
-    const propiedadesInRange = propiedadesFiltradas.filter((p) => {
-      if (!p.fecha_cierre) return false;
-      const key = p.fecha_cierre.substring(0, 10);
-      return key >= startKey;
-    });
+    const propiedadesCerradasInRangePropias = propiedadesFiltradas.filter(
+      (p) => {
+        if (!p.fecha_cierre) return false;
+        const key = p.fecha_cierre.substring(0, 10);
+        return key >= startKey;
+      }
+    );
+
+    const propiedadesCerradasInRangeTerceros =
+      propiedadesTercerosFiltradas.filter((p) => {
+        if (!p.fecha_cierre) return false;
+        const key = p.fecha_cierre.substring(0, 10);
+        return key >= startKey;
+      });
 
     // Actividades dentro del período (ya filtradas por scope)
     const actividadesInRange = actividadesFiltradas.filter((a) => {
@@ -487,13 +581,55 @@ export default function EmpresaTrackerPage() {
     }
     const prelistingCount = prelistingSet.size;
 
-    // CAPTACIONES: estado actual captado (en contactosInRange ya filtrados)
-    const captacionesCount = contactosInRange.filter(
-      (c) => c.estado === "captado"
-    ).length;
+    // ---- CAPTACIONES ----
+    // Base: contactos que hoy están en "captado" o "cierre" dentro del período
+    const captacionesBaseSet = new Set<string>();
+    for (const c of contactosInRange) {
+      if (c.estado === "captado" || c.estado === "cierre") {
+        captacionesBaseSet.add(c.id);
+      }
+    }
 
-    // CIERRES: propiedades con fecha_cierre en el período (ya filtradas por scope)
-    const cierresCount = propiedadesInRange.length;
+    // Propiedades captadas en el período (por fecha de inicio de comercialización)
+    const propiedadesCaptadasInRange = propiedadesFiltradas.filter((p) => {
+      if (!p.fecha_inicio_comercializacion) return false;
+      const key = p.fecha_inicio_comercializacion.substring(0, 10);
+      return key >= startKey;
+    });
+
+    // Cantidad de propiedades por contacto dentro del período
+    const propsPorContacto = new Map<string, number>();
+    for (const p of propiedadesCaptadasInRange) {
+      if (!p.contacto_id) continue;
+      propsPorContacto.set(
+        p.contacto_id,
+        (propsPorContacto.get(p.contacto_id) ?? 0) + 1
+      );
+    }
+
+    // Regla:
+    // - Si el contacto ya está en captacionesBaseSet → 1 captación "base" por propietario
+    //   + (n-1) captaciones adicionales por propiedades extra.
+    // - Si NO está en captacionesBaseSet → todas las propiedades cuentan como captaciones.
+    let extraCaptacionesFromProps = 0;
+    for (const [contactoId, countProps] of propsPorContacto) {
+      if (captacionesBaseSet.has(contactoId)) {
+        if (countProps > 1) {
+          extraCaptacionesFromProps += countProps - 1;
+        }
+      } else {
+        extraCaptacionesFromProps += countProps;
+      }
+    }
+
+    const captacionesCount =
+      captacionesBaseSet.size + extraCaptacionesFromProps;
+
+    // ---- CIERRES ----
+    // Suma de cierres de propiedades propias + propiedades de terceros
+    const cierresCount =
+      propiedadesCerradasInRangePropias.length +
+      propiedadesCerradasInRangeTerceros.length;
 
     return {
       prospectos: contactosInRange.length,
@@ -505,6 +641,7 @@ export default function EmpresaTrackerPage() {
     contactos,
     actividadesFiltradas,
     propiedadesFiltradas,
+    propiedadesTercerosFiltradas,
     startKpiDate,
     scope,
   ]);
@@ -536,7 +673,8 @@ export default function EmpresaTrackerPage() {
 
     fetchEmpresa();
   }, [user]);
-  // Carga inicial (contactos + actividades + propiedades)
+
+  // Carga inicial (contactos + actividades + propiedades + propiedades_terceros)
   useEffect(() => {
     if (!empresaId) return;
 
@@ -544,7 +682,7 @@ export default function EmpresaTrackerPage() {
       try {
         setLoading(true);
 
-        const [{ data: cData }, { data: aData }, { data: pData }] =
+        const [{ data: cData }, { data: aData }, { data: pData }, { data: ptData }] =
           await Promise.all([
             supabase
               .from("tracker_contactos")
@@ -584,6 +722,11 @@ export default function EmpresaTrackerPage() {
                   contacto:tracker_contactos (nombre, apellido)
                 `
               )
+              .eq("empresa_id", empresaId)
+              .order("created_at", { ascending: false }),
+            supabase
+              .from("tracker_propiedades_terceros")
+              .select("*")
               .eq("empresa_id", empresaId)
               .order("created_at", { ascending: false }),
           ]);
@@ -630,6 +773,9 @@ export default function EmpresaTrackerPage() {
         );
 
         setPropiedades(propsNormalizadas);
+        setPropiedadesTerceros(
+          (ptData as TrackerPropiedadTercero[]) ?? []
+        );
       } catch (err) {
         console.error("Error cargando tracker:", err);
       } finally {
@@ -665,7 +811,6 @@ export default function EmpresaTrackerPage() {
 
     fetchAsesores();
   }, [empresaId]);
-
   const showMessage = (text: string) => {
     setMensaje(text);
     setTimeout(() => setMensaje(null), 3200);
@@ -949,7 +1094,7 @@ export default function EmpresaTrackerPage() {
     }
   };
 
-  // ----- CRUD PROPIEDADES -----
+  // ----- CRUD PROPIEDADES (PROPIAS) -----
 
   const openNuevaPropiedad = (contactoId?: string) => {
     setEditingPropiedad(null);
@@ -1011,7 +1156,7 @@ export default function EmpresaTrackerPage() {
     return isNaN(parsed) ? null : parsed;
   };
 
-  // Cálculo de honorarios estimados en base al precio de cierre y los % cargados
+  // Cálculo de honorarios estimados en base al precio de cierre y los % cargados (propias)
   const honorariosEstimados = useMemo(() => {
     const precioCierre = parseNumberOrNull(formPropiedad.precio_cierre);
     if (precioCierre == null) {
@@ -1213,6 +1358,198 @@ export default function EmpresaTrackerPage() {
     }
   };
 
+  // ----- CRUD PROPIEDADES DE TERCEROS -----
+
+  const honorariosEstimadosTercero = useMemo(() => {
+    const precioCierre = parseNumberOrNull(formPropiedadTercero.precio_cierre);
+    if (precioCierre == null) {
+      return {
+        vendedor: null as number | null,
+        comprador: null as number | null,
+        total: null as number | null,
+      };
+    }
+
+    const pctVendedor = parseNumberOrNull(
+      formPropiedadTercero.honorarios_pct_vendedor
+    );
+    const pctComprador = parseNumberOrNull(
+      formPropiedadTercero.honorarios_pct_comprador
+    );
+
+    const vendedor =
+      pctVendedor != null ? (precioCierre * pctVendedor) / 100 : null;
+    const comprador =
+      pctComprador != null ? (precioCierre * pctComprador) / 100 : null;
+
+    const totalRaw = (vendedor ?? 0) + (comprador ?? 0);
+    const total = totalRaw > 0 ? totalRaw : null;
+
+    return {
+      vendedor,
+      comprador,
+      total,
+    };
+  }, [
+    formPropiedadTercero.precio_cierre,
+    formPropiedadTercero.honorarios_pct_vendedor,
+    formPropiedadTercero.honorarios_pct_comprador,
+  ]);
+
+  const openNuevaPropiedadTercero = () => {
+    setEditingPropiedadTercero(null);
+    setFormPropiedadTercero({
+      comprador_nombre: "",
+      tipologia: "",
+      tipo_operacion: "",
+      direccion: "",
+      zona: "",
+      moneda: "ARS",
+      precio_cierre: "",
+      fecha_cierre: new Date().toISOString().substring(0, 10),
+      honorarios_pct_vendedor: "",
+      honorarios_pct_comprador: "",
+      notas: "",
+      asesor_id: "",
+    });
+    setShowPropiedadTerceroModal(true);
+  };
+
+  const openEditarPropiedadTercero = (p: TrackerPropiedadTercero) => {
+    setEditingPropiedadTercero(p);
+    setFormPropiedadTercero({
+      comprador_nombre: p.comprador_nombre,
+      tipologia: p.tipologia,
+      tipo_operacion: p.tipo_operacion,
+      direccion: p.direccion ?? "",
+      zona: p.zona ?? "",
+      moneda: p.moneda ?? "ARS",
+      precio_cierre:
+        p.precio_cierre != null ? String(p.precio_cierre) : "",
+      fecha_cierre: p.fecha_cierre ?? "",
+      honorarios_pct_vendedor:
+        p.honorarios_pct_vendedor != null
+          ? String(p.honorarios_pct_vendedor)
+          : "",
+      honorarios_pct_comprador:
+        p.honorarios_pct_comprador != null
+          ? String(p.honorarios_pct_comprador)
+          : "",
+      notas: p.notas ?? "",
+      asesor_id: p.asesor_id ?? "",
+    });
+    setShowPropiedadTerceroModal(true);
+  };
+
+  const guardarPropiedadTercero = async () => {
+    if (!empresaId || savingPropiedadTercero) return;
+    setSavingPropiedadTercero(true);
+
+    const precioCierre = parseNumberOrNull(formPropiedadTercero.precio_cierre);
+    if (precioCierre == null) {
+      showMessage("❌ Ingresá un precio de cierre válido.");
+      setSavingPropiedadTercero(false);
+      return;
+    }
+
+    const payload = {
+      empresa_id: empresaId,
+      asesor_id: formPropiedadTercero.asesor_id || null,
+      comprador_nombre: formPropiedadTercero.comprador_nombre,
+      tipologia: formPropiedadTercero.tipologia,
+      tipo_operacion: formPropiedadTercero.tipo_operacion,
+      direccion: formPropiedadTercero.direccion || null,
+      zona: formPropiedadTercero.zona || null,
+      moneda: formPropiedadTercero.moneda || "ARS",
+      precio_cierre: precioCierre,
+      fecha_cierre: formPropiedadTercero.fecha_cierre || null,
+      honorarios_pct_vendedor: parseNumberOrNull(
+        formPropiedadTercero.honorarios_pct_vendedor
+      ),
+      honorarios_pct_comprador: parseNumberOrNull(
+        formPropiedadTercero.honorarios_pct_comprador
+      ),
+      notas: formPropiedadTercero.notas || null,
+    };
+
+    try {
+      if (editingPropiedadTercero) {
+        const { error } = await supabase
+          .from("tracker_propiedades_terceros")
+          .update({
+            ...payload,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", editingPropiedadTercero.id)
+          .eq("empresa_id", empresaId);
+
+        if (error) {
+          console.error("Error actualizando propiedad de tercero:", error);
+          showMessage("❌ No se pudo actualizar la propiedad de tercero.");
+          return;
+        }
+      } else {
+        const { error } = await supabase
+          .from("tracker_propiedades_terceros")
+          .insert(payload);
+
+        if (error) {
+          console.error("Error creando propiedad de tercero:", error);
+          showMessage("❌ No se pudo crear la propiedad de tercero.");
+          return;
+        }
+      }
+
+      showMessage("✅ Propiedad de tercero guardada.");
+      setShowPropiedadTerceroModal(false);
+
+      const { data: ptData } = await supabase
+        .from("tracker_propiedades_terceros")
+        .select("*")
+        .eq("empresa_id", empresaId)
+        .order("created_at", { ascending: false });
+
+      setPropiedadesTerceros(
+        (ptData as TrackerPropiedadTercero[]) ?? []
+      );
+    } catch (err) {
+      console.error("Error guardando propiedad de tercero:", err);
+      showMessage("❌ Error inesperado al guardar propiedad de tercero.");
+    } finally {
+      setSavingPropiedadTercero(false);
+    }
+  };
+
+  const eliminarPropiedadTercero = async (id: string) => {
+    if (!empresaId) return;
+    if (
+      !confirm(
+        "¿Eliminar esta propiedad de tercero? Esta operación no se puede deshacer."
+      )
+    )
+      return;
+
+    try {
+      const { error } = await supabase
+        .from("tracker_propiedades_terceros")
+        .delete()
+        .eq("id", id)
+        .eq("empresa_id", empresaId);
+
+      if (error) {
+        console.error("Error eliminando propiedad de tercero:", error);
+        showMessage("❌ No se pudo eliminar la propiedad de tercero.");
+        return;
+      }
+
+      showMessage("✅ Propiedad de tercero eliminada.");
+      setPropiedadesTerceros((prev) => prev.filter((p) => p.id !== id));
+    } catch (err) {
+      console.error("Error eliminando propiedad de tercero:", err);
+      showMessage("❌ Error inesperado al eliminar propiedad de tercero.");
+    }
+  };
+
   const labelEstadoContacto = (estado: TrackerContactoEstado) => {
     switch (estado) {
       case "sin_contactar":
@@ -1284,7 +1621,6 @@ export default function EmpresaTrackerPage() {
       </div>
     );
   }
-
   const monthMatrix = getMonthMatrix(currentMonth);
 
   return (
@@ -1488,7 +1824,8 @@ export default function EmpresaTrackerPage() {
                 {kpis.captaciones}
               </p>
               <p className="mt-1 text-[11px] text-slate-500">
-                Propietarios que te dieron la propiedad.
+                Propietarios que te dieron la propiedad (incluye nuevas
+                propiedades sobre clientes existentes).
               </p>
             </div>
             <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
@@ -1497,7 +1834,7 @@ export default function EmpresaTrackerPage() {
                 {kpis.cierres}
               </p>
               <p className="mt-1 text-[11px] text-slate-500">
-                Operaciones finalizadas con precio de cierre.
+                Operaciones finalizadas (propias + propiedades de terceros).
               </p>
             </div>
           </div>
@@ -1509,6 +1846,10 @@ export default function EmpresaTrackerPage() {
             { id: "calendario", label: "Calendario" },
             { id: "contactos", label: "Contactos / Captaciones" },
             { id: "propiedades", label: "Propiedades captadas" },
+            {
+              id: "propiedades_terceros",
+              label: "Propiedades de terceros (comprador)",
+            },
           ].map((tab) => {
             const isActive = activeTab === (tab.id as TrackerTab);
             return (
@@ -2052,6 +2393,167 @@ export default function EmpresaTrackerPage() {
           </section>
         )}
 
+        {activeTab === "propiedades_terceros" && (
+          <section className="rounded-2xl bg-white border border-gray-200 shadow-sm p-4 space-y-4">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div>
+                <h2 className="text-sm font-semibold text-slate-900">
+                  Propiedades de terceros (comprador)
+                </h2>
+                <p className="text-xs text-slate-500">
+                  Registrá operaciones donde aportaste el comprador a una
+                  propiedad de otra inmobiliaria, y sumá esos cierres a tus
+                  KPIs de operaciones.
+                </p>
+              </div>
+              <button
+                onClick={openNuevaPropiedadTercero}
+                className="inline-flex items-center gap-1 rounded-full bg-black text-white px-3 py-1.5 text-xs font-medium hover:bg-slate-900"
+              >
+                <span className="text-sm">＋</span>
+                Nueva propiedad de tercero
+              </button>
+            </div>
+
+            {/* Filtro por tipología (comparte el mismo filtro global) */}
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              <span className="text-slate-500">Filtrar por tipología:</span>
+              <select
+                className="rounded-full border border-gray-300 bg-white px-3 py-1 text-xs text-slate-700"
+                value={tipologiaFiltro}
+                onChange={(e) => setTipologiaFiltro(e.target.value)}
+              >
+                <option value="">Todas</option>
+                <option value="casa">Casa</option>
+                <option value="departamento">Departamento</option>
+                <option value="duplex">Dúplex</option>
+                <option value="ph">PH</option>
+                <option value="oficina">Oficina</option>
+                <option value="local">Local</option>
+                <option value="terreno">Terreno</option>
+                <option value="galpon">Galpón / Depósito</option>
+                <option value="cochera">Cochera</option>
+                <option value="campo">Campo</option>
+                <option value="otro">Otro</option>
+              </select>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-xs">
+                <thead>
+                  <tr className="border-b border-gray-200 bg-gray-50 text-[11px] text-slate-500">
+                    <th className="px-3 py-2 text-left font-medium">
+                      Comprador
+                    </th>
+                    <th className="px-3 py-2 text-left font-medium">
+                      Tipología
+                    </th>
+                    <th className="px-3 py-2 text-left font-medium">
+                      Operación
+                    </th>
+                    <th className="px-3 py-2 text-left font-medium">
+                      Dirección / Zona
+                    </th>
+                    <th className="px-3 py-2 text-left font-medium">
+                      Precio de cierre
+                    </th>
+                    <th className="px-3 py-2 text-left font-medium">
+                      Honorarios netos estimados
+                    </th>
+                    <th className="px-3 py-2 text-left font-medium">
+                      Fecha de cierre
+                    </th>
+                    <th className="px-3 py-2 text-right font-medium">
+                      Acciones
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {propiedadesTercerosFiltradasPorTipologia.length === 0 && (
+                    <tr>
+                      <td
+                        colSpan={8}
+                        className="px-3 py-6 text-center text-xs text-slate-500"
+                      >
+                        {propiedadesTercerosFiltradas.length === 0
+                          ? "Todavía no registraste operaciones con propiedades de terceros."
+                          : "No hay propiedades de terceros con la tipología seleccionada."}
+                      </td>
+                    </tr>
+                  )}
+                  {propiedadesTercerosFiltradasPorTipologia.map((p) => {
+                    const honoV =
+                      p.precio_cierre != null &&
+                      p.honorarios_pct_vendedor != null
+                        ? (p.precio_cierre * p.honorarios_pct_vendedor) / 100
+                        : null;
+                    const honoC =
+                      p.precio_cierre != null &&
+                      p.honorarios_pct_comprador != null
+                        ? (p.precio_cierre * p.honorarios_pct_comprador) / 100
+                        : null;
+                    const honoTotal =
+                      (honoV ?? 0) + (honoC ?? 0) > 0
+                        ? (honoV ?? 0) + (honoC ?? 0)
+                        : null;
+
+                    return (
+                      <tr
+                        key={p.id}
+                        className="border-b border-gray-100 hover:bg-gray-50"
+                      >
+                        <td className="px-3 py-2 align-top">
+                          <div className="font-medium text-slate-900">
+                            {p.comprador_nombre || "Sin nombre"}
+                          </div>
+                        </td>
+                        <td className="px-3 py-2 align-top text-slate-700">
+                          {p.tipologia || "—"}
+                        </td>
+                        <td className="px-3 py-2 align-top text-slate-700">
+                          {p.tipo_operacion || "—"}
+                        </td>
+                        <td className="px-3 py-2 align-top text-[11px] text-slate-700">
+                          {p.direccion || "—"}
+                          {p.zona ? ` · ${p.zona}` : ""}
+                        </td>
+                        <td className="px-3 py-2 align-top text-slate-700">
+                          {p.precio_cierre != null
+                            ? fmtCurrency(p.precio_cierre)
+                            : "—"}
+                        </td>
+                        <td className="px-3 py-2 align-top text-[11px] text-slate-700">
+                          {honoTotal != null
+                            ? fmtCurrency(honoTotal)
+                            : "—"}
+                        </td>
+                        <td className="px-3 py-2 align-top text-[11px] text-slate-700">
+                          {p.fecha_cierre || "—"}
+                        </td>
+                        <td className="px-3 py-2 align-top text-right">
+                          <div className="flex justify-end gap-2">
+                            <button
+                              onClick={() => openEditarPropiedadTercero(p)}
+                              className="text-[11px] text-slate-600 hover:text-black"
+                            >
+                              Ver / Editar
+                            </button>
+                            <button
+                              onClick={() => eliminarPropiedadTercero(p.id)}
+                              className="text-[11px] text-red-600 hover:text-red-700"
+                            >
+                              Eliminar
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        )}
         {/* Mensaje flotante */}
         {mensaje && (
           <div className="fixed bottom-4 right-4 rounded-full bg-black text-white px-4 py-2 text-xs shadow-lg">
@@ -2513,7 +3015,7 @@ export default function EmpresaTrackerPage() {
           </div>
         )}
 
-        {/* MODAL PROPIEDAD */}
+        {/* MODAL PROPIEDAD PROPIA */}
         {showPropiedadModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
             <div className="w-full max-w-lg rounded-2xl bg-white shadow-xl border border-gray-200">
@@ -2873,6 +3375,265 @@ export default function EmpresaTrackerPage() {
                   }`}
                 >
                   {savingPropiedad ? "Guardando..." : "Guardar"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* MODAL PROPIEDAD DE TERCERO */}
+        {showPropiedadTerceroModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+            <div className="w-full max-w-lg rounded-2xl bg-white shadow-xl border border-gray-200">
+              <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
+                <h3 className="text-sm font-semibold text-slate-900">
+                  {editingPropiedadTercero
+                    ? "Editar propiedad de tercero"
+                    : "Nueva propiedad de tercero"}
+                </h3>
+                <button
+                  onClick={() => setShowPropiedadTerceroModal(false)}
+                  className="text-slate-400 hover:text-slate-600 text-sm"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="max-h-[70vh] overflow-y-auto px-4 py-3 space-y-3 text-xs">
+                <div>
+                  <label className="block text-[11px] text-slate-500 mb-1">
+                    Comprador
+                  </label>
+                  <input
+                    className="w-full rounded-lg border border-gray-300 px-2 py-1 text-xs"
+                    placeholder="Ej: Cliente referido"
+                    value={formPropiedadTercero.comprador_nombre}
+                    onChange={(e) =>
+                      setFormPropiedadTercero((f) => ({
+                        ...f,
+                        comprador_nombre: e.target.value,
+                      }))
+                    }
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] text-slate-500 mb-1">
+                      Tipología
+                    </label>
+                    <select
+                      className="w-full rounded-lg border border-gray-300 px-2 py-1 text-xs"
+                      value={formPropiedadTercero.tipologia}
+                      onChange={(e) =>
+                        setFormPropiedadTercero((f) => ({
+                          ...f,
+                          tipologia: e.target.value,
+                        }))
+                      }
+                    >
+                      <option value="">Seleccionar…</option>
+                      <option value="casa">Casa</option>
+                      <option value="departamento">Departamento</option>
+                      <option value="duplex">Dúplex</option>
+                      <option value="ph">PH</option>
+                      <option value="oficina">Oficina</option>
+                      <option value="local">Local</option>
+                      <option value="terreno">Terreno</option>
+                      <option value="galpon">Galpón / Depósito</option>
+                      <option value="cochera">Cochera</option>
+                      <option value="campo">Campo</option>
+                      <option value="otro">Otro</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[11px] text-slate-500 mb-1">
+                      Operación
+                    </label>
+                    <select
+                      className="w-full rounded-lg border border-gray-300 px-2 py-1 text-xs"
+                      value={formPropiedadTercero.tipo_operacion}
+                      onChange={(e) =>
+                        setFormPropiedadTercero((f) => ({
+                          ...f,
+                          tipo_operacion: e.target.value,
+                        }))
+                      }
+                    >
+                      <option value="">Seleccionar…</option>
+                      <option value="venta">Venta</option>
+                      <option value="alquiler">Alquiler</option>
+                      <option value="alquiler_temporario">
+                        Alquiler temporario
+                      </option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] text-slate-500 mb-1">
+                    Dirección
+                  </label>
+                  <input
+                    className="w-full rounded-lg border border-gray-300 px-2 py-1 text-xs"
+                    placeholder="Ej: Propiedad de otra inmobiliaria"
+                    value={formPropiedadTercero.direccion}
+                    onChange={(e) =>
+                      setFormPropiedadTercero((f) => ({
+                        ...f,
+                        direccion: e.target.value,
+                      }))
+                    }
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] text-slate-500 mb-1">
+                      Zona / barrio
+                    </label>
+                    <input
+                      className="w-full rounded-lg border border-gray-300 px-2 py-1 text-xs"
+                      placeholder="Ej: Barrio Centro"
+                      value={formPropiedadTercero.zona}
+                      onChange={(e) =>
+                        setFormPropiedadTercero((f) => ({
+                          ...f,
+                          zona: e.target.value,
+                        }))
+                      }
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] text-slate-500 mb-1">
+                      Moneda
+                    </label>
+                    <select
+                      className="w-full rounded-lg border border-gray-300 px-2 py-1 text-xs"
+                      value={formPropiedadTercero.moneda}
+                      onChange={(e) =>
+                        setFormPropiedadTercero((f) => ({
+                          ...f,
+                          moneda: e.target.value,
+                        }))
+                      }
+                    >
+                      <option value="ARS">ARS</option>
+                      <option value="USD">USD</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] text-slate-500 mb-1">
+                      Precio de cierre
+                    </label>
+                    <input
+                      className="w-full rounded-lg border border-gray-300 px-2 py-1 text-xs"
+                      placeholder="Ej: 110000"
+                      value={formPropiedadTercero.precio_cierre}
+                      onChange={(e) =>
+                        setFormPropiedadTercero((f) => ({
+                          ...f,
+                          precio_cierre: e.target.value,
+                        }))
+                      }
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] text-slate-500 mb-1">
+                      Fecha de cierre
+                    </label>
+                    <input
+                      type="date"
+                      className="w-full rounded-lg border border-gray-300 px-2 py-1 text-xs"
+                      value={formPropiedadTercero.fecha_cierre}
+                      onChange={(e) =>
+                        setFormPropiedadTercero((f) => ({
+                          ...f,
+                          fecha_cierre: e.target.value,
+                        }))
+                      }
+                    />
+                  </div>
+                </div>
+
+                {/* Honorarios terceros */}
+                <div className="border-t border-gray-200 pt-3 mt-2 space-y-2">
+                  <p className="text-[11px] font-semibold text-slate-700">
+                    Honorarios por comprador
+                  </p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] text-slate-500 mb-1">
+                        Vendedor (%)
+                      </label>
+                      <input
+                        className="w-full rounded-lg border border-gray-300 px-2 py-1 text-xs"
+                        placeholder="Ej: 3"
+                        value={formPropiedadTercero.honorarios_pct_vendedor}
+                        onChange={(e) =>
+                          setFormPropiedadTercero((f) => ({
+                            ...f,
+                            honorarios_pct_vendedor: e.target.value,
+                          }))
+                        }
+                      />
+                      <p className="mt-1 text-[11px] text-slate-500">
+                        Neto estimado:{" "}
+                        {honorariosEstimadosTercero.vendedor != null
+                          ? fmtCurrency(honorariosEstimadosTercero.vendedor)
+                          : "—"}
+                      </p>
+                    </div>
+                    <div>
+                      <label className="block text-[11px] text-slate-500 mb-1">
+                        Comprador (%)
+                      </label>
+                      <input
+                        className="w-full rounded-lg border border-gray-300 px-2 py-1 text-xs"
+                        placeholder="Ej: 3"
+                        value={formPropiedadTercero.honorarios_pct_comprador}
+                        onChange={(e) =>
+                          setFormPropiedadTercero((f) => ({
+                            ...f,
+                            honorarios_pct_comprador: e.target.value,
+                          }))
+                        }
+                      />
+                      <p className="mt-1 text-[11px] text-slate-500">
+                        Neto estimado:{" "}
+                        {honorariosEstimadosTercero.comprador != null
+                          ? fmtCurrency(honorariosEstimadosTercero.comprador)
+                          : "—"}
+                      </p>
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-slate-500">
+                    Total estimado:{" "}
+                    {honorariosEstimadosTercero.total != null
+                      ? fmtCurrency(honorariosEstimadosTercero.total)
+                      : "—"}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 border-t border-gray-200 px-4 py-3">
+                <button
+                  onClick={() => setShowPropiedadTerceroModal(false)}
+                  className="rounded-full border border-gray-300 bg-white px-3 py-1.5 text-xs text-slate-700 hover:bg-gray-50"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={guardarPropiedadTercero}
+                  disabled={savingPropiedadTercero}
+                  className={`rounded-full bg-black px-4 py-1.5 text-xs font-medium text-white hover:bg-slate-900 ${
+                    savingPropiedadTercero ? "opacity-60 cursor-not-allowed" : ""
+                  }`}
+                >
+                  {savingPropiedadTercero ? "Guardando..." : "Guardar"}
                 </button>
               </div>
             </div>

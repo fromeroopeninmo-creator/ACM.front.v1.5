@@ -375,17 +375,20 @@ export default function EmpresaTrackerPage() {
   });
 
   const [formPropiedadTercero, setFormPropiedadTercero] =
-    useState<FormPropiedadTerceroState>({
-      comprador_nombre: "",
-      tipologia: "",
-      tipo_operacion: "",
-      direccion: "",
-      zona: "",
-      precio_cierre: "",
-      moneda: "ARS",
-      honorarios_pct_vendedor: "",
-      honorarios_pct_comprador: "",
-    });
+  useState<FormPropiedadTerceroState>({
+    comprador_nombre: "",
+    tipologia: "",
+    tipo_operacion: "",
+    direccion: "",
+    zona: "",
+    moneda: "ARS",
+    precio_cierre: "",
+    fecha_cierre: "",
+    honorarios_pct_vendedor: "",
+    honorarios_pct_comprador: "",
+    notas: "",
+    asesor_id: "",
+  });
 
   // Referencias de hoy y mañana (hora local, sin mezclar TZ)
   const hoy = startOfDay(new Date());

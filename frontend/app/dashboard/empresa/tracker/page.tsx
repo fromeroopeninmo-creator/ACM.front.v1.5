@@ -105,7 +105,8 @@ interface TrackerPropiedadTercero {
   fecha_cierre: string | null;
   honorarios_pct_vendedor: number | null;
   honorarios_pct_comprador: number | null;
-  nombre_comprador: string | null;
+  comprador_nombre: string | null;
+  notas: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -136,15 +137,18 @@ interface FormPropiedadState {
 }
 
 interface FormPropiedadTerceroState {
-  nombre_comprador: string;
+  comprador_nombre: string;
   tipologia: string;
   tipo_operacion: string;
   direccion: string;
   zona: string;
-  precio_cierre: string;
   moneda: string;
+  precio_cierre: string;
+  fecha_cierre: string;
   honorarios_pct_vendedor: string;
   honorarios_pct_comprador: string;
+  notas: string;
+  asesor_id: string;
 }
 
 function startOfDay(date: Date) {
@@ -372,7 +376,7 @@ export default function EmpresaTrackerPage() {
 
   const [formPropiedadTercero, setFormPropiedadTercero] =
     useState<FormPropiedadTerceroState>({
-      nombre_comprador: "",
+      comprador_nombre: "",
       tipologia: "",
       tipo_operacion: "",
       direccion: "",

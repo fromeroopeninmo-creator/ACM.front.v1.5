@@ -181,7 +181,7 @@ export default function AsesorTrackerAnaliticoPage() {
       const { data, error } = await supabase
         .from("asesores")
         .select("id, empresa_id, nombre, apellido")
-        .eq("user_id", user.id)
+        .eq("id", user.id)
         .maybeSingle();
 
       if (error) {
@@ -454,6 +454,7 @@ export default function AsesorTrackerAnaliticoPage() {
 
     return { tipologiaCierreStats, avgGapGlobal, avgDiasGlobal };
   }, [propiedadesFiltradas]);
+
 
     // ==== Donuts (captadas & cierres) con % dentro de las “porciones” ====
 

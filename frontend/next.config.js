@@ -5,6 +5,16 @@ const nextConfig = {
   reactStrictMode: true,
   swcMinify: true,
 
+  async redirects() {
+    return [
+      {
+        source: "/landing",
+        destination: "/",
+        permanent: true, // 301
+      },
+    ];
+  },
+
   webpack: (config) => {
     // ⚡ Alias para imports cortos
     config.resolve.alias["@"] = path.resolve(__dirname, "app");

@@ -34,6 +34,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [hydrated, setHydrated] = useState(false);
 
+  // ✅ Nuevo: flag de montaje para evitar bloquear el render inicial (SEO)
+  const [mounted, setMounted] = useState(false);
+
   // Bypass de loader SOLO para rutas públicas (landing + clusters SEO)
   const isPublicRoute =
     pathname === "/" ||
@@ -42,9 +45,16 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     pathname.startsWith("/factibilidad-constructiva") ||
     pathname.startsWith("/tracker-de-actividades") ||
     pathname.startsWith("/tracker-de-negocios") ||
+    pathname.startsWith("/metricas-de-tu-empresa") ||
     pathname.startsWith("/tutoriales") ||
-    pathname.startsWith("/blog") ||
-    pathname.startsWith("/metricas-de-tu-empresa");
+    pathname.startsWith("/blog");
+
+  // =====================================================
+  // 0️⃣ Marcar montado (para no devolver loader en SSR/primer paint)
+  // =====================================================
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   // =====================================================
   // 1️⃣ Cargar desde localStorage al montar
@@ -171,8 +181,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   // =====================================================
   // 6️⃣ Hidratar correctamente (sin flash)
+  //    ✅ Solo mostrar loader DESPUÉS de montado, y solo en rutas no públicas
   // =====================================================
-  if (!hydrated && !isPublicRoute) {
+  if (mounted && !hydrated && !isPublicRoute) {
     return (
       <div className="flex justify-center items-center h-screen text-gray-400">
         Cargando tema...

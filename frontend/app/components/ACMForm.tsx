@@ -770,7 +770,7 @@ const handleDownloadPDF = async () => {
   doc.setFont("helvetica", "bold");
   doc.setFontSize(16);
   doc.setTextColor(pc.r, pc.g, pc.b);
-  doc.text("VAI - Valuador de Activos Inmobiliarios", pageW / 2, y, { align: "center" });
+  doc.text("Valuación de Activo Inmobiliario", pageW / 2, y, { align: "center" });
   doc.setTextColor(0, 0, 0);
   y += 30;
 
@@ -1083,7 +1083,7 @@ const handleDownloadPDF = async () => {
   doc.setFontSize(9);
   doc.text(footerText, pageW / 2, pageH - 30, { align: "center" });
 
-  doc.save("VAI.pdf");
+  doc.save("Informe_VAI.pdf");
 };
 
 
@@ -1233,7 +1233,7 @@ return (
 
             {/* m² Cubiertos */}
             <div className="space-y-1">
-              <label className="block text-sm font-medium text-gray-700">m² a Valuar (si es Lote repetir campo anterior)</label>
+              <label className="block text-sm font-medium text-gray-700">m² a Valuar (si valúas un Lote repetir campo anterior)</label>
               <input
                 name="builtArea"
                 type="number"

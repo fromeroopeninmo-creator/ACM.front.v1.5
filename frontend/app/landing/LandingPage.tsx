@@ -84,7 +84,7 @@ function UvaCalculatorModal({
         </button>
 
         <h2 className="text-lg font-semibold text-neutral-50 mb-2">
-          Calculadora de Crédito UVA 
+          Calculadora de Crédito UVA
         </h2>
         <p className="text-xs text-neutral-300 mb-4">
           Ingresá un monto, una tasa de interés anual aproximada y la cantidad
@@ -350,9 +350,9 @@ export default function LandingPage() {
     <div className="min-h-screen bg-black text-neutral-50 flex flex-col">
       {/* NAVBAR */}
       <header className="sticky top-0 z-40 border-b border-neutral-800/80 bg-black/90 backdrop-blur">
-        <nav className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3 md:py-4">
+        <nav className="mx-auto flex max-w-6xl items-center gap-4 px-4 py-3 md:py-4">
           {/* Logo + nombre */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 shrink-0">
             <Link href="/" className="flex items-center gap-2">
               <div className="relative h-9 w-9 md:h-10 md:w-10">
                 <Image
@@ -375,7 +375,7 @@ export default function LandingPage() {
           </div>
 
           {/* Links desktop */}
-          <div className="hidden items-center gap-8 text-sm md:flex">
+          <div className="hidden flex-1 items-center justify-center gap-8 text-sm md:flex">
             <Link
               href="#inicio"
               className="hover:text-[rgba(230,169,48,0.9)] transition"
@@ -421,7 +421,7 @@ export default function LandingPage() {
           </div>
 
           {/* Botones auth desktop */}
-          <div className="hidden items-center gap-3 md:flex">
+          <div className="hidden items-center gap-3 md:flex shrink-0">
             <Link
               href="/auth/login"
               className="text-sm text-neutral-200 hover:text-white transition"
@@ -438,7 +438,7 @@ export default function LandingPage() {
 
           {/* Hamburguesa mobile */}
           <button
-            className="inline-flex items-center justify-center rounded-md border border-neutral-700 p-2 text-neutral-200 md:hidden"
+            className="ml-auto inline-flex items-center justify-center rounded-md border border-neutral-700 p-2 text-neutral-200 md:hidden"
             onClick={() => setMobileOpen((v) => !v)}
             aria-label="Abrir menú"
           >
@@ -573,7 +573,7 @@ export default function LandingPage() {
                   }
                   className="inline-flex cursor-pointer items-center justify-center rounded-full border border-neutral-700 px-5 py-2.5 text-sm font-medium text-neutral-200 hover:bg-neutral-900 transition"
                 >
-                  Solicitá tu DEMO 
+                  Solicitá tu DEMO
                 </a>
               </div>
 
@@ -608,8 +608,7 @@ export default function LandingPage() {
                   📄 Descargar ejemplo de informe (PDF)
                 </a>
               </div>
-
-             
+            </div>
 
             {/* Hero visual */}
             <div className="flex-1">
@@ -638,12 +637,8 @@ export default function LandingPage() {
                 </div>
 
                 <div className="pointer-events-none absolute -right-3 -top-4 hidden w-52 rounded-2xl border border-neutral-800 bg-black/85 px-3 py-2 text-xs text-neutral-200 shadow-[0_18px_40px_rgba(0,0,0,0.9)] sm:block">
-                  <div className="text-[11px] uppercase tracking-[0.18em] text-neutral-400">
-                    
-                  </div>
-                  <div className="mt-1 text-[13px] text-neutral-100">
-                    
-                  </div>
+                  <div className="text-[11px] uppercase tracking-[0.18em] text-neutral-400"></div>
+                  <div className="mt-1 text-[13px] text-neutral-100"></div>
                 </div>
               </div>
             </div>
@@ -839,8 +834,15 @@ export default function LandingPage() {
 
               <div className="relative overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-950 shadow-[0_22px_55px_rgba(0,0,0,0.9)]">
                 <div className="aspect-video w-full bg-black/80">
-                  <video className="h-full w-full object-cover" controls playsInline>
-                    <source src="/landing/videos/video_vai2.mp4" type="video/mp4" />
+                  <video
+                    className="h-full w-full object-cover"
+                    controls
+                    playsInline
+                  >
+                    <source
+                      src="/landing/videos/video_vai2.mp4"
+                      type="video/mp4"
+                    />
                     Tu navegador no soporta la reproducción de video.
                   </video>
                 </div>
@@ -1062,10 +1064,7 @@ export default function LandingPage() {
         </section>
 
         {/* PLANES (más simple y “decisión fácil”) */}
-        <section
-          id="planes"
-          className="border-b border-neutral-900 bg-black"
-        >
+        <section id="planes" className="border-b border-neutral-900 bg-black">
           <div className="mx-auto max-w-6xl px-4 py-12 md:py-16">
             <div className="mb-8 text-center">
               <p className="text-xs font-semibold tracking-[0.22em] uppercase text-[rgba(230,169,48,0.9)]">
@@ -1216,8 +1215,6 @@ export default function LandingPage() {
             </div>
 
             <div className="grid gap-6 md:grid-cols-3">
-              
-
               <div className="rounded-2xl border border-neutral-800 bg-neutral-950/90 p-5">
                 <div className="text-xs font-semibold uppercase tracking-[0.22em] text-neutral-500">
                   Próximamente

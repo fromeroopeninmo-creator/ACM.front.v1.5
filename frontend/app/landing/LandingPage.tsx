@@ -759,14 +759,14 @@ export default function LandingPage() {
                 step="2"
                 title="Gestión y Seguimiento de Asesores"
                 desc="Gestioná el alta de tus asesores y realizá un seguimiento de sus actividades."
-                imageSrc="/landing/hero/asesores.svg"
+                imageSrc="/landing/images/asesores.svg"
                 imageAlt="Vista del tablero de VAI Prop con informes y métricas"
               />
               <StepCard
                 step="3"
                 title="Medí, ordená y mejorá"
                 desc="Trackeá actividades diarias y resultados de operaciones para que puedas tomar decisiones con datos reales."
-                imageSrc="/landing/images/tablero_hero.jpg"
+                imageSrc="landing/hero/tablero_hero.jpg"
                 imageAlt="Panel y gestión de asesores con tracker y métricas"
               />
             </div>
@@ -977,7 +977,7 @@ export default function LandingPage() {
 
                 <div className="mt-4 h-28 overflow-hidden rounded-xl border border-neutral-800 bg-black/60">
                   <Image
-                    src="/landing/images/tablero_hero.jpg"
+                    src="/landing/hero/tablero_hero.jpg"
                     alt="Panel de gestión y tracker de asesores"
                     width={600}
                     height={400}

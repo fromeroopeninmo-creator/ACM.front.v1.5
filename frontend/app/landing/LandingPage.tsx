@@ -84,7 +84,7 @@ function UvaCalculatorModal({
         </button>
 
         <h2 className="text-lg font-semibold text-neutral-50 mb-2">
-          Calculadora de Crédito UVA (aproximada)
+          Calculadora de Crédito UVA 
         </h2>
         <p className="text-xs text-neutral-300 mb-4">
           Ingresá un monto, una tasa de interés anual aproximada y la cantidad
@@ -573,7 +573,7 @@ export default function LandingPage() {
                   }
                   className="inline-flex cursor-pointer items-center justify-center rounded-full border border-neutral-700 px-5 py-2.5 text-sm font-medium text-neutral-200 hover:bg-neutral-900 transition"
                 >
-                  Pedir demo 15 min
+                  Solicitá tu DEMO 
                 </a>
               </div>
 
@@ -585,7 +585,7 @@ export default function LandingPage() {
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="inline-block h-1.5 w-1.5 rounded-full bg-[rgba(230,169,48,0.9)]" />
-                  Trial con herramientas clave
+                  Trial con todas las funciones
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="inline-block h-1.5 w-1.5 rounded-full bg-[rgba(230,169,48,0.9)]" />
@@ -609,11 +609,7 @@ export default function LandingPage() {
                 </a>
               </div>
 
-              <p className="text-[11px] text-neutral-500">
-                * El PDF ejemplo puede agregarse luego (ruta sugerida:
-                <span className="text-neutral-400"> /landing/docs/...</span>)
-              </p>
-            </div>
+             
 
             {/* Hero visual */}
             <div className="flex-1">
@@ -643,10 +639,10 @@ export default function LandingPage() {
 
                 <div className="pointer-events-none absolute -right-3 -top-4 hidden w-52 rounded-2xl border border-neutral-800 bg-black/85 px-3 py-2 text-xs text-neutral-200 shadow-[0_18px_40px_rgba(0,0,0,0.9)] sm:block">
                   <div className="text-[11px] uppercase tracking-[0.18em] text-neutral-400">
-                    Informes listos
+                    
                   </div>
                   <div className="mt-1 text-[13px] text-neutral-100">
-                    Valuaciones prolijas para enviar.
+                    
                   </div>
                 </div>
               </div>
@@ -662,11 +658,11 @@ export default function LandingPage() {
                 Empecemos por lo que duele
               </p>
               <h2 className="mt-2 text-xl font-semibold text-neutral-50 md:text-2xl">
-                3 problemas típicos del real estate (y cómo resolverlos con datos)
+                3 Problemas típicos del real estate y cómo resolverlos con datos
               </h2>
               <p className="mx-auto mt-3 max-w-3xl text-sm text-neutral-300">
                 Si te identificás con alguno, estás a una decisión de ordenarlo.
-                VAI Prop está diseñado para el día a día de inmobiliarias y
+                VAI PROP está diseñado para el día a día de inmobiliarias y
                 desarrollistas.
               </p>
             </div>
@@ -735,14 +731,14 @@ export default function LandingPage() {
             <div className="mb-8 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
               <div>
                 <p className="text-xs font-semibold tracking-[0.22em] uppercase text-[rgba(230,169,48,0.9)]">
-                  En simple
+                  Simple y Fácil
                 </p>
                 <h2 className="mt-2 text-xl font-semibold text-neutral-50 md:text-2xl">
-                  Cómo funciona VAI Prop en 3 pasos
+                  Cómo funciona VAI PROP en 3 pasos
                 </h2>
                 <p className="mt-2 max-w-2xl text-sm text-neutral-300">
-                  Flujo claro para que tu equipo trabaje con orden: valuación +
-                  soporte de decisión + seguimiento.
+                  Flujo claro para que tu equipo trabaje ordenado y con criterio: Informes +
+                  Seguimiento + Métricas.
                 </p>
               </div>
 
@@ -759,23 +755,23 @@ export default function LandingPage() {
             <div className="grid gap-6 md:grid-cols-3">
               <StepCard
                 step="1"
-                title="Cargá datos y comparables"
-                desc="Armá la base del informe con información del inmueble, comparables, notas y fotos."
+                title="Generá tus Informes en minutos"
+                desc="Presentá valuaciones de forma clara, profesional y con tu marca, listo para enviar."
                 imageSrc="/landing/images/vai_propiedad_principal.svg"
                 imageAlt="Carga de datos y comparables para valuación inmobiliaria"
               />
               <StepCard
                 step="2"
-                title="Generá un informe prolijo"
-                desc="Presentá valuaciones de forma clara, profesional y con tu marca, listo para enviar."
-                imageSrc="/landing/hero/tablero_hero.jpg"
+                title="Gestión y Seguimiento de Asesores"
+                desc="Gestioná el alta de tus asesores y realizá un seguimiento de sus actividades."
+                imageSrc="/landing/hero/asesores.svg"
                 imageAlt="Vista del tablero de VAI Prop con informes y métricas"
               />
               <StepCard
                 step="3"
                 title="Medí, ordená y mejorá"
-                desc="Trackeá actividades y resultados por asesor/empresa y tomá decisiones con datos."
-                imageSrc="/landing/images/asesores.svg"
+                desc="Trackeá actividades diarias y resultados de operaciones para que puedas tomar decisiones con datos reales."
+                imageSrc="/landing/images/tablero_hero.jpg"
                 imageAlt="Panel y gestión de asesores con tracker y métricas"
               />
             </div>
@@ -785,7 +781,7 @@ export default function LandingPage() {
                 href="/auth/register"
                 className="inline-flex items-center justify-center rounded-full border border-[rgba(230,169,48,0.95)] bg-[rgba(230,169,48,0.98)] px-6 py-2.5 text-sm font-semibold text-black hover:bg-[rgba(230,169,48,1)] transition"
               >
-                Empezar prueba gratis
+                Empezar Prueba GRATIS
               </Link>
               <a
                 onClick={() =>
@@ -829,7 +825,7 @@ export default function LandingPage() {
                     href="/landing/tutoriales"
                     className="inline-flex items-center justify-center rounded-full border border-neutral-700 px-5 py-2.5 text-sm font-semibold text-neutral-100 hover:bg-neutral-900 transition"
                   >
-                    🎥 Conocé todas las herramientas
+                    🎥 Conocé las herramientas que ofrecemos
                   </Link>
 
                   <Link
@@ -869,7 +865,7 @@ export default function LandingPage() {
                 </h2>
                 <p className="mt-2 max-w-2xl text-sm text-neutral-300">
                   Diseñamos VAI Prop junto a inmobiliarias y desarrollistas para
-                  cubrir procesos clave: valuación/tasación, factibilidad y
+                  cubrir procesos clave: valuación/tasación, estudio de pre-factibilidad constructiva y
                   gestión del equipo con métricas y seguimiento.
                 </p>
               </div>
@@ -979,7 +975,7 @@ export default function LandingPage() {
 
                 <div className="mt-4 h-28 overflow-hidden rounded-xl border border-neutral-800 bg-black/60">
                   <Image
-                    src="/landing/images/asesores.svg"
+                    src="/landing/images/tablero_hero.jpg"
                     alt="Panel de gestión y tracker de asesores"
                     width={600}
                     height={400}
@@ -1220,18 +1216,7 @@ export default function LandingPage() {
             </div>
 
             <div className="grid gap-6 md:grid-cols-3">
-              <div className="rounded-2xl border border-neutral-800 bg-neutral-950/90 p-5">
-                <div className="text-xs font-semibold uppercase tracking-[0.22em] text-neutral-500">
-                  Próximamente
-                </div>
-                <h3 className="mt-2 text-sm font-semibold text-neutral-50">
-                  Business Tracker (Analítico)
-                </h3>
-                <p className="mt-2 text-xs text-neutral-300">
-                  Métricas, análisis y comparativas para tomar decisiones
-                  estratégicas con datos reales.
-                </p>
-              </div>
+              
 
               <div className="rounded-2xl border border-neutral-800 bg-neutral-950/90 p-5">
                 <div className="text-xs font-semibold uppercase tracking-[0.22em] text-neutral-500">
@@ -1341,7 +1326,7 @@ export default function LandingPage() {
                 VAI Prop no reemplaza una tasación oficial, pero te permite
                 generar valuaciones por método comparativo para respaldar tus
                 tasaciones y presentaciones con clientes. Además, te ayuda a
-                medir desempeño, ordenar tareas y trabajar con datos.
+                medir desempeño, ordenar tareas y trabajar con datos reales.
               </p>
               <div className="mt-6 flex flex-col justify-center gap-3 sm:flex-row">
                 <Link

@@ -9,6 +9,7 @@ import React, {
 } from "react";
 import { supabase } from "#lib/supabaseClient";
 import { useAuth } from "./AuthContext";
+import { usePathname } from "next/navigation";
 
 interface ThemeContextType {
   primaryColor: string;
@@ -27,9 +28,23 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     user = useAuth()?.user || null;
   } catch {}
 
+  const pathname = usePathname();
+
   const [primaryColor, setPrimaryColor] = useState("#2563eb");
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [hydrated, setHydrated] = useState(false);
+
+  // Bypass de loader SOLO para rutas públicas (landing + clusters SEO)
+  const isPublicRoute =
+    pathname === "/" ||
+    pathname.startsWith("/landing") ||
+    pathname.startsWith("/valuacion-de-inmuebles") ||
+    pathname.startsWith("/factibilidad-constructiva") ||
+    pathname.startsWith("/tracker-de-actividades") ||
+    pathname.startsWith("/tracker-de-negocios") ||
+    pathname.startsWith("/tutoriales") ||
+    pathname.startsWith("/blog") ||
+    pathname.startsWith("/metricas-de-tu-empresa");
 
   // =====================================================
   // 1️⃣ Cargar desde localStorage al montar
@@ -96,7 +111,10 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
     window.addEventListener("themeUpdated", handleThemeUpdate as EventListener);
     return () => {
-      window.removeEventListener("themeUpdated", handleThemeUpdate as EventListener);
+      window.removeEventListener(
+        "themeUpdated",
+        handleThemeUpdate as EventListener
+      );
     };
   }, []);
 
@@ -154,7 +172,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   // =====================================================
   // 6️⃣ Hidratar correctamente (sin flash)
   // =====================================================
-  if (!hydrated) {
+  if (!hydrated && !isPublicRoute) {
     return (
       <div className="flex justify-center items-center h-screen text-gray-400">
         Cargando tema...

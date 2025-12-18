@@ -7,26 +7,24 @@ export default function sitemap(): MetadataRoute.Sitemap {
   const lastModified = new Date();
 
   return [
-    // Landing principal (home)
+    // Landing principal (canónica)
     {
       url: `${baseUrl}/`,
       lastModified,
     },
 
-    // Auth públicas (si querés que Google sepa que existen)
+    // Tutoriales (página pública existente)
     {
-      url: `${baseUrl}/auth/login`,
-      lastModified,
-    },
-    {
-      url: `${baseUrl}/auth/register`,
+      url: `${baseUrl}/landing/tutoriales`,
       lastModified,
     },
 
-    // Acá podrías agregar otras páginas públicas futuras:
-    // - /precios
-    // - /faqs
-    // - /contacto
-    // etc.
+    // Cuando publiques las páginas públicas nuevas, agregalas acá:
+    // - /valuacion-de-inmuebles
+    // - /factibilidad-constructiva
+    // - /tracker-de-actividades
+    // - /tracker-de-negocios
+    // - /metricas-de-tu-empresa
+    // - /blog
   ];
 }

@@ -1,4 +1,5 @@
 import "./globals.css";
+import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import { AuthProvider } from "./context/AuthContext";
 import { ThemeProvider } from "./context/ThemeContext";
@@ -10,9 +11,21 @@ import { AnalyticsTracker } from "./AnalyticsTracker";
 
 const inter = Inter({ subsets: ["latin"] });
 
-export const metadata = {
-  title: "VAI PROP - Soluciones Digitales para el Real Estate",
+export const metadata: Metadata = {
+  metadataBase: new URL("https://vaiprop.com"),
+  title: {
+    default: "VAI PROP - Soluciones Digitales para el Real Estate",
+    template: "%s | VAI Prop",
+  },
   description: "Soluciones Digitales para el Real Estate",
+  alternates: {
+    canonical: "https://vaiprop.com/",
+  },
+  openGraph: {
+    siteName: "VAI Prop",
+    locale: "es_AR",
+    type: "website",
+  },
 };
 
 interface LayoutProps {

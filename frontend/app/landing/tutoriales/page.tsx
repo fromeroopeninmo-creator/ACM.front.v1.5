@@ -1,11 +1,118 @@
 // app/landing/tutoriales/page.tsx
-"use client";
-
+import type { Metadata } from "next";
 import SiteNavbar from "@/components/SiteNavbar";
 
+export const metadata: Metadata = {
+  metadataBase: new URL("https://vaiprop.com"),
+  title: "Tutoriales VAI Prop | Videos de valuación, factibilidad y tracker",
+  description:
+    "Centro de tutoriales en video de VAI Prop: valuación/tasación por método comparativo, factibilidad constructiva, Business Tracker y Business Analytics. Ideal para capacitar equipos de inmobiliarias y desarrollistas.",
+  alternates: {
+    canonical: "https://vaiprop.com/landing/tutoriales",
+  },
+  keywords: [
+    "tutoriales VAI Prop",
+    "software inmobiliario tutoriales",
+    "valuación de propiedades",
+    "tasación inmobiliaria",
+    "método comparativo",
+    "factibilidad constructiva",
+    "business tracker",
+    "tracker de actividades",
+    "métricas inmobiliarias",
+    "business analytics real estate",
+    "inmobiliarias",
+    "desarrollistas",
+  ],
+  openGraph: {
+    title: "Tutoriales VAI Prop | Videos para inmobiliarias y desarrollistas",
+    description:
+      "Aprendé a usar VAI Prop con tutoriales en video: valuación/tasación, factibilidad, tracker y tableros de métricas.",
+    url: "https://vaiprop.com/landing/tutoriales",
+    siteName: "VAI Prop",
+    locale: "es_AR",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Tutoriales VAI Prop | Videos de valuación, factibilidad y tracker",
+    description:
+      "Centro de tutoriales en video para usar VAI Prop: valuación/tasación, factibilidad, tracker y métricas.",
+  },
+  robots: {
+    index: true,
+    follow: true,
+  },
+};
+
 export default function LandingTutorialesPage() {
+  const jsonLd = {
+    "@context": "https://schema.org",
+    "@type": "ItemList",
+    name: "Tutoriales en video - VAI Prop",
+    itemListElement: [
+      {
+        "@type": "ListItem",
+        position: 1,
+        item: {
+          "@type": "VideoObject",
+          name: "Cómo utilizar el Valuador de Activos Inmobiliarios",
+          description:
+            "Paso a paso para cargar un inmueble, sumar comparables, subir imágenes y generar un Informe VAI listo para enviar.",
+          embedUrl: "https://www.youtube.com/embed/oMVdw8uFu2E",
+          url: "https://www.youtube.com/watch?v=oMVdw8uFu2E",
+          publisher: { "@type": "Organization", name: "VAI Prop" },
+        },
+      },
+      {
+        "@type": "ListItem",
+        position: 2,
+        item: {
+          "@type": "VideoObject",
+          name: "Cómo valuar un lote por Factibilidad Constructiva",
+          description:
+            "Recorrido por el módulo de Factibilidad Constructiva: normativa, parámetros y escenarios para analizar viabilidad.",
+          embedUrl: "https://www.youtube.com/embed/UdCCU-Axbk0",
+          url: "https://www.youtube.com/watch?v=UdCCU-Axbk0",
+          publisher: { "@type": "Organization", name: "VAI Prop" },
+        },
+      },
+      {
+        "@type": "ListItem",
+        position: 3,
+        item: {
+          "@type": "VideoObject",
+          name: "Business Tracker: seguimiento de contactos y oportunidades",
+          description:
+            "Cómo registrar contactos, propiedades, actividades y estados para ordenar el seguimiento comercial.",
+          embedUrl: "https://www.youtube.com/embed/a-FZa9QbOSE",
+          url: "https://www.youtube.com/watch?v=a-FZa9QbOSE",
+          publisher: { "@type": "Organization", name: "VAI Prop" },
+        },
+      },
+      {
+        "@type": "ListItem",
+        position: 4,
+        item: {
+          "@type": "VideoObject",
+          name: "Business Analytics: métricas y tableros para decidir con datos",
+          description:
+            "Recorrido por gráficos y tableros: ingresos, mix de tipologías, desempeño por asesor y visión global.",
+          embedUrl: "https://www.youtube.com/embed/_KseZwDzANg",
+          url: "https://www.youtube.com/watch?v=_KseZwDzANg",
+          publisher: { "@type": "Organization", name: "VAI Prop" },
+        },
+      },
+    ],
+  };
+
   return (
     <div className="min-h-screen bg-black text-neutral-50 flex flex-col">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
+
       {/* NAVBAR GLOBAL */}
       <SiteNavbar />
 
@@ -168,9 +275,9 @@ export default function LandingTutorialesPage() {
                   </h2>
                   <p className="mt-2 text-sm text-neutral-300">
                     En este video recorremos los gráficos y tableros de Business
-                    Analytics: ingresos, mix de tipologías, desempeño por
-                    asesor y visión global de la empresa. Es el módulo pensado
-                    para que tomes decisiones con datos y no solo con intuición.
+                    Analytics: ingresos, mix de tipologías, desempeño por asesor
+                    y visión global de la empresa. Es el módulo pensado para que
+                    tomes decisiones con datos y no solo con intuición.
                   </p>
                   <ul className="mt-3 text-sm text-neutral-300 space-y-1">
                     <li>• Lectura de indicadores clave de negocio.</li>

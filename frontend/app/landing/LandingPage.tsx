@@ -926,7 +926,7 @@ export default function LandingPage() {
               {/* Card Factibilidad */}
               <div className="flex flex-col rounded-2xl border border-neutral-800 bg-neutral-950/70 p-5 shadow-[0_18px_45px_rgba(0,0,0,0.85)]">
                 <div className="mb-3 inline-flex rounded-full border border-[rgba(230,169,48,0.35)] bg-[rgba(230,169,48,0.12)] px-3 py-1 text-xs font-medium text-[rgba(230,169,48,0.97)]">
-                  Factibilidad constructiva
+                  Factibilidad Constructiva
                 </div>
                 <h3 className="text-sm font-semibold text-neutral-50">
                   Analizá lotes con criterio de desarrollador
@@ -938,7 +938,7 @@ export default function LandingPage() {
 
                 <div className="mt-4 h-28 overflow-hidden rounded-xl border border-neutral-800 bg-black/60">
                   <Image
-                    src="/landing/images/sugerido_venta.svg"
+                    src="/landing/images/Factibilidad_armado.png"
                     alt="Informe de factibilidad constructiva inmobiliaria"
                     width={600}
                     height={400}
@@ -977,7 +977,7 @@ export default function LandingPage() {
 
                 <div className="mt-4 h-28 overflow-hidden rounded-xl border border-neutral-800 bg-black/60">
                   <Image
-                    src="/landing/hero/tablero_hero.jpg"
+                    src="/landing/images/tracker_actividades.png"
                     alt="Panel de gestión y tracker de asesores"
                     width={600}
                     height={400}
@@ -1027,7 +1027,7 @@ export default function LandingPage() {
                       href="/auth/register"
                       className="inline-flex items-center justify-center rounded-full border border-neutral-700 px-6 py-2.5 text-sm font-medium text-neutral-100 hover:bg-neutral-900 transition"
                     >
-                      Probar VAI Prop
+                      Probar VAI PROP
                     </Link>
                   </div>
                 </div>
@@ -1144,7 +1144,7 @@ export default function LandingPage() {
                     href="/auth/register"
                     className="inline-flex w-full items-center justify-center rounded-full border border-[rgba(230,169,48,0.9)] bg-[rgba(230,169,48,0.98)] px-4 py-2 text-xs font-semibold text-black hover:bg-[rgba(230,169,48,1)] transition"
                   >
-                    Empezar con VAI Prop
+                    Empezar con VAI PROP
                   </Link>
                 </div>
 
@@ -1306,7 +1306,7 @@ export default function LandingPage() {
                 href="/auth/register"
                 className="inline-flex items-center justify-center rounded-full border border-[rgba(230,169,48,0.95)] bg-[rgba(230,169,48,0.98)] px-7 py-2.5 text-sm font-semibold text-black shadow-[0_15px_45px_rgba(0,0,0,0.9)] hover:bg-[rgba(230,169,48,1)] transition"
               >
-                Empezar ahora (gratis)
+                Empezar ahora (GRATIS)
               </Link>
             </div>
           </div>

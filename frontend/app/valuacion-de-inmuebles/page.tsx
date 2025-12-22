@@ -161,7 +161,7 @@ export default function ValuacionDeInmueblesPage() {
                     alt="Valuación por método comparativo en VAI Prop"
                     fill
                     sizes="(max-width: 768px) 100vw, 45vw"
-                    className="object-contain p-4"
+                    className="object-contain p-2"
                     priority
                   />
                   <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent" />
@@ -455,7 +455,7 @@ export default function ValuacionDeInmueblesPage() {
                     alt="Panel de VAI Prop con análisis y métricas"
                     fill
                     sizes="(max-width: 768px) 100vw, 50vw"
-                    className="object-contain p-4"
+                    className="object-contain p-2"
                   />
                   <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent" />
                 </div>

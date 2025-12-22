@@ -1,4 +1,5 @@
 // frontend/app/valuacion-de-inmuebles/page.tsx
+
 import type { Metadata } from "next";
 import Link from "next/link";
 import Image from "next/image";
@@ -7,9 +8,9 @@ import SiteNavbar from "@/components/SiteNavbar";
 const baseUrl = "https://vaiprop.com";
 
 export const metadata: Metadata = {
-  title: "Valuación y Tasación de Inmuebles por Método Comparativo | VAI Prop",
+  title: "Valuación y Tasación de Inmuebles por Método Comparativo | VAI PROP",
   description:
-    "Software para valuación y tasación de propiedades por Método Comparativo de Mercado (ACM). Cargá inmueble y comparables, ajustá con coeficiente de competitividad, guardá el informe y descargalo en PDF con tu marca.",
+    "Software para valuación y tasación de propiedades por Método Comparativo de Mercado. Cargá inmueble y comparables, ajustá con coeficiente de competitividad, guardá el informe y descargalo en PDF con tu marca.",
   alternates: {
     canonical: `${baseUrl}/valuacion-de-inmuebles`,
   },
@@ -22,7 +23,7 @@ export const metadata: Metadata = {
     type: "website",
     images: [
       {
-        url: `${baseUrl}/landing/images/vai_propiedad_principal.svg`,
+        url: `${baseUrl}/landing/images/precio_sugerido.png`,
         width: 1200,
         height: 630,
         alt: "VAI Prop - Valuación por Método Comparativo",
@@ -34,7 +35,7 @@ export const metadata: Metadata = {
     title: "Valuación y Tasación por Método Comparativo | VAI Prop",
     description:
       "Informes VAI por método comparativo (ACM): comparables, coeficiente de competitividad, conclusiones y PDF con tu marca.",
-    images: [`${baseUrl}/landing/images/vai_propiedad_principal.svg`],
+    images: [`${baseUrl}/landing/images/precio_sugerido.png`],
   },
   keywords: [
     "valuación de inmuebles",
@@ -57,7 +58,7 @@ export default function ValuacionDeInmueblesPage() {
   const jsonLd = {
     "@context": "https://schema.org",
     "@type": "SoftwareApplication",
-    name: "VAI Prop",
+    name: "VAI PROP",
     applicationCategory: "BusinessApplication",
     operatingSystem: "Web",
     url: `${baseUrl}/valuacion-de-inmuebles`,
@@ -98,7 +99,7 @@ export default function ValuacionDeInmueblesPage() {
               <div className="space-y-5">
                 <span className="inline-flex items-center gap-2 rounded-full border border-[rgba(230,169,48,0.3)] bg-[rgba(230,169,48,0.08)] px-3 py-1 text-xs font-medium tracking-wide text-[rgba(230,169,48,0.96)]">
                   <span className="inline-block h-1.5 w-1.5 rounded-full bg-[rgba(230,169,48,0.9)]" />
-                  Valuador de Activos Inmobiliarios (Método Comparativo / ACM)
+                  Valuador de Activos Inmobiliarios (Método Comparativo)
                 </span>
 
                 <h1 className="text-balance text-3xl font-semibold tracking-tight text-neutral-50 sm:text-4xl">
@@ -156,11 +157,11 @@ export default function ValuacionDeInmueblesPage() {
                 <div className="absolute inset-0 rounded-3xl border border-[rgba(230,169,48,0.18)] pointer-events-none" />
                 <div className="relative h-72 w-full md:h-[420px] bg-black/60">
                   <Image
-                    src="/landing/images/vai_propiedad_principal.svg"
+                    src="/landing/images/precio_sugerido.png"
                     alt="Valuación por método comparativo en VAI Prop"
                     fill
                     sizes="(max-width: 768px) 100vw, 45vw"
-                    className="object-cover"
+                    className="object-contain p-4"
                     priority
                   />
                   <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent" />
@@ -295,11 +296,11 @@ export default function ValuacionDeInmueblesPage() {
                 </div>
                 <div className="relative h-40 w-full border-t border-neutral-800 bg-black/40">
                   <Image
-                    src="/landing/images/vai_propiedad_principal.svg"
+                    src="/landing/images/vai_propiedad.png"
                     alt="Carga de datos de la propiedad en VAI Prop"
                     fill
                     sizes="(max-width: 768px) 100vw, 33vw"
-                    className="object-cover"
+                    className="object-contain p-4"
                   />
                   <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent" />
                 </div>
@@ -322,11 +323,11 @@ export default function ValuacionDeInmueblesPage() {
                 </div>
                 <div className="relative h-40 w-full border-t border-neutral-800 bg-black/40">
                   <Image
-                    src="/landing/hero/tablero_hero.jpg"
+                    src="/landing/images/vai_comparables.png"
                     alt="Comparables y análisis comparativo de mercado"
                     fill
                     sizes="(max-width: 768px) 100vw, 33vw"
-                    className="object-cover"
+                    className="object-contain p-4"
                   />
                   <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent" />
                 </div>
@@ -350,11 +351,11 @@ export default function ValuacionDeInmueblesPage() {
                 </div>
                 <div className="relative h-40 w-full border-t border-neutral-800 bg-black/40">
                   <Image
-                    src="/landing/images/sugerido_venta.svg"
+                    src="/landing/images/informe_comparables.png"
                     alt="Conclusiones y valor sugerido de venta"
                     fill
                     sizes="(max-width: 768px) 100vw, 33vw"
-                    className="object-cover"
+                    className="object-contain p-4"
                   />
                   <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent" />
                 </div>
@@ -366,7 +367,7 @@ export default function ValuacionDeInmueblesPage() {
                 href="/auth/register"
                 className="inline-flex items-center justify-center rounded-full border border-[rgba(230,169,48,0.95)] bg-[rgba(230,169,48,0.98)] px-7 py-2.5 text-sm font-semibold text-black hover:bg-[rgba(230,169,48,1)] transition"
               >
-                Empezar prueba gratis
+                Empezar prueba GRATIS
               </Link>
               <a
                 href="/landing/docs/ejemplo_informe_vai.pdf"
@@ -393,8 +394,7 @@ export default function ValuacionDeInmueblesPage() {
                 <p className="mt-3 text-sm text-neutral-300">
                   El precio sugerido parte del promedio del valor por m² de los
                   comparables, pero el mercado real se mueve por múltiples
-                  factores. Por eso, VAI Prop incluye un coeficiente (rango
-                  orientativo: <span className="text-neutral-100">0.1 a 1.5</span>)
+                  factores. Por eso, VAI PROP incluye un coeficiente 
                   para ajustar el resultado según tu relevamiento.
                 </p>
 
@@ -424,7 +424,7 @@ export default function ValuacionDeInmueblesPage() {
                       Importante
                     </div>
                     <p className="mt-2 text-xs text-neutral-300">
-                      VAI Prop ordena el análisis, pero la decisión final siempre
+                      VAI PROP ordena el análisis, pero la decisión final siempre
                       la toma el profesional (criterio, experiencia y
                       conocimiento del mercado).
                     </p>
@@ -451,11 +451,11 @@ export default function ValuacionDeInmueblesPage() {
                 <div className="absolute inset-0 rounded-3xl border border-[rgba(230,169,48,0.18)] pointer-events-none" />
                 <div className="relative h-72 w-full md:h-[420px] bg-black/60">
                   <Image
-                    src="/landing/images/tablero_hero.jpg"
+                    src="/landing/images/vai_coeficiente"
                     alt="Panel de VAI Prop con análisis y métricas"
                     fill
                     sizes="(max-width: 768px) 100vw, 50vw"
-                    className="object-cover"
+                    className="object-contain p-4"
                   />
                   <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent" />
                 </div>
@@ -536,8 +536,7 @@ export default function ValuacionDeInmueblesPage() {
                 Crear cuenta y probar
               </Link>
               <div className="mt-4 text-xs text-neutral-400">
-                Tip: después armamos links internos desde la home a esta página
-                para potenciar SEO.
+                
               </div>
             </div>
           </div>

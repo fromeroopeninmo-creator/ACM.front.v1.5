@@ -23,7 +23,7 @@ export const metadata: Metadata = {
     type: "website",
     images: [
       {
-        url: `${baseUrl}/landing/images/precio_sugerido.png`,
+        url: `${baseUrl}/landing/images/Precio_sugerido.png`,
         width: 1200,
         height: 630,
         alt: "VAI Prop - Valuación por Método Comparativo",
@@ -35,7 +35,7 @@ export const metadata: Metadata = {
     title: "Valuación y Tasación por Método Comparativo | VAI Prop",
     description:
       "Informes VAI por método comparativo (ACM): comparables, coeficiente de competitividad, conclusiones y PDF con tu marca.",
-    images: [`${baseUrl}/landing/images/precio_sugerido.png`],
+    images: [`${baseUrl}/landing/images/Precio_sugerido.png`],
   },
   keywords: [
     "valuación de inmuebles",
@@ -157,7 +157,7 @@ export default function ValuacionDeInmueblesPage() {
                 <div className="absolute inset-0 rounded-3xl border border-[rgba(230,169,48,0.18)] pointer-events-none" />
                 <div className="relative h-72 w-full md:h-[420px] bg-black/60">
                   <Image
-                    src="/landing/images/precio_sugerido.png"
+                    src="/landing/images/Precio_sugerido.png"
                     alt="Valuación por método comparativo en VAI Prop"
                     fill
                     sizes="(max-width: 768px) 100vw, 45vw"
@@ -300,7 +300,7 @@ export default function ValuacionDeInmueblesPage() {
                     alt="Carga de datos de la propiedad en VAI Prop"
                     fill
                     sizes="(max-width: 768px) 100vw, 33vw"
-                    className="object-contain p-4"
+                    className="object-cover"
                   />
                   <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent" />
                 </div>
@@ -327,7 +327,7 @@ export default function ValuacionDeInmueblesPage() {
                     alt="Comparables y análisis comparativo de mercado"
                     fill
                     sizes="(max-width: 768px) 100vw, 33vw"
-                    className="object-contain p-4"
+                    className="object-cover"
                   />
                   <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent" />
                 </div>
@@ -355,7 +355,7 @@ export default function ValuacionDeInmueblesPage() {
                     alt="Conclusiones y valor sugerido de venta"
                     fill
                     sizes="(max-width: 768px) 100vw, 33vw"
-                    className="object-contain p-4"
+                    className="object-cover"
                   />
                   <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent" />
                 </div>
@@ -451,7 +451,7 @@ export default function ValuacionDeInmueblesPage() {
                 <div className="absolute inset-0 rounded-3xl border border-[rgba(230,169,48,0.18)] pointer-events-none" />
                 <div className="relative h-72 w-full md:h-[420px] bg-black/60">
                   <Image
-                    src="/landing/images/vai_coeficiente"
+                    src="/landing/images/vai_coeficiente.png"
                     alt="Panel de VAI Prop con análisis y métricas"
                     fill
                     sizes="(max-width: 768px) 100vw, 50vw"

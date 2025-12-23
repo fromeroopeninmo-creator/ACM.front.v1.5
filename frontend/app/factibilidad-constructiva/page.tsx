@@ -185,7 +185,7 @@ export default function FactibilidadConstructivaPage() {
               <div className="rounded-3xl border border-neutral-800 bg-gradient-to-br from-neutral-900 to-black p-3 shadow-[0_25px_60px_rgba(0,0,0,0.85)]">
                 <div className="relative overflow-hidden rounded-[1.4rem] bg-black">
                   <Image
-                    src="/landing/images/Factibilidad_armado.png"
+                    src="/landing/hero/factibilidad_armado2.png"
                     alt="Hero de Factibilidad Constructiva - VAI Prop"
                     width={1100}
                     height={800}

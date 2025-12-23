@@ -196,7 +196,7 @@ export default function FactibilidadConstructivaPage() {
                       alt="Hero de Factibilidad Constructiva - VAI Prop"
                       fill
                       sizes="(max-width: 768px) 100vw, 50vw"
-                      className="object-cover"
+                      className="object-contain"
                       priority
                     />
                     <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/60 via-black/10 to-transparent" />

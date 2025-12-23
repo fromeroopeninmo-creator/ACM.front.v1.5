@@ -188,30 +188,35 @@ export default function FactibilidadConstructivaPage() {
                 </div>
               </div>
 
-              <div className="w-full rounded-3xl border border-neutral-800 bg-gradient-to-br from-neutral-900 to-black p-4 md:p-5 shadow-[0_25px_60px_rgba(0,0,0,0.85)]">
-                <div className="relative overflow-hidden rounded-[1.4rem] bg-black">
-                  <div className="relative w-full h-[280px] sm:h-[340px] md:h-[420px] lg:h-[480px]">
-                    <Image
-                      src="/landing/hero/factibilidad_armado2.png"
-                      alt="Hero de Factibilidad Constructiva - VAI Prop"
-                      fill
-                      sizes="(max-width: 768px) 100vw, 50vw"
-                      className="object-contain"
-                      priority
-                    />
-                    <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/60 via-black/10 to-transparent" />
+              <div className="w-full md:w-[92%] lg:w-[90%] mx-auto rounded-3xl border border-neutral-800 bg-gradient-to-br from-neutral-900 to-black p-4 md:p-5 shadow-[0_25px_60px_rgba(0,0,0,0.85)]">
+              <div className="relative overflow-hidden rounded-[1.4rem] bg-black">
+                <div className="relative w-full h-[220px] sm:h-[270px] md:h-[330px] lg:h-[380px]">
+                  <div className="absolute inset-3 sm:inset-4">
+                    <div className="relative h-full w-full">
+                      <Image
+                        src="/landing/hero/factibilidad_armado2.png"
+                        alt="Hero de Factibilidad Constructiva - VAI Prop"
+                        fill
+                        sizes="(max-width: 768px) 100vw, 50vw"
+                        className="object-contain"
+                        priority
+                      />
+                    </div>
                   </div>
-                </div>
-
-                <div className="mt-4 rounded-2xl border border-neutral-800 bg-black/70 px-5 py-4">
-                  <div className="text-[11px] uppercase tracking-[0.18em] text-[rgba(230,169,48,0.9)]">
-                    Resultado clave
-                  </div>
-                  <div className="mt-1 text-sm text-neutral-100">
-                    Incidencia zonal = valor sugerido del lote.
-                  </div>
+            
+                  <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/55 via-black/10 to-transparent" />
                 </div>
               </div>
+            
+              <div className="mt-4 rounded-2xl border border-neutral-800 bg-black/70 px-5 py-4">
+                <div className="text-[11px] uppercase tracking-[0.18em] text-[rgba(230,169,48,0.9)]">
+                  Resultado clave
+                </div>
+                <div className="mt-1 text-sm text-neutral-100">
+                  Incidencia zonal = valor sugerido del lote.
+                </div>
+              </div>
+            </div>
             </div>
           </div>
         </section>

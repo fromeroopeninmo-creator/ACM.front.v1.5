@@ -1,4 +1,5 @@
 // frontend/app/factibilidad-constructiva/page.tsx
+
 import type { Metadata } from "next";
 import Link from "next/link";
 import Image from "next/image";
@@ -120,18 +121,18 @@ export default function FactibilidadConstructivaPage() {
               <div className="space-y-6">
                 <span className="inline-flex items-center gap-2 rounded-full border border-[rgba(230,169,48,0.3)] bg-[rgba(230,169,48,0.08)] px-3 py-1 text-xs font-medium tracking-wide text-[rgba(230,169,48,0.96)]">
                   <span className="inline-block h-1.5 w-1.5 rounded-full bg-[rgba(230,169,48,0.9)]" />
-                  Informe de Factibilidad Constructiva
+                 Factibilidad Constructiva
                 </span>
 
                 <h1 className="text-balance text-3xl font-semibold tracking-tight text-neutral-50 sm:text-4xl lg:text-[2.65rem]">
-                  Estimá el{" "}
-                  <span style={{ color: accent }}>precio sugerido</span> de un lote con datos técnicos
+                  Calculá el{" "}
+                  <span style={{ color: accent }}>Precio Sugerido</span> de un lote con datos técnicos
                 </h1>
 
                 <p className="max-w-2xl text-sm leading-relaxed text-neutral-300 sm:text-base">
-                  Ideal para inmobiliarias, arquitectos y constructoras pequeñas: cargás datos del lote + normativa (FOS/FOT/pisos)
-                  + eficiencia del proyecto y obtenés el resultado clave: <span className="text-neutral-100 font-semibold">incidencia zonal</span>
-                  (valor sugerido del lote). Guardás, editás y descargás el informe en PDF con tu marca.
+                  Ideal para inmobiliarias, arquitectos y desarrollistas: cargás datos del lote + normativa urbanistica
+                  + eficiencia del proyecto y obtenés el resultado clave: <span className="text-neutral-100 font-semibold">Incidencia Zonal del Terreno</span>
+                  . Guardás, editás y descargás el informe en PDF con tu marca.
                 </p>
 
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
@@ -184,7 +185,7 @@ export default function FactibilidadConstructivaPage() {
               <div className="rounded-3xl border border-neutral-800 bg-gradient-to-br from-neutral-900 to-black p-3 shadow-[0_25px_60px_rgba(0,0,0,0.85)]">
                 <div className="relative overflow-hidden rounded-[1.4rem] bg-black">
                   <Image
-                    src="/landing/hero/Factibilidad_armado.png"
+                    src="/landing/images/Factibilidad_armado.png"
                     alt="Hero de Factibilidad Constructiva - VAI Prop"
                     width={1100}
                     height={800}
@@ -198,7 +199,7 @@ export default function FactibilidadConstructivaPage() {
                     Resultado clave
                   </div>
                   <div className="mt-1 text-sm text-neutral-100">
-                    Incidencia zonal = valor sugerido del lote (orientativo).
+                    Incidencia zonal = valor sugerido del lote.
                   </div>
                 </div>
               </div>
@@ -276,7 +277,7 @@ export default function FactibilidadConstructivaPage() {
                   href="/auth/register"
                   className="inline-flex items-center justify-center rounded-full border border-[rgba(230,169,48,0.85)] bg-[rgba(230,169,48,0.10)] px-5 py-2 text-xs font-semibold text-[rgba(230,169,48,0.96)] hover:bg-[rgba(230,169,48,0.18)] transition"
                 >
-                  Probar gratis
+                  Probar GRATIS
                 </Link>
               </div>
             </div>
@@ -295,7 +296,7 @@ export default function FactibilidadConstructivaPage() {
               <Step
                 step="3"
                 title="Usos + eficiencia + unidades"
-                desc="Definís eficiencia total (m² vendibles), m² por unidad y valor por unidad (referencia de zona) → unidades vendibles."
+                desc="Definís eficiencia total (m² vendibles), m² por unidad y valor por unidad (obtenido del VAI) → unidades vendibles."
               />
               <Step
                 step="4"
@@ -351,7 +352,7 @@ export default function FactibilidadConstructivaPage() {
                 </div>
 
                 <div className="mt-4 text-xs text-neutral-400">
-                  Nota: es una herramienta de apoyo para asesoramiento y presentación. El profesional define supuestos y criterios según su experiencia.
+                  Nota: es una herramienta de apoyo para asesoramiento y presentación. El profesional define datos y criterios según su experiencia.
                 </div>
               </div>
 
@@ -464,7 +465,7 @@ export default function FactibilidadConstructivaPage() {
                   href="/auth/register"
                   className="inline-flex items-center justify-center rounded-full border border-[rgba(230,169,48,0.95)] bg-[rgba(230,169,48,0.98)] px-6 py-2.5 text-sm font-semibold text-black shadow-[0_15px_45px_rgba(0,0,0,0.9)] hover:bg-[rgba(230,169,48,1)] transition"
                 >
-                  Crear cuenta ahora
+                  Crear cuenta GRATIS
                 </Link>
                 <a
                   href="mailto:info@vaiprop.com?subject=Consulta%20Factibilidad%20Constructiva%20(VAI%20Prop)"

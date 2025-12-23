@@ -88,7 +88,13 @@ function ImageCard({
     <div className="overflow-hidden rounded-2xl border border-neutral-800 bg-black/60 shadow-[0_22px_55px_rgba(0,0,0,0.9)]">
       <div className="relative w-full">
         <div className="relative h-[220px] w-full sm:h-[260px] md:h-[300px]">
-          <Image src={src} alt={alt} fill sizes="(max-width: 768px) 100vw, 50vw" className="object-contain" />
+          <Image
+            src={src}
+            alt={alt}
+            fill
+            sizes="(max-width: 768px) 100vw, 50vw"
+            className="object-contain"
+          />
         </div>
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/35 via-transparent to-transparent" />
       </div>
@@ -117,11 +123,11 @@ export default function FactibilidadConstructivaPage() {
           }}
         >
           <div className="mx-auto max-w-6xl px-4 py-10 md:py-16">
-            <div className="grid gap-10 md:grid-cols-[1.15fr_0.85fr] md:items-center">
+            <div className="grid gap-10 md:gap-12 md:grid-cols-[1fr_1fr] md:items-center">
               <div className="space-y-6">
                 <span className="inline-flex items-center gap-2 rounded-full border border-[rgba(230,169,48,0.3)] bg-[rgba(230,169,48,0.08)] px-3 py-1 text-xs font-medium tracking-wide text-[rgba(230,169,48,0.96)]">
                   <span className="inline-block h-1.5 w-1.5 rounded-full bg-[rgba(230,169,48,0.9)]" />
-                 Factibilidad Constructiva
+                  Factibilidad Constructiva
                 </span>
 
                 <h1 className="text-balance text-3xl font-semibold tracking-tight text-neutral-50 sm:text-4xl lg:text-[2.65rem]">
@@ -182,7 +188,7 @@ export default function FactibilidadConstructivaPage() {
                 </div>
               </div>
 
-                            <div className="rounded-3xl border border-neutral-800 bg-gradient-to-br from-neutral-900 to-black p-4 md:p-5 shadow-[0_25px_60px_rgba(0,0,0,0.85)] max-w-[640px] md:max-w-[760px] lg:max-w-[860px] mx-auto">
+              <div className="w-full rounded-3xl border border-neutral-800 bg-gradient-to-br from-neutral-900 to-black p-4 md:p-5 shadow-[0_25px_60px_rgba(0,0,0,0.85)]">
                 <div className="relative overflow-hidden rounded-[1.4rem] bg-black">
                   <div className="relative w-full h-[280px] sm:h-[340px] md:h-[420px] lg:h-[480px]">
                     <Image
@@ -196,7 +202,7 @@ export default function FactibilidadConstructivaPage() {
                     <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/60 via-black/10 to-transparent" />
                   </div>
                 </div>
-              
+
                 <div className="mt-4 rounded-2xl border border-neutral-800 bg-black/70 px-5 py-4">
                   <div className="text-[11px] uppercase tracking-[0.18em] text-[rgba(230,169,48,0.9)]">
                     Resultado clave
@@ -209,6 +215,7 @@ export default function FactibilidadConstructivaPage() {
             </div>
           </div>
         </section>
+
 
         {/* PARA QUIÉN ES / PROBLEMAS */}
         <section className="border-b border-neutral-900 bg-black">

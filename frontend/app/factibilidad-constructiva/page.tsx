@@ -182,19 +182,22 @@ export default function FactibilidadConstructivaPage() {
                 </div>
               </div>
 
-              <div className="rounded-3xl border border-neutral-800 bg-gradient-to-br from-neutral-900 to-black p-3 shadow-[0_25px_60px_rgba(0,0,0,0.85)]">
+                            <div className="rounded-3xl border border-neutral-800 bg-gradient-to-br from-neutral-900 to-black p-4 md:p-5 shadow-[0_25px_60px_rgba(0,0,0,0.85)] max-w-[640px] md:max-w-[760px] lg:max-w-[860px] mx-auto">
                 <div className="relative overflow-hidden rounded-[1.4rem] bg-black">
-                  <Image
-                    src="/landing/hero/factibilidad_armado2.png"
-                    alt="Hero de Factibilidad Constructiva - VAI Prop"
-                    width={1100}
-                    height={800}
-                    className="h-auto w-full object-cover"
-                    priority
-                  />
-                  <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/60 via-black/10 to-transparent" />
+                  <div className="relative w-full h-[280px] sm:h-[340px] md:h-[420px] lg:h-[480px]">
+                    <Image
+                      src="/landing/hero/factibilidad_armado2.png"
+                      alt="Hero de Factibilidad Constructiva - VAI Prop"
+                      fill
+                      sizes="(max-width: 768px) 100vw, 50vw"
+                      className="object-cover"
+                      priority
+                    />
+                    <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/60 via-black/10 to-transparent" />
+                  </div>
                 </div>
-                <div className="mt-3 rounded-2xl border border-neutral-800 bg-black/70 px-4 py-3">
+              
+                <div className="mt-4 rounded-2xl border border-neutral-800 bg-black/70 px-5 py-4">
                   <div className="text-[11px] uppercase tracking-[0.18em] text-[rgba(230,169,48,0.9)]">
                     Resultado clave
                   </div>

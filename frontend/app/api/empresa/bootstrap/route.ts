@@ -130,23 +130,44 @@ export async function POST() {
     }
 
     if (!planActivo) {
-      // Buscar plan trial por nombre (tolerante a variantes)
-      const { data: trialPlan, error: trialErr } = await supabaseAdmin
+      // Buscar plan trial por flag real primero (más exacto)
+      let trialPlan: any = null;
+
+      const { data: trialByFlag, error: trialFlagErr } = await supabaseAdmin
         .from("planes")
         .select("id, nombre, duracion_dias")
-        .or("nombre.eq.Trial,nombre.eq.trial,nombre.ilike.%trial%")
+        .eq("es_trial", true)
         .order("duracion_dias", { ascending: false })
         .limit(1)
         .maybeSingle();
 
-      if (trialErr || !trialPlan?.id) {
+      if (!trialFlagErr && trialByFlag?.id) {
+        trialPlan = trialByFlag;
+      } else {
+        // Fallback: por nombre (tolerante a variantes)
+        const { data: trialByName, error: trialNameErr } = await supabaseAdmin
+          .from("planes")
+          .select("id, nombre, duracion_dias")
+          .or(
+            `nombre.eq.${TRIAL_NAME},nombre.eq.${TRIAL_NAME.toLowerCase()},nombre.ilike.%trial%`
+          )
+          .order("duracion_dias", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (!trialNameErr && trialByName?.id) {
+          trialPlan = trialByName;
+        }
+      }
+
+      if (!trialPlan?.id) {
         console.warn("No se encontró el plan Trial; se omite asignación de plan.");
         return NextResponse.json({ ok: true, empresaId }, { status: 200 });
       }
 
       // Fechas (en UTC)
       const fecha_inicio = todayUTC();
-      const dias = Number(trialPlan.duracion_dias) || 7;
+      const dias = Number(trialPlan.duracion_dias) || 30;
       const fecha_fin = addDaysUTC(fecha_inicio, dias);
 
       // Desactivar cualquier plan activo previo (por si acaso)

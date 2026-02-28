@@ -392,6 +392,35 @@ export async function POST(req: Request) {
   try {
     const rawBody = await req.json().catch(() => null as any);
 
+    // 👇 NUEVO: detectar defaults para poder loguear SIEMPRE (incluye test de MP)
+    const looksLikeMP =
+      !!rawBody &&
+      (
+        rawBody?.type === "payment" ||
+        rawBody?.topic === "payment" ||
+        (typeof rawBody?.action === "string" &&
+          rawBody.action.toLowerCase().startsWith("payment.")) ||
+        (rawBody?.data && (rawBody?.data?.id || rawBody?.data?.payment?.id))
+      );
+
+    const fallbackProvider: string =
+      rawBody?.provider ??
+      (looksLikeMP ? "mercadopago" : "unknown");
+
+    const fallbackExternalEventId: string | undefined =
+      rawBody?.externalEventId ??
+      rawBody?.external_event_id ??
+      (rawBody?.data?.id != null ? String(rawBody.data.id) : undefined) ??
+      (rawBody?.data?.payment?.id != null ? String(rawBody.data.payment.id) : undefined) ??
+      (rawBody?.id != null ? String(rawBody.id) : undefined);
+
+    const fallbackEventType: string | undefined =
+      rawBody?.eventType ??
+      rawBody?.event_type ??
+      (typeof rawBody?.action === "string" ? rawBody.action : undefined) ??
+      (typeof rawBody?.type === "string" ? rawBody.type : undefined) ??
+      (typeof rawBody?.topic === "string" ? rawBody.topic : undefined);
+
     let provider: string | undefined = rawBody?.provider;
     let externalEventId: string | undefined = rawBody?.externalEventId;
     let eventType: string | undefined = rawBody?.eventType;
@@ -411,15 +440,13 @@ export async function POST(req: Request) {
       }
     }
 
-    if (!provider || !externalEventId || !eventType) {
-      return NextResponse.json(
-        {
-          error:
-            "Faltan campos obligatorios: provider, externalEventId, eventType.",
-        },
-        { status: 400 }
-      );
-    }
+    // 👇 NUEVO: asegurar que SIEMPRE haya algo para loguear (evita 400 en test de MP)
+    provider = provider ?? fallbackProvider;
+    externalEventId =
+      externalEventId ??
+      fallbackExternalEventId ??
+      `fallback_${Date.now()}`;
+    eventType = eventType ?? fallbackEventType ?? "unknown_event";
 
     // Idempotencia
     {
@@ -437,14 +464,19 @@ export async function POST(req: Request) {
       }
     }
 
-    // Registrar evento (guardamos data procesada como payload)
+    // Registrar evento (guardamos RAW + data normalizada si existe)
+    const payloadToStore = {
+      raw: rawBody,
+      data,
+    };
+
     const { data: whInserted, error: whErr } = await supabaseAdmin
       .from("webhook_events")
       .insert({
         provider,
         external_event_id: externalEventId,
         event_type: eventType,
-        payload: data,
+        payload: payloadToStore as any,
         processed_at: null,
       })
       .select("id")
@@ -458,9 +490,11 @@ export async function POST(req: Request) {
           { status: 200 }
         );
       }
+      // 👇 NUEVO: no devolvemos 400 (MP reintenta); devolvemos 200 y queda en logs
+      console.error("No se pudo registrar webhook_events:", whErr.message);
       return NextResponse.json(
-        { error: whErr.message },
-        { status: 400 }
+        { ok: true, warning: "No se pudo registrar webhook_events" },
+        { status: 200 }
       );
     }
 
@@ -610,9 +644,11 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true }, { status: 200 });
   } catch (e: any) {
     console.error("Error en /api/pagos/webhook:", e?.message || e);
+    // 👇 NUEVO: devolver 200 para evitar reintentos infinitos de MP en casos raros,
+    // y dejarlo trazado en logs (ya intentamos registrar arriba si hubo body).
     return NextResponse.json(
-      { error: e?.message || "Error inesperado" },
-      { status: 500 }
+      { ok: true, warning: e?.message || "Error inesperado" },
+      { status: 200 }
     );
   }
 }

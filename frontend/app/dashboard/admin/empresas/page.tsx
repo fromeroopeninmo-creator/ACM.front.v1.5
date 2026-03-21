@@ -1,3 +1,4 @@
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { supabaseServer } from "#lib/supabaseServer";
 import Link from "next/link";
@@ -13,8 +14,8 @@ type SearchParams = {
 };
 
 type EmpresaRow = {
-  empresa_id: string;
-  empresa_nombre: string | null;
+  id: string;
+  razon_social: string | null;
   cuit: string | null;
   plan_nombre: string | null;
   max_asesores: number | null;
@@ -24,17 +25,172 @@ type EmpresaRow = {
   fecha_fin: string | null;
   logo_url?: string | null;
   color?: string | null;
+
+  acuerdo_comercial_activo?: boolean;
+  acuerdo_comercial_id?: string | null;
+  acuerdo_comercial_tipo?: string | null;
+  acuerdo_comercial_modo_iva?: string | null;
+  acuerdo_comercial_iva_pct?: number | null;
+  acuerdo_comercial_precio_neto_fijo?: number | null;
+  acuerdo_comercial_descuento_pct?: number | null;
+  acuerdo_comercial_max_asesores_override?: number | null;
+  acuerdo_comercial_precio_extra_por_asesor_override?: number | null;
+  acuerdo_comercial_fecha_inicio?: string | null;
+  acuerdo_comercial_fecha_fin?: string | null;
+};
+
+type ApiResponse = {
+  items: EmpresaRow[];
+  page: number;
+  pageSize: number;
+  total: number;
 };
 
 function fmtNumber(n?: number | null) {
   if (n === null || n === undefined) return "—";
   return new Intl.NumberFormat("es-AR").format(n);
 }
+
 function fmtDateOnly(d?: string | null) {
   if (!d) return "—";
   const dt = new Date(d);
   if (Number.isNaN(dt.getTime())) return "—";
   return dt.toLocaleDateString();
+}
+
+function buildCookieHeader(): string {
+  const jar = cookies();
+  const all = jar.getAll();
+  if (!all?.length) return "";
+  return all.map((c) => `${c.name}=${c.value}`).join("; ");
+}
+
+function getBaseUrl() {
+  const envUrl =
+    process.env.NEXT_PUBLIC_SITE_URL ||
+    process.env.NEXT_PUBLIC_VERCEL_URL ||
+    process.env.VERCEL_URL;
+
+  if (envUrl) {
+    return envUrl.startsWith("http") ? envUrl : `https://${envUrl}`;
+  }
+  return "http://localhost:3000";
+}
+
+function buildListadoUrl(params: {
+  q?: string | null;
+  plan?: string | null;
+  estado?: string | null;
+  page: number;
+  pageSize: number;
+}) {
+  const usp = new URLSearchParams();
+  if (params.q) usp.set("q", params.q);
+  if (params.plan) usp.set("plan", params.plan);
+  if (params.estado) usp.set("estado", params.estado);
+  usp.set("page", String(params.page));
+  usp.set("pageSize", String(params.pageSize));
+  return `/dashboard/admin/empresas?${usp.toString()}`;
+}
+
+function fmtTipoAcuerdo(v?: string | null) {
+  switch (v) {
+    case "descuento_pct":
+      return "Descuento %";
+    case "precio_fijo":
+      return "Precio fijo";
+    case "precio_fijo_con_cupo":
+      return "Precio fijo + cupo";
+    case "descuento_con_cupo":
+      return "Descuento + cupo";
+    default:
+      return "Acuerdo";
+  }
+}
+
+function renderAcuerdoBadges(e: EmpresaRow) {
+  const badges: Array<JSX.Element> = [];
+
+  if (e.acuerdo_comercial_activo) {
+    badges.push(
+      <span
+        key="activo"
+        className="inline-flex items-center rounded-full px-2 py-0.5 text-xs bg-blue-100 text-blue-700"
+      >
+        Acuerdo activo
+      </span>
+    );
+
+    if (e.acuerdo_comercial_modo_iva === "no_aplica") {
+      badges.push(
+        <span
+          key="sin-iva"
+          className="inline-flex items-center rounded-full px-2 py-0.5 text-xs bg-purple-100 text-purple-700"
+        >
+          Sin IVA
+        </span>
+      );
+    }
+
+    if (e.acuerdo_comercial_tipo) {
+      badges.push(
+        <span
+          key="tipo"
+          className="inline-flex items-center rounded-full px-2 py-0.5 text-xs bg-slate-100 text-slate-700"
+        >
+          {fmtTipoAcuerdo(e.acuerdo_comercial_tipo)}
+        </span>
+      );
+    }
+
+    if (
+      e.acuerdo_comercial_precio_neto_fijo != null &&
+      e.acuerdo_comercial_precio_neto_fijo >= 0
+    ) {
+      badges.push(
+        <span
+          key="precio-fijo"
+          className="inline-flex items-center rounded-full px-2 py-0.5 text-xs bg-emerald-100 text-emerald-700"
+        >
+          Precio fijo
+        </span>
+      );
+    }
+
+    if (
+      e.acuerdo_comercial_descuento_pct != null &&
+      e.acuerdo_comercial_descuento_pct > 0
+    ) {
+      badges.push(
+        <span
+          key="descuento"
+          className="inline-flex items-center rounded-full px-2 py-0.5 text-xs bg-amber-100 text-amber-700"
+        >
+          {e.acuerdo_comercial_descuento_pct}% off
+        </span>
+      );
+    }
+
+    if (
+      e.acuerdo_comercial_max_asesores_override != null &&
+      e.acuerdo_comercial_max_asesores_override > 0
+    ) {
+      badges.push(
+        <span
+          key="cupo-especial"
+          className="inline-flex items-center rounded-full px-2 py-0.5 text-xs bg-indigo-100 text-indigo-700"
+        >
+          Cupo especial
+        </span>
+      );
+    }
+  }
+
+  if (badges.length === 0) {
+    return <span className="text-xs text-gray-500">—</span>;
+  }
+
+  return <div className="flex flex-wrap gap-1.5">{badges}</div>;
 }
 
 export default async function AdminEmpresasPage({
@@ -82,32 +238,46 @@ export default async function AdminEmpresasPage({
   const pageSize = [10, 20, 50].includes(parseInt(searchParams.pageSize || "", 10))
     ? parseInt(searchParams.pageSize!, 10)
     : 10;
-  const from = (page - 1) * pageSize;
-  const to = from + pageSize - 1;
 
-  // 3) Query a la vista segura
-  let query = supa
-    .from("v_empresas_soporte")
-    .select(
-      "empresa_id, empresa_nombre, cuit, plan_nombre, max_asesores, max_asesores_override, plan_activo, fecha_inicio, fecha_fin, logo_url, color",
-      { count: "exact" }
-    );
+  // 3) Fetch al endpoint admin/soporte enriquecido
+  const cookieHeader = buildCookieHeader();
+  const baseUrl = getBaseUrl();
 
-  if (q) {
-    query = query.or(
-      `empresa_nombre.ilike.%${q}%,cuit.ilike.%${q}%`
-    );
+  const apiUrl = new URL(`${baseUrl}/api/soporte/empresas`);
+  if (q) apiUrl.searchParams.set("q", q);
+  if (plan) apiUrl.searchParams.set("plan", plan);
+  if (estado) apiUrl.searchParams.set("estado", estado);
+  apiUrl.searchParams.set("page", String(page));
+  apiUrl.searchParams.set("pageSize", String(pageSize));
+
+  let items: EmpresaRow[] = [];
+  let total = 0;
+  let errorMsg: string | null = null;
+
+  try {
+    const res = await fetch(apiUrl.toString(), {
+      method: "GET",
+      headers: {
+        cookie: cookieHeader,
+      },
+      cache: "no-store",
+    });
+
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      throw new Error(
+        `Error al cargar empresas: ${res.status} ${res.statusText} ${body}`.trim()
+      );
+    }
+
+    const json = (await res.json()) as ApiResponse;
+
+    items = Array.isArray(json.items) ? json.items : [];
+    total = Number(json.total ?? 0);
+  } catch (e: any) {
+    errorMsg = e?.message || "Error al cargar empresas.";
   }
-  if (plan) query = query.eq("plan_nombre", plan);
-  if (estado === "activo") query = query.eq("plan_activo", true);
-  if (estado === "inactivo") query = query.eq("plan_activo", false);
 
-  query = query.order("empresa_nombre", { ascending: true }).range(from, to);
-
-  const { data, error, count } = await query;
-
-  const items: EmpresaRow[] = data || [];
-  const total = count ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   // 4) Render
@@ -117,7 +287,7 @@ export default async function AdminEmpresasPage({
         <div className="space-y-1">
           <h1 className="text-xl md:text-2xl font-semibold">Empresas (Administración)</h1>
           <p className="text-sm text-gray-500">
-            Listado general, filtros y acceso al detalle. (Datos leídos desde <code>v_empresas_soporte</code>)
+            Listado general, filtros y acceso al detalle. Incluye resumen de acuerdos comerciales activos.
           </p>
         </div>
       </header>
@@ -177,10 +347,8 @@ export default async function AdminEmpresasPage({
 
       {/* Tabla */}
       <section className="rounded-2xl border p-0 overflow-hidden bg-white dark:bg-neutral-900">
-        {error ? (
-          <div className="p-4 text-red-700">
-            Error al cargar empresas: {error.message}
-          </div>
+        {errorMsg ? (
+          <div className="p-4 text-red-700">{errorMsg}</div>
         ) : (
           <div className="overflow-auto">
             <table className="min-w-full text-sm">
@@ -190,6 +358,7 @@ export default async function AdminEmpresasPage({
                   <th className="px-3 py-2">CUIT</th>
                   <th className="px-3 py-2">Plan</th>
                   <th className="px-3 py-2">Cupo (base → override)</th>
+                  <th className="px-3 py-2">Acuerdo comercial</th>
                   <th className="px-3 py-2">Estado</th>
                   <th className="px-3 py-2">Inicio</th>
                   <th className="px-3 py-2">Fin</th>
@@ -199,7 +368,7 @@ export default async function AdminEmpresasPage({
               <tbody>
                 {items.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="px-3 py-6 text-center text-gray-500">
+                    <td colSpan={9} className="px-3 py-6 text-center text-gray-500">
                       Sin resultados.
                     </td>
                   </tr>
@@ -207,13 +376,16 @@ export default async function AdminEmpresasPage({
                   items.map((e) => {
                     const cupoBase = e.max_asesores ?? 0;
                     const cupoOv = e.max_asesores_override ?? 0;
-                    const cupo = cupoOv > 0 ? `${cupoBase} → ${cupoOv}` : `${cupoBase}`;
+                    const cupo =
+                      cupoOv > 0 ? `${cupoBase} → ${cupoOv}` : `${cupoBase}`;
+
                     return (
-                      <tr key={e.empresa_id} className="border-t">
-                        <td className="px-3 py-2">{e.empresa_nombre || "—"}</td>
+                      <tr key={e.id} className="border-t">
+                        <td className="px-3 py-2">{e.razon_social || "—"}</td>
                         <td className="px-3 py-2">{e.cuit || "—"}</td>
                         <td className="px-3 py-2">{e.plan_nombre || "—"}</td>
                         <td className="px-3 py-2">{cupo}</td>
+                        <td className="px-3 py-2">{renderAcuerdoBadges(e)}</td>
                         <td className="px-3 py-2">
                           <span
                             className={
@@ -229,7 +401,7 @@ export default async function AdminEmpresasPage({
                         <td className="px-3 py-2">{fmtDateOnly(e.fecha_fin)}</td>
                         <td className="px-3 py-2">
                           <Link
-                            href={`/dashboard/admin/empresas/${encodeURIComponent(e.empresa_id)}`}
+                            href={`/dashboard/admin/empresas/${encodeURIComponent(e.id)}`}
                             className="text-blue-600 hover:underline"
                             title="Ver detalle de la empresa (vista Admin)"
                           >
@@ -253,13 +425,13 @@ export default async function AdminEmpresasPage({
         </p>
         <div className="flex items-center gap-2">
           <a
-            href={`/dashboard/admin/empresas?${new URLSearchParams({
-              q: q || "",
-              plan: plan || "",
-              estado: estado || "",
-              page: String(Math.max(1, page - 1)),
-              pageSize: String(pageSize),
-            }).toString()}`}
+            href={buildListadoUrl({
+              q,
+              plan,
+              estado,
+              page: Math.max(1, page - 1),
+              pageSize,
+            })}
             className={`rounded-xl border px-3 py-1 text-sm ${
               page <= 1 ? "pointer-events-none opacity-50" : "hover:bg-gray-50"
             }`}
@@ -267,13 +439,13 @@ export default async function AdminEmpresasPage({
             Anterior
           </a>
           <a
-            href={`/dashboard/admin/empresas?${new URLSearchParams({
-              q: q || "",
-              plan: plan || "",
-              estado: estado || "",
-              page: String(Math.min(totalPages, page + 1)),
-              pageSize: String(pageSize),
-            }).toString()}`}
+            href={buildListadoUrl({
+              q,
+              plan,
+              estado,
+              page: Math.min(totalPages, page + 1),
+              pageSize,
+            })}
             className={`rounded-xl border px-3 py-1 text-sm ${
               page >= totalPages ? "pointer-events-none opacity-50" : "hover:bg-gray-50"
             }`}

@@ -44,6 +44,19 @@ export type EmpresaListItem = {
   // Auditoría
   created_at?: string | null;  // snake
   createdAt?: string | null;   // camel
+
+  // Resumen acuerdo comercial
+  acuerdo_comercial_activo?: boolean;
+  acuerdo_comercial_id?: string | null;
+  acuerdo_comercial_tipo?: string | null;
+  acuerdo_comercial_modo_iva?: string | null;
+  acuerdo_comercial_iva_pct?: number | null;
+  acuerdo_comercial_precio_neto_fijo?: number | null;
+  acuerdo_comercial_descuento_pct?: number | null;
+  acuerdo_comercial_max_asesores_override?: number | null;
+  acuerdo_comercial_precio_extra_por_asesor_override?: number | null;
+  acuerdo_comercial_fecha_inicio?: string | null;
+  acuerdo_comercial_fecha_fin?: string | null;
 };
 
 export type EmpresaDetalle = {
@@ -125,6 +138,10 @@ export type EmpresaDetalle = {
     precio_extra_por_asesor_plan?: number | null;
     precio_extra_por_asesor_final?: number | null;
     pricing_source?: string | null;
+    fecha_inicio?: string | null;
+    fecha_fin?: string | null;
+    motivo?: string | null;
+    observaciones?: string | null;
   } | null;
 };
 
@@ -212,11 +229,11 @@ export async function getEmpresaDetalle(
   const empresaPlan =
     raw?.plan
       ? {
-          id: undefined as unknown as string, // no lo expone el backend; mantenemos shape
+          id: raw.plan.id ?? (undefined as unknown as string),
           nombre: raw.plan.nombre ?? null,
           max_asesores: raw.plan.maxAsesores ?? null,
-          duracion_dias: null,
-          precio: null,
+          duracion_dias: raw.plan.duracionDias ?? raw.plan.duracion_dias ?? null,
+          precio: raw.plan.precio ?? null,
 
           // Nuevos campos comerciales/fiscales
           precio_base_neto: raw.plan.precioBaseNeto ?? null,
@@ -263,6 +280,10 @@ export async function getEmpresaDetalle(
           precio_extra_por_asesor_final:
             raw.acuerdoComercial.precioExtraPorAsesorFinal ?? null,
           pricing_source: raw.acuerdoComercial.pricingSource ?? null,
+          fecha_inicio: raw.acuerdoComercial.fechaInicio ?? null,
+          fecha_fin: raw.acuerdoComercial.fechaFin ?? null,
+          motivo: raw.acuerdoComercial.motivo ?? null,
+          observaciones: raw.acuerdoComercial.observaciones ?? null,
         }
       : null;
 
@@ -286,7 +307,6 @@ export async function getEmpresaDetalle(
       informes_30d: raw?.kpis?.informesTotales ?? 0,
       ultima_actividad_at: null,
     },
-    // ✅ Ahora mapeamos lo que ya devuelve el backend
     asesores: (raw?.asesores || []).map((a: any) => ({
       id: a.id,
       nombre: a.nombre,

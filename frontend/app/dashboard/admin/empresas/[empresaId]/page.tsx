@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { supabaseServer } from "#lib/supabaseServer";
 import { getEmpresaDetalle, type EmpresaDetalle } from "#lib/soporteApi";
+import AcuerdoComercialAdminCard from "./AcuerdoComercialAdminCard";
 
 export const dynamic = "force-dynamic";
 
@@ -85,7 +86,6 @@ export default async function AdminEmpresaDetallePage({ params }: PageProps) {
   const isAdmin = role === "super_admin" || role === "super_admin_root";
 
   if (!isAdmin) {
-    // redirigir según rol real
     switch (role) {
       case "soporte":
         redirect("/dashboard/soporte");
@@ -104,7 +104,6 @@ export default async function AdminEmpresaDetallePage({ params }: PageProps) {
   let detalle: EmpresaDetalle | null = null;
   let errorMsg: string | null = null;
   try {
-    // Reutilizamos /api/soporte/empresas/[empresaId], que autoriza admin/root
     detalle = await getEmpresaDetalle(params.empresaId, {
       headers: { cookie: cookieHeader },
     });
@@ -116,14 +115,13 @@ export default async function AdminEmpresaDetallePage({ params }: PageProps) {
   const override = detalle?.empresa?.override ?? null;
   const acuerdo = detalle?.acuerdo_comercial ?? null;
 
-  // 3) Render
   return (
     <main className="p-4 md:p-6 space-y-4">
       <header className="flex items-center justify-between">
         <div className="space-y-1">
           <h1 className="text-xl md:text-2xl font-semibold">Detalle de empresa (Admin)</h1>
           <p className="text-sm text-gray-500">
-            Vista de solo lectura. Luego sumamos acciones administrativas (ABM, auditoría).
+            Vista administrativa con resumen comercial, acuerdo comercial e historial operativo.
           </p>
         </div>
         <a
@@ -145,7 +143,6 @@ export default async function AdminEmpresaDetallePage({ params }: PageProps) {
           {/* Resumen principal */}
           <section className="rounded-2xl border p-4 bg-white dark:bg-neutral-900">
             <div className="flex items-start gap-4">
-              {/* Logo */}
               <div className="w-16 h-16 rounded-xl border flex items-center justify-center overflow-hidden bg-white dark:bg-neutral-950">
                 {detalle.empresa.logo_url ? (
                   // eslint-disable-next-line @next/next/no-img-element
@@ -159,7 +156,6 @@ export default async function AdminEmpresaDetallePage({ params }: PageProps) {
                 )}
               </div>
 
-              {/* Datos de cabecera */}
               <div className="flex-1">
                 <h2 className="text-lg font-semibold">
                   {detalle.empresa.razon_social}
@@ -180,7 +176,6 @@ export default async function AdminEmpresaDetallePage({ params }: PageProps) {
                 </div>
               </div>
 
-              {/* Color corporativo */}
               <div className="shrink-0">
                 <div className="text-xs text-gray-500 mb-1">Color corporativo</div>
                 <div className="flex items-center gap-2">
@@ -198,7 +193,6 @@ export default async function AdminEmpresaDetallePage({ params }: PageProps) {
               </div>
             </div>
 
-            {/* Plan + override + métricas + acuerdo comercial */}
             <div className="mt-4 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
               <div className="rounded-xl border p-3">
                 <div className="text-xs text-gray-500">Plan</div>
@@ -248,7 +242,13 @@ export default async function AdminEmpresaDetallePage({ params }: PageProps) {
                   </div>
                   <div className="flex justify-between gap-3">
                     <dt>Extra por asesor</dt>
-                    <dd>{fmtMoney(plan?.precio_extra_por_asesor_final ?? plan?.precio_extra_por_asesor_plan ?? null)}</dd>
+                    <dd>
+                      {fmtMoney(
+                        plan?.precio_extra_por_asesor_final ??
+                          plan?.precio_extra_por_asesor_plan ??
+                          null
+                      )}
+                    </dd>
                   </div>
                   <div className="flex justify-between gap-3">
                     <dt>Origen pricing</dt>
@@ -273,9 +273,7 @@ export default async function AdminEmpresaDetallePage({ params }: PageProps) {
                   </div>
                   <div className="flex justify-between gap-3">
                     <dt>Estado</dt>
-                    <dd>
-                      {override?.activo ? "Activo" : "—"}
-                    </dd>
+                    <dd>{override?.activo ? "Activo" : "—"}</dd>
                   </div>
                 </dl>
               </div>
@@ -356,19 +354,23 @@ export default async function AdminEmpresaDetallePage({ params }: PageProps) {
                       <dt>Origen pricing</dt>
                       <dd className="text-right break-all">{acuerdo.pricing_source || "—"}</dd>
                     </div>
+                    <div className="flex justify-between gap-3">
+                      <dt>Vigencia</dt>
+                      <dd>
+                        {fmtDateOnly(acuerdo.fecha_inicio)} — {fmtDateOnly(acuerdo.fecha_fin)}
+                      </dd>
+                    </div>
                   </dl>
                 )}
 
-                <div className="mt-3 pt-3 border-t">
-                  <p className="text-xs text-gray-500">
-                    Próxima etapa: botones para crear, editar, desactivar y ver historial del acuerdo comercial.
-                  </p>
-                </div>
+                <AcuerdoComercialAdminCard
+                  empresaId={params.empresaId}
+                  acuerdoActual={acuerdo}
+                />
               </div>
             </div>
           </section>
 
-          {/* Listas (solo lectura) */}
           <section className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <div className="rounded-2xl border p-4 bg-white dark:bg-neutral-900">
               <h3 className="font-medium mb-2">Asesores</h3>

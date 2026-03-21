@@ -17,6 +17,28 @@ const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE);
 
 type Role = "empresa" | "asesor" | "soporte" | "super_admin" | "super_admin_root";
 
+type AcuerdoRawRow = {
+  id: string;
+  empresa_id: string;
+  plan_id: string | null;
+  activo: boolean;
+  tipo_acuerdo: string | null;
+  descuento_pct: number | null;
+  precio_neto_fijo: number | null;
+  max_asesores_override: number | null;
+  precio_extra_por_asesor_override: number | null;
+  modo_iva: string | null;
+  iva_pct: number | null;
+  fecha_inicio: string | null;
+  fecha_fin: string | null;
+  motivo: string | null;
+  observaciones: string | null;
+  created_by: string | null;
+  updated_by: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+};
+
 async function resolveUserRole(userId: string): Promise<Role | null> {
   // 1) Por user_id
   const { data: p1 } = await supabaseAdmin
@@ -122,7 +144,7 @@ export async function GET(
     // 2.3) Acuerdo comercial activo/vigente (para fallback y UI)
     const hoy = new Date().toISOString().slice(0, 10);
 
-    const { data: acuerdoRaw } = await supabaseAdmin
+    const acuerdoQuery = await supabaseAdmin
       .from("empresa_acuerdos_comerciales")
       .select(
         [
@@ -154,6 +176,8 @@ export async function GET(
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
+
+    const acuerdoRaw = (acuerdoQuery.data ?? null) as AcuerdoRawRow | null;
 
     // 2.4) Billing resuelto
     let billingConfig: Awaited<
@@ -192,13 +216,19 @@ export async function GET(
         | "acuerdo_comercial_descuento"
         | "acuerdo_comercial_precio_fijo" = "plan";
 
-      if (acuerdoRaw?.tipo_acuerdo === "descuento_pct" || acuerdoRaw?.tipo_acuerdo === "descuento_con_cupo") {
+      if (
+        acuerdoRaw?.tipo_acuerdo === "descuento_pct" ||
+        acuerdoRaw?.tipo_acuerdo === "descuento_con_cupo"
+      ) {
         const pct = Number(acuerdoRaw.descuento_pct ?? 0);
         precioNetoFinal = round2(Math.max(precioBaseNeto - precioBaseNeto * (pct / 100), 0));
         pricingSource = "acuerdo_comercial_descuento";
       }
 
-      if (acuerdoRaw?.tipo_acuerdo === "precio_fijo" || acuerdoRaw?.tipo_acuerdo === "precio_fijo_con_cupo") {
+      if (
+        acuerdoRaw?.tipo_acuerdo === "precio_fijo" ||
+        acuerdoRaw?.tipo_acuerdo === "precio_fijo_con_cupo"
+      ) {
         precioNetoFinal = round2(Number(acuerdoRaw.precio_neto_fijo ?? 0));
         pricingSource = "acuerdo_comercial_precio_fijo";
       }

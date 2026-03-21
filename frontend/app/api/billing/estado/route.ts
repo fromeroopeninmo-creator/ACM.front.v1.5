@@ -5,6 +5,10 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { supabaseServer } from "#lib/supabaseServer";
+import {
+  assertAuthAndGetContext,
+  resolveEmpresaBillingConfig,
+} from "#lib/billing/utils";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -51,11 +55,7 @@ export async function GET(req: Request) {
     if (!isAdminLike) {
       const a: any = actor;
 
-      const actorUserId =
-        a.userId ??
-        a.id ??
-        a.sub ??
-        null;
+      const actorUserId = a.userId ?? a.id ?? a.sub ?? null;
 
       // 3.1: intentar siempre primero desde profiles.empresa_id
       if (!empresaId && actorUserId) {
@@ -85,10 +85,7 @@ export async function GET(req: Request) {
 
       // 3.3: fallback para ASESOR → tabla asesores.email
       if (!empresaId && role === "asesor") {
-        const email =
-          a.email ??
-          a.user_metadata?.email ??
-          null;
+        const email = a.email ?? a.user_metadata?.email ?? null;
 
         if (email) {
           const { data: asesorRow, error: asesorErr } = await supabaseAdmin
@@ -233,6 +230,15 @@ export async function GET(req: Request) {
             incluye_valuador: false,
             incluye_tracker: false,
           },
+          // Nuevo bloque: pricing / acuerdo comercial cuando no hay plan
+          pricing: null,
+          acuerdoComercial: null,
+          cupos: {
+            max_asesores_plan: null,
+            max_asesores_final: null,
+            precio_extra_por_asesor_plan: null,
+            precio_extra_por_asesor_final: null,
+          },
         },
         { status: 200 }
       );
@@ -251,9 +257,21 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: planErr.message }, { status: 400 });
     }
 
-    const precioNeto = toNum(planRow?.precio ?? 0);
-    const iva = Math.round(precioNeto * 0.21 * 100) / 100;
-    const totalConIVA = Math.round((precioNeto + iva) * 100) / 100;
+    // 7.1) Resolución central de billing (precio/cupo/IVA/acuerdo)
+    const billingConfig = await resolveEmpresaBillingConfig({
+      supabase: supabaseAdmin,
+      empresaId,
+      planId: planEP.plan_id,
+      maxAsesoresOverride:
+        planEP.max_asesores_override == null
+          ? null
+          : Number(planEP.max_asesores_override),
+    });
+
+    // Compatibilidad con payload previo
+    const precioNeto = toNum(billingConfig.precio_neto_final);
+    const iva = toNum(billingConfig.iva_importe);
+    const totalConIVA = toNum(billingConfig.precio_total_final);
 
     // 8) Última suscripción si existe
     const { data: susRow } = await supabaseAdmin
@@ -293,8 +311,20 @@ export async function GET(req: Request) {
           ? {
               id: planRow.id,
               nombre: planRow.nombre,
+
+              // Compatibilidad payload anterior
               precioNeto,
               totalConIVA,
+
+              // Nuevo detalle de pricing
+              precioBaseNeto: billingConfig.precio_base_neto,
+              precioNetoFinal: billingConfig.precio_neto_final,
+              ivaModo: billingConfig.modo_iva,
+              ivaPct: billingConfig.iva_pct,
+              ivaImporte: billingConfig.iva_importe,
+              precioTotalFinal: billingConfig.precio_total_final,
+              pricingSource: billingConfig.pricing_source,
+
               // info del tipo de plan / features
               tipo_plan: tipoPlan, // "core" | "combo" | "tracker_only" | "trial"
               incluye_valuador: incluyeValuador,
@@ -335,6 +365,44 @@ export async function GET(req: Request) {
           incluye_valuador: incluyeValuador,
           incluye_tracker: incluyeTracker,
         },
+        // Nuevo bloque explícito de pricing
+        pricing: {
+          precio_base_neto: billingConfig.precio_base_neto,
+          precio_neto_final: billingConfig.precio_neto_final,
+          modo_iva: billingConfig.modo_iva,
+          iva_pct: billingConfig.iva_pct,
+          iva_importe: billingConfig.iva_importe,
+          precio_total_final: billingConfig.precio_total_final,
+          pricing_source: billingConfig.pricing_source,
+          suscripcion_override_applied:
+            billingConfig.suscripcion_override_applied,
+          suscripcion_precio_neto_override:
+            billingConfig.suscripcion_precio_neto_override,
+        },
+        // Nuevo bloque explícito de cupos
+        cupos: {
+          max_asesores_plan: billingConfig.max_asesores_plan,
+          max_asesores_final: billingConfig.max_asesores_final,
+          precio_extra_por_asesor_plan:
+            billingConfig.precio_extra_por_asesor_plan,
+          precio_extra_por_asesor_final:
+            billingConfig.precio_extra_por_asesor_final,
+        },
+        // Nuevo bloque explícito de acuerdo comercial
+        acuerdoComercial: billingConfig.agreement_applied
+          ? {
+              activo: true,
+              id: billingConfig.agreement_id,
+              tipo: billingConfig.agreement_tipo,
+              modo_iva: billingConfig.modo_iva,
+              iva_pct: billingConfig.iva_pct,
+              precio_neto_final: billingConfig.precio_neto_final,
+              precio_total_final: billingConfig.precio_total_final,
+              max_asesores_final: billingConfig.max_asesores_final,
+              precio_extra_por_asesor_final:
+                billingConfig.precio_extra_por_asesor_final,
+            }
+          : null,
       },
       { status: 200 }
     );
@@ -346,6 +414,3 @@ export async function GET(req: Request) {
     );
   }
 }
-
-// IMPORT que ya usabas
-import { assertAuthAndGetContext } from "#lib/billing/utils";

@@ -5,7 +5,11 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { supabaseServer } from "#lib/supabaseServer";
-import { resolveEmpresaBillingConfig } from "#lib/billing/utils";
+import {
+  resolveEmpresaBillingConfig,
+  calcularMontosConIva,
+  round2,
+} from "#lib/billing/utils";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -72,14 +76,14 @@ export async function GET(
       return NextResponse.json({ error: "Empresa no encontrada." }, { status: 404 });
     }
 
-    // 2) Logo/color + datos de empresa adicionales (para completar el detalle visual)
+    // 2) Logo/color + datos adicionales de empresa
     const { data: empresaRow } = await supabaseAdmin
       .from("empresas")
       .select("logo_url, color, condicion_fiscal, telefono, direccion, localidad, provincia")
       .eq("id", empresaId)
       .maybeSingle();
 
-    // 2.1) Plan activo / último plan operativo para enriquecer el bloque comercial
+    // 2.1) Plan operativo (activo o último)
     const { data: planActivoRow } = await supabaseAdmin
       .from("empresas_planes")
       .select("plan_id, max_asesores_override, activo, fecha_inicio, fecha_fin")
@@ -101,7 +105,57 @@ export async function GET(
       planOperativo = ultimoPlanRow ?? null;
     }
 
-    // 2.2) Billing resuelto + acuerdo comercial activo (si existe)
+    // 2.2) Plan base real
+    let planBaseRow: any = null;
+    if (planOperativo?.plan_id) {
+      const { data: planDb } = await supabaseAdmin
+        .from("planes")
+        .select(
+          "id, nombre, precio, duracion_dias, max_asesores, precio_extra_por_asesor, tipo_plan, incluye_valuador, incluye_tracker, es_trial"
+        )
+        .eq("id", planOperativo.plan_id)
+        .maybeSingle();
+
+      planBaseRow = planDb ?? null;
+    }
+
+    // 2.3) Acuerdo comercial activo/vigente (para fallback y UI)
+    const hoy = new Date().toISOString().slice(0, 10);
+
+    const { data: acuerdoRaw } = await supabaseAdmin
+      .from("empresa_acuerdos_comerciales")
+      .select(
+        [
+          "id",
+          "empresa_id",
+          "plan_id",
+          "activo",
+          "tipo_acuerdo",
+          "descuento_pct",
+          "precio_neto_fijo",
+          "max_asesores_override",
+          "precio_extra_por_asesor_override",
+          "modo_iva",
+          "iva_pct",
+          "fecha_inicio",
+          "fecha_fin",
+          "motivo",
+          "observaciones",
+          "created_by",
+          "updated_by",
+          "created_at",
+          "updated_at",
+        ].join(", ")
+      )
+      .eq("empresa_id", empresaId)
+      .eq("activo", true)
+      .lte("fecha_inicio", hoy)
+      .or(`fecha_fin.is.null,fecha_fin.gte.${hoy}`)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    // 2.4) Billing resuelto
     let billingConfig: Awaited<
       ReturnType<typeof resolveEmpresaBillingConfig>
     > | null = null;
@@ -126,6 +180,83 @@ export async function GET(
       }
     }
 
+    // 2.5) Fallback comercial/manual para evitar mostrar "--"
+    if (!billingConfig && planBaseRow) {
+      const precioBaseNeto = Number(planBaseRow.precio ?? 0);
+
+      let precioNetoFinal = round2(precioBaseNeto);
+      let pricingSource:
+        | "plan"
+        | "personalizado_formula"
+        | "suscripcion_override"
+        | "acuerdo_comercial_descuento"
+        | "acuerdo_comercial_precio_fijo" = "plan";
+
+      if (acuerdoRaw?.tipo_acuerdo === "descuento_pct" || acuerdoRaw?.tipo_acuerdo === "descuento_con_cupo") {
+        const pct = Number(acuerdoRaw.descuento_pct ?? 0);
+        precioNetoFinal = round2(Math.max(precioBaseNeto - precioBaseNeto * (pct / 100), 0));
+        pricingSource = "acuerdo_comercial_descuento";
+      }
+
+      if (acuerdoRaw?.tipo_acuerdo === "precio_fijo" || acuerdoRaw?.tipo_acuerdo === "precio_fijo_con_cupo") {
+        precioNetoFinal = round2(Number(acuerdoRaw.precio_neto_fijo ?? 0));
+        pricingSource = "acuerdo_comercial_precio_fijo";
+      }
+
+      const modoIva = (acuerdoRaw?.modo_iva ?? "sumar_al_neto") as
+        | "sumar_al_neto"
+        | "incluido_en_precio"
+        | "no_aplica";
+
+      const ivaPct = Number(acuerdoRaw?.iva_pct ?? 21);
+
+      const montos = calcularMontosConIva({
+        precioNeto: precioNetoFinal,
+        modoIva,
+        ivaPct,
+      });
+
+      billingConfig = {
+        empresa_id: empresaId,
+        plan_id: String(planBaseRow.id),
+        plan_nombre: (planBaseRow.nombre ?? null) as string | null,
+
+        precio_base_neto: round2(precioBaseNeto),
+        precio_neto_final: montos.precio_neto_final,
+
+        modo_iva: modoIva,
+        iva_pct: ivaPct,
+        iva_importe: montos.iva_importe,
+        precio_total_final: montos.precio_total_final,
+
+        max_asesores_plan:
+          planBaseRow.max_asesores == null ? null : Number(planBaseRow.max_asesores),
+        max_asesores_final:
+          acuerdoRaw?.max_asesores_override != null
+            ? Number(acuerdoRaw.max_asesores_override)
+            : planOperativo?.max_asesores_override != null
+            ? Number(planOperativo.max_asesores_override)
+            : planBaseRow.max_asesores == null
+            ? null
+            : Number(planBaseRow.max_asesores),
+
+        precio_extra_por_asesor_plan: round2(Number(planBaseRow.precio_extra_por_asesor ?? 0)),
+        precio_extra_por_asesor_final:
+          acuerdoRaw?.precio_extra_por_asesor_override != null
+            ? round2(Number(acuerdoRaw.precio_extra_por_asesor_override))
+            : round2(Number(planBaseRow.precio_extra_por_asesor ?? 0)),
+
+        agreement_applied: !!acuerdoRaw,
+        agreement_id: acuerdoRaw?.id ?? null,
+        agreement_tipo: (acuerdoRaw?.tipo_acuerdo ?? null) as any,
+
+        suscripcion_override_applied: false,
+        suscripcion_precio_neto_override: null,
+
+        pricing_source: pricingSource,
+      };
+    }
+
     // 3) Últimas acciones de soporte (10)
     const { data: acciones, error: accErr } = await supabaseAdmin
       .from("acciones_soporte")
@@ -138,7 +269,7 @@ export async function GET(
       return NextResponse.json({ error: accErr.message }, { status: 400 });
     }
 
-    // 4) Listado de asesores de la empresa (para card de “Asesores”)
+    // 4) Listado de asesores
     const { data: asesores, error: asesErr } = await supabaseAdmin
       .from("asesores")
       .select("id, nombre, apellido, email, activo, fecha_creacion")
@@ -149,7 +280,7 @@ export async function GET(
       return NextResponse.json({ error: asesErr.message }, { status: 400 });
     }
 
-    // 5) Informes recientes de la empresa (para card “Informes recientes”)
+    // 5) Informes recientes
     const { data: informes, error: infErr } = await supabaseAdmin
       .from("informes")
       .select("id, titulo, estado, fecha_creacion")
@@ -161,7 +292,7 @@ export async function GET(
       return NextResponse.json({ error: infErr.message }, { status: 400 });
     }
 
-    // 6) Armar respuesta (mismo shape actual + nuevos campos)
+    // 6) Respuesta
     const resp = {
       empresa: {
         id: detalle.empresa_id,
@@ -176,47 +307,73 @@ export async function GET(
         provincia: empresaRow?.provincia ?? null,
       },
       plan: {
-        nombre: detalle.plan_nombre ?? null,
-        maxAsesores: detalle.max_asesores ?? null,
+        id: planBaseRow?.id ?? null,
+        nombre: detalle.plan_nombre ?? planBaseRow?.nombre ?? null,
+        maxAsesores: detalle.max_asesores ?? planBaseRow?.max_asesores ?? null,
         override: detalle.max_asesores_override ?? null,
         activo: !!detalle.plan_activo,
         fechaInicio: detalle.fecha_inicio,
         fechaFin: detalle.fecha_fin,
+        duracionDias: planBaseRow?.duracion_dias ?? null,
+        precio: planBaseRow?.precio ?? null,
 
-        // Nuevos datos útiles para UI/admin
-        precioBaseNeto: billingConfig?.precio_base_neto ?? null,
-        precioNetoFinal: billingConfig?.precio_neto_final ?? null,
+        // comerciales / fiscales
+        precioBaseNeto: billingConfig?.precio_base_neto ?? (planBaseRow?.precio ?? null),
+        precioNetoFinal: billingConfig?.precio_neto_final ?? (planBaseRow?.precio ?? null),
         precioTotalFinal: billingConfig?.precio_total_final ?? null,
-        ivaModo: billingConfig?.modo_iva ?? null,
-        ivaPct: billingConfig?.iva_pct ?? null,
+        ivaModo: billingConfig?.modo_iva ?? "sumar_al_neto",
+        ivaPct: billingConfig?.iva_pct ?? 21,
         ivaImporte: billingConfig?.iva_importe ?? null,
-        pricingSource: billingConfig?.pricing_source ?? null,
+        pricingSource: billingConfig?.pricing_source ?? "plan",
         precioExtraPorAsesorPlan:
-          billingConfig?.precio_extra_por_asesor_plan ?? null,
+          billingConfig?.precio_extra_por_asesor_plan ??
+          (planBaseRow?.precio_extra_por_asesor ?? null),
         precioExtraPorAsesorFinal:
-          billingConfig?.precio_extra_por_asesor_final ?? null,
-        maxAsesoresFinal: billingConfig?.max_asesores_final ?? null,
+          billingConfig?.precio_extra_por_asesor_final ??
+          (planBaseRow?.precio_extra_por_asesor ?? null),
+        maxAsesoresFinal:
+          billingConfig?.max_asesores_final ??
+          detalle.max_asesores_override ??
+          detalle.max_asesores ??
+          planBaseRow?.max_asesores ??
+          null,
       },
-      acuerdoComercial: billingConfig?.agreement_applied
-        ? {
-            activo: true,
-            id: billingConfig.agreement_id ?? null,
-            tipo: billingConfig.agreement_tipo ?? null,
-            precioBaseNeto: billingConfig.precio_base_neto ?? null,
-            precioNetoFinal: billingConfig.precio_neto_final ?? null,
-            precioTotalFinal: billingConfig.precio_total_final ?? null,
-            modoIva: billingConfig.modo_iva ?? null,
-            ivaPct: billingConfig.iva_pct ?? null,
-            ivaImporte: billingConfig.iva_importe ?? null,
-            maxAsesoresPlan: billingConfig.max_asesores_plan ?? null,
-            maxAsesoresFinal: billingConfig.max_asesores_final ?? null,
-            precioExtraPorAsesorPlan:
-              billingConfig.precio_extra_por_asesor_plan ?? null,
-            precioExtraPorAsesorFinal:
-              billingConfig.precio_extra_por_asesor_final ?? null,
-            pricingSource: billingConfig.pricing_source ?? null,
-          }
-        : null,
+      acuerdoComercial:
+        billingConfig?.agreement_applied || acuerdoRaw
+          ? {
+              activo: true,
+              id: billingConfig?.agreement_id ?? acuerdoRaw?.id ?? null,
+              tipo: billingConfig?.agreement_tipo ?? acuerdoRaw?.tipo_acuerdo ?? null,
+              precioBaseNeto:
+                billingConfig?.precio_base_neto ?? (planBaseRow?.precio ?? null),
+              precioNetoFinal:
+                billingConfig?.precio_neto_final ??
+                (acuerdoRaw?.precio_neto_fijo ?? planBaseRow?.precio ?? null),
+              precioTotalFinal: billingConfig?.precio_total_final ?? null,
+              modoIva: billingConfig?.modo_iva ?? acuerdoRaw?.modo_iva ?? "sumar_al_neto",
+              ivaPct: billingConfig?.iva_pct ?? Number(acuerdoRaw?.iva_pct ?? 21),
+              ivaImporte: billingConfig?.iva_importe ?? null,
+              maxAsesoresPlan:
+                billingConfig?.max_asesores_plan ??
+                (planBaseRow?.max_asesores == null ? null : Number(planBaseRow.max_asesores)),
+              maxAsesoresFinal:
+                billingConfig?.max_asesores_final ??
+                (acuerdoRaw?.max_asesores_override ?? null),
+              precioExtraPorAsesorPlan:
+                billingConfig?.precio_extra_por_asesor_plan ??
+                (planBaseRow?.precio_extra_por_asesor == null
+                  ? null
+                  : Number(planBaseRow.precio_extra_por_asesor)),
+              precioExtraPorAsesorFinal:
+                billingConfig?.precio_extra_por_asesor_final ??
+                (acuerdoRaw?.precio_extra_por_asesor_override ?? null),
+              pricingSource: billingConfig?.pricing_source ?? "plan",
+              fechaInicio: acuerdoRaw?.fecha_inicio ?? null,
+              fechaFin: acuerdoRaw?.fecha_fin ?? null,
+              motivo: acuerdoRaw?.motivo ?? null,
+              observaciones: acuerdoRaw?.observaciones ?? null,
+            }
+          : null,
       kpis: {
         asesoresTotales: detalle.asesores_totales ?? 0,
         informesTotales: detalle.informes_totales ?? 0,
@@ -229,7 +386,6 @@ export async function GET(
           descripcion: a.descripcion,
           timestamp: a.timestamp,
         })) ?? [],
-      // ✅ Nuevos arrays para que la UI muestre contenido real
       asesores:
         (asesores || []).map((a) => ({
           id: a.id,

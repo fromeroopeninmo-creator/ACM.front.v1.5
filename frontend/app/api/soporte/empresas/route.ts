@@ -69,8 +69,6 @@ export async function GET(req: Request) {
     let query = supabaseAdmin
       .from("v_empresas_soporte")
       .select(
-        // OJO: si tu vista ya expone provincia/created_at, añadilos aquí y
-        // más abajo NO hará falta el "merge" con la tabla empresas.
         "empresa_id, empresa_nombre, cuit, plan_nombre, max_asesores, max_asesores_override, plan_activo, fecha_inicio, fecha_fin",
         { count: "exact" }
       );
@@ -110,9 +108,22 @@ export async function GET(req: Request) {
         asesores_activos: null as number | null,
         informes_30d: null as number | null,
 
-        // Los completaremos con un 2º query a "empresas"
+        // Los completaremos con queries complementarias
         provincia: null as string | null,
         created_at: null as string | null,
+
+        // Resumen acuerdo comercial activo
+        acuerdo_comercial_activo: false as boolean,
+        acuerdo_comercial_id: null as string | null,
+        acuerdo_comercial_tipo: null as string | null,
+        acuerdo_comercial_modo_iva: null as string | null,
+        acuerdo_comercial_iva_pct: null as number | null,
+        acuerdo_comercial_precio_neto_fijo: null as number | null,
+        acuerdo_comercial_descuento_pct: null as number | null,
+        acuerdo_comercial_max_asesores_override: null as number | null,
+        acuerdo_comercial_precio_extra_por_asesor_override: null as number | null,
+        acuerdo_comercial_fecha_inicio: null as string | null,
+        acuerdo_comercial_fecha_fin: null as string | null,
       })) ?? [];
 
     // Si no hay items, devolvemos directamente
@@ -123,8 +134,9 @@ export async function GET(req: Request) {
       );
     }
 
-    // 🧩 Traer provincia + created_at (y opcionalmente KPIs si los tenés en empresas)
+    // 🧩 Traer provincia + created_at
     const empresaIds = baseItems.map((i) => i.id);
+
     const { data: empresasRows, error: empErr } = await supabaseAdmin
       .from("empresas")
       .select("id, provincia, created_at")
@@ -132,8 +144,6 @@ export async function GET(req: Request) {
 
     if (empErr) {
       // No rompemos la respuesta si falla; devolvemos lo que tengamos.
-      // Pero informamos el error en un campo adicional "warning" si querés.
-      // Para simplificar, lo ignoramos.
     }
 
     const byId = new Map<string, { provincia: string | null; created_at: string | null }>();
@@ -144,14 +154,99 @@ export async function GET(req: Request) {
       });
     }
 
+    // 🧩 Traer acuerdos comerciales activos/vigentes de esas empresas
+    const hoy = new Date().toISOString().slice(0, 10);
+
+    const { data: acuerdosRows, error: acuerdosErr } = await supabaseAdmin
+      .from("empresa_acuerdos_comerciales")
+      .select(
+        "id, empresa_id, tipo_acuerdo, descuento_pct, precio_neto_fijo, max_asesores_override, precio_extra_por_asesor_override, modo_iva, iva_pct, fecha_inicio, fecha_fin, created_at"
+      )
+      .in("empresa_id", empresaIds)
+      .eq("activo", true)
+      .lte("fecha_inicio", hoy)
+      .or(`fecha_fin.is.null,fecha_fin.gte.${hoy}`)
+      .order("created_at", { ascending: false });
+
+    if (acuerdosErr) {
+      // No rompemos la respuesta si falla; devolvemos lo que tengamos.
+    }
+
+    const acuerdoByEmpresaId = new Map<
+      string,
+      {
+        id: string | null;
+        tipo_acuerdo: string | null;
+        descuento_pct: number | null;
+        precio_neto_fijo: number | null;
+        max_asesores_override: number | null;
+        precio_extra_por_asesor_override: number | null;
+        modo_iva: string | null;
+        iva_pct: number | null;
+        fecha_inicio: string | null;
+        fecha_fin: string | null;
+      }
+    >();
+
+    for (const a of acuerdosRows || []) {
+      const empresaId = (a as any).empresa_id as string;
+      if (!acuerdoByEmpresaId.has(empresaId)) {
+        acuerdoByEmpresaId.set(empresaId, {
+          id: ((a as any).id ?? null) as string | null,
+          tipo_acuerdo: ((a as any).tipo_acuerdo ?? null) as string | null,
+          descuento_pct:
+            (a as any).descuento_pct == null
+              ? null
+              : Number((a as any).descuento_pct),
+          precio_neto_fijo:
+            (a as any).precio_neto_fijo == null
+              ? null
+              : Number((a as any).precio_neto_fijo),
+          max_asesores_override:
+            (a as any).max_asesores_override == null
+              ? null
+              : Number((a as any).max_asesores_override),
+          precio_extra_por_asesor_override:
+            (a as any).precio_extra_por_asesor_override == null
+              ? null
+              : Number((a as any).precio_extra_por_asesor_override),
+          modo_iva: ((a as any).modo_iva ?? null) as string | null,
+          iva_pct:
+            (a as any).iva_pct == null ? null : Number((a as any).iva_pct),
+          fecha_inicio: ((a as any).fecha_inicio ?? null) as string | null,
+          fecha_fin: ((a as any).fecha_fin ?? null) as string | null,
+        });
+      }
+    }
+
     // Merge
     const merged = baseItems
       .map((item) => {
         const extra = byId.get(item.id);
+        const acuerdo = acuerdoByEmpresaId.get(item.id);
+
         return {
           ...item,
           provincia: extra?.provincia ?? null,
           created_at: extra?.created_at ?? null,
+
+          acuerdo_comercial_activo: !!acuerdo,
+          acuerdo_comercial_id: acuerdo?.id ?? null,
+          acuerdo_comercial_tipo: acuerdo?.tipo_acuerdo ?? null,
+          acuerdo_comercial_modo_iva: acuerdo?.modo_iva ?? null,
+          acuerdo_comercial_iva_pct: acuerdo?.iva_pct ?? null,
+          acuerdo_comercial_precio_neto_fijo:
+            acuerdo?.precio_neto_fijo ?? null,
+          acuerdo_comercial_descuento_pct:
+            acuerdo?.descuento_pct ?? null,
+          acuerdo_comercial_max_asesores_override:
+            acuerdo?.max_asesores_override ?? null,
+          acuerdo_comercial_precio_extra_por_asesor_override:
+            acuerdo?.precio_extra_por_asesor_override ?? null,
+          acuerdo_comercial_fecha_inicio:
+            acuerdo?.fecha_inicio ?? null,
+          acuerdo_comercial_fecha_fin:
+            acuerdo?.fecha_fin ?? null,
         };
       })
       // Filtro por provincia si lo pidieron y la vista no lo traía

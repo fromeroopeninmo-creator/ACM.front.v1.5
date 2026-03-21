@@ -8,8 +8,7 @@ import {
   assertAuthAndGetContext,
   getEmpresaIdForActor,
   getSuscripcionEstado,
-  getPlanPrecioNetoPreferido,
-  calcularDeltaProrrateo,
+  resolveEmpresaBillingConfig,
   round2,
 } from "#lib/billing/utils";
 
@@ -32,6 +31,25 @@ import {
  *   nota?: string | null;
  * };
  */
+
+function calcularDiasCicloYRestantes(params: {
+  cicloInicioISO: string;
+  cicloFinISO: string;
+}) {
+  const inicio = new Date(params.cicloInicioISO).getTime();
+  const fin = new Date(params.cicloFinISO).getTime();
+  const ahora = Date.now();
+
+  const msCiclo = Math.max(fin - inicio, 0);
+  const msRest = Math.max(fin - ahora, 0);
+
+  const diasCiclo = Math.max(Math.ceil(msCiclo / 86400000), 0);
+  const diasRestantes = Math.max(Math.ceil(msRest / 86400000), 0);
+  const factor = diasCiclo > 0 ? diasRestantes / diasCiclo : 0;
+
+  return { diasCiclo, diasRestantes, factor };
+}
+
 export async function GET(req: Request) {
   try {
     const url = new URL(req.url);
@@ -39,7 +57,9 @@ export async function GET(req: Request) {
     const empresaIdParam = url.searchParams.get("empresa_id") || undefined;
 
     // opcional, usado para plan "Personalizado"
-    const maxAsesoresOverrideParam = url.searchParams.get("max_asesores_override");
+    const maxAsesoresOverrideParam = url.searchParams.get(
+      "max_asesores_override"
+    );
     const parsedOverride = maxAsesoresOverrideParam
       ? parseInt(maxAsesoresOverrideParam, 10)
       : NaN;
@@ -87,65 +107,91 @@ export async function GET(req: Request) {
       plan_proximo_nombre,
     } = sus;
 
-    // Precios netos actuales/nuevo plan (con override si aplica)
-    const precioActual = await getPlanPrecioNetoPreferido(
+    // Escenario actual:
+    // - Sí considera acuerdo comercial activo si existe
+    const actualConfig = await resolveEmpresaBillingConfig({
       supabase,
-      plan_actual_id,
-      empresaId
-    );
-    const precioNuevo = await getPlanPrecioNetoPreferido(
-      supabase,
-      nuevoPlanId,
       empresaId,
-      maxAsesoresOverride
-    );
-
-    if (precioActual == null || precioNuevo == null) {
-      return NextResponse.json(
-        { error: "No se pudieron resolver los precios netos (planes)." },
-        { status: 409 }
-      );
-    }
-
-    // 👇 NUEVO: tratar trial/free o ciclo vencido como ciclo completo nuevo
-    const isTrialOrFree = precioActual <= 0;
-
-    const simBase = calcularDeltaProrrateo({
-      cicloInicioISO: ciclo_inicio,
-      cicloFinISO: ciclo_fin,
-      precioActualNeto: precioActual,
-      precioNuevoNeto: precioNuevo,
-      alicuotaIVA: 0.21,
+      planId: plan_actual_id,
     });
 
-    let sim = simBase;
+    // Escenario nuevo:
+    // - NO hereda automáticamente el acuerdo comercial actual
+    // - Sí usa override de max asesores si el admin lo está simulando
+    const nuevoConfig = await resolveEmpresaBillingConfig({
+      supabase,
+      empresaId,
+      planId: nuevoPlanId,
+      maxAsesoresOverride,
+      forzarSinAcuerdo: true,
+    });
 
-    if (isTrialOrFree || simBase.diasRestantes <= 0) {
-      const diasCiclo = simBase.diasCiclo ?? null;
-      const deltaNeto = round2(precioNuevo);
-      const iva = round2(deltaNeto * 0.21);
-      const total = round2(deltaNeto + iva);
+    const precioActualNeto = round2(actualConfig.precio_neto_final);
+    const precioNuevoNeto = round2(nuevoConfig.precio_neto_final);
 
-      sim = {
-        ...simBase,
-        diasCiclo,
-        diasRestantes: diasCiclo,
-        deltaNeto,
-        iva,
-        total,
-      };
+    const dias = calcularDiasCicloYRestantes({
+      cicloInicioISO: ciclo_inicio,
+      cicloFinISO: ciclo_fin,
+    });
+
+    // Trial/free o ciclo vencido => cobrar ciclo completo del nuevo escenario
+    const isTrialOrFree = precioActualNeto <= 0;
+    const cicloVencido = dias.diasRestantes <= 0;
+
+    let deltaNeto = 0;
+    let iva = 0;
+    let total = 0;
+
+    if (isTrialOrFree || cicloVencido) {
+      deltaNeto = round2(nuevoConfig.precio_neto_final);
+      iva = round2(nuevoConfig.iva_importe);
+      total = round2(nuevoConfig.precio_total_final);
+    } else {
+      // Para upgrades prorrateamos la diferencia.
+      // Para downgrades no hay cobro inmediato.
+      const deltaBase = Math.max(precioNuevoNeto - precioActualNeto, 0);
+      const factor = dias.factor ?? 0;
+      deltaNeto = round2(deltaBase * factor);
+
+      if (deltaNeto > 0) {
+        // Reutilizamos el modo fiscal del escenario nuevo para el importe a cobrar.
+        // Si el nuevo plan no aplica IVA, el cobro prorrateado tampoco lo aplica.
+        // Si lo incluye, el monto se interpreta como total pactado con IVA incluido.
+        if (nuevoConfig.modo_iva === "no_aplica") {
+          iva = 0;
+          total = round2(deltaNeto);
+        } else if (nuevoConfig.modo_iva === "incluido_en_precio") {
+          const tasa = (nuevoConfig.iva_pct ?? 21) / 100;
+          if (tasa > 0) {
+            const neto = deltaNeto / (1 + tasa);
+            const ivaIncluido = deltaNeto - neto;
+            deltaNeto = round2(neto);
+            iva = round2(ivaIncluido);
+            total = round2(deltaNeto + iva);
+          } else {
+            iva = 0;
+            total = round2(deltaNeto);
+          }
+        } else {
+          iva = round2(deltaNeto * ((nuevoConfig.iva_pct ?? 21) / 100));
+          total = round2(deltaNeto + iva);
+        }
+      } else {
+        iva = 0;
+        total = 0;
+      }
     }
 
     let tipo: "upgrade" | "downgrade" | "sin_cambio" = "sin_cambio";
-    if (precioNuevo > precioActual) tipo = "upgrade";
-    else if (precioNuevo < precioActual) tipo = "downgrade";
+    if (precioNuevoNeto > precioActualNeto) tipo = "upgrade";
+    else if (precioNuevoNeto < precioActualNeto) tipo = "downgrade";
 
     // Nota para el modal
     let nota: string | null = null;
     let aplicar_desde: string | null = null;
 
     if (tipo === "upgrade") {
-      if (isTrialOrFree || sim.diasRestantes <= 0) {
+      if (isTrialOrFree || cicloVencido) {
         nota =
           "Como tu plan actual es gratuito o ya venció, se cobrará el valor completo del nuevo ciclo.";
       } else {
@@ -166,23 +212,24 @@ export async function GET(req: Request) {
 
         plan_actual: {
           id: plan_actual_id,
-          nombre: plan_actual_nombre ?? "",
-          precio_neto: round2(precioActual),
+          nombre: actualConfig.plan_nombre ?? plan_actual_nombre ?? "",
+          precio_neto: round2(precioActualNeto),
         },
 
         plan_nuevo: {
           id: nuevoPlanId,
-          nombre: "", // la UI usa el nombre del card, acá no es obligatorio
-          precio_neto: round2(precioNuevo),
+          nombre: nuevoConfig.plan_nombre ?? "",
+          precio_neto: round2(precioNuevoNeto),
         },
 
-        dias_ciclo: sim.diasCiclo,
-        dias_restantes: sim.diasRestantes,
+        dias_ciclo: dias.diasCiclo,
+        dias_restantes:
+          isTrialOrFree || cicloVencido ? dias.diasCiclo : dias.diasRestantes,
 
         // Montos prorrateados o ciclo completo (según corresponda)
-        delta_neto: round2(sim.deltaNeto),
-        iva: round2(sim.iva),
-        total: round2(sim.total),
+        delta_neto: round2(deltaNeto),
+        iva: round2(iva),
+        total: round2(total),
 
         aplicar_desde,
         nota,
@@ -195,6 +242,33 @@ export async function GET(req: Request) {
               aplica_desde: ciclo_fin,
             }
           : null,
+
+        // Extras útiles para futura UI/admin
+        pricing_actual: {
+          precio_base_neto: actualConfig.precio_base_neto,
+          precio_neto_final: actualConfig.precio_neto_final,
+          modo_iva: actualConfig.modo_iva,
+          iva_pct: actualConfig.iva_pct,
+          iva_importe: actualConfig.iva_importe,
+          precio_total_final: actualConfig.precio_total_final,
+          pricing_source: actualConfig.pricing_source,
+          agreement_applied: actualConfig.agreement_applied,
+          agreement_id: actualConfig.agreement_id,
+          agreement_tipo: actualConfig.agreement_tipo,
+        },
+
+        pricing_nuevo: {
+          precio_base_neto: nuevoConfig.precio_base_neto,
+          precio_neto_final: nuevoConfig.precio_neto_final,
+          modo_iva: nuevoConfig.modo_iva,
+          iva_pct: nuevoConfig.iva_pct,
+          iva_importe: nuevoConfig.iva_importe,
+          precio_total_final: nuevoConfig.precio_total_final,
+          pricing_source: nuevoConfig.pricing_source,
+          agreement_applied: nuevoConfig.agreement_applied,
+          agreement_id: nuevoConfig.agreement_id,
+          agreement_tipo: nuevoConfig.agreement_tipo,
+        },
       },
       { status: 200 }
     );

@@ -5,6 +5,7 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { supabaseServer } from "#lib/supabaseServer";
+import { resolveEmpresaBillingConfig } from "#lib/billing/utils";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -78,6 +79,53 @@ export async function GET(
       .eq("id", empresaId)
       .maybeSingle();
 
+    // 2.1) Plan activo / último plan operativo para enriquecer el bloque comercial
+    const { data: planActivoRow } = await supabaseAdmin
+      .from("empresas_planes")
+      .select("plan_id, max_asesores_override, activo, fecha_inicio, fecha_fin")
+      .eq("empresa_id", empresaId)
+      .eq("activo", true)
+      .maybeSingle();
+
+    let planOperativo = planActivoRow ?? null;
+
+    if (!planOperativo) {
+      const { data: ultimoPlanRow } = await supabaseAdmin
+        .from("empresas_planes")
+        .select("plan_id, max_asesores_override, activo, fecha_inicio, fecha_fin")
+        .eq("empresa_id", empresaId)
+        .order("fecha_inicio", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      planOperativo = ultimoPlanRow ?? null;
+    }
+
+    // 2.2) Billing resuelto + acuerdo comercial activo (si existe)
+    let billingConfig: Awaited<
+      ReturnType<typeof resolveEmpresaBillingConfig>
+    > | null = null;
+
+    if (planOperativo?.plan_id) {
+      try {
+        billingConfig = await resolveEmpresaBillingConfig({
+          supabase: supabaseAdmin,
+          empresaId,
+          planId: planOperativo.plan_id,
+          maxAsesoresOverride:
+            planOperativo.max_asesores_override == null
+              ? null
+              : Number(planOperativo.max_asesores_override),
+        });
+      } catch (billingErr: any) {
+        console.warn(
+          "api/soporte/empresas/[empresaId]: no se pudo resolver billingConfig:",
+          billingErr?.message || billingErr
+        );
+        billingConfig = null;
+      }
+    }
+
     // 3) Últimas acciones de soporte (10)
     const { data: acciones, error: accErr } = await supabaseAdmin
       .from("acciones_soporte")
@@ -134,7 +182,41 @@ export async function GET(
         activo: !!detalle.plan_activo,
         fechaInicio: detalle.fecha_inicio,
         fechaFin: detalle.fecha_fin,
+
+        // Nuevos datos útiles para UI/admin
+        precioBaseNeto: billingConfig?.precio_base_neto ?? null,
+        precioNetoFinal: billingConfig?.precio_neto_final ?? null,
+        precioTotalFinal: billingConfig?.precio_total_final ?? null,
+        ivaModo: billingConfig?.modo_iva ?? null,
+        ivaPct: billingConfig?.iva_pct ?? null,
+        ivaImporte: billingConfig?.iva_importe ?? null,
+        pricingSource: billingConfig?.pricing_source ?? null,
+        precioExtraPorAsesorPlan:
+          billingConfig?.precio_extra_por_asesor_plan ?? null,
+        precioExtraPorAsesorFinal:
+          billingConfig?.precio_extra_por_asesor_final ?? null,
+        maxAsesoresFinal: billingConfig?.max_asesores_final ?? null,
       },
+      acuerdoComercial: billingConfig?.agreement_applied
+        ? {
+            activo: true,
+            id: billingConfig.agreement_id ?? null,
+            tipo: billingConfig.agreement_tipo ?? null,
+            precioBaseNeto: billingConfig.precio_base_neto ?? null,
+            precioNetoFinal: billingConfig.precio_neto_final ?? null,
+            precioTotalFinal: billingConfig.precio_total_final ?? null,
+            modoIva: billingConfig.modo_iva ?? null,
+            ivaPct: billingConfig.iva_pct ?? null,
+            ivaImporte: billingConfig.iva_importe ?? null,
+            maxAsesoresPlan: billingConfig.max_asesores_plan ?? null,
+            maxAsesoresFinal: billingConfig.max_asesores_final ?? null,
+            precioExtraPorAsesorPlan:
+              billingConfig.precio_extra_por_asesor_plan ?? null,
+            precioExtraPorAsesorFinal:
+              billingConfig.precio_extra_por_asesor_final ?? null,
+            pricingSource: billingConfig.pricing_source ?? null,
+          }
+        : null,
       kpis: {
         asesoresTotales: detalle.asesores_totales ?? 0,
         informesTotales: detalle.informes_totales ?? 0,

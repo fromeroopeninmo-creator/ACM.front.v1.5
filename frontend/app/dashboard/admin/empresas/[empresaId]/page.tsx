@@ -44,6 +44,25 @@ function fmtMoney(n?: number | null) {
   }).format(n);
 }
 
+function fmtModoIVA(v?: string | null) {
+  switch (v) {
+    case "sumar_al_neto":
+      return "Sumar al neto";
+    case "incluido_en_precio":
+      return "Incluido en precio";
+    case "no_aplica":
+      return "No aplica";
+    default:
+      return "—";
+  }
+}
+
+function badgeClass(active?: boolean | null) {
+  return active
+    ? "inline-flex items-center rounded-full px-2 py-0.5 text-xs bg-green-100 text-green-700"
+    : "inline-flex items-center rounded-full px-2 py-0.5 text-xs bg-amber-100 text-amber-700";
+}
+
 export default async function AdminEmpresaDetallePage({ params }: PageProps) {
   // 1) Guard: sesión + rol
   const supa = supabaseServer();
@@ -92,6 +111,10 @@ export default async function AdminEmpresaDetallePage({ params }: PageProps) {
   } catch (e: any) {
     errorMsg = e?.message || "Error al cargar el detalle de la empresa.";
   }
+
+  const plan = detalle?.empresa?.plan ?? null;
+  const override = detalle?.empresa?.override ?? null;
+  const acuerdo = detalle?.acuerdo_comercial ?? null;
 
   // 3) Render
   return (
@@ -175,29 +198,61 @@ export default async function AdminEmpresaDetallePage({ params }: PageProps) {
               </div>
             </div>
 
-            {/* Plan + override + métricas */}
-            <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
+            {/* Plan + override + métricas + acuerdo comercial */}
+            <div className="mt-4 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
               <div className="rounded-xl border p-3">
                 <div className="text-xs text-gray-500">Plan</div>
                 <div className="font-medium">
-                  {detalle.empresa.plan?.nombre || "—"}
+                  {plan?.nombre || "—"}
                 </div>
                 <dl className="mt-2 text-sm space-y-1">
-                  <div className="flex justify-between">
+                  <div className="flex justify-between gap-3">
                     <dt>Cupo base</dt>
-                    <dd>{fmtNumber(detalle.empresa.plan?.max_asesores)}</dd>
+                    <dd>{fmtNumber(plan?.max_asesores)}</dd>
                   </div>
-                  <div className="flex justify-between">
+                  <div className="flex justify-between gap-3">
+                    <dt>Cupo final</dt>
+                    <dd>{fmtNumber(plan?.max_asesores_final ?? plan?.max_asesores)}</dd>
+                  </div>
+                  <div className="flex justify-between gap-3">
                     <dt>Duración</dt>
                     <dd>
-                      {detalle.empresa.plan?.duracion_dias
-                        ? `${detalle.empresa.plan?.duracion_dias} días`
+                      {plan?.duracion_dias
+                        ? `${plan?.duracion_dias} días`
                         : "—"}
                     </dd>
                   </div>
-                  <div className="flex justify-between">
-                    <dt>Precio neto</dt>
-                    <dd>{fmtMoney(detalle.empresa.plan?.precio ?? null)}</dd>
+                  <div className="flex justify-between gap-3">
+                    <dt>Precio base neto</dt>
+                    <dd>{fmtMoney(plan?.precio_base_neto ?? plan?.precio ?? null)}</dd>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <dt>Precio neto final</dt>
+                    <dd>{fmtMoney(plan?.precio_neto_final ?? null)}</dd>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <dt>Total final</dt>
+                    <dd>{fmtMoney(plan?.precio_total_final ?? null)}</dd>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <dt>IVA</dt>
+                    <dd>{fmtModoIVA(plan?.iva_modo)}</dd>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <dt>IVA %</dt>
+                    <dd>{plan?.iva_pct != null ? `${plan.iva_pct}%` : "—"}</dd>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <dt>IVA importe</dt>
+                    <dd>{fmtMoney(plan?.iva_importe ?? null)}</dd>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <dt>Extra por asesor</dt>
+                    <dd>{fmtMoney(plan?.precio_extra_por_asesor_final ?? plan?.precio_extra_por_asesor_plan ?? null)}</dd>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <dt>Origen pricing</dt>
+                    <dd className="text-right break-all">{plan?.pricing_source || "—"}</dd>
                   </div>
                 </dl>
               </div>
@@ -205,21 +260,21 @@ export default async function AdminEmpresaDetallePage({ params }: PageProps) {
               <div className="rounded-xl border p-3">
                 <div className="text-xs text-gray-500">Override</div>
                 <dl className="mt-1 text-sm space-y-1">
-                  <div className="flex justify-between">
+                  <div className="flex justify-between gap-3">
                     <dt>Cupo override</dt>
-                    <dd>{fmtNumber(detalle.empresa.override?.max_asesores_override)}</dd>
+                    <dd>{fmtNumber(override?.max_asesores_override)}</dd>
                   </div>
-                  <div className="flex justify-between">
+                  <div className="flex justify-between gap-3">
                     <dt>Vigencia</dt>
                     <dd>
-                      {fmtDateOnly(detalle.empresa.override?.fecha_inicio)} —{" "}
-                      {fmtDateOnly(detalle.empresa.override?.fecha_fin)}
+                      {fmtDateOnly(override?.fecha_inicio)} —{" "}
+                      {fmtDateOnly(override?.fecha_fin)}
                     </dd>
                   </div>
-                  <div className="flex justify-between">
+                  <div className="flex justify-between gap-3">
                     <dt>Estado</dt>
                     <dd>
-                      {detalle.empresa.override?.activo ? "Activo" : "—"}
+                      {override?.activo ? "Activo" : "—"}
                     </dd>
                   </div>
                 </dl>
@@ -228,19 +283,87 @@ export default async function AdminEmpresaDetallePage({ params }: PageProps) {
               <div className="rounded-xl border p-3">
                 <div className="text-xs text-gray-500">Métricas</div>
                 <dl className="mt-1 text-sm space-y-1">
-                  <div className="flex justify-between">
+                  <div className="flex justify-between gap-3">
                     <dt>Asesores</dt>
                     <dd>{fmtNumber(detalle.metrics.asesores_count)}</dd>
                   </div>
-                  <div className="flex justify-between">
+                  <div className="flex justify-between gap-3">
                     <dt>Informes (30 días)</dt>
                     <dd>{fmtNumber(detalle.metrics.informes_30d)}</dd>
                   </div>
-                  <div className="flex justify-between">
+                  <div className="flex justify-between gap-3">
                     <dt>Última actividad</dt>
                     <dd>{fmtDate(detalle.metrics.ultima_actividad_at)}</dd>
                   </div>
                 </dl>
+              </div>
+
+              <div className="rounded-xl border p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-xs text-gray-500">Acuerdo Comercial</div>
+                  <span className={badgeClass(!!acuerdo?.activo)}>
+                    {acuerdo?.activo ? "Activo" : "Sin acuerdo"}
+                  </span>
+                </div>
+
+                {!acuerdo ? (
+                  <div className="mt-3 text-sm text-gray-500">
+                    Esta empresa no tiene un acuerdo comercial activo.
+                  </div>
+                ) : (
+                  <dl className="mt-2 text-sm space-y-1">
+                    <div className="flex justify-between gap-3">
+                      <dt>Tipo</dt>
+                      <dd className="text-right break-all">{acuerdo.tipo || "—"}</dd>
+                    </div>
+                    <div className="flex justify-between gap-3">
+                      <dt>Precio base neto</dt>
+                      <dd>{fmtMoney(acuerdo.precio_base_neto ?? null)}</dd>
+                    </div>
+                    <div className="flex justify-between gap-3">
+                      <dt>Precio neto final</dt>
+                      <dd>{fmtMoney(acuerdo.precio_neto_final ?? null)}</dd>
+                    </div>
+                    <div className="flex justify-between gap-3">
+                      <dt>Total final</dt>
+                      <dd>{fmtMoney(acuerdo.precio_total_final ?? null)}</dd>
+                    </div>
+                    <div className="flex justify-between gap-3">
+                      <dt>Modo IVA</dt>
+                      <dd>{fmtModoIVA(acuerdo.modo_iva)}</dd>
+                    </div>
+                    <div className="flex justify-between gap-3">
+                      <dt>IVA %</dt>
+                      <dd>{acuerdo.iva_pct != null ? `${acuerdo.iva_pct}%` : "—"}</dd>
+                    </div>
+                    <div className="flex justify-between gap-3">
+                      <dt>IVA importe</dt>
+                      <dd>{fmtMoney(acuerdo.iva_importe ?? null)}</dd>
+                    </div>
+                    <div className="flex justify-between gap-3">
+                      <dt>Cupo plan</dt>
+                      <dd>{fmtNumber(acuerdo.max_asesores_plan ?? null)}</dd>
+                    </div>
+                    <div className="flex justify-between gap-3">
+                      <dt>Cupo final</dt>
+                      <dd>{fmtNumber(acuerdo.max_asesores_final ?? null)}</dd>
+                    </div>
+                    <div className="flex justify-between gap-3">
+                      <dt>Extra por asesor</dt>
+                      <dd>{fmtMoney(acuerdo.precio_extra_por_asesor_final ?? null)}</dd>
+                    </div>
+                    <div className="flex justify-between gap-3">
+                      <dt>Origen pricing</dt>
+                      <dd className="text-right break-all">{acuerdo.pricing_source || "—"}</dd>
+                    </div>
+                  </dl>
+                )}
+
+                <div className="mt-3 pt-3 border-t">
+                  <p className="text-xs text-gray-500">
+                    Próxima etapa: botones para crear, editar, desactivar y ver historial del acuerdo comercial.
+                  </p>
+                </div>
               </div>
             </div>
           </section>

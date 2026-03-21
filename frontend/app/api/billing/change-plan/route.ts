@@ -1,4 +1,4 @@
-// app/api/billing/change-plan/route.ts 
+// app/api/billing/change-plan/route.ts
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -9,8 +9,7 @@ import {
   assertAuthAndGetContext,
   getEmpresaIdForActor,
   getSuscripcionEstado,
-  getPlanPrecioNetoPreferido,
-  calcularDeltaProrrateo,
+  resolveEmpresaBillingConfig,
   round2,
 } from "#lib/billing/utils";
 
@@ -29,6 +28,69 @@ function getBaseUrl(): string | null {
     process.env.NEXT_PUBLIC_VERCEL_URL;
   if (!envUrl) return null;
   return envUrl.startsWith("http") ? envUrl : `https://${envUrl}`;
+}
+
+function calcularDiasCicloYRestantes(params: {
+  cicloInicioISO: string;
+  cicloFinISO: string;
+}) {
+  const inicio = new Date(params.cicloInicioISO).getTime();
+  const fin = new Date(params.cicloFinISO).getTime();
+  const ahora = Date.now();
+
+  const msCiclo = Math.max(fin - inicio, 0);
+  const msRest = Math.max(fin - ahora, 0);
+
+  const diasCiclo = Math.max(Math.ceil(msCiclo / 86400000), 0);
+  const diasRestantes = Math.max(Math.ceil(msRest / 86400000), 0);
+  const factor = diasCiclo > 0 ? diasRestantes / diasCiclo : 0;
+
+  return { diasCiclo, diasRestantes, factor };
+}
+
+function calcularImporteFiscalDesdeModo(params: {
+  precioBase: number;
+  modoIva: "sumar_al_neto" | "incluido_en_precio" | "no_aplica";
+  ivaPct: number;
+}) {
+  const base = round2(Number(params.precioBase ?? 0));
+  const modo = params.modoIva;
+  const ivaPct = Number(params.ivaPct ?? 21);
+  const tasa = ivaPct / 100;
+
+  if (modo === "no_aplica") {
+    return {
+      neto: round2(base),
+      iva: 0,
+      total: round2(base),
+    };
+  }
+
+  if (modo === "incluido_en_precio") {
+    if (tasa <= 0) {
+      return {
+        neto: round2(base),
+        iva: 0,
+        total: round2(base),
+      };
+    }
+
+    const neto = base / (1 + tasa);
+    const iva = base - neto;
+
+    return {
+      neto: round2(neto),
+      iva: round2(iva),
+      total: round2(base),
+    };
+  }
+
+  const iva = base * tasa;
+  return {
+    neto: round2(base),
+    iva: round2(iva),
+    total: round2(base + iva),
+  };
 }
 
 /** Helper para activar inmediatamente el nuevo plan (simulando que el pago fue OK). */
@@ -230,84 +292,27 @@ export async function POST(req: Request) {
 
     const { ciclo_inicio, ciclo_fin, plan_actual_id } = sus;
 
-    // Precio neto actual (plan activo)
-    const precioActual = await getPlanPrecioNetoPreferido(
+    // Configuración ACTUAL:
+    // - Sí considera acuerdo comercial vigente si existe
+    const actualConfig = await resolveEmpresaBillingConfig({
       supabase,
-      plan_actual_id,
-      empresaId
-    );
+      empresaId,
+      planId: plan_actual_id,
+    });
 
-    if (precioActual == null) {
-      return NextResponse.json(
-        { error: "No se pudo resolver el precio neto del plan actual." },
-        { status: 409 }
-      );
-    }
-
-    // --------------------------
-    // Precio neto NUEVO, con caso especial para "Personalizado"
-    // --------------------------
-    // Base (lo que tengas en planes.precio o override actual si aplica)
-    let precioNuevo = await getPlanPrecioNetoPreferido(
+    // Configuración NUEVA:
+    // - NO hereda automáticamente el acuerdo comercial actual
+    // - Sí permite simular override de max asesores para "Personalizado"
+    const nuevoConfig = await resolveEmpresaBillingConfig({
       supabase,
-      nuevoPlanId,
-      empresaId
-    );
+      empresaId,
+      planId: nuevoPlanId,
+      maxAsesoresOverride,
+      forzarSinAcuerdo: true,
+    });
 
-    if (precioNuevo == null) {
-      return NextResponse.json(
-        { error: "No se pudo resolver el precio neto del nuevo plan." },
-        { status: 409 }
-      );
-    }
-
-    // Si viene override y el nuevo plan es "Personalizado", recalculamos precioNuevo
-    // usando la misma lógica que el frontend:
-    //   premiumPrecio + (maxAsesoresOverride - 20) * precio_extra_por_asesor
-    if (
-      typeof maxAsesoresOverride === "number" &&
-      Number.isFinite(maxAsesoresOverride)
-    ) {
-      // Primero vemos si el nuevo plan ES "Personalizado"
-      const { data: nuevoPlanRow, error: nuevoPlanErr } = await supabase
-        .from("planes")
-        .select("id, nombre, precio, precio_extra_por_asesor")
-        .eq("id", nuevoPlanId)
-        .maybeSingle();
-
-      if (nuevoPlanErr) {
-        console.error("Error leyendo nuevo plan:", nuevoPlanErr.message);
-      }
-
-      if (
-        nuevoPlanRow &&
-        (nuevoPlanRow.nombre || "").toLowerCase() === "personalizado"
-      ) {
-        // Buscamos el plan Premium para tomar su precio base (igual que en el frontend)
-        const { data: premiumPlan, error: premiumErr } = await supabase
-          .from("planes")
-          .select("id, precio")
-          .eq("nombre", "Premium")
-          .maybeSingle();
-
-        if (premiumErr) {
-          console.error("Error leyendo plan Premium:", premiumErr.message);
-        }
-
-        const basePremium = premiumPlan
-          ? Number(premiumPlan.precio ?? 0)
-          : Number(nuevoPlanRow.precio ?? 0); // fallback por las dudas
-
-        const unitExtra = Number(nuevoPlanRow.precio_extra_por_asesor ?? 0);
-        // Según tu UX, los primeros 20 asesores están cubiertos por Premium
-        const extra = Math.max(0, maxAsesoresOverride - 20);
-        const personalizadoPrecio = basePremium + extra * unitExtra;
-
-        if (personalizadoPrecio > 0) {
-          precioNuevo = personalizadoPrecio;
-        }
-      }
-    }
+    const precioActual = round2(actualConfig.precio_neto_final);
+    const precioNuevo = round2(nuevoConfig.precio_neto_final);
 
     const isUpgrade = precioNuevo > precioActual;
     const isDowngrade = precioNuevo < precioActual;
@@ -317,26 +322,37 @@ export async function POST(req: Request) {
     // UPGRADE → crear movimiento financiero 'ajuste' (subtipo upgrade_prorrateo)
     // -------------------------
     if (isUpgrade) {
-      const simBase = calcularDeltaProrrateo({
+      const dias = calcularDiasCicloYRestantes({
         cicloInicioISO: ciclo_inicio,
         cicloFinISO: ciclo_fin,
-        precioActualNeto: precioActual,
-        precioNuevoNeto: precioNuevo,
-        alicuotaIVA: 0.21,
       });
 
-      const needsFullCycle = isTrialOrFree || simBase.diasRestantes <= 0;
+      const needsFullCycle = isTrialOrFree || dias.diasRestantes <= 0;
 
-      const sim = needsFullCycle
-        ? {
-            ...simBase,
-            diasCiclo: simBase.diasCiclo,
-            diasRestantes: simBase.diasCiclo,
-            deltaNeto: round2(precioNuevo),
-            iva: round2(precioNuevo * 0.21),
-            total: round2(precioNuevo * 1.21),
-          }
-        : simBase;
+      let deltaNeto = 0;
+      let iva = 0;
+      let total = 0;
+      let factor = dias.factor;
+
+      if (needsFullCycle) {
+        deltaNeto = round2(nuevoConfig.precio_neto_final);
+        iva = round2(nuevoConfig.iva_importe);
+        total = round2(nuevoConfig.precio_total_final);
+        factor = 1;
+      } else {
+        const deltaBase = Math.max(precioNuevo - precioActual, 0);
+        const deltaProrrateado = round2(deltaBase * dias.factor);
+
+        const fiscal = calcularImporteFiscalDesdeModo({
+          precioBase: deltaProrrateado,
+          modoIva: nuevoConfig.modo_iva,
+          ivaPct: nuevoConfig.iva_pct,
+        });
+
+        deltaNeto = round2(fiscal.neto);
+        iva = round2(fiscal.iva);
+        total = round2(fiscal.total);
+      }
 
       // Idempotencia: buscamos un movimiento pending del ciclo con este subtipo
       // ⚠️ Usamos supabaseAdmin para evitar RLS en movimientos_financieros
@@ -385,7 +401,7 @@ export async function POST(req: Request) {
           checkoutUrl = await crearPreferenciaMercadoPago({
             movimientoId: existingId,
             empresaId,
-            totalConIVA: sim.total,
+            totalConIVA: total,
           });
         }
 
@@ -395,10 +411,34 @@ export async function POST(req: Request) {
             movimiento_id: existingId,
             checkoutUrl,
             delta: {
-              neto: round2(sim.deltaNeto),
-              iva: round2(sim.iva),
-              total: round2(sim.total),
+              neto: round2(deltaNeto),
+              iva: round2(iva),
+              total: round2(total),
               moneda: "ARS",
+            },
+            pricing_actual: {
+              precio_base_neto: actualConfig.precio_base_neto,
+              precio_neto_final: actualConfig.precio_neto_final,
+              modo_iva: actualConfig.modo_iva,
+              iva_pct: actualConfig.iva_pct,
+              iva_importe: actualConfig.iva_importe,
+              precio_total_final: actualConfig.precio_total_final,
+              pricing_source: actualConfig.pricing_source,
+              agreement_applied: actualConfig.agreement_applied,
+              agreement_id: actualConfig.agreement_id,
+              agreement_tipo: actualConfig.agreement_tipo,
+            },
+            pricing_nuevo: {
+              precio_base_neto: nuevoConfig.precio_base_neto,
+              precio_neto_final: nuevoConfig.precio_neto_final,
+              modo_iva: nuevoConfig.modo_iva,
+              iva_pct: nuevoConfig.iva_pct,
+              iva_importe: nuevoConfig.iva_importe,
+              precio_total_final: nuevoConfig.precio_total_final,
+              pricing_source: nuevoConfig.pricing_source,
+              agreement_applied: nuevoConfig.agreement_applied,
+              agreement_id: nuevoConfig.agreement_id,
+              agreement_tipo: nuevoConfig.agreement_tipo,
             },
             nota: SIMULAR_PAGO_OK
               ? "Simulación: se reutilizó el movimiento pendiente existente, se marcó como 'paid' y el nuevo plan ya está activo."
@@ -415,11 +455,35 @@ export async function POST(req: Request) {
         nuevo_plan_id: nuevoPlanId,
         ciclo_inicio,
         ciclo_fin,
-        dias_ciclo: sim.diasCiclo,
-        dias_restantes: sim.diasRestantes,
-        factor: sim.factor,
-        iva: round2(sim.iva),
-        total: round2(sim.total),
+        dias_ciclo: dias.diasCiclo,
+        dias_restantes: needsFullCycle ? dias.diasCiclo : dias.diasRestantes,
+        factor,
+        iva: round2(iva),
+        total: round2(total),
+        pricing_actual: {
+          precio_base_neto: actualConfig.precio_base_neto,
+          precio_neto_final: actualConfig.precio_neto_final,
+          modo_iva: actualConfig.modo_iva,
+          iva_pct: actualConfig.iva_pct,
+          iva_importe: actualConfig.iva_importe,
+          precio_total_final: actualConfig.precio_total_final,
+          pricing_source: actualConfig.pricing_source,
+          agreement_applied: actualConfig.agreement_applied,
+          agreement_id: actualConfig.agreement_id,
+          agreement_tipo: actualConfig.agreement_tipo,
+        },
+        pricing_nuevo: {
+          precio_base_neto: nuevoConfig.precio_base_neto,
+          precio_neto_final: nuevoConfig.precio_neto_final,
+          modo_iva: nuevoConfig.modo_iva,
+          iva_pct: nuevoConfig.iva_pct,
+          iva_importe: nuevoConfig.iva_importe,
+          precio_total_final: nuevoConfig.precio_total_final,
+          pricing_source: nuevoConfig.pricing_source,
+          agreement_applied: nuevoConfig.agreement_applied,
+          agreement_id: nuevoConfig.agreement_id,
+          agreement_tipo: nuevoConfig.agreement_tipo,
+        },
       };
 
       if (typeof maxAsesoresOverride === "number") {
@@ -435,9 +499,9 @@ export async function POST(req: Request) {
             estado: "pending",
             fecha: new Date().toISOString(),
             moneda: "ARS",
-            monto_neto: round2(sim.deltaNeto),
-            iva: round2(sim.iva),
-            total: round2(sim.total),
+            monto_neto: round2(deltaNeto),
+            iva: round2(iva),
+            total: round2(total),
             descripcion: needsFullCycle
               ? "Upgrade de plan (ciclo completo)"
               : "Upgrade de plan prorrateado",
@@ -479,7 +543,7 @@ export async function POST(req: Request) {
         checkoutUrl = await crearPreferenciaMercadoPago({
           movimientoId: ins.id,
           empresaId,
-          totalConIVA: sim.total,
+          totalConIVA: total,
         });
       }
 
@@ -489,10 +553,34 @@ export async function POST(req: Request) {
           movimiento_id: ins?.id ?? null,
           checkoutUrl,
           delta: {
-            neto: round2(sim.deltaNeto),
-            iva: round2(sim.iva),
-            total: round2(sim.total),
+            neto: round2(deltaNeto),
+            iva: round2(iva),
+            total: round2(total),
             moneda: "ARS",
+          },
+          pricing_actual: {
+            precio_base_neto: actualConfig.precio_base_neto,
+            precio_neto_final: actualConfig.precio_neto_final,
+            modo_iva: actualConfig.modo_iva,
+            iva_pct: actualConfig.iva_pct,
+            iva_importe: actualConfig.iva_importe,
+            precio_total_final: actualConfig.precio_total_final,
+            pricing_source: actualConfig.pricing_source,
+            agreement_applied: actualConfig.agreement_applied,
+            agreement_id: actualConfig.agreement_id,
+            agreement_tipo: actualConfig.agreement_tipo,
+          },
+          pricing_nuevo: {
+            precio_base_neto: nuevoConfig.precio_base_neto,
+            precio_neto_final: nuevoConfig.precio_neto_final,
+            modo_iva: nuevoConfig.modo_iva,
+            iva_pct: nuevoConfig.iva_pct,
+            iva_importe: nuevoConfig.iva_importe,
+            precio_total_final: nuevoConfig.precio_total_final,
+            pricing_source: nuevoConfig.pricing_source,
+            agreement_applied: nuevoConfig.agreement_applied,
+            agreement_id: nuevoConfig.agreement_id,
+            agreement_tipo: nuevoConfig.agreement_tipo,
           },
           nota: SIMULAR_PAGO_OK
             ? "Simulación: el pago se marcó como 'paid' y el nuevo plan ya está activo."
@@ -533,6 +621,30 @@ export async function POST(req: Request) {
           scheduled: true,
           aplica_desde: ciclo_fin,
           proximo_plan_id: nuevoPlanId,
+          pricing_actual: {
+            precio_base_neto: actualConfig.precio_base_neto,
+            precio_neto_final: actualConfig.precio_neto_final,
+            modo_iva: actualConfig.modo_iva,
+            iva_pct: actualConfig.iva_pct,
+            iva_importe: actualConfig.iva_importe,
+            precio_total_final: actualConfig.precio_total_final,
+            pricing_source: actualConfig.pricing_source,
+            agreement_applied: actualConfig.agreement_applied,
+            agreement_id: actualConfig.agreement_id,
+            agreement_tipo: actualConfig.agreement_tipo,
+          },
+          pricing_nuevo: {
+            precio_base_neto: nuevoConfig.precio_base_neto,
+            precio_neto_final: nuevoConfig.precio_neto_final,
+            modo_iva: nuevoConfig.modo_iva,
+            iva_pct: nuevoConfig.iva_pct,
+            iva_importe: nuevoConfig.iva_importe,
+            precio_total_final: nuevoConfig.precio_total_final,
+            pricing_source: nuevoConfig.pricing_source,
+            agreement_applied: nuevoConfig.agreement_applied,
+            agreement_id: nuevoConfig.agreement_id,
+            agreement_tipo: nuevoConfig.agreement_tipo,
+          },
         },
         { status: 200 }
       );
@@ -545,6 +657,30 @@ export async function POST(req: Request) {
       {
         accion: "sin_cambio",
         mensaje: "El nuevo plan tiene el mismo precio que el actual.",
+        pricing_actual: {
+          precio_base_neto: actualConfig.precio_base_neto,
+          precio_neto_final: actualConfig.precio_neto_final,
+          modo_iva: actualConfig.modo_iva,
+          iva_pct: actualConfig.iva_pct,
+          iva_importe: actualConfig.iva_importe,
+          precio_total_final: actualConfig.precio_total_final,
+          pricing_source: actualConfig.pricing_source,
+          agreement_applied: actualConfig.agreement_applied,
+          agreement_id: actualConfig.agreement_id,
+          agreement_tipo: actualConfig.agreement_tipo,
+        },
+        pricing_nuevo: {
+          precio_base_neto: nuevoConfig.precio_base_neto,
+          precio_neto_final: nuevoConfig.precio_neto_final,
+          modo_iva: nuevoConfig.modo_iva,
+          iva_pct: nuevoConfig.iva_pct,
+          iva_importe: nuevoConfig.iva_importe,
+          precio_total_final: nuevoConfig.precio_total_final,
+          pricing_source: nuevoConfig.pricing_source,
+          agreement_applied: nuevoConfig.agreement_applied,
+          agreement_id: nuevoConfig.agreement_id,
+          agreement_tipo: nuevoConfig.agreement_tipo,
+        },
       },
       { status: 200 }
     );

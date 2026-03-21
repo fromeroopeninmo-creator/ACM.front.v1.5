@@ -64,6 +64,18 @@ export type EmpresaDetalle = {
       max_asesores: number;
       duracion_dias?: number | null;
       precio?: number | null;
+
+      // Nuevos campos comerciales/fiscales
+      precio_base_neto?: number | null;
+      precio_neto_final?: number | null;
+      precio_total_final?: number | null;
+      iva_modo?: string | null;
+      iva_pct?: number | null;
+      iva_importe?: number | null;
+      pricing_source?: string | null;
+      precio_extra_por_asesor_plan?: number | null;
+      precio_extra_por_asesor_final?: number | null;
+      max_asesores_final?: number | null;
     } | null;
     override?: {
       max_asesores_override?: number | null;
@@ -96,6 +108,24 @@ export type EmpresaDetalle = {
     descripcion: string;
     timestamp: string;
   }>;
+
+  // Nuevo bloque: acuerdo comercial
+  acuerdo_comercial?: {
+    activo: boolean;
+    id?: string | null;
+    tipo?: string | null;
+    precio_base_neto?: number | null;
+    precio_neto_final?: number | null;
+    precio_total_final?: number | null;
+    modo_iva?: string | null;
+    iva_pct?: number | null;
+    iva_importe?: number | null;
+    max_asesores_plan?: number | null;
+    max_asesores_final?: number | null;
+    precio_extra_por_asesor_plan?: number | null;
+    precio_extra_por_asesor_final?: number | null;
+    pricing_source?: string | null;
+  } | null;
 };
 
 // --------- Tipo exportado que espera EmpresasTable ----------
@@ -187,6 +217,20 @@ export async function getEmpresaDetalle(
           max_asesores: raw.plan.maxAsesores ?? null,
           duracion_dias: null,
           precio: null,
+
+          // Nuevos campos comerciales/fiscales
+          precio_base_neto: raw.plan.precioBaseNeto ?? null,
+          precio_neto_final: raw.plan.precioNetoFinal ?? null,
+          precio_total_final: raw.plan.precioTotalFinal ?? null,
+          iva_modo: raw.plan.ivaModo ?? null,
+          iva_pct: raw.plan.ivaPct ?? null,
+          iva_importe: raw.plan.ivaImporte ?? null,
+          pricing_source: raw.plan.pricingSource ?? null,
+          precio_extra_por_asesor_plan:
+            raw.plan.precioExtraPorAsesorPlan ?? null,
+          precio_extra_por_asesor_final:
+            raw.plan.precioExtraPorAsesorFinal ?? null,
+          max_asesores_final: raw.plan.maxAsesoresFinal ?? null,
         }
       : null;
 
@@ -197,6 +241,28 @@ export async function getEmpresaDetalle(
           fecha_inicio: raw.plan.fechaInicio ?? null,
           fecha_fin: raw.plan.fechaFin ?? null,
           activo: raw.plan.activo ?? null,
+        }
+      : null;
+
+  const acuerdoComercial =
+    raw?.acuerdoComercial
+      ? {
+          activo: !!raw.acuerdoComercial.activo,
+          id: raw.acuerdoComercial.id ?? null,
+          tipo: raw.acuerdoComercial.tipo ?? null,
+          precio_base_neto: raw.acuerdoComercial.precioBaseNeto ?? null,
+          precio_neto_final: raw.acuerdoComercial.precioNetoFinal ?? null,
+          precio_total_final: raw.acuerdoComercial.precioTotalFinal ?? null,
+          modo_iva: raw.acuerdoComercial.modoIva ?? null,
+          iva_pct: raw.acuerdoComercial.ivaPct ?? null,
+          iva_importe: raw.acuerdoComercial.ivaImporte ?? null,
+          max_asesores_plan: raw.acuerdoComercial.maxAsesoresPlan ?? null,
+          max_asesores_final: raw.acuerdoComercial.maxAsesoresFinal ?? null,
+          precio_extra_por_asesor_plan:
+            raw.acuerdoComercial.precioExtraPorAsesorPlan ?? null,
+          precio_extra_por_asesor_final:
+            raw.acuerdoComercial.precioExtraPorAsesorFinal ?? null,
+          pricing_source: raw.acuerdoComercial.pricingSource ?? null,
         }
       : null;
 
@@ -241,6 +307,7 @@ export async function getEmpresaDetalle(
         descripcion: a.descripcion,
         timestamp: a.timestamp,
       })) ?? [],
+    acuerdo_comercial: acuerdoComercial,
   };
 
   return mapped;

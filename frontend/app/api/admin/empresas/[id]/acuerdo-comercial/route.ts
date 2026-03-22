@@ -57,6 +57,24 @@ async function resolveUserRole(userId: string): Promise<Role | null> {
   return (p2?.role as Role) ?? null;
 }
 
+async function resolveProfileId(userId: string): Promise<string | null> {
+  const { data: p1 } = await supabaseAdmin
+    .from("profiles")
+    .select("id")
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (p1?.id) return String(p1.id);
+
+  const { data: p2 } = await supabaseAdmin
+    .from("profiles")
+    .select("id")
+    .eq("id", userId)
+    .maybeSingle();
+
+  return p2?.id ? String(p2.id) : null;
+}
+
 async function assertAdmin() {
   const server = supabaseServer();
   const {
@@ -78,9 +96,12 @@ async function assertAdmin() {
     };
   }
 
+  const profileId = await resolveProfileId(user.id);
+
   return {
     ok: true as const,
     userId: user.id,
+    profileId,
     role,
   };
 }
@@ -186,13 +207,13 @@ function validateCreateBody(body: CreateAcuerdoBody) {
 
 export async function GET(
   _req: Request,
-  { params }: { params: { empresaId: string } }
+  { params }: { params: { id: string } }
 ) {
   try {
     const auth = await assertAdmin();
     if (!auth.ok) return auth.response;
 
-    const empresaId = params?.empresaId;
+    const empresaId = params?.id;
     if (!empresaId) {
       return NextResponse.json({ error: "Falta empresaId." }, { status: 400 });
     }
@@ -253,13 +274,13 @@ export async function GET(
 
 export async function POST(
   req: Request,
-  { params }: { params: { empresaId: string } }
+  { params }: { params: { id: string } }
 ) {
   try {
     const auth = await assertAdmin();
     if (!auth.ok) return auth.response;
 
-    const empresaId = params?.empresaId;
+    const empresaId = params?.id;
     if (!empresaId) {
       return NextResponse.json({ error: "Falta empresaId." }, { status: 400 });
     }
@@ -356,8 +377,8 @@ export async function POST(
       fecha_fin: body.fecha_fin,
       motivo: body.motivo,
       observaciones: body.observaciones,
-      created_by: auth.userId,
-      updated_by: auth.userId,
+      created_by: auth.profileId,
+      updated_by: auth.profileId,
     };
 
     const { data: created, error: createErr } = await supabaseAdmin

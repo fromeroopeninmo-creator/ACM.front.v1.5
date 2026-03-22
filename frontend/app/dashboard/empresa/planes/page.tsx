@@ -11,24 +11,24 @@ interface EmpresaPlan {
   fecha_inicio: string;
   fecha_fin: string;
   activo: boolean;
-  max_asesores: number; // calculado: override ?? plan.max_asesores
+  max_asesores: number;
 }
 
 interface Plan {
   id: string;
-  nombre: string; // nombre "crudo" de BD
-  tipo_plan?: string | null; // core | combo | tracker_only | trial
+  nombre: string;
+  tipo_plan?: string | null;
   incluye_valuador?: boolean | null;
   incluye_tracker?: boolean | null;
   max_asesores: number;
   precio?: number | string | null;
   duracion_dias?: number | null;
-  precio_extra_por_asesor?: number | string | null; // Personalizado
+  precio_extra_por_asesor?: number | string | null;
 }
 
 type PreviewResult = {
   tipo?: "upgrade" | "downgrade" | "sin_cambio";
-  accion?: "upgrade" | "downgrade" | "sin_cambio"; // compat viejo
+  accion?: "upgrade" | "downgrade" | "sin_cambio";
   empresa_id: string;
   plan_actual?: { id: string; nombre: string; precio_neto?: number | null } | null;
   plan_nuevo?: { id: string; nombre: string; precio_neto?: number | null } | null;
@@ -37,10 +37,8 @@ type PreviewResult = {
   delta_neto?: number;
   iva?: number;
   total?: number;
-  aplicar_desde?: string | null; // para downgrade programado
+  aplicar_desde?: string | null;
   nota?: string | null;
-
-  // compat viejo (estructura anidada)
   ciclo?: {
     inicio?: string;
     fin?: string;
@@ -118,8 +116,6 @@ type BillingEstado = {
   } | null;
 };
 
-// ---------- HELPERS GENERALES ----------
-
 function tierFromMaxAsesores(max: number): "Inicial" | "Pro" | "Premium" | "Personalizado" {
   if (!max || max <= 4) return "Inicial";
   if (max <= 10) return "Pro";
@@ -132,10 +128,8 @@ function tierDisplayName(tier: "Inicial" | "Pro" | "Premium" | "Personalizado"):
   return tier;
 }
 
-// Renombre visual “Pro” → “Profesional” (fallback)
 const displayPlanName = (n: string) => (n === "Pro" ? "Profesional" : n);
 
-// Nombre comercial para cards según tipo_plan + tier
 function getPlanUiName(plan: Plan): string {
   const tipo = (plan.tipo_plan || "").toLowerCase();
   const tier = tierFromMaxAsesores(plan.max_asesores);
@@ -145,11 +139,9 @@ function getPlanUiName(plan: Plan): string {
   if (tipo === "core") return `Core ${tierLabel}`;
   if (tipo === "tracker_only") return `Tracker ${tierLabel}`;
 
-  // Fallback: comportamiento anterior
   return displayPlanName(plan.nombre);
 }
 
-// Nombre comercial para el plan actual (encabezado)
 function getEmpresaPlanUiName(ep: EmpresaPlan | null): string {
   if (!ep) return "Sin plan";
   const tipo = (ep.tipo_plan || "").toLowerCase();
@@ -163,7 +155,6 @@ function getEmpresaPlanUiName(ep: EmpresaPlan | null): string {
   return displayPlanName(ep.plan_nombre);
 }
 
-// Filtrado de planes que no deben verse en el front
 function isHiddenPlan(plan: Plan): boolean {
   const tipo = (plan.tipo_plan || "").toLowerCase();
   if (tipo === "trial") return true;
@@ -214,10 +205,8 @@ export default function EmpresaPlanesPage() {
   const [loadingPago, setLoadingPago] = useState(false);
   const [mensaje, setMensaje] = useState<string | null>(null);
 
-  // Estado UI para “Personalizado”
-  const [personalCount, setPersonalCount] = useState<number>(21); // 21..50
+  const [personalCount, setPersonalCount] = useState<number>(21);
 
-  // Preview prorrateo
   const [preview, setPreview] = useState<PreviewResult | null>(null);
   const [previewVisible, setPreviewVisible] = useState(false);
   const [previewConfirmLoading, setPreviewConfirmLoading] = useState(false);
@@ -226,10 +215,7 @@ export default function EmpresaPlanesPage() {
     personalizadoCount?: number;
   } | null>(null);
 
-  // IVA
   const IVA_PCT = 0.21;
-
-  // --- HELPERS PREVIEW NORMALIZADOS (para soportar backend viejo/nuevo) ---
 
   const previewTipo = useMemo<"upgrade" | "downgrade" | "sin_cambio" | null>(() => {
     if (!preview) return null;
@@ -267,7 +253,6 @@ export default function EmpresaPlanesPage() {
     return anyPrev.total ?? anyPrev.delta?.total ?? 0;
   }, [preview]);
 
-  // 🔎 Resolver empresas.id
   useEffect(() => {
     const fetchEmpresa = async () => {
       if (!user?.id) return;
@@ -286,7 +271,6 @@ export default function EmpresaPlanesPage() {
     fetchEmpresa();
   }, [user]);
 
-  // 📡 Plan actual + planes + billing/estado
   useEffect(() => {
     const fetchPlanes = async () => {
       if (!empresaId) {
@@ -295,7 +279,6 @@ export default function EmpresaPlanesPage() {
       }
       setLoading(true);
       try {
-        // Plan actual (traemos override y tipo_plan)
         const { data: empresaPlan, error: errorEmpresaPlan } = await supabase
           .from("empresas_planes")
           .select(
@@ -339,7 +322,6 @@ export default function EmpresaPlanesPage() {
           setPlanActual(null);
         }
 
-        // Planes disponibles
         const { data: planes, error: errorPlanes } = await supabase
           .from("planes")
           .select(
@@ -353,7 +335,6 @@ export default function EmpresaPlanesPage() {
           setPlanesDisponibles(planes || []);
         }
 
-        // Billing estado
         try {
           const res = await fetch(`/api/billing/estado?empresaId=${encodeURIComponent(empresaId)}`, {
             method: "GET",
@@ -380,7 +361,6 @@ export default function EmpresaPlanesPage() {
     fetchPlanes();
   }, [empresaId]);
 
-  // Agrupaciones por tipo_plan (ya filtrados los ocultos)
   const visiblePlanes = useMemo(
     () => planesDisponibles.filter((p) => !isHiddenPlan(p)),
     [planesDisponibles]
@@ -413,7 +393,6 @@ export default function EmpresaPlanesPage() {
     [visiblePlanes]
   );
 
-  // 🚀 Upgrade/Downgrade → Primero PREVIEW, luego CONFIRM
   const handleUpgrade = async (planId: string, opts?: { personalizadoCount?: number }) => {
     if (!empresaId) return;
     setMensaje("Calculando prorrateo...");
@@ -431,56 +410,26 @@ export default function EmpresaPlanesPage() {
       const res = await fetch(`/api/billing/preview-change?${qs.toString()}`, {
         method: "GET",
         headers: { "Content-Type": "application/json" },
+        cache: "no-store",
       });
-      const data: any = await res.json();
 
-      if (res.ok && data) {
-        console.log("preview-change response:", data);
-        setPreview(data as PreviewResult);
-        setPreviewTarget({ planId, personalizadoCount: opts?.personalizadoCount });
-        setPreviewVisible(true);
-        setMensaje(null);
+      const data: any = await res.json().catch(() => null);
+
+      if (!res.ok || !data) {
+        console.error("preview-change error:", data);
+        setMensaje("❌ No se pudo calcular el cambio de plan. Intenta nuevamente.");
         return;
       }
 
-      console.warn("preview-change no disponible. Fallback a /api/solicitud-upgrade");
-      await legacyUpgrade(planId, opts);
+      setPreview(data as PreviewResult);
+      setPreviewTarget({ planId, personalizadoCount: opts?.personalizadoCount });
+      setPreviewVisible(true);
+      setMensaje(null);
     } catch (err) {
       console.error("Error en preview-change:", err);
-      await legacyUpgrade(planId, opts);
+      setMensaje("❌ Error de red al calcular el cambio de plan.");
     } finally {
       setTimeout(() => setMensaje(null), 2500);
-    }
-  };
-
-  // Fallback histórico (tu endpoint existente)
-  const legacyUpgrade = async (planId: string, opts?: { personalizadoCount?: number }) => {
-    try {
-      const body: any = { empresaId, planId };
-      if (typeof opts?.personalizadoCount === "number") {
-        body.maxAsesoresOverride = opts.personalizadoCount;
-      }
-
-      const res = await fetch("/api/solicitud-upgrade", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      const data = await res.json();
-
-      if (!res.ok || data.error) {
-        console.error("Error desde API:", data.error || data);
-        setMensaje("❌ No se pudo cambiar el plan. Intenta nuevamente.");
-        return;
-      }
-
-      setMensaje(`✅ ${data.message}`);
-      setTimeout(() => window.location.reload(), 1000);
-    } catch (err) {
-      console.error("Error de red:", err);
-      setMensaje("❌ No se pudo conectar al servidor.");
-    } finally {
-      setTimeout(() => setMensaje(null), 3500);
     }
   };
 
@@ -515,7 +464,7 @@ export default function EmpresaPlanesPage() {
         return;
       }
 
-      setMensaje("✅ Cambio aplicado.");
+      setMensaje("✅ Operación procesada.");
       setPreviewVisible(false);
       setTimeout(() => window.location.reload(), 800);
     } catch (err) {
@@ -557,7 +506,7 @@ export default function EmpresaPlanesPage() {
         return;
       }
 
-      setMensaje("✅ Operación procesada.");
+      setMensaje("❌ No se recibió un checkout válido.");
     } catch (err) {
       console.error("Error generando checkout:", err);
       setMensaje("❌ Error de red al generar checkout.");
@@ -567,7 +516,6 @@ export default function EmpresaPlanesPage() {
     }
   };
 
-  // 💵 formato viejo
   const num = (x?: number | string | null) =>
     typeof x === "string" ? parseFloat(x) : (x ?? 0);
 
@@ -578,7 +526,6 @@ export default function EmpresaPlanesPage() {
     return Math.round(n * (1 + IVA_PCT));
   };
 
-  // Premium base y extra unitario (para Personalizado core)
   const premiumPrecio = useMemo(() => {
     const p = planesDisponibles.find(
       (pl) =>
@@ -834,7 +781,6 @@ export default function EmpresaPlanesPage() {
 
   return (
     <div className="p-6 space-y-6">
-      {/* Encabezado */}
       <section className="bg-white shadow-sm rounded-xl p-6">
         <h1 className="text-2xl font-semibold">Suscripción Mensual</h1>
         <p className="text-gray-600 mt-1">
@@ -847,7 +793,6 @@ export default function EmpresaPlanesPage() {
         </p>
       </section>
 
-      {/* Estado de pago / vencimiento */}
       {(planVencido || estaSuspendida) && (
         <section className="bg-red-50 border border-red-200 text-red-800 rounded-xl p-4">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
@@ -881,7 +826,6 @@ export default function EmpresaPlanesPage() {
         </section>
       )}
 
-      {/* Plan actual */}
       {planActual ? (
         <section className="bg-white shadow-sm rounded-xl p-6 border border-gray-200">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
@@ -939,7 +883,6 @@ export default function EmpresaPlanesPage() {
         </section>
       )}
 
-      {/* Acuerdo comercial: solo si existe */}
       {acuerdoVisible && billingEstado?.acuerdoComercial && (
         <section className="bg-white shadow-sm rounded-xl p-6 border border-gray-200">
           <div className="flex items-center justify-between gap-3">
@@ -1018,7 +961,6 @@ export default function EmpresaPlanesPage() {
         </section>
       )}
 
-      {/* SECCIÓN 1: PLANES FULL (COMBO) */}
       {planesFull.length > 0 && (
         <section className="space-y-4">
           <div>
@@ -1040,7 +982,6 @@ export default function EmpresaPlanesPage() {
         </section>
       )}
 
-      {/* SECCIÓN 2: PLANES CORE */}
       {planesCore.length > 0 && (
         <section className="space-y-4">
           <div>
@@ -1059,7 +1000,6 @@ export default function EmpresaPlanesPage() {
         </section>
       )}
 
-      {/* SECCIÓN 3: PLANES BUSINESS TRACKER */}
       {planesTracker.length > 0 && (
         <section className="space-y-4">
           <div>
@@ -1085,7 +1025,6 @@ export default function EmpresaPlanesPage() {
         <p className="text-center text-blue-600 font-medium">{mensaje}</p>
       )}
 
-      {/* MODAL PREVIEW PRORRATEO */}
       {previewVisible && preview && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-lg p-6">

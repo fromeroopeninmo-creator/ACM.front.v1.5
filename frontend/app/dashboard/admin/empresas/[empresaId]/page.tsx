@@ -64,6 +64,19 @@ function badgeClass(active?: boolean | null) {
     : "inline-flex items-center rounded-full px-2 py-0.5 text-xs bg-amber-100 text-amber-700";
 }
 
+function statusBadgeClass(kind: "ok" | "warn" | "danger" | "neutral") {
+  switch (kind) {
+    case "ok":
+      return "inline-flex items-center rounded-full px-2 py-0.5 text-xs bg-green-100 text-green-700";
+    case "warn":
+      return "inline-flex items-center rounded-full px-2 py-0.5 text-xs bg-amber-100 text-amber-700";
+    case "danger":
+      return "inline-flex items-center rounded-full px-2 py-0.5 text-xs bg-red-100 text-red-700";
+    default:
+      return "inline-flex items-center rounded-full px-2 py-0.5 text-xs bg-gray-100 text-gray-700";
+  }
+}
+
 export default async function AdminEmpresaDetallePage({ params }: PageProps) {
   // 1) Guard: sesión + rol
   const supa = supabaseServer();
@@ -115,6 +128,23 @@ export default async function AdminEmpresaDetallePage({ params }: PageProps) {
   const override = detalle?.empresa?.override ?? null;
   const acuerdo = detalle?.acuerdo_comercial ?? null;
 
+  const suspendida = !!detalle?.empresa?.suspendida;
+  const suspendidaMotivo = detalle?.empresa?.suspension_motivo ?? null;
+  const suspendidaAt = detalle?.empresa?.suspendida_at ?? null;
+
+  const cicloInicio = override?.fecha_inicio ?? null;
+  const cicloFin = override?.fecha_fin ?? null;
+
+  const now = new Date();
+  const finDate =
+    cicloFin && !Number.isNaN(new Date(cicloFin).getTime())
+      ? new Date(cicloFin)
+      : null;
+
+  const planVencido = !!(finDate && finDate.getTime() < now.getTime());
+  const esTrial = !!plan?.es_trial;
+  const tieneAcuerdoActivo = !!acuerdo?.activo;
+
   return (
     <main className="p-4 md:p-6 space-y-4">
       <header className="flex items-center justify-between">
@@ -140,6 +170,72 @@ export default async function AdminEmpresaDetallePage({ params }: PageProps) {
         <section className="rounded-2xl border p-4">Cargando…</section>
       ) : (
         <>
+          <section className="rounded-2xl border p-4 bg-white dark:bg-neutral-900">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-3">
+              <div className="rounded-xl border p-3">
+                <div className="text-xs text-gray-500 mb-1">Estado empresa</div>
+                <div className="flex flex-wrap gap-2">
+                  <span className={statusBadgeClass(suspendida ? "danger" : "ok")}>
+                    {suspendida ? "Suspendida" : "Activa"}
+                  </span>
+                  {suspendida && suspendidaMotivo ? (
+                    <span className={statusBadgeClass("warn")}>
+                      {suspendidaMotivo}
+                    </span>
+                  ) : null}
+                </div>
+                <div className="mt-2 text-sm text-gray-600">
+                  {suspendidaAt ? `Desde: ${fmtDate(suspendidaAt)}` : "—"}
+                </div>
+              </div>
+
+              <div className="rounded-xl border p-3">
+                <div className="text-xs text-gray-500 mb-1">Estado plan</div>
+                <div className="flex flex-wrap gap-2">
+                  <span className={statusBadgeClass(planVencido ? "danger" : "ok")}>
+                    {planVencido ? "Vencido" : "Vigente"}
+                  </span>
+                  {esTrial ? (
+                    <span className={statusBadgeClass("warn")}>Trial</span>
+                  ) : (
+                    <span className={statusBadgeClass("neutral")}>Pago / comercial</span>
+                  )}
+                </div>
+                <div className="mt-2 text-sm text-gray-600">
+                  Vence: {fmtDateOnly(cicloFin)}
+                </div>
+              </div>
+
+              <div className="rounded-xl border p-3">
+                <div className="text-xs text-gray-500 mb-1">Acuerdo comercial</div>
+                <div className="flex flex-wrap gap-2">
+                  <span className={statusBadgeClass(tieneAcuerdoActivo ? "ok" : "neutral")}>
+                    {tieneAcuerdoActivo ? "Activo" : "Sin acuerdo"}
+                  </span>
+                </div>
+                <div className="mt-2 text-sm text-gray-600">
+                  Vigencia: {fmtDateOnly(acuerdo?.fecha_inicio)} — {fmtDateOnly(acuerdo?.fecha_fin)}
+                </div>
+              </div>
+
+              <div className="rounded-xl border p-3">
+                <div className="text-xs text-gray-500 mb-1">Plan operativo actual</div>
+                <div className="font-medium">{plan?.nombre || "—"}</div>
+                <div className="mt-2 text-sm text-gray-600">
+                  Cupo final: {fmtNumber(plan?.max_asesores_final ?? plan?.max_asesores ?? null)}
+                </div>
+              </div>
+
+              <div className="rounded-xl border p-3">
+                <div className="text-xs text-gray-500 mb-1">Última actividad</div>
+                <div className="font-medium">{fmtDate(detalle.metrics.ultima_actividad_at)}</div>
+                <div className="mt-2 text-sm text-gray-600">
+                  Informes 30 días: {fmtNumber(detalle.metrics.informes_30d)}
+                </div>
+              </div>
+            </div>
+          </section>
+
           {/* Resumen principal */}
           <section className="rounded-2xl border p-4 bg-white dark:bg-neutral-900">
             <div className="flex items-start gap-4">
@@ -200,6 +296,16 @@ export default async function AdminEmpresaDetallePage({ params }: PageProps) {
                   {plan?.nombre || "—"}
                 </div>
                 <dl className="mt-2 text-sm space-y-1">
+                  <div className="flex justify-between gap-3">
+                    <dt>Trial</dt>
+                    <dd>{plan?.es_trial ? "Sí" : "No"}</dd>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <dt>Ciclo</dt>
+                    <dd>
+                      {fmtDateOnly(cicloInicio)} — {fmtDateOnly(cicloFin)}
+                    </dd>
+                  </div>
                   <div className="flex justify-between gap-3">
                     <dt>Cupo base</dt>
                     <dd>{fmtNumber(plan?.max_asesores)}</dd>
@@ -310,6 +416,10 @@ export default async function AdminEmpresaDetallePage({ params }: PageProps) {
                   </div>
                 ) : (
                   <dl className="mt-2 text-sm space-y-1">
+                    <div className="flex justify-between gap-3">
+                      <dt>Plan acuerdo</dt>
+                      <dd className="text-right break-all">{acuerdo.plan_id || "—"}</dd>
+                    </div>
                     <div className="flex justify-between gap-3">
                       <dt>Tipo</dt>
                       <dd className="text-right break-all">{acuerdo.tipo || "—"}</dd>

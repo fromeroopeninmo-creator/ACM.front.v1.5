@@ -68,6 +68,7 @@ export type EmpresaBillingConfig = {
   empresa_id: string;
   plan_id: string;
   plan_nombre: string | null;
+  plan_duracion_dias: number | null;
 
   precio_base_neto: number;
   precio_neto_final: number;
@@ -86,9 +87,16 @@ export type EmpresaBillingConfig = {
   agreement_applied: boolean;
   agreement_id: string | null;
   agreement_tipo: TipoAcuerdoComercial | null;
+  agreement_plan_id: string | null;
+  agreement_fecha_inicio: string | null;
+  agreement_fecha_fin: string | null;
 
   suscripcion_override_applied: boolean;
   suscripcion_precio_neto_override: number | null;
+
+  ciclo_inicio: string | null;
+  ciclo_fin: string | null;
+  plan_es_trial: boolean | null;
 
   pricing_source:
     | "plan"
@@ -183,6 +191,49 @@ function addDaysISO(dateISO: string, days: number): string {
 }
 
 /**
+ * Lee el plan activo de la empresa desde empresas_planes.
+ * Esta es la fuente operativa del plan efectivo.
+ */
+export async function getEmpresaPlanActivo(
+  supabase: SupabaseClient,
+  empresaId: string
+): Promise<{
+  empresa_id: string;
+  plan_id: string | null;
+  fecha_inicio: string | null;
+  fecha_fin: string | null;
+  max_asesores_override: number | null;
+} | null> {
+  const { data, error } = await supabase
+    .from("empresas_planes")
+    .select(
+      "empresa_id, plan_id, fecha_inicio, fecha_fin, max_asesores_override"
+    )
+    .eq("empresa_id", empresaId)
+    .eq("activo", true)
+    .order("fecha_inicio", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Error leyendo empresas_planes: ${error.message}`);
+  }
+
+  if (!data) return null;
+
+  return {
+    empresa_id: (data as any).empresa_id as string,
+    plan_id: ((data as any).plan_id ?? null) as string | null,
+    fecha_inicio: ((data as any).fecha_inicio ?? null) as string | null,
+    fecha_fin: ((data as any).fecha_fin ?? null) as string | null,
+    max_asesores_override:
+      (data as any).max_asesores_override == null
+        ? null
+        : Number((data as any).max_asesores_override),
+  };
+}
+
+/**
  * Estado de suscripción/ciclo basado SOLO en empresas_planes + planes:
  * - Busca el registro activo en empresas_planes.
  * - Si no tiene fecha_fin, la calcula con planes.duracion_dias (o 30 días default).
@@ -191,28 +242,21 @@ export async function getSuscripcionEstado(
   supabase: SupabaseClient,
   empresaId: string
 ) {
-  const { data: ep, error: epErr } = await supabase
-    .from("empresas_planes")
-    .select("empresa_id, plan_id, fecha_inicio, fecha_fin")
-    .eq("empresa_id", empresaId)
-    .eq("activo", true)
-    .maybeSingle();
-
-  if (epErr) {
-    throw new Error(`Error leyendo empresas_planes: ${epErr.message}`);
-  }
+  const ep = await getEmpresaPlanActivo(supabase, empresaId);
 
   if (!ep) return null;
 
-  const empresa_id = (ep as any).empresa_id as string;
-  const plan_actual_id = (ep as any).plan_id as string | null;
-  const fecha_inicio = (ep as any).fecha_inicio as string;
-  let fecha_fin = (ep as any).fecha_fin as string | null;
+  const empresa_id = ep.empresa_id;
+  const plan_actual_id = ep.plan_id;
+  const fecha_inicio = ep.fecha_inicio;
+  let fecha_fin = ep.fecha_fin;
 
-  if (!fecha_fin && plan_actual_id) {
+  let plan_actual_nombre: string | null = null;
+
+  if (plan_actual_id) {
     const { data: planRow, error: planErr } = await supabase
       .from("planes")
-      .select("duracion_dias")
+      .select("nombre, duracion_dias")
       .eq("id", plan_actual_id)
       .maybeSingle();
 
@@ -222,12 +266,16 @@ export async function getSuscripcionEstado(
       );
     }
 
-    const dur =
-      typeof planRow?.duracion_dias === "number" && planRow.duracion_dias > 0
-        ? planRow.duracion_dias
-        : 30;
+    plan_actual_nombre = ((planRow as any)?.nombre ?? null) as string | null;
 
-    fecha_fin = addDaysISO(fecha_inicio, dur);
+    if (!fecha_fin && fecha_inicio) {
+      const dur =
+        typeof planRow?.duracion_dias === "number" && planRow.duracion_dias > 0
+          ? planRow.duracion_dias
+          : 30;
+
+      fecha_fin = addDaysISO(fecha_inicio, dur);
+    }
   }
 
   return {
@@ -237,7 +285,7 @@ export async function getSuscripcionEstado(
     estado: "activa",
     moneda: "ARS",
     plan_actual_id,
-    plan_actual_nombre: null,
+    plan_actual_nombre,
     plan_proximo_id: null,
     plan_proximo_nombre: null,
     cambio_programado_para: null,
@@ -306,14 +354,15 @@ export async function getPlanBaseConfig(
 }
 
 /**
- * Trae el acuerdo comercial activo y vigente para la empresa.
- * Si el acuerdo tiene plan_id, solo aplica si coincide con el plan evaluado.
+ * Devuelve todos los acuerdos activos y vigentes de una empresa.
+ * Luego se elige el mejor match en memoria:
+ * - primero acuerdo específico del plan
+ * - luego acuerdo genérico (plan_id null)
  */
-export async function getEmpresaAcuerdoComercialActivo(
+async function getEmpresaAcuerdosComercialesActivos(
   supabase: SupabaseClient,
-  empresaId: string,
-  planId?: string | null
-): Promise<EmpresaAcuerdoComercialActivo | null> {
+  empresaId: string
+): Promise<EmpresaAcuerdoComercialActivo[]> {
   const hoy = todayUTCDate();
 
   const { data, error } = await supabase
@@ -345,58 +394,84 @@ export async function getEmpresaAcuerdoComercialActivo(
     .eq("activo", true)
     .lte("fecha_inicio", hoy)
     .or(`fecha_fin.is.null,fecha_fin.gte.${hoy}`)
+    .order("fecha_inicio", { ascending: false })
     .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .limit(25);
 
   if (error) {
     throw new Error(
-      `Error leyendo acuerdo comercial activo: ${error.message}`
+      `Error leyendo acuerdos comerciales activos: ${error.message}`
     );
   }
 
-  if (!data) return null;
+  if (!Array.isArray(data) || data.length === 0) return [];
 
-  const acuerdoPlanId = ((data as any).plan_id ?? null) as string | null;
+  return data.map((row: any) => ({
+    id: row.id as string,
+    empresa_id: row.empresa_id as string,
+    plan_id: (row.plan_id ?? null) as string | null,
+    activo: Boolean(row.activo),
+    tipo_acuerdo: row.tipo_acuerdo as TipoAcuerdoComercial,
+    descuento_pct:
+      row.descuento_pct == null ? null : Number(row.descuento_pct),
+    precio_neto_fijo:
+      row.precio_neto_fijo == null ? null : Number(row.precio_neto_fijo),
+    max_asesores_override:
+      row.max_asesores_override == null
+        ? null
+        : Number(row.max_asesores_override),
+    precio_extra_por_asesor_override:
+      row.precio_extra_por_asesor_override == null
+        ? null
+        : Number(row.precio_extra_por_asesor_override),
+    modo_iva: (row.modo_iva ?? "sumar_al_neto") as ModoIVA,
+    iva_pct: Number(row.iva_pct ?? 21),
+    fecha_inicio: row.fecha_inicio as string,
+    fecha_fin: (row.fecha_fin ?? null) as string | null,
+    motivo: (row.motivo ?? null) as string | null,
+    observaciones: (row.observaciones ?? null) as string | null,
+    created_by: (row.created_by ?? null) as string | null,
+    updated_by: (row.updated_by ?? null) as string | null,
+    created_at: (row.created_at ?? null) as string | null,
+    updated_at: (row.updated_at ?? null) as string | null,
+  }));
+}
 
-  if (acuerdoPlanId && planId && acuerdoPlanId !== planId) {
+/**
+ * Trae el acuerdo comercial activo y vigente para la empresa.
+ * Reglas:
+ * - si hay planId, prioriza acuerdo específico de ese plan
+ * - si no encuentra, usa acuerdo genérico (plan_id null)
+ * - si no hay match, retorna null
+ */
+export async function getEmpresaAcuerdoComercialActivo(
+  supabase: SupabaseClient,
+  empresaId: string,
+  planId?: string | null
+): Promise<EmpresaAcuerdoComercialActivo | null> {
+  const acuerdos = await getEmpresaAcuerdosComercialesActivos(
+    supabase,
+    empresaId
+  );
+
+  if (acuerdos.length === 0) return null;
+
+  if (planId) {
+    const acuerdoEspecifico = acuerdos.find(
+      (a) => a.plan_id != null && a.plan_id === planId
+    );
+    if (acuerdoEspecifico) return acuerdoEspecifico;
+
+    const acuerdoGenerico = acuerdos.find((a) => a.plan_id == null);
+    if (acuerdoGenerico) return acuerdoGenerico;
+
     return null;
   }
 
-  return {
-    id: (data as any).id as string,
-    empresa_id: (data as any).empresa_id as string,
-    plan_id: acuerdoPlanId,
-    activo: Boolean((data as any).activo),
-    tipo_acuerdo: (data as any).tipo_acuerdo as TipoAcuerdoComercial,
-    descuento_pct:
-      (data as any).descuento_pct == null
-        ? null
-        : Number((data as any).descuento_pct),
-    precio_neto_fijo:
-      (data as any).precio_neto_fijo == null
-        ? null
-        : Number((data as any).precio_neto_fijo),
-    max_asesores_override:
-      (data as any).max_asesores_override == null
-        ? null
-        : Number((data as any).max_asesores_override),
-    precio_extra_por_asesor_override:
-      (data as any).precio_extra_por_asesor_override == null
-        ? null
-        : Number((data as any).precio_extra_por_asesor_override),
-    modo_iva: ((data as any).modo_iva ??
-      "sumar_al_neto") as EmpresaAcuerdoComercialActivo["modo_iva"],
-    iva_pct: Number((data as any).iva_pct ?? 21),
-    fecha_inicio: (data as any).fecha_inicio as string,
-    fecha_fin: ((data as any).fecha_fin ?? null) as string | null,
-    motivo: ((data as any).motivo ?? null) as string | null,
-    observaciones: ((data as any).observaciones ?? null) as string | null,
-    created_by: ((data as any).created_by ?? null) as string | null,
-    updated_by: ((data as any).updated_by ?? null) as string | null,
-    created_at: ((data as any).created_at ?? null) as string | null,
-    updated_at: ((data as any).updated_at ?? null) as string | null,
-  };
+  const acuerdoGenerico = acuerdos.find((a) => a.plan_id == null);
+  if (acuerdoGenerico) return acuerdoGenerico;
+
+  return acuerdos[0] ?? null;
 }
 
 /**
@@ -450,7 +525,9 @@ export async function getEmpresaPlanActivoOverrides(
     .from("empresas_planes")
     .select("max_asesores_override, plan_id")
     .eq("empresa_id", empresaId)
-    .eq("activo", true);
+    .eq("activo", true)
+    .order("fecha_inicio", { ascending: false })
+    .limit(1);
 
   if (planId) {
     query = query.eq("plan_id", planId);
@@ -618,6 +695,11 @@ export function calcularMontosConIva(params: {
 
 /**
  * Resuelve la configuración final de billing para una empresa y plan.
+ *
+ * Reglas:
+ * - Plan operativo efectivo: si no se pasa planId, se toma desde empresas_planes.
+ * - Pricing efectivo: acuerdo comercial vigente > suscripción override > precio base del plan.
+ * - Si no hay acuerdo, el flujo normal del plan sigue intacto.
  */
 export async function resolveEmpresaBillingConfig(params: {
   supabase: SupabaseClient;
@@ -634,11 +716,13 @@ export async function resolveEmpresaBillingConfig(params: {
     forzarSinAcuerdo = false,
   } = params;
 
+  const planActivo = await getEmpresaPlanActivo(supabase, empresaId);
+  const suscripcionEstado = await getSuscripcionEstado(supabase, empresaId);
+
   let effectivePlanId = planId ?? null;
 
   if (!effectivePlanId) {
-    const suscripcionEstado = await getSuscripcionEstado(supabase, empresaId);
-    effectivePlanId = suscripcionEstado?.plan_actual_id ?? null;
+    effectivePlanId = planActivo?.plan_id ?? suscripcionEstado?.plan_actual_id ?? null;
   }
 
   if (!effectivePlanId) {
@@ -671,7 +755,11 @@ export async function resolveEmpresaBillingConfig(params: {
 
   const acuerdo = forzarSinAcuerdo
     ? null
-    : await getEmpresaAcuerdoComercialActivo(supabase, empresaId, effectivePlanId);
+    : await getEmpresaAcuerdoComercialActivo(
+        supabase,
+        empresaId,
+        effectivePlanId
+      );
 
   const suscripcionOverride = await getSuscripcionPrecioNetoOverride(
     supabase,
@@ -734,6 +822,8 @@ export async function resolveEmpresaBillingConfig(params: {
     empresa_id: empresaId,
     plan_id: effectivePlanId,
     plan_nombre: plan.nombre ?? null,
+    plan_duracion_dias:
+      plan.duracion_dias == null ? null : Number(plan.duracion_dias),
 
     precio_base_neto: round2(baseResolved.precio_base_neto),
     precio_neto_final: montos.precio_neto_final,
@@ -752,10 +842,17 @@ export async function resolveEmpresaBillingConfig(params: {
     agreement_applied: Boolean(acuerdo),
     agreement_id: acuerdo?.id ?? null,
     agreement_tipo: acuerdo?.tipo_acuerdo ?? null,
+    agreement_plan_id: acuerdo?.plan_id ?? null,
+    agreement_fecha_inicio: acuerdo?.fecha_inicio ?? null,
+    agreement_fecha_fin: acuerdo?.fecha_fin ?? null,
 
     suscripcion_override_applied: !acuerdo && suscripcionOverride != null,
     suscripcion_precio_neto_override:
       suscripcionOverride == null ? null : round2(suscripcionOverride),
+
+    ciclo_inicio: suscripcionEstado?.ciclo_inicio ?? null,
+    ciclo_fin: suscripcionEstado?.ciclo_fin ?? null,
+    plan_es_trial: plan.es_trial ?? null,
 
     pricing_source: pricingSource,
   };

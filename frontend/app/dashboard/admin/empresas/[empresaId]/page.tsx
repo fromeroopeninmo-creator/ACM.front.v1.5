@@ -8,6 +8,9 @@ export const dynamic = "force-dynamic";
 
 type PageProps = {
   params: { empresaId: string };
+  searchParams?: {
+    modal?: string;
+  };
 };
 
 function buildCookieHeader(): string {
@@ -77,7 +80,14 @@ function statusBadgeClass(kind: "ok" | "warn" | "danger" | "neutral") {
   }
 }
 
-export default async function AdminEmpresaDetallePage({ params }: PageProps) {
+function buildModalHref(modal: string) {
+  return `?modal=${encodeURIComponent(modal)}`;
+}
+
+export default async function AdminEmpresaDetallePage({
+  params,
+  searchParams,
+}: PageProps) {
   // 1) Guard: sesión + rol
   const supa = supabaseServer();
   const {
@@ -144,6 +154,10 @@ export default async function AdminEmpresaDetallePage({ params }: PageProps) {
   const planVencido = !!(finDate && finDate.getTime() < now.getTime());
   const esTrial = !!plan?.es_trial;
   const tieneAcuerdoActivo = !!acuerdo?.activo;
+
+  const modal = searchParams?.modal ?? null;
+  const acuerdoModalOpen = modal === "acuerdo";
+  const planModalOpen = modal === "plan";
 
   return (
     <main className="p-4 md:p-6 space-y-4">
@@ -402,81 +416,106 @@ export default async function AdminEmpresaDetallePage({ params }: PageProps) {
                 </dl>
               </div>
 
-              <div className="rounded-xl border p-3">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="text-xs text-gray-500">Acuerdo Comercial</div>
-                  <span className={badgeClass(!!acuerdo?.activo)}>
-                    {acuerdo?.activo ? "Activo" : "Sin acuerdo"}
-                  </span>
+              <div className="rounded-xl border p-4 space-y-4">
+                <div>
+                  <div className="text-xs text-gray-500 mb-1">Plan actual</div>
+                  <div className="font-medium">{plan?.nombre || "—"}</div>
+                  <div className="mt-1 text-sm text-gray-600">
+                    Cupo final: {fmtNumber(plan?.max_asesores_final ?? plan?.max_asesores ?? null)}
+                  </div>
+                  <div className="mt-3">
+                    <a
+                      href={buildModalHref("plan")}
+                      className="inline-flex items-center rounded-xl border px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-neutral-800"
+                    >
+                      Cambiar Plan
+                    </a>
+                  </div>
+                  <div className="mt-2 text-xs text-gray-500">
+                    Esta acción va a quedar separada del acuerdo comercial. En el próximo ajuste movemos el selector de plan fuera de la card del acuerdo.
+                  </div>
                 </div>
 
-                {!acuerdo ? (
-                  <div className="mt-3 text-sm text-gray-500">
-                    Esta empresa no tiene un acuerdo comercial activo.
+                <div className="border-t pt-4">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="text-xs text-gray-500">Acuerdo Comercial</div>
+                    <span className={badgeClass(!!acuerdo?.activo)}>
+                      {acuerdo?.activo ? "Activo" : "Sin acuerdo"}
+                    </span>
                   </div>
-                ) : (
-                  <dl className="mt-2 text-sm space-y-1">
-                    <div className="flex justify-between gap-3">
-                      <dt>Plan acuerdo</dt>
-                      <dd className="text-right break-all">{acuerdo.plan_id || "—"}</dd>
-                    </div>
-                    <div className="flex justify-between gap-3">
-                      <dt>Tipo</dt>
-                      <dd className="text-right break-all">{acuerdo.tipo || "—"}</dd>
-                    </div>
-                    <div className="flex justify-between gap-3">
-                      <dt>Precio base neto</dt>
-                      <dd>{fmtMoney(acuerdo.precio_base_neto ?? null)}</dd>
-                    </div>
-                    <div className="flex justify-between gap-3">
-                      <dt>Precio neto final</dt>
-                      <dd>{fmtMoney(acuerdo.precio_neto_final ?? null)}</dd>
-                    </div>
-                    <div className="flex justify-between gap-3">
-                      <dt>Total final</dt>
-                      <dd>{fmtMoney(acuerdo.precio_total_final ?? null)}</dd>
-                    </div>
-                    <div className="flex justify-between gap-3">
-                      <dt>Modo IVA</dt>
-                      <dd>{fmtModoIVA(acuerdo.modo_iva)}</dd>
-                    </div>
-                    <div className="flex justify-between gap-3">
-                      <dt>IVA %</dt>
-                      <dd>{acuerdo.iva_pct != null ? `${acuerdo.iva_pct}%` : "—"}</dd>
-                    </div>
-                    <div className="flex justify-between gap-3">
-                      <dt>IVA importe</dt>
-                      <dd>{fmtMoney(acuerdo.iva_importe ?? null)}</dd>
-                    </div>
-                    <div className="flex justify-between gap-3">
-                      <dt>Cupo plan</dt>
-                      <dd>{fmtNumber(acuerdo.max_asesores_plan ?? null)}</dd>
-                    </div>
-                    <div className="flex justify-between gap-3">
-                      <dt>Cupo final</dt>
-                      <dd>{fmtNumber(acuerdo.max_asesores_final ?? null)}</dd>
-                    </div>
-                    <div className="flex justify-between gap-3">
-                      <dt>Extra por asesor</dt>
-                      <dd>{fmtMoney(acuerdo.precio_extra_por_asesor_final ?? null)}</dd>
-                    </div>
-                    <div className="flex justify-between gap-3">
-                      <dt>Origen pricing</dt>
-                      <dd className="text-right break-all">{acuerdo.pricing_source || "—"}</dd>
-                    </div>
-                    <div className="flex justify-between gap-3">
-                      <dt>Vigencia</dt>
-                      <dd>
-                        {fmtDateOnly(acuerdo.fecha_inicio)} — {fmtDateOnly(acuerdo.fecha_fin)}
-                      </dd>
-                    </div>
-                  </dl>
-                )}
 
-                <AcuerdoComercialAdminCard
-                  empresaId={params.empresaId}
-                  acuerdoActual={acuerdo}
-                />
+                  {!acuerdo ? (
+                    <div className="mt-3 text-sm text-gray-500">
+                      Esta empresa no tiene un acuerdo comercial activo.
+                    </div>
+                  ) : (
+                    <dl className="mt-2 text-sm space-y-1">
+                      <div className="flex justify-between gap-3">
+                        <dt>Plan acuerdo</dt>
+                        <dd className="text-right break-all">{acuerdo.plan_id || "—"}</dd>
+                      </div>
+                      <div className="flex justify-between gap-3">
+                        <dt>Tipo</dt>
+                        <dd className="text-right break-all">{acuerdo.tipo || "—"}</dd>
+                      </div>
+                      <div className="flex justify-between gap-3">
+                        <dt>Precio base neto</dt>
+                        <dd>{fmtMoney(acuerdo.precio_base_neto ?? null)}</dd>
+                      </div>
+                      <div className="flex justify-between gap-3">
+                        <dt>Precio neto final</dt>
+                        <dd>{fmtMoney(acuerdo.precio_neto_final ?? null)}</dd>
+                      </div>
+                      <div className="flex justify-between gap-3">
+                        <dt>Total final</dt>
+                        <dd>{fmtMoney(acuerdo.precio_total_final ?? null)}</dd>
+                      </div>
+                      <div className="flex justify-between gap-3">
+                        <dt>Modo IVA</dt>
+                        <dd>{fmtModoIVA(acuerdo.modo_iva)}</dd>
+                      </div>
+                      <div className="flex justify-between gap-3">
+                        <dt>IVA %</dt>
+                        <dd>{acuerdo.iva_pct != null ? `${acuerdo.iva_pct}%` : "—"}</dd>
+                      </div>
+                      <div className="flex justify-between gap-3">
+                        <dt>IVA importe</dt>
+                        <dd>{fmtMoney(acuerdo.iva_importe ?? null)}</dd>
+                      </div>
+                      <div className="flex justify-between gap-3">
+                        <dt>Cupo plan</dt>
+                        <dd>{fmtNumber(acuerdo.max_asesores_plan ?? null)}</dd>
+                      </div>
+                      <div className="flex justify-between gap-3">
+                        <dt>Cupo final</dt>
+                        <dd>{fmtNumber(acuerdo.max_asesores_final ?? null)}</dd>
+                      </div>
+                      <div className="flex justify-between gap-3">
+                        <dt>Extra por asesor</dt>
+                        <dd>{fmtMoney(acuerdo.precio_extra_por_asesor_final ?? null)}</dd>
+                      </div>
+                      <div className="flex justify-between gap-3">
+                        <dt>Origen pricing</dt>
+                        <dd className="text-right break-all">{acuerdo.pricing_source || "—"}</dd>
+                      </div>
+                      <div className="flex justify-between gap-3">
+                        <dt>Vigencia</dt>
+                        <dd>
+                          {fmtDateOnly(acuerdo.fecha_inicio)} — {fmtDateOnly(acuerdo.fecha_fin)}
+                        </dd>
+                      </div>
+                    </dl>
+                  )}
+
+                  <div className="mt-4">
+                    <a
+                      href={buildModalHref("acuerdo")}
+                      className="inline-flex items-center rounded-xl border px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-neutral-800"
+                    >
+                      {acuerdo?.activo ? "Editar Acuerdo Comercial" : "Crear Acuerdo Comercial"}
+                    </a>
+                  </div>
+                </div>
               </div>
             </div>
           </section>
@@ -605,6 +644,98 @@ export default async function AdminEmpresaDetallePage({ params }: PageProps) {
               </div>
             </div>
           </section>
+
+          {acuerdoModalOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+              <a
+                href="/dashboard/admin/empresas/[empresaId]"
+                aria-label="Cerrar modal"
+                className="absolute inset-0 bg-black/50"
+              />
+              <div className="relative z-10 w-full max-w-5xl max-h-[90vh] overflow-auto rounded-2xl border bg-white shadow-2xl dark:bg-neutral-950">
+                <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b bg-white px-4 py-3 dark:bg-neutral-950">
+                  <div>
+                    <h3 className="text-lg font-semibold">
+                      {acuerdo?.activo ? "Editar Acuerdo Comercial" : "Crear Acuerdo Comercial"}
+                    </h3>
+                    <p className="text-sm text-gray-500">
+                      Configurá precio, IVA, vigencia y demás parámetros comerciales.
+                    </p>
+                  </div>
+                  <a
+                    href={`/dashboard/admin/empresas/${encodeURIComponent(params.empresaId)}`}
+                    className="rounded-xl border px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-neutral-800"
+                  >
+                    Cerrar
+                  </a>
+                </div>
+                <div className="p-4">
+                  <AcuerdoComercialAdminCard
+                    empresaId={params.empresaId}
+                    acuerdoActual={acuerdo}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {planModalOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+              <a
+                href={`/dashboard/admin/empresas/${encodeURIComponent(params.empresaId)}`}
+                aria-label="Cerrar modal"
+                className="absolute inset-0 bg-black/50"
+              />
+              <div className="relative z-10 w-full max-w-3xl rounded-2xl border bg-white shadow-2xl dark:bg-neutral-950">
+                <div className="flex items-center justify-between gap-3 border-b px-4 py-3">
+                  <div>
+                    <h3 className="text-lg font-semibold">Cambiar Plan</h3>
+                    <p className="text-sm text-gray-500">
+                      Esta acción queda separada del acuerdo comercial. En el próximo ajuste movemos el selector de plan a un componente independiente.
+                    </p>
+                  </div>
+                  <a
+                    href={`/dashboard/admin/empresas/${encodeURIComponent(params.empresaId)}`}
+                    className="rounded-xl border px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-neutral-800"
+                  >
+                    Cerrar
+                  </a>
+                </div>
+                <div className="p-4">
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+                    El layout ya quedó preparado para separar “Cambiar Plan” de “Acuerdo Comercial”.
+                    Para que el selector de plan deje de aparecer dentro del acuerdo y pase a esta ventana,
+                    el siguiente archivo a corregir es <strong>AcuerdoComercialAdminCard.tsx</strong>.
+                  </div>
+
+                  <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                    <div className="rounded-xl border p-3">
+                      <div className="text-xs text-gray-500 mb-1">Plan actual</div>
+                      <div className="font-medium">{plan?.nombre || "—"}</div>
+                    </div>
+                    <div className="rounded-xl border p-3">
+                      <div className="text-xs text-gray-500 mb-1">Cupo final</div>
+                      <div className="font-medium">
+                        {fmtNumber(plan?.max_asesores_final ?? plan?.max_asesores ?? null)}
+                      </div>
+                    </div>
+                    <div className="rounded-xl border p-3">
+                      <div className="text-xs text-gray-500 mb-1">Ciclo actual</div>
+                      <div className="font-medium">
+                        {fmtDateOnly(cicloInicio)} — {fmtDateOnly(cicloFin)}
+                      </div>
+                    </div>
+                    <div className="rounded-xl border p-3">
+                      <div className="text-xs text-gray-500 mb-1">Estado</div>
+                      <div className="font-medium">
+                        {planVencido ? "Vencido" : "Vigente"}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </>
       )}
     </main>

@@ -34,6 +34,24 @@ async function resolveUserRole(userId: string): Promise<Role | null> {
   return (p2?.role as Role) ?? null;
 }
 
+async function resolveProfileId(userId: string): Promise<string | null> {
+  const { data: p1 } = await supabaseAdmin
+    .from("profiles")
+    .select("id")
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (p1?.id) return String(p1.id);
+
+  const { data: p2 } = await supabaseAdmin
+    .from("profiles")
+    .select("id")
+    .eq("id", userId)
+    .maybeSingle();
+
+  return p2?.id ? String(p2.id) : null;
+}
+
 async function assertAdmin() {
   const server = supabaseServer();
   const {
@@ -55,21 +73,24 @@ async function assertAdmin() {
     };
   }
 
+  const profileId = await resolveProfileId(user.id);
+
   return {
     ok: true as const,
     userId: user.id,
+    profileId,
   };
 }
 
 export async function POST(
   _req: Request,
-  { params }: { params: { empresaId: string; acuerdoId: string } }
+  { params }: { params: { id: string; acuerdoId: string } }
 ) {
   try {
     const auth = await assertAdmin();
     if (!auth.ok) return auth.response;
 
-    const empresaId = params?.empresaId;
+    const empresaId = params?.id;
     const acuerdoId = params?.acuerdoId;
 
     if (!empresaId || !acuerdoId) {
@@ -97,7 +118,7 @@ export async function POST(
 
     const patch: Record<string, any> = {
       activo: false,
-      updated_by: auth.userId,
+      updated_by: auth.profileId,
     };
 
     if (!actual.fecha_fin || String(actual.fecha_fin) > hoy) {

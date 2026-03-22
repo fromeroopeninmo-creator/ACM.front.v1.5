@@ -158,7 +158,6 @@ export default function AcuerdoComercialAdminCard({
   const [loadingPlanes, setLoadingPlanes] = useState(false);
   const [billingEstado, setBillingEstado] = useState<BillingEstadoLite | null>(null);
 
-  const [planId, setPlanId] = useState<string>(acuerdoActual?.plan_id ?? "");
   const [tipoAcuerdo, setTipoAcuerdo] = useState<TipoAcuerdo>(initialTipo);
   const [descuentoPct, setDescuentoPct] = useState<string>("");
   const [precioNetoFijo, setPrecioNetoFijo] = useState<string>(
@@ -271,11 +270,6 @@ export default function AcuerdoComercialAdminCard({
     return planes.find((p) => p.id === planIdActual) ?? null;
   }, [billingEstado, planes]);
 
-  const planSeleccionado = useMemo(() => {
-    if (!planId) return null;
-    return planes.find((p) => p.id === planId) ?? null;
-  }, [planId, planes]);
-
   async function handleSubmit() {
     try {
       setLoading(true);
@@ -283,7 +277,6 @@ export default function AcuerdoComercialAdminCard({
       setMessage(null);
 
       const payload: Record<string, any> = {
-        plan_id: planId || null,
         tipo_acuerdo: tipoAcuerdo,
         descuento_pct: visibleFields.showDescuento && descuentoPct !== "" ? Number(descuentoPct) : null,
         precio_neto_fijo: visibleFields.showPrecioFijo && precioNetoFijo !== "" ? Number(precioNetoFijo) : null,
@@ -393,13 +386,17 @@ export default function AcuerdoComercialAdminCard({
   }
 
   return (
-    <div className="mt-3 pt-3 border-t space-y-3">
+    <div className="space-y-4">
       <div className="rounded-xl border p-3 bg-gray-50 dark:bg-neutral-900/40">
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3 text-sm">
           <div>
             <div className="text-xs text-gray-500 mb-1">Plan operativo actual</div>
             <div className="font-medium">
-              {planActualOperativo ? getPlanLabel(planActualOperativo) : billingEstado?.plan?.nombre || "—"}
+              {loadingPlanes
+                ? "Cargando..."
+                : planActualOperativo
+                ? getPlanLabel(planActualOperativo)
+                : billingEstado?.plan?.nombre || "—"}
             </div>
           </div>
 
@@ -469,35 +466,13 @@ export default function AcuerdoComercialAdminCard({
       ) : null}
 
       {(mode === "create" || mode === "edit") && (
-        <div className="rounded-xl border p-3 space-y-3">
+        <div className="rounded-xl border p-4 space-y-4">
           <div className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-700">
-            Desde aquí podés dejar configurado el plan efectivo de la empresa y las condiciones del acuerdo comercial.
-            Si el acuerdo está vigente y tiene plan asociado, el backend sincroniza el plan operativo de la empresa.
+            Configurá únicamente las condiciones comerciales del acuerdo.
+            El cambio de plan queda separado en su propia acción administrativa.
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Plan base / plan efectivo</label>
-              <select
-                value={planId}
-                onChange={(e) => setPlanId(e.target.value)}
-                className="w-full rounded-xl border px-3 py-2 text-sm bg-white dark:bg-neutral-950"
-                disabled={loadingPlanes}
-              >
-                <option value="">Seleccionar plan…</option>
-                {planes.map((plan) => (
-                  <option key={plan.id} value={plan.id}>
-                    {getPlanLabel(plan)}
-                  </option>
-                ))}
-              </select>
-              <div className="mt-1 text-xs text-gray-500">
-                {loadingPlanes
-                  ? "Cargando catálogo de planes…"
-                  : "Este plan define las funciones/capacidades operativas de la empresa."}
-              </div>
-            </div>
-
             <div>
               <label className="block text-xs text-gray-500 mb-1">Tipo de acuerdo</label>
               <select
@@ -563,7 +538,7 @@ export default function AcuerdoComercialAdminCard({
                 className="w-full rounded-xl border px-3 py-2 text-sm bg-white dark:bg-neutral-950"
               />
               <div className="mt-1 text-xs text-gray-500">
-                Podés usarlo aunque el acuerdo no sea “con cupo”, para dejar configurado el cupo final del cliente.
+                Podés dejar definido el cupo final del cliente independientemente del cambio de plan.
               </div>
             </div>
 
@@ -612,29 +587,35 @@ export default function AcuerdoComercialAdminCard({
             </div>
           </div>
 
-          {planSeleccionado ? (
-            <div className="rounded-xl border p-3 bg-gray-50 dark:bg-neutral-900/40">
-              <div className="text-sm font-medium mb-2">Plan seleccionado</div>
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3 text-sm">
-                <div>
-                  <div className="text-xs text-gray-500 mb-1">Nombre</div>
-                  <div className="font-medium">{planSeleccionado.nombre}</div>
-                </div>
-                <div>
-                  <div className="text-xs text-gray-500 mb-1">Tipo</div>
-                  <div className="font-medium">{planSeleccionado.tipo_plan || "—"}</div>
-                </div>
-                <div>
-                  <div className="text-xs text-gray-500 mb-1">Cupo base</div>
-                  <div className="font-medium">{planSeleccionado.max_asesores ?? "—"}</div>
-                </div>
-                <div>
-                  <div className="text-xs text-gray-500 mb-1">Precio base</div>
-                  <div className="font-medium">{fmtMoney(planSeleccionado.precio ?? null)}</div>
+          <div className="rounded-xl border p-3 bg-gray-50 dark:bg-neutral-900/40">
+            <div className="text-sm font-medium mb-2">Referencia actual</div>
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3 text-sm">
+              <div>
+                <div className="text-xs text-gray-500 mb-1">Plan operativo actual</div>
+                <div className="font-medium">
+                  {loadingPlanes
+                    ? "Cargando..."
+                    : planActualOperativo
+                    ? getPlanLabel(planActualOperativo)
+                    : billingEstado?.plan?.nombre || "—"}
                 </div>
               </div>
+              <div>
+                <div className="text-xs text-gray-500 mb-1">Cupo actual final</div>
+                <div className="font-medium">
+                  {billingEstado?.cupos?.max_asesores_final ?? "—"}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs text-gray-500 mb-1">Acuerdo vigente desde</div>
+                <div className="font-medium">{fmtDateOnly(acuerdoActual?.fecha_inicio ?? null)}</div>
+              </div>
+              <div>
+                <div className="text-xs text-gray-500 mb-1">Acuerdo vigente hasta</div>
+                <div className="font-medium">{fmtDateOnly(acuerdoActual?.fecha_fin ?? null)}</div>
+              </div>
             </div>
-          ) : null}
+          </div>
 
           <div>
             <label className="block text-xs text-gray-500 mb-1">Motivo</label>

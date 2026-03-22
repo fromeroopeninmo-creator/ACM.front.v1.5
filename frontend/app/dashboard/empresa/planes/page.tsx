@@ -1,4 +1,3 @@
-// frontend/app/dashboard/empresa/planes/page.tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -58,6 +57,67 @@ type PreviewResult = {
 
 type TipoPlanKind = "combo" | "core" | "tracker_only";
 
+type BillingEstado = {
+  plan: {
+    id: string;
+    nombre: string;
+    precioNeto?: number | null;
+    totalConIVA?: number | null;
+    precioBaseNeto?: number | null;
+    precioNetoFinal?: number | null;
+    ivaModo?: string | null;
+    ivaPct?: number | null;
+    ivaImporte?: number | null;
+    precioTotalFinal?: number | null;
+    pricingSource?: string | null;
+    tipo_plan?: string | null;
+    incluye_valuador?: boolean | null;
+    incluye_tracker?: boolean | null;
+    es_trial?: boolean | null;
+  } | null;
+  ciclo?: {
+    inicio?: string | null;
+    fin?: string | null;
+    proximoCobro?: string | null;
+  } | null;
+  estado?: {
+    suspendida?: boolean;
+    suspendida_motivo?: string | null;
+    suspendida_at?: string | null;
+    plan_vencido?: boolean;
+    dias_desde_vencimiento?: number | null;
+    en_periodo_gracia?: boolean;
+  } | null;
+  pricing?: {
+    precio_base_neto?: number | null;
+    precio_neto_final?: number | null;
+    modo_iva?: string | null;
+    iva_pct?: number | null;
+    iva_importe?: number | null;
+    precio_total_final?: number | null;
+    pricing_source?: string | null;
+    suscripcion_override_applied?: boolean;
+    suscripcion_precio_neto_override?: number | null;
+  } | null;
+  cupos?: {
+    max_asesores_plan?: number | null;
+    max_asesores_final?: number | null;
+    precio_extra_por_asesor_plan?: number | null;
+    precio_extra_por_asesor_final?: number | null;
+  } | null;
+  acuerdoComercial?: {
+    activo: boolean;
+    id?: string | null;
+    tipo?: string | null;
+    modo_iva?: string | null;
+    iva_pct?: number | null;
+    precio_neto_final?: number | null;
+    precio_total_final?: number | null;
+    max_asesores_final?: number | null;
+    precio_extra_por_asesor_final?: number | null;
+  } | null;
+};
+
 // ---------- HELPERS GENERALES ----------
 
 function tierFromMaxAsesores(max: number): "Inicial" | "Pro" | "Premium" | "Personalizado" {
@@ -111,13 +171,47 @@ function isHiddenPlan(plan: Plan): boolean {
   return false;
 }
 
+function fmtMoney(value?: number | string | null) {
+  if (value == null) return "—";
+  const n = typeof value === "string" ? parseFloat(value) : value;
+  if (!isFinite(n)) return "—";
+  if (n === 0) return "$ 0";
+  return new Intl.NumberFormat("es-AR", {
+    style: "currency",
+    currency: "ARS",
+    maximumFractionDigits: 0,
+  }).format(n);
+}
+
+function fmtModoIVA(v?: string | null) {
+  switch (v) {
+    case "sumar_al_neto":
+      return "Sumar al neto";
+    case "incluido_en_precio":
+      return "Incluido en precio";
+    case "no_aplica":
+      return "No aplica";
+    default:
+      return "—";
+  }
+}
+
+function fmtDateOnly(d?: string | null) {
+  if (!d) return "—";
+  const dt = new Date(d);
+  if (Number.isNaN(dt.getTime())) return "—";
+  return dt.toLocaleDateString("es-AR");
+}
+
 export default function EmpresaPlanesPage() {
   const { user } = useAuth();
 
   const [empresaId, setEmpresaId] = useState<string | null>(null);
   const [planActual, setPlanActual] = useState<EmpresaPlan | null>(null);
   const [planesDisponibles, setPlanesDisponibles] = useState<Plan[]>([]);
+  const [billingEstado, setBillingEstado] = useState<BillingEstado | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadingPago, setLoadingPago] = useState(false);
   const [mensaje, setMensaje] = useState<string | null>(null);
 
   // Estado UI para “Personalizado”
@@ -192,7 +286,7 @@ export default function EmpresaPlanesPage() {
     fetchEmpresa();
   }, [user]);
 
-  // 📡 Plan actual + planes
+  // 📡 Plan actual + planes + billing/estado
   useEffect(() => {
     const fetchPlanes = async () => {
       if (!empresaId) {
@@ -234,10 +328,9 @@ export default function EmpresaPlanesPage() {
             fecha_inicio: empresaPlan.fecha_inicio,
             fecha_fin: empresaPlan.fecha_fin,
             activo: empresaPlan.activo,
-            max_asesores: override ?? baseMax, // ← usa override si está seteado
+            max_asesores: override ?? baseMax,
           });
 
-          // si el plan activo es Personalizado, inicializamos el slider con el override o 21
           const tier = tierFromMaxAsesores(override ?? baseMax);
           if (tier === "Personalizado") {
             setPersonalCount(Math.max(21, Math.min(50, override ?? 21)));
@@ -246,7 +339,7 @@ export default function EmpresaPlanesPage() {
           setPlanActual(null);
         }
 
-        // Planes: traemos todos y filtramos en la capa UI
+        // Planes disponibles
         const { data: planes, error: errorPlanes } = await supabase
           .from("planes")
           .select(
@@ -258,6 +351,24 @@ export default function EmpresaPlanesPage() {
           console.error("Error cargando planes:", errorPlanes);
         } else {
           setPlanesDisponibles(planes || []);
+        }
+
+        // Billing estado
+        try {
+          const res = await fetch(`/api/billing/estado?empresaId=${encodeURIComponent(empresaId)}`, {
+            method: "GET",
+            cache: "no-store",
+          });
+          const data = await res.json();
+          if (res.ok) {
+            setBillingEstado(data as BillingEstado);
+          } else {
+            console.error("Error obteniendo billing/estado:", data);
+            setBillingEstado(null);
+          }
+        } catch (err) {
+          console.error("Error cargando billing/estado:", err);
+          setBillingEstado(null);
         }
       } catch (err) {
         console.error("Error cargando planes:", err);
@@ -310,7 +421,6 @@ export default function EmpresaPlanesPage() {
     setPreviewTarget(null);
 
     try {
-      // PREVIEW
       const qs = new URLSearchParams();
       qs.set("empresa_id", empresaId);
       qs.set("nuevo_plan_id", planId);
@@ -348,7 +458,7 @@ export default function EmpresaPlanesPage() {
     try {
       const body: any = { empresaId, planId };
       if (typeof opts?.personalizadoCount === "number") {
-        body.maxAsesoresOverride = opts.personalizadoCount; // << enviar override al backend
+        body.maxAsesoresOverride = opts.personalizadoCount;
       }
 
       const res = await fetch("/api/solicitud-upgrade", {
@@ -417,18 +527,47 @@ export default function EmpresaPlanesPage() {
     }
   };
 
-  // 💵 formato
-  const fmtPrice = (p?: number | string | null) => {
-    if (p == null) return "—";
-    const val = typeof p === "string" ? parseFloat(p) : p;
-    if (!isFinite(val)) return "—";
-    if (val === 0) return "Gratis";
-    return new Intl.NumberFormat("es-AR", {
-      style: "currency",
-      currency: "ARS",
-      maximumFractionDigits: 0,
-    }).format(val);
+  const handleIrAPagar = async () => {
+    if (!empresaId || !planActual?.plan_id) return;
+
+    setLoadingPago(true);
+    setMensaje("Redirigiendo al checkout...");
+
+    try {
+      const res = await fetch("/api/billing/change-plan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          empresa_id: empresaId,
+          nuevo_plan_id: planActual.plan_id,
+          max_asesores_override: planActual.max_asesores > 20 ? planActual.max_asesores : undefined,
+        }),
+      });
+
+      const data: any = await res.json();
+
+      if (!res.ok || data?.error) {
+        console.error("Error ir a pagar:", data?.error || data);
+        setMensaje("❌ No se pudo generar el checkout.");
+        return;
+      }
+
+      if (data.checkoutUrl) {
+        window.location.href = data.checkoutUrl as string;
+        return;
+      }
+
+      setMensaje("✅ Operación procesada.");
+    } catch (err) {
+      console.error("Error generando checkout:", err);
+      setMensaje("❌ Error de red al generar checkout.");
+    } finally {
+      setLoadingPago(false);
+      setTimeout(() => setMensaje(null), 3000);
+    }
   };
+
+  // 💵 formato viejo
   const num = (x?: number | string | null) =>
     typeof x === "string" ? parseFloat(x) : (x ?? 0);
 
@@ -456,10 +595,9 @@ export default function EmpresaPlanesPage() {
         tierFromMaxAsesores(pl.max_asesores) === "Personalizado"
     );
     const raw = num(p?.precio_extra_por_asesor);
-    return raw > 0 ? raw : 1800; // fallback 1.800 por asesor extra
+    return raw > 0 ? raw : 1800;
   }, [planesDisponibles]);
 
-  // Neto para Core Personalizado (base: Core Premium + extra por asesor > 20)
   const personalizadoNeto = useMemo(() => {
     const extra = Math.max(0, personalCount - 20);
     return premiumPrecio + extra * extraUnitPrice;
@@ -470,7 +608,6 @@ export default function EmpresaPlanesPage() {
     [personalizadoNeto]
   );
 
-  // Bases Premium para Tracker y Full (combo)
   const trackerPremiumPrecio = useMemo(() => {
     const p = planesDisponibles.find(
       (pl) =>
@@ -480,7 +617,6 @@ export default function EmpresaPlanesPage() {
     return num(p?.precio);
   }, [planesDisponibles]);
 
-  // Tracker Inicial (para regla FULL = CORE + TRACKER INICIAL)
   const trackerInitialPrecio = useMemo(() => {
     const p = planesDisponibles.find(
       (pl) =>
@@ -504,6 +640,12 @@ export default function EmpresaPlanesPage() {
     [planActual]
   );
 
+  const acuerdoVisible = !!billingEstado?.acuerdoComercial?.activo;
+  const planVencido = !!billingEstado?.estado?.plan_vencido;
+  const estaSuspendida = !!billingEstado?.estado?.suspendida;
+  const enPeriodoGracia = !!billingEstado?.estado?.en_periodo_gracia;
+  const proximoCobro = billingEstado?.ciclo?.proximoCobro ?? planActual?.fecha_fin ?? null;
+
   if (loading) {
     return (
       <div className="flex justify-center items-center h-[60vh] text-gray-500">
@@ -514,41 +656,32 @@ export default function EmpresaPlanesPage() {
 
   const esTrial = planActual?.plan_nombre === "Trial";
 
-  // ---------- RENDER CARD GENERICO POR SECCIÓN ----------
-
   const renderPlanCard = (plan: Plan, sectionKind: TipoPlanKind) => {
     const uiName = getPlanUiName(plan);
     const tier = tierFromMaxAsesores(plan.max_asesores);
     const isPersonalizadoTier = tier === "Personalizado";
     const isActive = planActual?.plan_id === plan.id;
 
-    // Neto y total con IVA (precio tal cual está en BD por defecto)
     const neto = num(plan.precio);
     const totalConIVA = withIVA(neto);
-
     const capAsesores = isPersonalizadoTier ? personalCount : plan.max_asesores;
-
     const extraAsesores = Math.max(0, personalCount - 20);
 
-    // Neto dinámico para planes Personalizados según sección
     let netoPersonalizado: number | null = null;
     let totalPersonalizadoConIVA: number | null = null;
 
     if (isPersonalizadoTier) {
       if (sectionKind === "core") {
-        // Core Personalizado → usa cálculo basado en Core Premium
         netoPersonalizado = personalizadoNeto;
         totalPersonalizadoConIVA =
           personalizadoTotalConIVA ?? withIVA(personalizadoNeto);
       } else if (sectionKind === "tracker_only") {
-        // Tracker Personalizado → base Tracker Premium + extra por asesor
         if (trackerPremiumPrecio > 0) {
           netoPersonalizado =
             trackerPremiumPrecio + extraAsesores * extraUnitPrice;
           totalPersonalizadoConIVA = withIVA(netoPersonalizado);
         }
       } else if (sectionKind === "combo") {
-        // Full Personalizado → base Full Premium (o Core Premium + Tracker Inicial) + extra por asesor
         let baseFull = fullPremiumPrecio;
         if (!baseFull || baseFull <= 0) {
           const fallback = premiumPrecio + trackerInitialPrecio;
@@ -586,33 +719,31 @@ export default function EmpresaPlanesPage() {
             </span>
           </div>
 
-          {/* BLOQUE PRECIO */}
           {isPersonalizadoTier && netoPersonalizado !== null ? (
             <div className="mt-3">
               <div className="text-2xl font-bold">
-                Total: {fmtPrice(netoPersonalizado)}{" "}
+                Total: {fmtMoney(netoPersonalizado)}{" "}
                 <span className="text-base font-semibold">+ IVA</span>
               </div>
               <div className="text-xs text-gray-600">
                 Total:{" "}
                 {totalPersonalizadoConIVA != null
-                  ? fmtPrice(totalPersonalizadoConIVA)
+                  ? fmtMoney(totalPersonalizadoConIVA)
                   : "—"}
               </div>
             </div>
           ) : (
             <div className="mt-2">
               <div className="text-2xl font-bold">
-                {fmtPrice(neto)}{" "}
+                {fmtMoney(neto)}{" "}
                 <span className="text-base font-semibold">+ IVA</span>
               </div>
               <div className="text-xs text-gray-600">
-                Total: {totalConIVA != null ? fmtPrice(totalConIVA) : "—"}
+                Total: {totalConIVA != null ? fmtMoney(totalConIVA) : "—"}
               </div>
             </div>
           )}
 
-          {/* Slider en TODOS los planes Personalizados (Core / Full / Tracker) */}
           {isPersonalizadoTier && (
             <div className="mt-4">
               <label className="block text-sm text-gray-600 mb-1">
@@ -650,12 +781,9 @@ export default function EmpresaPlanesPage() {
             </div>
           )}
 
-          {/* Bullets según sección */}
           {sectionKind === "combo" && (
             <ul className="mt-4 text-sm text-gray-700 space-y-1">
-              <li>
-                <strong>• Hasta {capAsesores} asesores</strong>
-              </li>
+              <li><strong>• Hasta {capAsesores} asesores</strong></li>
               <li>• Valuador de Activos Inmobiliarios</li>
               <li>• Análisis de Factibilidad Constructiva</li>
               <li>• Sin límites de informes</li>
@@ -669,9 +797,7 @@ export default function EmpresaPlanesPage() {
 
           {sectionKind === "core" && (
             <ul className="mt-4 text-sm text-gray-700 space-y-1">
-              <li>
-                <strong>• Hasta {capAsesores} asesores</strong>
-              </li>
+              <li><strong>• Hasta {capAsesores} asesores</strong></li>
               <li>• Valuador de Activos Inmobiliarios</li>
               <li>• Análisis de Factibilidad Constructiva</li>
               <li>• Sin límites de informes</li>
@@ -682,9 +808,7 @@ export default function EmpresaPlanesPage() {
 
           {sectionKind === "tracker_only" && (
             <ul className="mt-4 text-sm text-gray-700 space-y-1">
-              <li>
-                <strong>• Hasta {capAsesores} asesores</strong>
-              </li>
+              <li><strong>• Hasta {capAsesores} asesores</strong></li>
               <li>• Registra las actividades de tus asesores</li>
               <li>• Carga tus captaciones y cierres</li>
               <li>• Maneja tus métricas y gráficos de desempeño</li>
@@ -693,7 +817,6 @@ export default function EmpresaPlanesPage() {
           )}
         </div>
 
-        {/* Botón */}
         <button
           onClick={handleClick}
           disabled={disabled}
@@ -724,6 +847,40 @@ export default function EmpresaPlanesPage() {
         </p>
       </section>
 
+      {/* Estado de pago / vencimiento */}
+      {(planVencido || estaSuspendida) && (
+        <section className="bg-red-50 border border-red-200 text-red-800 rounded-xl p-4">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div className="space-y-1">
+              <h2 className="font-semibold">Tu plan se encuentra vencido</h2>
+              <p className="text-sm">
+                {acuerdoVisible
+                  ? "Tu acuerdo comercial venció o requiere renovación para seguir utilizando la plataforma."
+                  : "Tu suscripción venció y necesitás regularizar el pago para seguir utilizando la plataforma."}
+              </p>
+              {proximoCobro ? (
+                <p className="text-sm">
+                  Vencimiento: <strong>{fmtDateOnly(proximoCobro)}</strong>
+                </p>
+              ) : null}
+              {enPeriodoGracia ? (
+                <p className="text-xs">
+                  Estás dentro del período de gracia.
+                </p>
+              ) : null}
+            </div>
+
+            <button
+              onClick={handleIrAPagar}
+              disabled={loadingPago}
+              className="rounded-lg bg-red-600 hover:bg-red-700 text-white px-4 py-2 text-sm font-medium disabled:opacity-60"
+            >
+              {loadingPago ? "Redirigiendo..." : "Ir a pagar"}
+            </button>
+          </div>
+        </section>
+      )}
+
       {/* Plan actual */}
       {planActual ? (
         <section className="bg-white shadow-sm rounded-xl p-6 border border-gray-200">
@@ -734,36 +891,130 @@ export default function EmpresaPlanesPage() {
                 Asesores permitidos: <strong>{planActual.max_asesores}</strong>
               </p>
               <p className="text-sm text-gray-600">
-                Inicio:{" "}
-                {new Date(planActual.fecha_inicio).toLocaleDateString("es-AR")}
+                Inicio: {fmtDateOnly(planActual.fecha_inicio)}
               </p>
               <p className="text-sm text-gray-600">
-                Vencimiento:{" "}
-                {new Date(planActual.fecha_fin).toLocaleDateString("es-AR")}
+                Vencimiento: {fmtDateOnly(planActual.fecha_fin)}
               </p>
+              {billingEstado?.pricing?.precio_neto_final != null ? (
+                <p className="text-sm text-gray-600">
+                  Importe actual:{" "}
+                  <strong>{fmtMoney(billingEstado.pricing.precio_total_final)}</strong>
+                </p>
+              ) : null}
             </div>
-            <span
-              className={`text-xs px-2 py-1 rounded self-start ${
-                planActual.activo
-                  ? "bg-green-100 text-green-700"
-                  : "bg-red-100 text-red-700"
-              }`}
-            >
-              {planActual.activo ? "Activo" : "Inactivo"}
-            </span>
+            <div className="flex flex-col items-start gap-2">
+              <span
+                className={`text-xs px-2 py-1 rounded self-start ${
+                  planActual.activo
+                    ? "bg-green-100 text-green-700"
+                    : "bg-red-100 text-red-700"
+                }`}
+              >
+                {planActual.activo ? "Activo" : "Inactivo"}
+              </span>
+
+              {(planVencido || estaSuspendida) && (
+                <button
+                  onClick={handleIrAPagar}
+                  disabled={loadingPago}
+                  className="rounded-lg border border-blue-600 text-blue-700 hover:bg-blue-50 px-3 py-2 text-sm font-medium disabled:opacity-60"
+                >
+                  {loadingPago ? "Procesando..." : "Ir a pagar"}
+                </button>
+              )}
+            </div>
           </div>
 
           {esTrial && (
             <p className="mt-4 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3">
-              🔸 Estás usando el plan <strong>Trial</strong> (prueba gratuita
-              de 7 días). No podés agregar asesores con este plan. Realizá un{" "}
-              <strong>upgrade</strong> para habilitar tus asesores.
+              🔸 Estás usando el plan <strong>Trial</strong> (prueba gratuita de 7 días).
+              No podés agregar asesores con este plan. Realizá un <strong>upgrade</strong> para habilitar tus asesores.
             </p>
           )}
         </section>
       ) : (
         <section className="bg-white shadow-sm rounded-xl p-6 border border-dashed border-gray-300">
           <p className="text-gray-600">No se encontró un plan activo.</p>
+        </section>
+      )}
+
+      {/* Acuerdo comercial: solo si existe */}
+      {acuerdoVisible && billingEstado?.acuerdoComercial && (
+        <section className="bg-white shadow-sm rounded-xl p-6 border border-gray-200">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-semibold">Acuerdo Comercial</h2>
+              <p className="text-sm text-gray-600">
+                Este acuerdo define las condiciones comerciales actualmente aplicadas a tu empresa.
+              </p>
+            </div>
+            <span className="text-xs px-2 py-1 rounded bg-blue-100 text-blue-700">
+              Activo
+            </span>
+          </div>
+
+          <div className="mt-4 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 text-sm">
+            <div className="rounded-lg border p-3">
+              <div className="text-xs text-gray-500 mb-1">Tipo</div>
+              <div className="font-medium">{billingEstado.acuerdoComercial.tipo || "—"}</div>
+            </div>
+
+            <div className="rounded-lg border p-3">
+              <div className="text-xs text-gray-500 mb-1">Importe neto</div>
+              <div className="font-medium">
+                {fmtMoney(billingEstado.acuerdoComercial.precio_neto_final ?? null)}
+              </div>
+            </div>
+
+            <div className="rounded-lg border p-3">
+              <div className="text-xs text-gray-500 mb-1">Importe total</div>
+              <div className="font-medium">
+                {fmtMoney(billingEstado.acuerdoComercial.precio_total_final ?? null)}
+              </div>
+            </div>
+
+            <div className="rounded-lg border p-3">
+              <div className="text-xs text-gray-500 mb-1">IVA</div>
+              <div className="font-medium">
+                {fmtModoIVA(billingEstado.acuerdoComercial.modo_iva)}
+                {billingEstado.acuerdoComercial.iva_pct != null
+                  ? ` (${billingEstado.acuerdoComercial.iva_pct}%)`
+                  : ""}
+              </div>
+            </div>
+
+            <div className="rounded-lg border p-3">
+              <div className="text-xs text-gray-500 mb-1">Cupo acordado</div>
+              <div className="font-medium">
+                {billingEstado.acuerdoComercial.max_asesores_final ?? "—"}
+              </div>
+            </div>
+
+            <div className="rounded-lg border p-3">
+              <div className="text-xs text-gray-500 mb-1">Extra por asesor</div>
+              <div className="font-medium">
+                {fmtMoney(billingEstado.acuerdoComercial.precio_extra_por_asesor_final ?? null)}
+              </div>
+            </div>
+
+            <div className="rounded-lg border p-3 md:col-span-2 xl:col-span-3">
+              <div className="text-xs text-gray-500 mb-1">Vigencia / próximo vencimiento</div>
+              <div className="font-medium">{fmtDateOnly(proximoCobro)}</div>
+            </div>
+          </div>
+
+          {(planVencido || estaSuspendida) && (
+            <div className="mt-4">
+              <button
+                onClick={handleIrAPagar}
+                disabled={loadingPago}
+                className="rounded-lg bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 text-sm font-medium disabled:opacity-60"
+              >
+                {loadingPago ? "Redirigiendo..." : "Ir a pagar"}
+              </button>
+            </div>
+          )}
         </section>
       )}
 
@@ -830,7 +1081,6 @@ export default function EmpresaPlanesPage() {
         </section>
       )}
 
-      {/* Mensaje temporal */}
       {mensaje && (
         <p className="text-center text-blue-600 font-medium">{mensaje}</p>
       )}
@@ -861,16 +1111,13 @@ export default function EmpresaPlanesPage() {
             {previewTipo === "upgrade" && (
               <div className="border rounded-lg p-3 mb-3 bg-emerald-50 border-emerald-200">
                 <p className="text-sm">
-                  Delta neto:{" "}
-                  <strong>{fmtPrice(previewDeltaNeto)}</strong>
+                  Delta neto: <strong>{fmtMoney(previewDeltaNeto)}</strong>
                 </p>
                 <p className="text-sm">
-                  IVA (21%):{" "}
-                  <strong>{fmtPrice(previewIva)}</strong>
+                  IVA: <strong>{fmtMoney(previewIva)}</strong>
                 </p>
                 <p className="text-sm">
-                  Total a pagar ahora:{" "}
-                  <strong>{fmtPrice(previewTotal)}</strong>
+                  Total a pagar ahora: <strong>{fmtMoney(previewTotal)}</strong>
                 </p>
               </div>
             )}
@@ -881,9 +1128,7 @@ export default function EmpresaPlanesPage() {
                   El cambio se aplicará desde:{" "}
                   <strong>
                     {preview.aplicar_desde
-                      ? new Date(
-                          preview.aplicar_desde
-                        ).toLocaleDateString("es-AR")
+                      ? new Date(preview.aplicar_desde).toLocaleDateString("es-AR")
                       : "próximo ciclo"}
                   </strong>
                 </p>

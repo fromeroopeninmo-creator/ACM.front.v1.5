@@ -17,10 +17,6 @@ const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE);
 
-// ⚙️ flag de simulación: si es "true", marcamos el pago como OK y activamos el plan sin pasar por MP
-const SIMULAR_PAGO_OK =
-  process.env.NEXT_PUBLIC_BILLING_SIMULATE === "true";
-
 // Helper: base URL pública (para back_urls de Mercado Pago)
 function getBaseUrl(): string | null {
   const envUrl =
@@ -93,62 +89,6 @@ function calcularImporteFiscalDesdeModo(params: {
   };
 }
 
-/** Helper para activar inmediatamente el nuevo plan (simulando que el pago fue OK). */
-async function simularActivarPlanInmediato(
-  empresaId: string,
-  nuevoPlanId: string,
-  maxAsesoresOverride?: number
-) {
-  const nowISO = new Date().toISOString();
-  const today = new Date().toISOString().slice(0, 10);
-
-  // 1) Desactivar el plan actual
-  await supabaseAdmin
-    .from("empresas_planes")
-    .update({ activo: false, updated_at: nowISO })
-    .eq("empresa_id", empresaId)
-    .eq("activo", true);
-
-  // 2) Ver si ya hay un registro para ese plan
-  const { data: existente } = await supabaseAdmin
-    .from("empresas_planes")
-    .select("id")
-    .eq("empresa_id", empresaId)
-    .eq("plan_id", nuevoPlanId)
-    .order("fecha_inicio", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (existente?.id) {
-    const patch: any = {
-      activo: true,
-      fecha_fin: null,
-      updated_at: nowISO,
-    };
-    if (typeof maxAsesoresOverride === "number") {
-      patch.max_asesores_override = maxAsesoresOverride;
-    }
-
-    await supabaseAdmin
-      .from("empresas_planes")
-      .update(patch)
-      .eq("id", existente.id);
-  } else {
-    const insert: any = {
-      empresa_id: empresaId,
-      plan_id: nuevoPlanId,
-      fecha_inicio: today,
-      activo: true,
-      updated_at: nowISO,
-    };
-    if (typeof maxAsesoresOverride === "number") {
-      insert.max_asesores_override = maxAsesoresOverride;
-    }
-
-    await supabaseAdmin.from("empresas_planes").insert(insert);
-  }
-}
-
 /** Helper para crear preferencia de Mercado Pago y devolver checkoutUrl. */
 async function crearPreferenciaMercadoPago(params: {
   movimientoId: string;
@@ -169,7 +109,7 @@ async function crearPreferenciaMercadoPago(params: {
   const prefBody = {
     items: [
       {
-        title: "Upgrade de plan VAI",
+        title: "Suscripción / cambio de plan VAI",
         quantity: 1,
         currency_id: "ARS",
         unit_price: amountTotal,
@@ -184,16 +124,13 @@ async function crearPreferenciaMercadoPago(params: {
         }
       : undefined,
     auto_return: "approved",
-
-    // 👇 máximo 1 cuota
     payment_methods: {
       installments: 1,
     },
-
     metadata: {
       movimiento_id: params.movimientoId,
       empresa_id: params.empresaId,
-      tipo: "upgrade_plan",
+      tipo: "billing_plan",
     },
   };
 
@@ -221,10 +158,7 @@ async function crearPreferenciaMercadoPago(params: {
     }
 
     const prefJson = (await mpRes.json()) as any;
-    const url =
-      prefJson.init_point ||
-      prefJson.sandbox_init_point ||
-      null;
+    const url = prefJson.init_point || prefJson.sandbox_init_point || null;
     return typeof url === "string" ? url : null;
   } catch (err: any) {
     console.error("Excepción creando preferencia de MP:", err?.message);
@@ -232,20 +166,129 @@ async function crearPreferenciaMercadoPago(params: {
   }
 }
 
+/** Busca un movimiento pending reutilizable del ciclo actual. */
+async function buscarMovimientoPending(params: {
+  empresaId: string;
+  cicloInicio: string;
+  cicloFin: string;
+  subtipo: string;
+}) {
+  const { data, error } = await supabaseAdmin
+    .from("movimientos_financieros")
+    .select("id, estado, metadata, total, monto_neto, iva")
+    .eq("empresa_id", params.empresaId)
+    .eq("tipo", "ajuste")
+    .eq("estado", "pending")
+    .contains("metadata", { subtipo: params.subtipo })
+    .gte("fecha", params.cicloInicio)
+    .lte("fecha", params.cicloFin);
+
+  if (error) {
+    throw new Error(`Error buscando movimientos existentes: ${error.message}`);
+  }
+
+  return data && data.length > 0 ? data[0] : null;
+}
+
+/** Crea un movimiento pending para checkout. */
+async function crearMovimientoPending(params: {
+  empresaId: string;
+  descripcion: string;
+  cicloInicio: string;
+  cicloFin: string;
+  subtipo: string;
+  planActualId: string;
+  nuevoPlanId: string;
+  deltaNeto: number;
+  iva: number;
+  total: number;
+  diasCiclo: number;
+  diasRestantes: number;
+  factor: number;
+  maxAsesoresOverride?: number;
+  actualConfig: any;
+  nuevoConfig: any;
+}) {
+  const metadata: any = {
+    subtipo: params.subtipo,
+    plan_actual_id: params.planActualId,
+    nuevo_plan_id: params.nuevoPlanId,
+    ciclo_inicio: params.cicloInicio,
+    ciclo_fin: params.cicloFin,
+    dias_ciclo: params.diasCiclo,
+    dias_restantes: params.diasRestantes,
+    factor: params.factor,
+    iva: round2(params.iva),
+    total: round2(params.total),
+    pricing_actual: {
+      precio_base_neto: params.actualConfig.precio_base_neto,
+      precio_neto_final: params.actualConfig.precio_neto_final,
+      modo_iva: params.actualConfig.modo_iva,
+      iva_pct: params.actualConfig.iva_pct,
+      iva_importe: params.actualConfig.iva_importe,
+      precio_total_final: params.actualConfig.precio_total_final,
+      pricing_source: params.actualConfig.pricing_source,
+      agreement_applied: params.actualConfig.agreement_applied,
+      agreement_id: params.actualConfig.agreement_id,
+      agreement_tipo: params.actualConfig.agreement_tipo,
+    },
+    pricing_nuevo: {
+      precio_base_neto: params.nuevoConfig.precio_base_neto,
+      precio_neto_final: params.nuevoConfig.precio_neto_final,
+      modo_iva: params.nuevoConfig.modo_iva,
+      iva_pct: params.nuevoConfig.iva_pct,
+      iva_importe: params.nuevoConfig.iva_importe,
+      precio_total_final: params.nuevoConfig.precio_total_final,
+      pricing_source: params.nuevoConfig.pricing_source,
+      agreement_applied: params.nuevoConfig.agreement_applied,
+      agreement_id: params.nuevoConfig.agreement_id,
+      agreement_tipo: params.nuevoConfig.agreement_tipo,
+    },
+  };
+
+  if (typeof params.maxAsesoresOverride === "number") {
+    metadata.max_asesores_override = params.maxAsesoresOverride;
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from("movimientos_financieros")
+    .insert([
+      {
+        empresa_id: params.empresaId,
+        tipo: "ajuste",
+        estado: "pending",
+        fecha: new Date().toISOString(),
+        moneda: "ARS",
+        monto_neto: round2(params.deltaNeto),
+        iva: round2(params.iva),
+        total: round2(params.total),
+        descripcion: params.descripcion,
+        metadata,
+      },
+    ])
+    .select("id")
+    .single();
+
+  if (error) {
+    throw new Error(`No se pudo crear el movimiento de cobro: ${error.message}`);
+  }
+
+  return data?.id ?? null;
+}
+
 /**
  * POST /api/billing/change-plan
  * Body: {
  *   nuevo_plan_id: string,
  *   empresa_id?: string,
- *   max_asesores_override?: number   // usado para plan "Personalizado"
+ *   max_asesores_override?: number
  * }
  *
- * - Upgrade: crea movimiento 'ajuste' con metadata.subtipo = 'upgrade_prorrateo' (pending).
- *   En modo simulación también marca el movimiento como paid y activa el plan.
- *   En modo real crea un checkout de Mercado Pago y NO activa el plan (lo hará el webhook).
- *
- * - Downgrade: programa cambio al fin del ciclo en `suscripciones`
- *   (plan_proximo_id / cambio_programado_para).
+ * Reglas:
+ * - Nunca activa plan sin pago.
+ * - Upgrade: checkout por diferencia o ciclo completo.
+ * - Mismo plan vencido: checkout de renovación del ciclo completo.
+ * - Downgrade: programa el cambio al próximo ciclo.
  */
 export async function POST(req: Request) {
   try {
@@ -265,7 +308,6 @@ export async function POST(req: Request) {
       );
     }
 
-    // Cliente con contexto del usuario (RLS ON) → auth + lecturas seguras
     const supabase = supabaseServer();
     const ctx = await assertAuthAndGetContext(supabase);
     const empresaId = await getEmpresaIdForActor({
@@ -281,7 +323,6 @@ export async function POST(req: Request) {
       );
     }
 
-    // Estado actual (basado en empresas_planes + planes)
     const sus = await getSuscripcionEstado(supabase, empresaId);
     if (!sus?.plan_actual_id) {
       return NextResponse.json(
@@ -292,17 +333,12 @@ export async function POST(req: Request) {
 
     const { ciclo_inicio, ciclo_fin, plan_actual_id } = sus;
 
-    // Configuración ACTUAL:
-    // - Sí considera acuerdo comercial vigente si existe
     const actualConfig = await resolveEmpresaBillingConfig({
       supabase,
       empresaId,
       planId: plan_actual_id,
     });
 
-    // Configuración NUEVA:
-    // - NO hereda automáticamente el acuerdo comercial actual
-    // - Sí permite simular override de max asesores para "Personalizado"
     const nuevoConfig = await resolveEmpresaBillingConfig({
       supabase,
       empresaId,
@@ -314,20 +350,99 @@ export async function POST(req: Request) {
     const precioActual = round2(actualConfig.precio_neto_final);
     const precioNuevo = round2(nuevoConfig.precio_neto_final);
 
+    const dias = calcularDiasCicloYRestantes({
+      cicloInicioISO: ciclo_inicio,
+      cicloFinISO: ciclo_fin,
+    });
+
+    const cicloVencido = dias.diasRestantes <= 0;
     const isUpgrade = precioNuevo > precioActual;
     const isDowngrade = precioNuevo < precioActual;
+    const isSamePlan = nuevoPlanId === plan_actual_id;
     const isTrialOrFree = precioActual <= 0;
 
     // -------------------------
-    // UPGRADE → crear movimiento financiero 'ajuste' (subtipo upgrade_prorrateo)
+    // MISMO PLAN VENCIDO → generar checkout de renovación
     // -------------------------
-    if (isUpgrade) {
-      const dias = calcularDiasCicloYRestantes({
-        cicloInicioISO: ciclo_inicio,
-        cicloFinISO: ciclo_fin,
+    if (isSamePlan && cicloVencido) {
+      const existing = await buscarMovimientoPending({
+        empresaId,
+        cicloInicio: ciclo_inicio,
+        cicloFin: ciclo_fin,
+        subtipo: "renovacion_ciclo",
       });
 
-      const needsFullCycle = isTrialOrFree || dias.diasRestantes <= 0;
+      if (existing?.id) {
+        const checkoutUrl = await crearPreferenciaMercadoPago({
+          movimientoId: existing.id as string,
+          empresaId,
+          totalConIVA: Number(existing.total ?? actualConfig.precio_total_final ?? 0),
+        });
+
+        return NextResponse.json(
+          {
+            accion: "renovacion",
+            movimiento_id: existing.id,
+            checkoutUrl,
+            delta: {
+              neto: round2(Number(existing.monto_neto ?? actualConfig.precio_neto_final ?? 0)),
+              iva: round2(Number(existing.iva ?? actualConfig.iva_importe ?? 0)),
+              total: round2(Number(existing.total ?? actualConfig.precio_total_final ?? 0)),
+              moneda: "ARS",
+            },
+            nota: "Se reutilizó un checkout pendiente de renovación.",
+          },
+          { status: 200 }
+        );
+      }
+
+      const movimientoId = await crearMovimientoPending({
+        empresaId,
+        descripcion: "Renovación de plan (ciclo completo)",
+        cicloInicio: ciclo_inicio,
+        cicloFin: ciclo_fin,
+        subtipo: "renovacion_ciclo",
+        planActualId: plan_actual_id,
+        nuevoPlanId,
+        deltaNeto: round2(actualConfig.precio_neto_final),
+        iva: round2(actualConfig.iva_importe),
+        total: round2(actualConfig.precio_total_final),
+        diasCiclo: dias.diasCiclo,
+        diasRestantes: 0,
+        factor: 1,
+        maxAsesoresOverride,
+        actualConfig,
+        nuevoConfig: actualConfig,
+      });
+
+      const checkoutUrl = await crearPreferenciaMercadoPago({
+        movimientoId: movimientoId as string,
+        empresaId,
+        totalConIVA: actualConfig.precio_total_final,
+      });
+
+      return NextResponse.json(
+        {
+          accion: "renovacion",
+          movimiento_id: movimientoId,
+          checkoutUrl,
+          delta: {
+            neto: round2(actualConfig.precio_neto_final),
+            iva: round2(actualConfig.iva_importe),
+            total: round2(actualConfig.precio_total_final),
+            moneda: "ARS",
+          },
+          nota: "Se generó el checkout de renovación del plan actual.",
+        },
+        { status: 200 }
+      );
+    }
+
+    // -------------------------
+    // UPGRADE → checkout
+    // -------------------------
+    if (isUpgrade) {
+      const needsFullCycle = isTrialOrFree || cicloVencido;
 
       let deltaNeto = 0;
       let iva = 0;
@@ -354,61 +469,24 @@ export async function POST(req: Request) {
         total = round2(fiscal.total);
       }
 
-      // Idempotencia: buscamos un movimiento pending del ciclo con este subtipo
-      // ⚠️ Usamos supabaseAdmin para evitar RLS en movimientos_financieros
-      const { data: existing, error: exErr } = await supabaseAdmin
-        .from("movimientos_financieros")
-        .select("id, estado, metadata")
-        .eq("empresa_id", empresaId)
-        .eq("tipo", "ajuste")
-        .eq("estado", "pending")
-        .contains("metadata", { subtipo: "upgrade_prorrateo" })
-        .gte("fecha", ciclo_inicio)
-        .lte("fecha", ciclo_fin);
+      const existing = await buscarMovimientoPending({
+        empresaId,
+        cicloInicio: ciclo_inicio,
+        cicloFin: ciclo_fin,
+        subtipo: "upgrade_prorrateo",
+      });
 
-      if (exErr) {
-        return NextResponse.json(
-          {
-            error: "Error buscando movimientos existentes",
-            detail: exErr.message,
-          },
-          { status: 500 }
-        );
-      }
-
-      // ⚠️ Caso: ya hay un movimiento pending en este ciclo
-      if (existing && existing.length > 0) {
-        const existingId = existing[0].id as string;
-        let checkoutUrl: string | null = null;
-
-        if (SIMULAR_PAGO_OK && existingId) {
-          const nowISO = new Date().toISOString();
-
-          // Marcar ese movimiento como paid
-          await supabaseAdmin
-            .from("movimientos_financieros")
-            .update({ estado: "paid", updated_at: nowISO })
-            .eq("id", existingId);
-
-          // Activar inmediatamente el nuevo plan
-          await simularActivarPlanInmediato(
-            empresaId,
-            nuevoPlanId,
-            maxAsesoresOverride
-          );
-        } else if (existingId) {
-          // Modo REAL → crear preferencia de MP
-          checkoutUrl = await crearPreferenciaMercadoPago({
-            movimientoId: existingId,
-            empresaId,
-            totalConIVA: total,
-          });
-        }
+      if (existing?.id) {
+        const checkoutUrl = await crearPreferenciaMercadoPago({
+          movimientoId: existing.id as string,
+          empresaId,
+          totalConIVA: total,
+        });
 
         return NextResponse.json(
           {
             accion: "upgrade",
-            movimiento_id: existingId,
+            movimiento_id: existing.id,
             checkoutUrl,
             delta: {
               neto: round2(deltaNeto),
@@ -440,117 +518,43 @@ export async function POST(req: Request) {
               agreement_id: nuevoConfig.agreement_id,
               agreement_tipo: nuevoConfig.agreement_tipo,
             },
-            nota: SIMULAR_PAGO_OK
-              ? "Simulación: se reutilizó el movimiento pendiente existente, se marcó como 'paid' y el nuevo plan ya está activo."
-              : "Movimiento pendiente existente reutilizado. Tras el pago en Mercado Pago, el plan se activará vía webhook.",
+            nota: "Movimiento pendiente existente reutilizado. Tras el pago en Mercado Pago, el plan se activará vía webhook.",
           },
           { status: 200 }
         );
       }
 
-      // Crear nuevo movimiento pending
-      const metadata: any = {
+      const movimientoId = await crearMovimientoPending({
+        empresaId,
+        descripcion: needsFullCycle
+          ? "Upgrade de plan (ciclo completo)"
+          : "Upgrade de plan prorrateado",
+        cicloInicio: ciclo_inicio,
+        cicloFin: ciclo_fin,
         subtipo: "upgrade_prorrateo",
-        plan_actual_id,
-        nuevo_plan_id: nuevoPlanId,
-        ciclo_inicio,
-        ciclo_fin,
-        dias_ciclo: dias.diasCiclo,
-        dias_restantes: needsFullCycle ? dias.diasCiclo : dias.diasRestantes,
+        planActualId: plan_actual_id,
+        nuevoPlanId,
+        deltaNeto,
+        iva,
+        total,
+        diasCiclo: dias.diasCiclo,
+        diasRestantes: needsFullCycle ? dias.diasCiclo : dias.diasRestantes,
         factor,
-        iva: round2(iva),
-        total: round2(total),
-        pricing_actual: {
-          precio_base_neto: actualConfig.precio_base_neto,
-          precio_neto_final: actualConfig.precio_neto_final,
-          modo_iva: actualConfig.modo_iva,
-          iva_pct: actualConfig.iva_pct,
-          iva_importe: actualConfig.iva_importe,
-          precio_total_final: actualConfig.precio_total_final,
-          pricing_source: actualConfig.pricing_source,
-          agreement_applied: actualConfig.agreement_applied,
-          agreement_id: actualConfig.agreement_id,
-          agreement_tipo: actualConfig.agreement_tipo,
-        },
-        pricing_nuevo: {
-          precio_base_neto: nuevoConfig.precio_base_neto,
-          precio_neto_final: nuevoConfig.precio_neto_final,
-          modo_iva: nuevoConfig.modo_iva,
-          iva_pct: nuevoConfig.iva_pct,
-          iva_importe: nuevoConfig.iva_importe,
-          precio_total_final: nuevoConfig.precio_total_final,
-          pricing_source: nuevoConfig.pricing_source,
-          agreement_applied: nuevoConfig.agreement_applied,
-          agreement_id: nuevoConfig.agreement_id,
-          agreement_tipo: nuevoConfig.agreement_tipo,
-        },
-      };
+        maxAsesoresOverride,
+        actualConfig,
+        nuevoConfig,
+      });
 
-      if (typeof maxAsesoresOverride === "number") {
-        metadata.max_asesores_override = maxAsesoresOverride;
-      }
-
-      const { data: ins, error: insErr } = await supabaseAdmin
-        .from("movimientos_financieros")
-        .insert([
-          {
-            empresa_id: empresaId,
-            tipo: "ajuste", // ✅ permitido por el CHECK
-            estado: "pending",
-            fecha: new Date().toISOString(),
-            moneda: "ARS",
-            monto_neto: round2(deltaNeto),
-            iva: round2(iva),
-            total: round2(total),
-            descripcion: needsFullCycle
-              ? "Upgrade de plan (ciclo completo)"
-              : "Upgrade de plan prorrateado",
-            metadata,
-          },
-        ])
-        .select("id")
-        .single();
-
-      if (insErr) {
-        return NextResponse.json(
-          {
-            error: "No se pudo crear el movimiento de prorrateo",
-            detail: insErr.message,
-          },
-          { status: 500 }
-        );
-      }
-
-      let checkoutUrl: string | null = null;
-
-      // 🔧 SIMULACIÓN DE PAGO OK: marcamos el movimiento como paid
-      // y activamos el nuevo plan inmediatamente.
-      if (SIMULAR_PAGO_OK && ins?.id) {
-        const nowISO = new Date().toISOString();
-
-        await supabaseAdmin
-          .from("movimientos_financieros")
-          .update({ estado: "paid", updated_at: nowISO })
-          .eq("id", ins.id);
-
-        await simularActivarPlanInmediato(
-          empresaId,
-          nuevoPlanId,
-          maxAsesoresOverride
-        );
-      } else if (ins?.id) {
-        // Modo REAL → crear preferencia de MP
-        checkoutUrl = await crearPreferenciaMercadoPago({
-          movimientoId: ins.id,
-          empresaId,
-          totalConIVA: total,
-        });
-      }
+      const checkoutUrl = await crearPreferenciaMercadoPago({
+        movimientoId: movimientoId as string,
+        empresaId,
+        totalConIVA: total,
+      });
 
       return NextResponse.json(
         {
           accion: "upgrade",
-          movimiento_id: ins?.id ?? null,
+          movimiento_id: movimientoId,
           checkoutUrl,
           delta: {
             neto: round2(deltaNeto),
@@ -582,9 +586,7 @@ export async function POST(req: Request) {
             agreement_id: nuevoConfig.agreement_id,
             agreement_tipo: nuevoConfig.agreement_tipo,
           },
-          nota: SIMULAR_PAGO_OK
-            ? "Simulación: el pago se marcó como 'paid' y el nuevo plan ya está activo."
-            : needsFullCycle
+          nota: needsFullCycle
             ? "Al completar el pago en Mercado Pago, el nuevo plan se activará por el valor completo del ciclo."
             : "Al completar el pago en Mercado Pago, el nuevo plan se activará con el prorrateo de la diferencia.",
         },
@@ -596,7 +598,6 @@ export async function POST(req: Request) {
     // DOWNGRADE → programar cambio al fin del ciclo
     // -------------------------
     if (isDowngrade) {
-      // ⚠️ Usamos supabaseAdmin para evitar RLS en suscripciones
       const { error: updErr } = await supabaseAdmin
         .from("suscripciones")
         .update({
@@ -651,7 +652,7 @@ export async function POST(req: Request) {
     }
 
     // -------------------------
-    // Mismo precio → no hay cambio financiero
+    // MISMO PRECIO Y NO VENCIDO → no hay cambio financiero
     // -------------------------
     return NextResponse.json(
       {

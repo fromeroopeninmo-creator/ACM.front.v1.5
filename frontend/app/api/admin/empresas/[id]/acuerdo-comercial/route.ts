@@ -205,6 +205,149 @@ function validateCreateBody(body: CreateAcuerdoBody) {
   return null;
 }
 
+function isDateInRangeToday(fechaInicio: string, fechaFin?: string | null) {
+  const hoy = new Date().toISOString().slice(0, 10);
+  if (fechaInicio > hoy) return false;
+  if (fechaFin && fechaFin < hoy) return false;
+  return true;
+}
+
+function addDaysToDateOnly(dateOnly: string, days: number): string {
+  const d = new Date(`${dateOnly}T00:00:00.000Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+async function resolvePlanFechaFin(params: {
+  planId: string;
+  fechaInicio: string;
+  fechaFin?: string | null;
+}) {
+  if (params.fechaFin) return params.fechaFin;
+
+  const { data: plan, error } = await supabaseAdmin
+    .from("planes")
+    .select("duracion_dias")
+    .eq("id", params.planId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`No se pudo resolver duracion_dias del plan: ${error.message}`);
+  }
+
+  const duracionDias =
+    typeof plan?.duracion_dias === "number" && plan.duracion_dias > 0
+      ? plan.duracion_dias
+      : 30;
+
+  return addDaysToDateOnly(params.fechaInicio, duracionDias);
+}
+
+async function syncEmpresaPlanOperativoConAcuerdo(params: {
+  empresaId: string;
+  planId: string;
+  fechaInicio: string;
+  fechaFin?: string | null;
+  maxAsesoresOverride?: number | null;
+}) {
+  const acuerdoVigenteHoy = isDateInRangeToday(params.fechaInicio, params.fechaFin);
+
+  if (!acuerdoVigenteHoy) {
+    return {
+      synced: false,
+      reason: "acuerdo_fuera_de_vigencia_hoy",
+      planRowId: null as string | null,
+      fechaFinAplicada: params.fechaFin ?? null,
+    };
+  }
+
+  const fechaFinAplicada = await resolvePlanFechaFin({
+    planId: params.planId,
+    fechaInicio: params.fechaInicio,
+    fechaFin: params.fechaFin,
+  });
+
+  const { data: planActivoActual, error: activoErr } = await supabaseAdmin
+    .from("empresas_planes")
+    .select("id, plan_id, fecha_inicio, fecha_fin, max_asesores_override, activo")
+    .eq("empresa_id", params.empresaId)
+    .eq("activo", true)
+    .order("fecha_inicio", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (activoErr) {
+    throw new Error(`Error leyendo plan activo actual de la empresa: ${activoErr.message}`);
+  }
+
+  if (planActivoActual?.id && String(planActivoActual.plan_id) === params.planId) {
+    const { data: updated, error: updErr } = await supabaseAdmin
+      .from("empresas_planes")
+      .update({
+        fecha_inicio: params.fechaInicio,
+        fecha_fin: fechaFinAplicada,
+        max_asesores_override:
+          params.maxAsesoresOverride == null ? null : params.maxAsesoresOverride,
+        activo: true,
+      })
+      .eq("id", planActivoActual.id)
+      .select("id")
+      .single();
+
+    if (updErr) {
+      throw new Error(`Error actualizando empresas_planes existente: ${updErr.message}`);
+    }
+
+    return {
+      synced: true,
+      reason: "updated_existing_active_plan",
+      planRowId: updated?.id ? String(updated.id) : null,
+      fechaFinAplicada,
+    };
+  }
+
+  if (planActivoActual?.id) {
+    const { error: deactivateErr } = await supabaseAdmin
+      .from("empresas_planes")
+      .update({
+        activo: false,
+      })
+      .eq("empresa_id", params.empresaId)
+      .eq("activo", true);
+
+    if (deactivateErr) {
+      throw new Error(`Error desactivando plan activo anterior: ${deactivateErr.message}`);
+    }
+  }
+
+  const { data: inserted, error: insertErr } = await supabaseAdmin
+    .from("empresas_planes")
+    .insert([
+      {
+        empresa_id: params.empresaId,
+        plan_id: params.planId,
+        fecha_inicio: params.fechaInicio,
+        fecha_fin: fechaFinAplicada,
+        max_asesores_override:
+          params.maxAsesoresOverride == null ? null : params.maxAsesoresOverride,
+        activo: true,
+      },
+    ])
+    .select("id")
+    .single();
+
+  if (insertErr) {
+    throw new Error(`Error insertando plan operativo alineado al acuerdo: ${insertErr.message}`);
+  }
+
+  return {
+    synced: true,
+    reason: "inserted_new_active_plan",
+    planRowId: inserted?.id ? String(inserted.id) : null,
+    fechaFinAplicada,
+  };
+}
+
 export async function GET(
   _req: Request,
   { params }: { params: { id: string } }
@@ -394,10 +537,46 @@ export async function POST(
       );
     }
 
+    let planSync:
+      | {
+          synced: boolean;
+          reason: string;
+          planRowId: string | null;
+          fechaFinAplicada: string | null;
+        }
+      | null = null;
+
+    if (body.plan_id) {
+      try {
+        planSync = await syncEmpresaPlanOperativoConAcuerdo({
+          empresaId,
+          planId: body.plan_id,
+          fechaInicio: body.fecha_inicio,
+          fechaFin: body.fecha_fin,
+          maxAsesoresOverride: body.max_asesores_override,
+        });
+      } catch (syncErr: any) {
+        await supabaseAdmin
+          .from("empresa_acuerdos_comerciales")
+          .delete()
+          .eq("id", created.id);
+
+        return NextResponse.json(
+          {
+            error:
+              syncErr?.message ||
+              "No se pudo sincronizar empresas_planes con el acuerdo comercial.",
+          },
+          { status: 500 }
+        );
+      }
+    }
+
     return NextResponse.json(
       {
         ok: true,
         acuerdo: created,
+        plan_sync: planSync,
       },
       { status: 201 }
     );

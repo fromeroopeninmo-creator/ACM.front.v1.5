@@ -58,6 +58,24 @@ async function resolveUserRole(userId: string): Promise<Role | null> {
   return (p2?.role as Role) ?? null;
 }
 
+async function resolveProfileId(userId: string): Promise<string | null> {
+  const { data: p1 } = await supabaseAdmin
+    .from("profiles")
+    .select("id")
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (p1?.id) return String(p1.id);
+
+  const { data: p2 } = await supabaseAdmin
+    .from("profiles")
+    .select("id")
+    .eq("id", userId)
+    .maybeSingle();
+
+  return p2?.id ? String(p2.id) : null;
+}
+
 async function assertAdmin() {
   const server = supabaseServer();
   const {
@@ -79,9 +97,12 @@ async function assertAdmin() {
     };
   }
 
+  const profileId = await resolveProfileId(user.id);
+
   return {
     ok: true as const,
     userId: user.id,
+    profileId,
   };
 }
 
@@ -172,13 +193,13 @@ function validateUpdatePayload(payload: Record<string, any>) {
 
 export async function PUT(
   req: Request,
-  { params }: { params: { empresaId: string; acuerdoId: string } }
+  { params }: { params: { id: string; acuerdoId: string } }
 ) {
   try {
     const auth = await assertAdmin();
     if (!auth.ok) return auth.response;
 
-    const empresaId = params?.empresaId;
+    const empresaId = params?.id;
     const acuerdoId = params?.acuerdoId;
 
     if (!empresaId || !acuerdoId) {
@@ -208,7 +229,7 @@ export async function PUT(
     }
 
     const payload: Record<string, any> = {
-      updated_by: auth.userId,
+      updated_by: auth.profileId,
     };
 
     if ("plan_id" in bodyRaw) payload.plan_id = normalizeNullableString(bodyRaw.plan_id);

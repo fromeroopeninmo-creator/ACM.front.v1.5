@@ -56,7 +56,6 @@ export type PlanBaseConfig = {
   incluye_valuador: boolean | null;
   incluye_tracker: boolean | null;
   es_trial: boolean | null;
-  activo: boolean | null;
 };
 
 export type MontosConIVA = {
@@ -152,13 +151,9 @@ export async function getEmpresaIdForActor(params: {
     actor.role === "super_admin" ||
     actor.role === "soporte";
 
-  // Si el profile ya tiene empresa_id, priorizarlo (evita confusiones)
   if (actor.empresaId) return actor.empresaId;
-
-  // Admin/soporte puede pasar empresaIdParam
   if (isAdminLike && empresaIdParam) return empresaIdParam;
 
-  // Fallback: empresas.user_id = actor.userId
   if (actor.userId) {
     const { data: emp, error } = await supabase
       .from("empresas")
@@ -196,7 +191,6 @@ export async function getSuscripcionEstado(
   supabase: SupabaseClient,
   empresaId: string
 ) {
-  // 1) Plan activo
   const { data: ep, error: epErr } = await supabase
     .from("empresas_planes")
     .select("empresa_id, plan_id, fecha_inicio, fecha_fin")
@@ -208,17 +202,13 @@ export async function getSuscripcionEstado(
     throw new Error(`Error leyendo empresas_planes: ${epErr.message}`);
   }
 
-  if (!ep) {
-    // No hay plan activo registrado
-    return null;
-  }
+  if (!ep) return null;
 
   const empresa_id = (ep as any).empresa_id as string;
   const plan_actual_id = (ep as any).plan_id as string | null;
   const fecha_inicio = (ep as any).fecha_inicio as string;
   let fecha_fin = (ep as any).fecha_fin as string | null;
 
-  // 2) Si no tenemos fecha_fin, calculamos desde planes.duracion_dias (o 30 días por defecto)
   if (!fecha_fin && plan_actual_id) {
     const { data: planRow, error: planErr } = await supabase
       .from("planes")
@@ -240,7 +230,6 @@ export async function getSuscripcionEstado(
     fecha_fin = addDaysISO(fecha_inicio, dur);
   }
 
-  // 3) Devolvemos estructura compatible
   return {
     empresa_id,
     ciclo_inicio: fecha_inicio,
@@ -276,7 +265,6 @@ export async function getPlanBaseConfig(
         "incluye_valuador",
         "incluye_tracker",
         "es_trial",
-        "activo",
       ].join(", ")
     )
     .eq("id", planId)
@@ -314,7 +302,6 @@ export async function getPlanBaseConfig(
         : Boolean((plan as any).incluye_tracker),
     es_trial:
       (plan as any).es_trial == null ? null : Boolean((plan as any).es_trial),
-    activo: (plan as any).activo == null ? null : Boolean((plan as any).activo),
   };
 }
 
@@ -631,25 +618,6 @@ export function calcularMontosConIva(params: {
 
 /**
  * Resuelve la configuración final de billing para una empresa y plan.
- *
- * Precedencias:
- * - Precio final:
- *   1) acuerdo comercial activo
- *   2) suscripciones.precio_neto_override
- *   3) precio base del plan
- *
- * - Cupo final:
- *   1) acuerdo comercial.max_asesores_override
- *   2) empresas_planes.max_asesores_override
- *   3) planes.max_asesores
- *
- * - Extra por asesor:
- *   1) acuerdo comercial.precio_extra_por_asesor_override
- *   2) planes.precio_extra_por_asesor
- *
- * - IVA:
- *   1) acuerdo comercial.modo_iva / iva_pct
- *   2) default sistema: sumar_al_neto / 21
  */
 export async function resolveEmpresaBillingConfig(params: {
   supabase: SupabaseClient;
@@ -822,7 +790,7 @@ export function calcularDeltaProrrateo(params: {
   cicloFinISO: string;
   precioActualNeto: number;
   precioNuevoNeto: number;
-  alicuotaIVA: number; // ej. 0.21
+  alicuotaIVA: number;
 }) {
   const inicio = new Date(params.cicloInicioISO).getTime();
   const fin = new Date(params.cicloFinISO).getTime();

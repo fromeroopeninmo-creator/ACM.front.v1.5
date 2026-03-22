@@ -71,6 +71,12 @@ export type EmpresaDetalle = {
     provincia?: string | null;
     logo_url?: string | null;
     color?: string | null;
+
+    // Estado empresa
+    suspendida?: boolean | null;
+    suspendida_at?: string | null;
+    suspension_motivo?: string | null;
+
     plan?: {
       id: string;
       nombre: string;
@@ -89,6 +95,9 @@ export type EmpresaDetalle = {
       precio_extra_por_asesor_plan?: number | null;
       precio_extra_por_asesor_final?: number | null;
       max_asesores_final?: number | null;
+
+      // Estado/flags del plan
+      es_trial?: boolean | null;
     } | null;
     override?: {
       max_asesores_override?: number | null;
@@ -127,6 +136,7 @@ export type EmpresaDetalle = {
     activo: boolean;
     id?: string | null;
     tipo?: string | null;
+    plan_id?: string | null;
     precio_base_neto?: number | null;
     precio_neto_final?: number | null;
     precio_total_final?: number | null;
@@ -248,6 +258,9 @@ export async function getEmpresaDetalle(
           precio_extra_por_asesor_final:
             raw.plan.precioExtraPorAsesorFinal ?? null,
           max_asesores_final: raw.plan.maxAsesoresFinal ?? null,
+
+          // Estado/flags del plan
+          es_trial: raw.plan.es_trial ?? null,
         }
       : null;
 
@@ -267,6 +280,7 @@ export async function getEmpresaDetalle(
           activo: !!raw.acuerdoComercial.activo,
           id: raw.acuerdoComercial.id ?? null,
           tipo: raw.acuerdoComercial.tipo ?? null,
+          plan_id: raw.acuerdoComercial.plan_id ?? null,
           precio_base_neto: raw.acuerdoComercial.precioBaseNeto ?? null,
           precio_neto_final: raw.acuerdoComercial.precioNetoFinal ?? null,
           precio_total_final: raw.acuerdoComercial.precioTotalFinal ?? null,
@@ -299,6 +313,12 @@ export async function getEmpresaDetalle(
       provincia: raw?.empresa?.provincia ?? null,
       logo_url: raw?.empresa?.logoUrl ?? null,
       color: raw?.empresa?.color ?? null,
+
+      // Estado empresa
+      suspendida: raw?.empresa?.suspendida ?? null,
+      suspendida_at: raw?.empresa?.suspendida_at ?? null,
+      suspension_motivo: raw?.empresa?.suspendida_motivo ?? null,
+
       plan: empresaPlan,
       override: empresaOverride,
     },

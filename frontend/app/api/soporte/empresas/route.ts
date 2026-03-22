@@ -75,9 +75,7 @@ export async function GET(req: Request) {
 
     // Filtros básicos
     if (q) {
-      query = query.or(
-        `empresa_nombre.ilike.%${q}%,cuit.ilike.%${q}%`
-      );
+      query = query.or(`empresa_nombre.ilike.%${q}%,cuit.ilike.%${q}%`);
     }
     if (plan && plan.trim().length > 0) {
       query = query.eq("plan_nombre", plan);
@@ -95,14 +93,19 @@ export async function GET(req: Request) {
 
     const baseItems =
       data?.map((row) => ({
-        id: row.empresa_id as string,                 // 👈 normalizamos a "id"
-        razon_social: row.empresa_nombre as string,   // 👈 normalizamos a "razon_social"
+        id: row.empresa_id as string,               // 👈 normalizamos a "id"
+        razon_social: row.empresa_nombre as string, // 👈 normalizamos a "razon_social"
         cuit: row.cuit as string | null,
 
         // Estos vienen de la vista:
         plan_nombre: row.plan_nombre as string | null,
         max_asesores: row.max_asesores as number | null,
         max_asesores_override: row.max_asesores_override as number | null,
+
+        // 👇 ESTOS CAMPOS FALTABAN Y LA UI LOS USA
+        plan_activo: row.plan_activo as boolean | null,
+        fecha_inicio: row.fecha_inicio as string | null,
+        fecha_fin: row.fecha_fin as string | null,
 
         // KPIs si tu vista los tuviera (si no, los dejamos como null/0)
         asesores_activos: null as number | null,
@@ -235,23 +238,21 @@ export async function GET(req: Request) {
           acuerdo_comercial_tipo: acuerdo?.tipo_acuerdo ?? null,
           acuerdo_comercial_modo_iva: acuerdo?.modo_iva ?? null,
           acuerdo_comercial_iva_pct: acuerdo?.iva_pct ?? null,
-          acuerdo_comercial_precio_neto_fijo:
-            acuerdo?.precio_neto_fijo ?? null,
-          acuerdo_comercial_descuento_pct:
-            acuerdo?.descuento_pct ?? null,
+          acuerdo_comercial_precio_neto_fijo: acuerdo?.precio_neto_fijo ?? null,
+          acuerdo_comercial_descuento_pct: acuerdo?.descuento_pct ?? null,
           acuerdo_comercial_max_asesores_override:
             acuerdo?.max_asesores_override ?? null,
           acuerdo_comercial_precio_extra_por_asesor_override:
             acuerdo?.precio_extra_por_asesor_override ?? null,
-          acuerdo_comercial_fecha_inicio:
-            acuerdo?.fecha_inicio ?? null,
-          acuerdo_comercial_fecha_fin:
-            acuerdo?.fecha_fin ?? null,
+          acuerdo_comercial_fecha_inicio: acuerdo?.fecha_inicio ?? null,
+          acuerdo_comercial_fecha_fin: acuerdo?.fecha_fin ?? null,
         };
       })
       // Filtro por provincia si lo pidieron y la vista no lo traía
       .filter((i) =>
-        provinciaFilter ? (i.provincia || "").toLowerCase().includes(provinciaFilter.toLowerCase()) : true
+        provinciaFilter
+          ? (i.provincia || "").toLowerCase().includes(provinciaFilter.toLowerCase())
+          : true
       );
 
     return NextResponse.json(
@@ -259,7 +260,7 @@ export async function GET(req: Request) {
         items: merged,
         page,
         pageSize: limit,
-        total: count ?? merged.length, // si count vino bien, usamos count
+        total: count ?? merged.length,
       },
       { status: 200 }
     );

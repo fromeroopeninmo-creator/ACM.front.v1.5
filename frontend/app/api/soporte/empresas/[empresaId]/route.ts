@@ -250,6 +250,8 @@ export async function GET(
         empresa_id: empresaId,
         plan_id: String(planBaseRow.id),
         plan_nombre: (planBaseRow.nombre ?? null) as string | null,
+        plan_duracion_dias:
+          planBaseRow.duracion_dias == null ? null : Number(planBaseRow.duracion_dias),
 
         precio_base_neto: round2(precioBaseNeto),
         precio_neto_final: montos.precio_neto_final,
@@ -279,9 +281,17 @@ export async function GET(
         agreement_applied: !!acuerdoRaw,
         agreement_id: acuerdoRaw?.id ?? null,
         agreement_tipo: (acuerdoRaw?.tipo_acuerdo ?? null) as any,
+        agreement_plan_id: acuerdoRaw?.plan_id ?? null,
+        agreement_fecha_inicio: acuerdoRaw?.fecha_inicio ?? null,
+        agreement_fecha_fin: acuerdoRaw?.fecha_fin ?? null,
 
         suscripcion_override_applied: false,
         suscripcion_precio_neto_override: null,
+
+        ciclo_inicio: planOperativo?.fecha_inicio ?? null,
+        ciclo_fin: planOperativo?.fecha_fin ?? null,
+        plan_es_trial:
+          planBaseRow.es_trial == null ? null : Boolean(planBaseRow.es_trial),
 
         pricing_source: pricingSource,
       };

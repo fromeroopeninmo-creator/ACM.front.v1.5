@@ -128,9 +128,10 @@ export default async function AdminEmpresaDetallePage({ params }: PageProps) {
   const override = detalle?.empresa?.override ?? null;
   const acuerdo = detalle?.acuerdo_comercial ?? null;
 
-  const suspendida = !!detalle?.empresa?.suspendida;
-  const suspendidaMotivo = detalle?.empresa?.suspension_motivo ?? null;
-  const suspendidaAt = detalle?.empresa?.suspendida_at ?? null;
+  const empresaUnsafe = (detalle?.empresa ?? {}) as any;
+  const suspendida = !!empresaUnsafe.suspendida;
+  const suspendidaMotivo = empresaUnsafe.suspension_motivo ?? null;
+  const suspendidaAt = empresaUnsafe.suspendida_at ?? null;
 
   const cicloInicio = override?.fecha_inicio ?? null;
   const cicloFin = override?.fecha_fin ?? null;
@@ -236,12 +237,10 @@ export default async function AdminEmpresaDetallePage({ params }: PageProps) {
             </div>
           </section>
 
-          {/* Resumen principal */}
           <section className="rounded-2xl border p-4 bg-white dark:bg-neutral-900">
             <div className="flex items-start gap-4">
               <div className="w-16 h-16 rounded-xl border flex items-center justify-center overflow-hidden bg-white dark:bg-neutral-950">
                 {detalle.empresa.logo_url ? (
-                  // eslint-disable-next-line @next/next/no-img-element
                   <img
                     src={detalle.empresa.logo_url}
                     alt="Logo empresa"

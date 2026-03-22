@@ -72,6 +72,7 @@ type BillingEstado = {
     incluye_valuador?: boolean | null;
     incluye_tracker?: boolean | null;
     es_trial?: boolean | null;
+    duracion_dias?: number | null;
   } | null;
   ciclo?: {
     inicio?: string | null;
@@ -107,6 +108,9 @@ type BillingEstado = {
     activo: boolean;
     id?: string | null;
     tipo?: string | null;
+    plan_id?: string | null;
+    fecha_inicio?: string | null;
+    fecha_fin?: string | null;
     modo_iva?: string | null;
     iva_pct?: number | null;
     precio_neto_final?: number | null;
@@ -192,6 +196,23 @@ function fmtDateOnly(d?: string | null) {
   const dt = new Date(d);
   if (Number.isNaN(dt.getTime())) return "—";
   return dt.toLocaleDateString("es-AR");
+}
+
+function fmtPricingSource(v?: string | null) {
+  switch (v) {
+    case "plan":
+      return "Precio de lista";
+    case "personalizado_formula":
+      return "Fórmula personalizado";
+    case "suscripcion_override":
+      return "Override de suscripción";
+    case "acuerdo_comercial_descuento":
+      return "Acuerdo comercial";
+    case "acuerdo_comercial_precio_fijo":
+      return "Acuerdo comercial";
+    default:
+      return "—";
+  }
 }
 
 export default function EmpresaPlanesPage() {
@@ -592,6 +613,9 @@ export default function EmpresaPlanesPage() {
   const estaSuspendida = !!billingEstado?.estado?.suspendida;
   const enPeriodoGracia = !!billingEstado?.estado?.en_periodo_gracia;
   const proximoCobro = billingEstado?.ciclo?.proximoCobro ?? planActual?.fecha_fin ?? null;
+  const acuerdoFechaInicio = billingEstado?.acuerdoComercial?.fecha_inicio ?? null;
+  const acuerdoFechaFin = billingEstado?.acuerdoComercial?.fecha_fin ?? null;
+  const pricingSource = billingEstado?.pricing?.pricing_source ?? billingEstado?.plan?.pricingSource ?? null;
 
   if (loading) {
     return (
@@ -835,16 +859,22 @@ export default function EmpresaPlanesPage() {
                 Asesores permitidos: <strong>{planActual.max_asesores}</strong>
               </p>
               <p className="text-sm text-gray-600">
-                Inicio: {fmtDateOnly(planActual.fecha_inicio)}
+                Inicio: {fmtDateOnly(billingEstado?.ciclo?.inicio ?? planActual.fecha_inicio)}
               </p>
               <p className="text-sm text-gray-600">
-                Vencimiento: {fmtDateOnly(planActual.fecha_fin)}
+                Vencimiento: {fmtDateOnly(billingEstado?.ciclo?.fin ?? planActual.fecha_fin)}
               </p>
               {billingEstado?.pricing?.precio_neto_final != null ? (
-                <p className="text-sm text-gray-600">
-                  Importe actual:{" "}
-                  <strong>{fmtMoney(billingEstado.pricing.precio_total_final)}</strong>
-                </p>
+                <>
+                  <p className="text-sm text-gray-600">
+                    Importe actual:{" "}
+                    <strong>{fmtMoney(billingEstado.pricing.precio_total_final)}</strong>
+                  </p>
+                  <p className="text-sm text-gray-600">
+                    Origen del precio:{" "}
+                    <strong>{fmtPricingSource(pricingSource)}</strong>
+                  </p>
+                </>
               ) : null}
             </div>
             <div className="flex flex-col items-start gap-2">
@@ -869,6 +899,67 @@ export default function EmpresaPlanesPage() {
               )}
             </div>
           </div>
+
+          {billingEstado?.pricing && (
+            <div className="mt-4 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 text-sm">
+              <div className="rounded-lg border p-3">
+                <div className="text-xs text-gray-500 mb-1">Precio base neto</div>
+                <div className="font-medium">
+                  {fmtMoney(billingEstado.pricing.precio_base_neto ?? null)}
+                </div>
+              </div>
+              <div className="rounded-lg border p-3">
+                <div className="text-xs text-gray-500 mb-1">Precio neto final</div>
+                <div className="font-medium">
+                  {fmtMoney(billingEstado.pricing.precio_neto_final ?? null)}
+                </div>
+              </div>
+              <div className="rounded-lg border p-3">
+                <div className="text-xs text-gray-500 mb-1">IVA</div>
+                <div className="font-medium">
+                  {fmtModoIVA(billingEstado.pricing.modo_iva)}
+                  {billingEstado.pricing.iva_pct != null
+                    ? ` (${billingEstado.pricing.iva_pct}%)`
+                    : ""}
+                </div>
+              </div>
+              <div className="rounded-lg border p-3">
+                <div className="text-xs text-gray-500 mb-1">Total final</div>
+                <div className="font-medium">
+                  {fmtMoney(billingEstado.pricing.precio_total_final ?? null)}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {billingEstado?.cupos && (
+            <div className="mt-4 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 text-sm">
+              <div className="rounded-lg border p-3">
+                <div className="text-xs text-gray-500 mb-1">Cupo plan</div>
+                <div className="font-medium">
+                  {billingEstado.cupos.max_asesores_plan ?? "—"}
+                </div>
+              </div>
+              <div className="rounded-lg border p-3">
+                <div className="text-xs text-gray-500 mb-1">Cupo final</div>
+                <div className="font-medium">
+                  {billingEstado.cupos.max_asesores_final ?? "—"}
+                </div>
+              </div>
+              <div className="rounded-lg border p-3">
+                <div className="text-xs text-gray-500 mb-1">Extra por asesor plan</div>
+                <div className="font-medium">
+                  {fmtMoney(billingEstado.cupos.precio_extra_por_asesor_plan ?? null)}
+                </div>
+              </div>
+              <div className="rounded-lg border p-3">
+                <div className="text-xs text-gray-500 mb-1">Extra por asesor final</div>
+                <div className="font-medium">
+                  {fmtMoney(billingEstado.cupos.precio_extra_por_asesor_final ?? null)}
+                </div>
+              </div>
+            </div>
+          )}
 
           {esTrial && (
             <p className="mt-4 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3">
@@ -941,8 +1032,25 @@ export default function EmpresaPlanesPage() {
               </div>
             </div>
 
+            <div className="rounded-lg border p-3">
+              <div className="text-xs text-gray-500 mb-1">Plan del acuerdo</div>
+              <div className="font-medium">
+                {billingEstado.acuerdoComercial.plan_id || "—"}
+              </div>
+            </div>
+
+            <div className="rounded-lg border p-3">
+              <div className="text-xs text-gray-500 mb-1">Vigencia desde</div>
+              <div className="font-medium">{fmtDateOnly(acuerdoFechaInicio)}</div>
+            </div>
+
+            <div className="rounded-lg border p-3">
+              <div className="text-xs text-gray-500 mb-1">Vigencia hasta</div>
+              <div className="font-medium">{fmtDateOnly(acuerdoFechaFin)}</div>
+            </div>
+
             <div className="rounded-lg border p-3 md:col-span-2 xl:col-span-3">
-              <div className="text-xs text-gray-500 mb-1">Vigencia / próximo vencimiento</div>
+              <div className="text-xs text-gray-500 mb-1">Próximo vencimiento / cobro</div>
               <div className="font-medium">{fmtDateOnly(proximoCobro)}</div>
             </div>
           </div>

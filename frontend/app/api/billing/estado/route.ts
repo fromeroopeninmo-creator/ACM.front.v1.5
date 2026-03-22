@@ -1,4 +1,3 @@
-// app/api/billing/estado/route.ts
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -284,15 +283,26 @@ export async function GET(req: Request) {
       .limit(1)
       .maybeSingle();
 
-    // 9) Si no se calculó proximoCobro arriba, intentar de nuevo
+    // 9) Si billingConfig ya resolvió ciclo, priorizarlo.
+    // Si no, usar el cálculo / fallback actual.
+    const cicloInicio = billingConfig.ciclo_inicio ?? planEP.fecha_inicio ?? null;
+    const cicloFin = billingConfig.ciclo_fin ?? planEP.fecha_fin ?? null;
+
     if (!proximoCobro) {
-      if (planEP.fecha_fin) {
-        proximoCobro = new Date(planEP.fecha_fin as string).toISOString();
-      } else if (planEP.fecha_inicio && planRow?.duracion_dias) {
+      if (cicloFin) {
         try {
-          const base = new Date(planEP.fecha_inicio as string);
+          proximoCobro = new Date(cicloFin as string).toISOString();
+        } catch {
+          proximoCobro = null;
+        }
+      } else if (cicloInicio && (billingConfig.plan_duracion_dias ?? planRow?.duracion_dias)) {
+        try {
+          const base = new Date(cicloInicio as string);
           const d = new Date(base.getTime());
-          d.setDate(d.getDate() + Number(planRow.duracion_dias));
+          d.setDate(
+            d.getDate() +
+              Number(billingConfig.plan_duracion_dias ?? planRow?.duracion_dias ?? 30)
+          );
           proximoCobro = d.toISOString();
         } catch {
           proximoCobro = null;
@@ -329,12 +339,15 @@ export async function GET(req: Request) {
               tipo_plan: tipoPlan, // "core" | "combo" | "tracker_only" | "trial"
               incluye_valuador: incluyeValuador,
               incluye_tracker: incluyeTracker,
-              es_trial: !!planRow.es_trial,
+              es_trial: billingConfig.plan_es_trial ?? !!planRow.es_trial,
+              duracion_dias:
+                billingConfig.plan_duracion_dias ??
+                (planRow?.duracion_dias == null ? null : Number(planRow.duracion_dias)),
             }
           : null,
         ciclo: {
-          inicio: planEP.fecha_inicio,
-          fin: planEP.fecha_fin,
+          inicio: cicloInicio,
+          fin: cicloFin,
           proximoCobro,
         },
         suscripcion: susRow
@@ -394,6 +407,9 @@ export async function GET(req: Request) {
               activo: true,
               id: billingConfig.agreement_id,
               tipo: billingConfig.agreement_tipo,
+              plan_id: billingConfig.agreement_plan_id,
+              fecha_inicio: billingConfig.agreement_fecha_inicio,
+              fecha_fin: billingConfig.agreement_fecha_fin,
               modo_iva: billingConfig.modo_iva,
               iva_pct: billingConfig.iva_pct,
               precio_neto_final: billingConfig.precio_neto_final,

@@ -57,69 +57,65 @@ async function assertAdmin() {
 
   return {
     ok: true as const,
-    userId: user.id,
   };
 }
 
-export async function POST(
-  _req: Request,
-  { params }: { params: { empresaId: string; acuerdoId: string } }
+export async function GET(
+  req: Request,
+  { params }: { params: { id: string } }
 ) {
   try {
     const auth = await assertAdmin();
     if (!auth.ok) return auth.response;
 
-    const empresaId = params?.empresaId;
-    const acuerdoId = params?.acuerdoId;
-
-    if (!empresaId || !acuerdoId) {
-      return NextResponse.json(
-        { error: "Faltan empresaId o acuerdoId." },
-        { status: 400 }
-      );
+    const empresaId = params?.id;
+    if (!empresaId) {
+      return NextResponse.json({ error: "Falta empresaId." }, { status: 400 });
     }
 
-    const hoy = new Date().toISOString().slice(0, 10);
+    const url = new URL(req.url);
+    const limitRaw = Number(url.searchParams.get("limit") ?? 50);
+    const limit = Number.isFinite(limitRaw)
+      ? Math.max(1, Math.min(100, limitRaw))
+      : 50;
 
-    const { data: actual, error: actualErr } = await supabaseAdmin
+    const { data, error } = await supabaseAdmin
       .from("empresa_acuerdos_comerciales")
-      .select("id, empresa_id, activo, fecha_fin")
-      .eq("id", acuerdoId)
+      .select(
+        [
+          "id",
+          "empresa_id",
+          "plan_id",
+          "activo",
+          "tipo_acuerdo",
+          "descuento_pct",
+          "precio_neto_fijo",
+          "max_asesores_override",
+          "precio_extra_por_asesor_override",
+          "modo_iva",
+          "iva_pct",
+          "fecha_inicio",
+          "fecha_fin",
+          "motivo",
+          "observaciones",
+          "created_by",
+          "updated_by",
+          "created_at",
+          "updated_at",
+        ].join(", ")
+      )
       .eq("empresa_id", empresaId)
-      .maybeSingle();
+      .order("created_at", { ascending: false })
+      .limit(limit);
 
-    if (actualErr) {
-      return NextResponse.json({ error: actualErr.message }, { status: 400 });
-    }
-    if (!actual) {
-      return NextResponse.json({ error: "Acuerdo no encontrado." }, { status: 404 });
-    }
-
-    const patch: Record<string, any> = {
-      activo: false,
-      updated_by: auth.userId,
-    };
-
-    if (!actual.fecha_fin || String(actual.fecha_fin) > hoy) {
-      patch.fecha_fin = hoy;
-    }
-
-    const { data: updated, error: updErr } = await supabaseAdmin
-      .from("empresa_acuerdos_comerciales")
-      .update(patch)
-      .eq("id", acuerdoId)
-      .eq("empresa_id", empresaId)
-      .select("*")
-      .single();
-
-    if (updErr) {
-      return NextResponse.json({ error: updErr.message }, { status: 400 });
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
     }
 
     return NextResponse.json(
       {
         ok: true,
-        acuerdo: updated,
+        items: data ?? [],
       },
       { status: 200 }
     );

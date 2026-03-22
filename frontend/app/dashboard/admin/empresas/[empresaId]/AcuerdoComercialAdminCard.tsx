@@ -1,11 +1,13 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { supabase } from "#lib/supabaseClient";
 
 type AcuerdoComercial = {
   activo: boolean;
   id?: string | null;
   tipo?: string | null;
+  plan_id?: string | null;
   precio_base_neto?: number | null;
   precio_neto_final?: number | null;
   precio_total_final?: number | null;
@@ -39,6 +41,7 @@ type ModoIVA = "sumar_al_neto" | "incluido_en_precio" | "no_aplica";
 type HistorialItem = {
   id: string;
   activo: boolean;
+  plan_id: string | null;
   tipo_acuerdo: string | null;
   descuento_pct: number | null;
   precio_neto_fijo: number | null;
@@ -52,6 +55,34 @@ type HistorialItem = {
   observaciones: string | null;
   created_at: string | null;
   updated_at: string | null;
+};
+
+type PlanOption = {
+  id: string;
+  nombre: string;
+  tipo_plan: string | null;
+  max_asesores: number | null;
+  precio: number | null;
+  duracion_dias: number | null;
+  es_trial: boolean | null;
+};
+
+type BillingEstadoLite = {
+  plan?: {
+    id?: string | null;
+    nombre?: string | null;
+    tipo_plan?: string | null;
+    es_trial?: boolean | null;
+    duracion_dias?: number | null;
+  } | null;
+  cupos?: {
+    max_asesores_plan?: number | null;
+    max_asesores_final?: number | null;
+  } | null;
+  ciclo?: {
+    inicio?: string | null;
+    fin?: string | null;
+  } | null;
 };
 
 function todayDateOnly() {
@@ -102,6 +133,16 @@ function fmtTipoAcuerdo(v?: string | null) {
   }
 }
 
+function getPlanLabel(plan: PlanOption) {
+  const nombre = plan.nombre || "Plan";
+  const tipo = plan.tipo_plan ? ` · ${plan.tipo_plan}` : "";
+  const asesores =
+    plan.max_asesores != null ? ` · ${plan.max_asesores} asesores` : "";
+  const precio = plan.precio != null ? ` · ${fmtMoney(plan.precio)}` : "";
+  const trial = plan.es_trial ? " · Trial" : "";
+  return `${nombre}${tipo}${asesores}${precio}${trial}`;
+}
+
 export default function AcuerdoComercialAdminCard({
   empresaId,
   acuerdoActual,
@@ -113,13 +154,13 @@ export default function AcuerdoComercialAdminCard({
   const [message, setMessage] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [historial, setHistorial] = useState<HistorialItem[]>([]);
+  const [planes, setPlanes] = useState<PlanOption[]>([]);
+  const [loadingPlanes, setLoadingPlanes] = useState(false);
+  const [billingEstado, setBillingEstado] = useState<BillingEstadoLite | null>(null);
 
+  const [planId, setPlanId] = useState<string>(acuerdoActual?.plan_id ?? "");
   const [tipoAcuerdo, setTipoAcuerdo] = useState<TipoAcuerdo>(initialTipo);
-  const [descuentoPct, setDescuentoPct] = useState<string>(
-    acuerdoActual?.tipo?.includes("descuento")
-      ? String(acuerdoActual?.precio_neto_final ? "" : "")
-      : ""
-  );
+  const [descuentoPct, setDescuentoPct] = useState<string>("");
   const [precioNetoFijo, setPrecioNetoFijo] = useState<string>(
     acuerdoActual?.precio_neto_final != null ? String(acuerdoActual.precio_neto_final) : ""
   );
@@ -148,6 +189,71 @@ export default function AcuerdoComercialAdminCard({
 
   const isEdit = !!acuerdoActual?.id;
 
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadPlanes() {
+      try {
+        setLoadingPlanes(true);
+
+        const { data, error } = await supabase
+          .from("planes")
+          .select("id, nombre, tipo_plan, max_asesores, precio, duracion_dias, es_trial")
+          .order("max_asesores", { ascending: true });
+
+        if (error) {
+          throw error;
+        }
+
+        if (!cancelled) {
+          setPlanes((data || []) as PlanOption[]);
+        }
+      } catch (e: any) {
+        if (!cancelled) {
+          console.error("Error cargando planes:", e?.message || e);
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingPlanes(false);
+        }
+      }
+    }
+
+    async function loadBillingEstado() {
+      try {
+        const res = await fetch(
+          `/api/billing/estado?empresaId=${encodeURIComponent(empresaId)}`,
+          {
+            method: "GET",
+            cache: "no-store",
+          }
+        );
+
+        const json = await res.json().catch(() => null);
+
+        if (!res.ok) {
+          throw new Error(json?.error || "No se pudo cargar billing/estado.");
+        }
+
+        if (!cancelled) {
+          setBillingEstado((json || null) as BillingEstadoLite);
+        }
+      } catch (e: any) {
+        if (!cancelled) {
+          console.error("Error cargando billing/estado:", e?.message || e);
+          setBillingEstado(null);
+        }
+      }
+    }
+
+    loadPlanes();
+    loadBillingEstado();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [empresaId]);
+
   const visibleFields = useMemo(() => {
     return {
       showDescuento:
@@ -159,6 +265,17 @@ export default function AcuerdoComercialAdminCard({
     };
   }, [tipoAcuerdo]);
 
+  const planActualOperativo = useMemo(() => {
+    const planIdActual = billingEstado?.plan?.id ?? null;
+    if (!planIdActual) return null;
+    return planes.find((p) => p.id === planIdActual) ?? null;
+  }, [billingEstado, planes]);
+
+  const planSeleccionado = useMemo(() => {
+    if (!planId) return null;
+    return planes.find((p) => p.id === planId) ?? null;
+  }, [planId, planes]);
+
   async function handleSubmit() {
     try {
       setLoading(true);
@@ -166,10 +283,11 @@ export default function AcuerdoComercialAdminCard({
       setMessage(null);
 
       const payload: Record<string, any> = {
+        plan_id: planId || null,
         tipo_acuerdo: tipoAcuerdo,
         descuento_pct: visibleFields.showDescuento && descuentoPct !== "" ? Number(descuentoPct) : null,
         precio_neto_fijo: visibleFields.showPrecioFijo && precioNetoFijo !== "" ? Number(precioNetoFijo) : null,
-        max_asesores_override: visibleFields.showCupo && maxAsesoresOverride !== "" ? Number(maxAsesoresOverride) : null,
+        max_asesores_override: maxAsesoresOverride !== "" ? Number(maxAsesoresOverride) : null,
         precio_extra_por_asesor_override:
           precioExtraPorAsesorOverride !== "" ? Number(precioExtraPorAsesorOverride) : null,
         modo_iva: modoIva,
@@ -276,6 +394,34 @@ export default function AcuerdoComercialAdminCard({
 
   return (
     <div className="mt-3 pt-3 border-t space-y-3">
+      <div className="rounded-xl border p-3 bg-gray-50 dark:bg-neutral-900/40">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3 text-sm">
+          <div>
+            <div className="text-xs text-gray-500 mb-1">Plan operativo actual</div>
+            <div className="font-medium">
+              {planActualOperativo ? getPlanLabel(planActualOperativo) : billingEstado?.plan?.nombre || "—"}
+            </div>
+          </div>
+
+          <div>
+            <div className="text-xs text-gray-500 mb-1">Cupo actual final</div>
+            <div className="font-medium">
+              {billingEstado?.cupos?.max_asesores_final ?? "—"}
+            </div>
+          </div>
+
+          <div>
+            <div className="text-xs text-gray-500 mb-1">Inicio ciclo actual</div>
+            <div className="font-medium">{fmtDateOnly(billingEstado?.ciclo?.inicio ?? null)}</div>
+          </div>
+
+          <div>
+            <div className="text-xs text-gray-500 mb-1">Fin ciclo actual</div>
+            <div className="font-medium">{fmtDateOnly(billingEstado?.ciclo?.fin ?? null)}</div>
+          </div>
+        </div>
+      </div>
+
       <div className="flex flex-wrap gap-2">
         <button
           type="button"
@@ -324,7 +470,34 @@ export default function AcuerdoComercialAdminCard({
 
       {(mode === "create" || mode === "edit") && (
         <div className="rounded-xl border p-3 space-y-3">
+          <div className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-700">
+            Desde aquí podés dejar configurado el plan efectivo de la empresa y las condiciones del acuerdo comercial.
+            Si el acuerdo está vigente y tiene plan asociado, el backend sincroniza el plan operativo de la empresa.
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Plan base / plan efectivo</label>
+              <select
+                value={planId}
+                onChange={(e) => setPlanId(e.target.value)}
+                className="w-full rounded-xl border px-3 py-2 text-sm bg-white dark:bg-neutral-950"
+                disabled={loadingPlanes}
+              >
+                <option value="">Seleccionar plan…</option>
+                {planes.map((plan) => (
+                  <option key={plan.id} value={plan.id}>
+                    {getPlanLabel(plan)}
+                  </option>
+                ))}
+              </select>
+              <div className="mt-1 text-xs text-gray-500">
+                {loadingPlanes
+                  ? "Cargando catálogo de planes…"
+                  : "Este plan define las funciones/capacidades operativas de la empresa."}
+              </div>
+            </div>
+
             <div>
               <label className="block text-xs text-gray-500 mb-1">Tipo de acuerdo</label>
               <select
@@ -378,18 +551,21 @@ export default function AcuerdoComercialAdminCard({
               </div>
             ) : null}
 
-            {visibleFields.showCupo ? (
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Cupo override</label>
-                <input
-                  type="number"
-                  step="1"
-                  value={maxAsesoresOverride}
-                  onChange={(e) => setMaxAsesoresOverride(e.target.value)}
-                  className="w-full rounded-xl border px-3 py-2 text-sm bg-white dark:bg-neutral-950"
-                />
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">
+                Cupo final de asesores
+              </label>
+              <input
+                type="number"
+                step="1"
+                value={maxAsesoresOverride}
+                onChange={(e) => setMaxAsesoresOverride(e.target.value)}
+                className="w-full rounded-xl border px-3 py-2 text-sm bg-white dark:bg-neutral-950"
+              />
+              <div className="mt-1 text-xs text-gray-500">
+                Podés usarlo aunque el acuerdo no sea “con cupo”, para dejar configurado el cupo final del cliente.
               </div>
-            ) : null}
+            </div>
 
             <div>
               <label className="block text-xs text-gray-500 mb-1">
@@ -435,6 +611,30 @@ export default function AcuerdoComercialAdminCard({
               />
             </div>
           </div>
+
+          {planSeleccionado ? (
+            <div className="rounded-xl border p-3 bg-gray-50 dark:bg-neutral-900/40">
+              <div className="text-sm font-medium mb-2">Plan seleccionado</div>
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3 text-sm">
+                <div>
+                  <div className="text-xs text-gray-500 mb-1">Nombre</div>
+                  <div className="font-medium">{planSeleccionado.nombre}</div>
+                </div>
+                <div>
+                  <div className="text-xs text-gray-500 mb-1">Tipo</div>
+                  <div className="font-medium">{planSeleccionado.tipo_plan || "—"}</div>
+                </div>
+                <div>
+                  <div className="text-xs text-gray-500 mb-1">Cupo base</div>
+                  <div className="font-medium">{planSeleccionado.max_asesores ?? "—"}</div>
+                </div>
+                <div>
+                  <div className="text-xs text-gray-500 mb-1">Precio base</div>
+                  <div className="font-medium">{fmtMoney(planSeleccionado.precio ?? null)}</div>
+                </div>
+              </div>
+            </div>
+          ) : null}
 
           <div>
             <label className="block text-xs text-gray-500 mb-1">Motivo</label>
@@ -498,6 +698,7 @@ export default function AcuerdoComercialAdminCard({
                 <thead className="bg-gray-50 dark:bg-neutral-900">
                   <tr className="text-left">
                     <th className="px-3 py-2">Estado</th>
+                    <th className="px-3 py-2">Plan</th>
                     <th className="px-3 py-2">Tipo</th>
                     <th className="px-3 py-2">Neto fijo</th>
                     <th className="px-3 py-2">Desc. %</th>
@@ -520,6 +721,7 @@ export default function AcuerdoComercialAdminCard({
                           </span>
                         )}
                       </td>
+                      <td className="px-3 py-2">{item.plan_id || "—"}</td>
                       <td className="px-3 py-2">{fmtTipoAcuerdo(item.tipo_acuerdo)}</td>
                       <td className="px-3 py-2">{fmtMoney(item.precio_neto_fijo)}</td>
                       <td className="px-3 py-2">

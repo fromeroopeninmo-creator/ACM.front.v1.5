@@ -324,9 +324,12 @@ export async function POST(req: Request) {
     }
 
     const sus = await getSuscripcionEstado(supabase, empresaId);
-    if (!sus?.plan_actual_id) {
+    if (!sus?.plan_actual_id || !sus?.ciclo_inicio || !sus?.ciclo_fin) {
       return NextResponse.json(
-        { error: "Empresa sin plan actual/ciclo vigente para cambiar." },
+        {
+          error:
+            "Empresa sin plan actual o sin ciclo vigente completo para cambiar.",
+        },
         { status: 409 }
       );
     }

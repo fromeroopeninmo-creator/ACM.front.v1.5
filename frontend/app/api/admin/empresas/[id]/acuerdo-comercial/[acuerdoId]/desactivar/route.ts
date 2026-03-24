@@ -82,6 +82,60 @@ async function assertAdmin() {
   };
 }
 
+function getTodayISODateOnly(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+async function clearEmpresaPlanOperativoPorDesactivacionAcuerdo(params: {
+  empresaId: string;
+}) {
+  const hoy = getTodayISODateOnly();
+
+  const { data: planesActivos, error: readErr } = await supabaseAdmin
+    .from("empresas_planes")
+    .select("id, fecha_inicio, fecha_fin, activo")
+    .eq("empresa_id", params.empresaId)
+    .eq("activo", true);
+
+  if (readErr) {
+    throw new Error(
+      `Error leyendo planes activos para desactivación por acuerdo comercial: ${readErr.message}`
+    );
+  }
+
+  if (!planesActivos || planesActivos.length === 0) {
+    return {
+      synced: true,
+      reason: "no_active_plan_to_clear",
+      planRowIds: [] as string[],
+      fechaFinAplicada: hoy,
+    };
+  }
+
+  const ids = planesActivos.map((row) => String(row.id));
+
+  const { error: clearErr } = await supabaseAdmin
+    .from("empresas_planes")
+    .update({
+      activo: false,
+      fecha_fin: hoy,
+    })
+    .in("id", ids);
+
+  if (clearErr) {
+    throw new Error(
+      `Error desactivando plan operativo por desactivación de acuerdo: ${clearErr.message}`
+    );
+  }
+
+  return {
+    synced: true,
+    reason: "cleared_active_plan_by_acuerdo_deactivation",
+    planRowIds: ids,
+    fechaFinAplicada: hoy,
+  };
+}
+
 export async function POST(
   _req: Request,
   { params }: { params: { id: string; acuerdoId: string } }
@@ -100,7 +154,7 @@ export async function POST(
       );
     }
 
-    const hoy = new Date().toISOString().slice(0, 10);
+    const hoy = getTodayISODateOnly();
 
     const { data: actual, error: actualErr } = await supabaseAdmin
       .from("empresa_acuerdos_comerciales")
@@ -137,10 +191,35 @@ export async function POST(
       return NextResponse.json({ error: updErr.message }, { status: 400 });
     }
 
+    let planSync:
+      | {
+          synced: boolean;
+          reason: string;
+          planRowIds: string[];
+          fechaFinAplicada: string;
+        }
+      | null = null;
+
+    try {
+      planSync = await clearEmpresaPlanOperativoPorDesactivacionAcuerdo({
+        empresaId,
+      });
+    } catch (clearErr: any) {
+      return NextResponse.json(
+        {
+          error:
+            clearErr?.message ||
+            "No se pudo limpiar empresas_planes al desactivar el acuerdo comercial.",
+        },
+        { status: 500 }
+      );
+    }
+
     return NextResponse.json(
       {
         ok: true,
         acuerdo: updated,
+        plan_sync: planSync,
       },
       { status: 200 }
     );

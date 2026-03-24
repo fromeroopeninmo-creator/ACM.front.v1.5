@@ -40,7 +40,6 @@ type AcuerdoRawRow = {
 };
 
 async function resolveUserRole(userId: string): Promise<Role | null> {
-  // 1) Por user_id
   const { data: p1 } = await supabaseAdmin
     .from("profiles")
     .select("role")
@@ -48,7 +47,6 @@ async function resolveUserRole(userId: string): Promise<Role | null> {
     .maybeSingle();
   if (p1?.role) return p1.role as Role;
 
-  // 2) Fallback por id (algunas instalaciones usan profiles.id === auth.users.id)
   const { data: p2 } = await supabaseAdmin
     .from("profiles")
     .select("role")
@@ -105,7 +103,7 @@ export async function GET(
       .eq("id", empresaId)
       .maybeSingle();
 
-    // 2.1) Plan operativo (activo o último)
+    // 2.1) Plan operativo SOLO ACTIVO
     const { data: planActivoRow } = await supabaseAdmin
       .from("empresas_planes")
       .select("plan_id, max_asesores_override, activo, fecha_inicio, fecha_fin")
@@ -113,21 +111,9 @@ export async function GET(
       .eq("activo", true)
       .maybeSingle();
 
-    let planOperativo = planActivoRow ?? null;
+    const planOperativo = planActivoRow ?? null;
 
-    if (!planOperativo) {
-      const { data: ultimoPlanRow } = await supabaseAdmin
-        .from("empresas_planes")
-        .select("plan_id, max_asesores_override, activo, fecha_inicio, fecha_fin")
-        .eq("empresa_id", empresaId)
-        .order("fecha_inicio", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      planOperativo = ultimoPlanRow ?? null;
-    }
-
-    // 2.2) Plan base real
+    // 2.2) Plan base real SOLO si hay plan operativo activo
     let planBaseRow: any = null;
     if (planOperativo?.plan_id) {
       const { data: planDb } = await supabaseAdmin
@@ -141,7 +127,7 @@ export async function GET(
       planBaseRow = planDb ?? null;
     }
 
-    // 2.3) Acuerdo comercial activo/vigente (para fallback y UI)
+    // 2.3) Acuerdo comercial activo/vigente
     const hoy = new Date().toISOString().slice(0, 10);
 
     const acuerdoQuery = await supabaseAdmin
@@ -179,7 +165,7 @@ export async function GET(
 
     const acuerdoRaw = (acuerdoQuery.data ?? null) as AcuerdoRawRow | null;
 
-    // 2.4) Billing resuelto
+    // 2.4) Billing resuelto SOLO si hay plan operativo activo
     let billingConfig: Awaited<
       ReturnType<typeof resolveEmpresaBillingConfig>
     > | null = null;
@@ -204,7 +190,7 @@ export async function GET(
       }
     }
 
-    // 2.5) Fallback comercial/manual para evitar mostrar "--"
+    // 2.5) Fallback comercial/manual SOLO si hay plan base activo
     if (!billingConfig && planBaseRow) {
       const precioBaseNeto = Number(planBaseRow.precio ?? 0);
 
@@ -346,38 +332,41 @@ export async function GET(
         localidad: empresaRow?.localidad ?? null,
         provincia: empresaRow?.provincia ?? null,
       },
-      plan: {
-        id: planBaseRow?.id ?? null,
-        nombre: detalle.plan_nombre ?? planBaseRow?.nombre ?? null,
-        maxAsesores: detalle.max_asesores ?? planBaseRow?.max_asesores ?? null,
-        override: detalle.max_asesores_override ?? null,
-        activo: !!detalle.plan_activo,
-        fechaInicio: detalle.fecha_inicio,
-        fechaFin: detalle.fecha_fin,
-        duracionDias: planBaseRow?.duracion_dias ?? null,
-        precio: planBaseRow?.precio ?? null,
+      plan: planOperativo && planBaseRow
+        ? {
+            id: planBaseRow?.id ?? null,
+            nombre: planBaseRow?.nombre ?? null,
+            maxAsesores:
+              planBaseRow?.max_asesores == null ? null : Number(planBaseRow.max_asesores),
+            override:
+              planOperativo?.max_asesores_override == null
+                ? null
+                : Number(planOperativo.max_asesores_override),
+            activo: true,
+            fechaInicio: planOperativo?.fecha_inicio ?? null,
+            fechaFin: planOperativo?.fecha_fin ?? null,
+            duracionDias: planBaseRow?.duracion_dias ?? null,
+            precio: planBaseRow?.precio ?? null,
 
-        // comerciales / fiscales
-        precioBaseNeto: billingConfig?.precio_base_neto ?? (planBaseRow?.precio ?? null),
-        precioNetoFinal: billingConfig?.precio_neto_final ?? (planBaseRow?.precio ?? null),
-        precioTotalFinal: billingConfig?.precio_total_final ?? null,
-        ivaModo: billingConfig?.modo_iva ?? "sumar_al_neto",
-        ivaPct: billingConfig?.iva_pct ?? 21,
-        ivaImporte: billingConfig?.iva_importe ?? null,
-        pricingSource: billingConfig?.pricing_source ?? "plan",
-        precioExtraPorAsesorPlan:
-          billingConfig?.precio_extra_por_asesor_plan ??
-          (planBaseRow?.precio_extra_por_asesor ?? null),
-        precioExtraPorAsesorFinal:
-          billingConfig?.precio_extra_por_asesor_final ??
-          (planBaseRow?.precio_extra_por_asesor ?? null),
-        maxAsesoresFinal:
-          billingConfig?.max_asesores_final ??
-          detalle.max_asesores_override ??
-          detalle.max_asesores ??
-          planBaseRow?.max_asesores ??
-          null,
-      },
+            precioBaseNeto: billingConfig?.precio_base_neto ?? (planBaseRow?.precio ?? null),
+            precioNetoFinal: billingConfig?.precio_neto_final ?? (planBaseRow?.precio ?? null),
+            precioTotalFinal: billingConfig?.precio_total_final ?? null,
+            ivaModo: billingConfig?.modo_iva ?? "sumar_al_neto",
+            ivaPct: billingConfig?.iva_pct ?? 21,
+            ivaImporte: billingConfig?.iva_importe ?? null,
+            pricingSource: billingConfig?.pricing_source ?? "plan",
+            precioExtraPorAsesorPlan:
+              billingConfig?.precio_extra_por_asesor_plan ??
+              (planBaseRow?.precio_extra_por_asesor ?? null),
+            precioExtraPorAsesorFinal:
+              billingConfig?.precio_extra_por_asesor_final ??
+              (planBaseRow?.precio_extra_por_asesor ?? null),
+            maxAsesoresFinal:
+              billingConfig?.max_asesores_final ??
+              (planOperativo?.max_asesores_override ?? null) ??
+              (planBaseRow?.max_asesores ?? null),
+          }
+        : null,
       acuerdoComercial:
         billingConfig?.agreement_applied || acuerdoRaw
           ? {

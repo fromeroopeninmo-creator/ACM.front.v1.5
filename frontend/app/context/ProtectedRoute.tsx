@@ -6,47 +6,29 @@ import { useAuth } from "./AuthContext";
 import { supabase } from "#lib/supabaseClient";
 import { useEmpresa } from "@/hooks/useEmpresa";
 
-type BillingEstadoFlags = {
-  suspendida?: boolean;
-  suspendida_motivo?: string | null;
-  suspendida_at?: string | null;
-  plan_vencido?: boolean;
-  dias_desde_vencimiento?: number | null;
-  en_periodo_gracia?: boolean;
-  requiere_seleccion_plan?: boolean;
-};
-
-type BillingEstadoResponse = {
-  estado?: BillingEstadoFlags | null;
-};
-
-function isEmpresaBillingExemptPath(pathname: string | null): boolean {
-  if (!pathname) return false;
-  if (pathname.startsWith("/dashboard/empresa/suspendido")) return true;
-  if (pathname.startsWith("/dashboard/empresa/planes")) return true;
-  return false;
-}
-
 export default function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
   const { empresa, isLoading: isEmpresaLoading } = useEmpresa();
   const router = useRouter();
   const pathname = usePathname();
-
   const [checkingPlan, setCheckingPlan] = useState(true);
 
-  // ⛑️ Rol efectivo (evita defaultear a "empresa" antes de tiempo)
+  // ⛑️ Nuevo: rol efectivo (evita defaultear a "empresa" antes de tiempo)
   const [effectiveRole, setEffectiveRole] = useState<string | null>(null);
   const [roleLoading, setRoleLoading] = useState<boolean>(true);
 
   useEffect(() => {
-    if (loading) return;
+    if (loading) return; // Esperar a que cargue sesión
 
+    // Si no hay usuario → redirigir al login
     if (!user) {
       router.replace("/auth/login");
       return;
     }
 
+    // 1) Resolver rol efectivo:
+    //    - Primero intentamos con user.role / user_metadata.role
+    //    - Si no está, leemos desde profiles para no asumir "empresa"
     let cancelled = false;
 
     async function resolveRole() {
@@ -82,19 +64,19 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
     }
 
     resolveRole();
-
     return () => {
       cancelled = true;
     };
   }, [loading, user, router]);
 
   useEffect(() => {
-    if (loading) return;
-    if (!user) return;
-    if (roleLoading) return;
+    if (loading) return;        // aún cargando sesión
+    if (!user) return;          // ya manejado arriba
+    if (roleLoading) return;    // ⚠️ esperar rol efectivo
 
+    // 🧭 Control de acceso por rol (solo cuando ya sabemos el rol real)
     const role = effectiveRole;
-    if (!role) return;
+    if (!role) return; // si no pudimos resolver rol todavía, no redirigir
 
     const roleDashboard: Record<string, string> = {
       super_admin_root: "/dashboard/admin",
@@ -103,9 +85,9 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
       empresa: "/dashboard/empresa",
       asesor: "/dashboard/asesor",
     };
-
     const target = roleDashboard[role] || "/dashboard";
 
+    // Redirigir a su dashboard correspondiente (evitar empujar a empresa por default)
     if (pathname.startsWith("/dashboard")) {
       if (!pathname.startsWith(target)) {
         router.replace(target);
@@ -113,62 +95,58 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
       }
     }
 
+    // 🧩 Validación de plan solo para EMPRESAS, usando empresa.id real
     const checkPlanStatus = async () => {
-      // No empresa => no aplica billing guard
       if (role !== "empresa") {
         setCheckingPlan(false);
         return;
       }
 
-      // Rutas permitidas aunque la cuenta esté suspendida/sin plan
-      if (isEmpresaBillingExemptPath(pathname)) {
-        setCheckingPlan(false);
-        return;
-      }
-
+      // Esperar a que cargue la empresa (para obtener su id)
       if (isEmpresaLoading) return;
 
       const empresaId = empresa?.id;
-
-      // Si no pudimos resolver empresa, por seguridad redirigimos a suspendido
       if (!empresaId) {
-        router.replace("/dashboard/empresa/suspendido");
+        // Si no hay empresa todavía, no bloquear
+        setCheckingPlan(false);
         return;
       }
 
-      try {
-        const res = await fetch(
-          `/api/billing/estado?empresaId=${encodeURIComponent(empresaId)}`,
-          { cache: "no-store" }
-        );
+      const { data: plan, error } = await supabase
+        .from("empresas_planes")
+        .select("id, fecha_fin, activo")
+        .eq("empresa_id", empresaId)
+        .eq("activo", true)
+        .maybeSingle();
 
-        if (!res.ok) {
-          console.error("Error consultando /api/billing/estado en ProtectedRoute:", res.status);
-          router.replace("/dashboard/empresa/suspendido");
-          return;
-        }
-
-        const data: BillingEstadoResponse = await res.json();
-        const estado = data?.estado;
-
-        const debeSuspender =
-          !!estado?.suspendida ||
-          !!estado?.requiere_seleccion_plan ||
-          (!!estado?.plan_vencido && !estado?.en_periodo_gracia);
-
-        if (debeSuspender) {
-          router.replace("/dashboard/empresa/suspendido");
-          return;
-        }
-
+      if (error) {
+        console.error("Error verificando plan:", error);
         setCheckingPlan(false);
-      } catch (error) {
-        console.error("Error verificando billing en ProtectedRoute:", error);
-        router.replace("/dashboard/empresa/suspendido");
+        return;
       }
+
+      if (plan) {
+        const hoy = new Date();
+        const vencimiento = new Date(plan.fecha_fin as any);
+
+        // ⏰ Si el plan expiró → marcar como inactivo y redirigir
+        if (hoy > vencimiento) {
+          await supabase
+            .from("empresas_planes")
+            .update({ activo: false })
+            .eq("id", plan.id);
+
+          alert(
+            "⏰ Tu plan de prueba ha expirado. Actualizá tu plan para continuar usando la app."
+          );
+          router.replace("/dashboard/empresa/planes");
+          return;
+        }
+      }
+
+      setCheckingPlan(false);
     };
 
-    setCheckingPlan(true);
     checkPlanStatus();
   }, [
     loading,
@@ -181,6 +159,7 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
     isEmpresaLoading,
   ]);
 
+  // Mostrar pantalla de carga mientras se verifica sesión, rol o plan
   if (loading || roleLoading || checkingPlan) {
     return (
       <div className="flex justify-center items-center h-screen text-gray-500">

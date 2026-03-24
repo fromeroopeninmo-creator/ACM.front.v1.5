@@ -8,6 +8,27 @@ import { supabase } from "#lib/supabaseClient";
 import DashboardHeader from "./components/DashboardHeader";
 import DashboardSidebar from "./components/DashboardSidebar";
 
+type BillingEstadoFlags = {
+  suspendida?: boolean;
+  suspendida_motivo?: string | null;
+  suspendida_at?: string | null;
+  plan_vencido?: boolean;
+  dias_desde_vencimiento?: number | null;
+  en_periodo_gracia?: boolean;
+  requiere_seleccion_plan?: boolean;
+};
+
+type BillingEstadoResponse = {
+  estado?: BillingEstadoFlags | null;
+};
+
+function isEmpresaBillingExemptPath(pathname: string | null): boolean {
+  if (!pathname) return false;
+  if (pathname.startsWith("/dashboard/empresa/suspendido")) return true;
+  if (pathname.startsWith("/dashboard/empresa/planes")) return true;
+  return false;
+}
+
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { user, loading, logout } = useAuth();
   const { primaryColor, hydrated } = useTheme();
@@ -19,6 +40,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   // Rol efectivo (evita default a "empresa" antes de tiempo)
   const [effectiveRole, setEffectiveRole] = useState<string | null>(null);
   const [roleLoading, setRoleLoading] = useState<boolean>(true);
+
+  const [billingChecked, setBillingChecked] = useState(false);
 
   useEffect(() => {
     if (!loading) setAuthChecked(true);
@@ -79,6 +102,62 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     };
   }, [user]);
 
+  // Guard central de billing para empresa
+  useEffect(() => {
+    let cancelled = false;
+
+    async function checkBilling() {
+      if (loading || !user || roleLoading || !effectiveRole) return;
+
+      // Solo aplica a empresa
+      if (effectiveRole !== "empresa") {
+        if (!cancelled) setBillingChecked(true);
+        return;
+      }
+
+      // Rutas permitidas aun suspendido
+      if (isEmpresaBillingExemptPath(pathname)) {
+        if (!cancelled) setBillingChecked(true);
+        return;
+      }
+
+      try {
+        const res = await fetch("/api/billing/estado", { cache: "no-store" });
+
+        if (!res.ok) {
+          console.error("Error al consultar /api/billing/estado en DashboardLayout:", res.status);
+          if (!cancelled) setBillingChecked(true);
+          return;
+        }
+
+        const data: BillingEstadoResponse = await res.json();
+        const estado = data?.estado;
+
+        const debeSuspender =
+          !!estado?.suspendida ||
+          !!estado?.requiere_seleccion_plan ||
+          (!!estado?.plan_vencido && !estado?.en_periodo_gracia);
+
+        if (debeSuspender) {
+          router.replace("/dashboard/empresa/suspendido");
+          return;
+        }
+
+        if (!cancelled) setBillingChecked(true);
+      } catch (err) {
+        console.error("Error verificando billing en DashboardLayout:", err);
+        if (!cancelled) setBillingChecked(true);
+      }
+    }
+
+    setBillingChecked(false);
+    checkBilling();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user, loading, roleLoading, effectiveRole, pathname, router]);
+
   // ✅ Esperar a que AuthContext y ThemeContext estén listos
   if (loading || !authChecked || !hydrated) {
     return (
@@ -110,6 +189,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     return (
       <div className="flex justify-center items-center h-screen text-gray-500">
         Preparando tu panel...
+      </div>
+    );
+  }
+
+  // Esperar chequeo de billing antes de renderizar dashboard empresa
+  if (effectiveRole === "empresa" && !billingChecked && !isEmpresaBillingExemptPath(pathname)) {
+    return (
+      <div className="flex justify-center items-center h-screen text-gray-500">
+        Verificando estado de tu cuenta...
       </div>
     );
   }

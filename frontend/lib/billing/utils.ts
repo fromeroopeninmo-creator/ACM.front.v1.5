@@ -572,8 +572,9 @@ export async function resolvePlanNetoBase(params: {
     throw new Error("Plan no encontrado");
   }
 
-  const base = Number(plan.precio ?? 0);
   const nombre = (plan.nombre ?? "").toLowerCase();
+  const tipoPlan = (plan.tipo_plan ?? "").toLowerCase();
+  const base = Number(plan.precio ?? 0);
 
   if (nombre !== "personalizado") {
     return {
@@ -610,22 +611,32 @@ export async function resolvePlanNetoBase(params: {
     };
   }
 
-  const { data: premiumPlan, error: premiumErr } = await supabase
-    .from("planes")
-    .select("precio")
-    .eq("nombre", "Premium")
-    .maybeSingle();
+  // Base Premium correcta por familia de plan:
+  // - core -> Core Premium (max_asesores = 20)
+  // - tracker_only -> Tracker Premium (max_asesores = 20)
+  // - combo -> Full Premium (max_asesores = 20)
+  let basePremium = base;
 
-  if (premiumErr) {
-    console.warn(
-      "resolvePlanNetoBase: error leyendo plan Premium:",
-      premiumErr.message
-    );
+  if (tipoPlan) {
+    const { data: premiumPlan, error: premiumErr } = await supabase
+      .from("planes")
+      .select("precio")
+      .eq("tipo_plan", tipoPlan)
+      .eq("max_asesores", 20)
+      .limit(1)
+      .maybeSingle();
+
+    if (premiumErr) {
+      console.warn(
+        "resolvePlanNetoBase: error leyendo base Premium específica:",
+        premiumErr.message
+      );
+    }
+
+    if (premiumPlan) {
+      basePremium = Number((premiumPlan as any).precio ?? base);
+    }
   }
-
-  const basePremium = premiumPlan
-    ? Number((premiumPlan as any).precio ?? 0)
-    : base;
 
   const unitExtra = Number(plan.precio_extra_por_asesor ?? 0);
   const extra = Math.max(0, targetCount - 20);

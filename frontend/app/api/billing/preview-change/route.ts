@@ -50,6 +50,16 @@ function calcularDiasCicloYRestantes(params: {
   return { diasCiclo, diasRestantes, factor };
 }
 
+function addDaysToDateOnly(dateOnly: string, days: number): string {
+  const d = new Date(`${dateOnly}T00:00:00.000Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+function getTodayISODateOnly(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
 export async function GET(req: Request) {
   try {
     const url = new URL(req.url);
@@ -91,10 +101,77 @@ export async function GET(req: Request) {
     }
 
     const sus = await getSuscripcionEstado(supabase, empresaId);
+
+    // Escenario nuevo / reactivación:
+    // Si la empresa no tiene plan actual o no tiene ciclo vigente completo,
+    // no debe devolver 409. Debe simular alta/reactivación cobrando ciclo completo.
     if (!sus?.plan_actual_id || !sus?.ciclo_inicio || !sus?.ciclo_fin) {
+      const nuevoConfig = await resolveEmpresaBillingConfig({
+        supabase,
+        empresaId,
+        planId: nuevoPlanId,
+        maxAsesoresOverride,
+        forzarSinAcuerdo: true,
+      });
+
+      const hoy = getTodayISODateOnly();
+      const duracionDias =
+        typeof nuevoConfig.plan_duracion_dias === "number" &&
+        nuevoConfig.plan_duracion_dias > 0
+          ? nuevoConfig.plan_duracion_dias
+          : 30;
+
+      const cicloFinEstimado = addDaysToDateOnly(hoy, duracionDias);
+
       return NextResponse.json(
-        { error: "Empresa sin plan actual o sin ciclo vigente completo para simular." },
-        { status: 409 }
+        {
+          tipo: "upgrade",
+          empresa_id: empresaId,
+
+          plan_actual: null,
+
+          plan_nuevo: {
+            id: nuevoPlanId,
+            nombre: nuevoConfig.plan_nombre ?? "",
+            precio_neto: round2(nuevoConfig.precio_neto_final),
+          },
+
+          dias_ciclo: duracionDias,
+          dias_restantes: duracionDias,
+
+          // Alta / reactivación = cobro ciclo completo
+          delta_neto: round2(nuevoConfig.precio_neto_final),
+          iva: round2(nuevoConfig.iva_importe),
+          total: round2(nuevoConfig.precio_total_final),
+
+          aplicar_desde: hoy,
+          nota:
+            "No tenés un plan activo. Se cobrará el valor completo del nuevo ciclo para reactivar la cuenta.",
+
+          proximo_programado: null,
+
+          pricing_actual: null,
+
+          pricing_nuevo: {
+            precio_base_neto: nuevoConfig.precio_base_neto,
+            precio_neto_final: nuevoConfig.precio_neto_final,
+            modo_iva: nuevoConfig.modo_iva,
+            iva_pct: nuevoConfig.iva_pct,
+            iva_importe: nuevoConfig.iva_importe,
+            precio_total_final: nuevoConfig.precio_total_final,
+            pricing_source: nuevoConfig.pricing_source,
+            agreement_applied: nuevoConfig.agreement_applied,
+            agreement_id: nuevoConfig.agreement_id,
+            agreement_tipo: nuevoConfig.agreement_tipo,
+          },
+
+          // Extras útiles para debugging / futura UI
+          ciclo_estimado: {
+            inicio: hoy,
+            fin: cicloFinEstimado,
+          },
+        },
+        { status: 200 }
       );
     }
 

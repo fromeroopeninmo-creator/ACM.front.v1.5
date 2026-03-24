@@ -1,4 +1,3 @@
-// frontend/app/dashboard/empresa/components/PlanStatusBanner.tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -8,17 +7,24 @@ import { useRouter } from "next/navigation";
 
 type BillingEstado = {
   estado?: {
-    empresaId: string;
-    tienePlan: boolean;
-    esTrial: boolean;
-    tipoPlan: "core" | "combo" | "tracker_only" | null;
-    incluyeValuador: boolean;
-    incluyeTracker: boolean;
-    suspendida: boolean;
-    planVencido: boolean;
-    enPeriodoGracia: boolean;
-    diasRestantes: number | null;
-    diasGraciaRestantes: number | null;
+    empresaId?: string;
+    tienePlan?: boolean;
+    esTrial?: boolean;
+    tipoPlan?: "core" | "combo" | "tracker_only" | null;
+    incluyeValuador?: boolean;
+    incluyeTracker?: boolean;
+    suspendida?: boolean;
+    planVencido?: boolean;
+    enPeriodoGracia?: boolean;
+    diasRestantes?: number | null;
+    diasGraciaRestantes?: number | null;
+
+    // shape nuevo backend
+    plan_vencido?: boolean;
+    en_periodo_gracia?: boolean;
+    dias_desde_vencimiento?: number | null;
+    requiere_seleccion_plan?: boolean;
+    suspendida_motivo?: string | null;
   } | null;
   plan: {
     id: string;
@@ -46,7 +52,6 @@ type BillingEstado = {
 
 /** Resuelve empresas.id para el usuario actual (dueño directo o perfil ligado) */
 async function resolveEmpresaIdForUser(userId: string): Promise<string | null> {
-  // 1) Empresa donde el usuario es dueño directo
   const { data: emp } = await supabase
     .from("empresas")
     .select("id")
@@ -54,7 +59,6 @@ async function resolveEmpresaIdForUser(userId: string): Promise<string | null> {
     .maybeSingle();
   if (emp?.id) return emp.id as string;
 
-  // 2) Perfil con empresa asociada
   const { data: prof } = await supabase
     .from("profiles")
     .select("empresa_id")
@@ -73,10 +77,12 @@ export default function PlanStatusBanner() {
   const [diasRestantes, setDiasRestantes] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [tieneTracker, setTieneTracker] = useState<boolean | null>(null);
+  const [requiereSeleccionPlan, setRequiereSeleccionPlan] = useState(false);
+  const [estaSuspendida, setEstaSuspendida] = useState(false);
 
   const hoursLeftWithinGrace = useMemo(() => {
     if (diasRestantes === null) return null;
-    const h = 48 + diasRestantes * 24; // si diasRestantes es negativo, quedan menos de 48h
+    const h = 48 + diasRestantes * 24;
     return Math.max(0, h);
   }, [diasRestantes]);
 
@@ -85,19 +91,18 @@ export default function PlanStatusBanner() {
       if (!user?.id) return;
 
       try {
-        // Resolución de empresa (por si en el futuro permitimos admin ver otra empresa)
         const empresaId =
           (user as any)?.empresa_id || (await resolveEmpresaIdForUser(user.id));
 
-        // Llamamos al endpoint interno que ya aplica control de rol y arma el shape estable
         const qs = empresaId ? `?empresaId=${encodeURIComponent(empresaId)}` : "";
         const res = await fetch(`/api/billing/estado${qs}`, { cache: "no-store" });
+
         if (!res.ok) {
           setLoading(false);
           return;
         }
-        const data: BillingEstado = await res.json();
 
+        const data: BillingEstado = await res.json();
         const nombre = data?.plan?.nombre ?? null;
         setPlanNombre(nombre);
 
@@ -105,19 +110,31 @@ export default function PlanStatusBanner() {
         const fin = finIso ? new Date(finIso) : null;
         setFechaFin(fin);
 
-        // 🧩 Flags de estado (incluyeTracker, esTrial, etc.)
-        const flags = data?.estado;
-        if (flags) {
-          const trackerHabilitado = !!flags.incluyeTracker || !!flags.esTrial;
-          setTieneTracker(trackerHabilitado);
-        } else {
-          setTieneTracker(null);
-        }
+        const flags = data?.estado ?? null;
 
-        // Cálculo de días restantes: usamos el valor del backend si viene, o caemos al cálculo tradicional
+        const trackerHabilitado =
+          !!flags?.incluyeTracker || !!flags?.esTrial;
+        setTieneTracker(flags ? trackerHabilitado : null);
+
+        const requierePlan = !!flags?.requiere_seleccion_plan;
+        const suspendidaFlag = !!flags?.suspendida;
+        const planVencido =
+          !!flags?.planVencido || !!flags?.plan_vencido;
+        const enGracia =
+          !!flags?.enPeriodoGracia || !!flags?.en_periodo_gracia;
+
+        setRequiereSeleccionPlan(requierePlan);
+        setEstaSuspendida(suspendidaFlag);
+
         let diff: number | null = null;
-        if (flags && typeof flags.diasRestantes === "number") {
+
+        if (typeof flags?.diasRestantes === "number") {
           diff = flags.diasRestantes;
+        } else if (
+          typeof flags?.dias_desde_vencimiento === "number" &&
+          planVencido
+        ) {
+          diff = -Math.abs(flags.dias_desde_vencimiento);
         } else if (fin) {
           const hoy = new Date();
           diff = Math.ceil(
@@ -125,26 +142,21 @@ export default function PlanStatusBanner() {
           );
         }
 
-        if (diff !== null) {
-          setDiasRestantes(diff);
+        setDiasRestantes(diff);
 
-          // 🚨 bloqueo si plan pago vencido +2 días
-          if (nombre && nombre !== "Trial" && diff < -2) {
-            if (!window.location.pathname.includes("/dashboard/empresa/suspendido")) {
-              router.replace("/dashboard/empresa/suspendido");
-              return;
-            }
-          }
+        const debeSuspender =
+          requierePlan || suspendidaFlag || (planVencido && !enGracia);
 
-          // ✅ si estaba suspendido y vuelve a margen tolerado, redirigir al dashboard normal
-          if (nombre && nombre !== "Trial" && diff >= -2) {
-            if (window.location.pathname.includes("/dashboard/empresa/suspendido")) {
-              router.replace("/dashboard/empresa");
-              return;
-            }
+        if (debeSuspender) {
+          if (!window.location.pathname.includes("/dashboard/empresa/suspendido")) {
+            router.replace("/dashboard/empresa/suspendido");
+            return;
           }
         } else {
-          setDiasRestantes(null);
+          if (window.location.pathname.includes("/dashboard/empresa/suspendido")) {
+            router.replace("/dashboard/empresa");
+            return;
+          }
         }
       } catch (err) {
         console.error("Error obteniendo estado de billing:", err);
@@ -153,23 +165,36 @@ export default function PlanStatusBanner() {
       }
     };
 
-    // primera carga
     fetchEstado();
-    // refresco cada 60s para captar cambios por webhook
     const t = setInterval(fetchEstado, 60000);
     return () => clearInterval(t);
   }, [user, router]);
 
-  // 🧪 BYPASS TEMPORAL: permitir agregar asesores sin plan (modo development)
-  // ⚠️ Mantener la lógica del archivo original
   if (process.env.NODE_ENV === "development") {
     console.warn("🚧 Bypass de verificación de plan activo habilitado (solo en desarrollo)");
     return null;
   }
 
-  if (loading || !planNombre) return null;
+  if (loading) return null;
 
-  // 🧩 BANNER PARA PLAN TRIAL ACTIVO
+  // Sin plan activo / requiere selección => mostrar banner rojo directo
+  if (requiereSeleccionPlan) {
+    return (
+      <div className="p-3 text-sm text-white bg-red-700 text-center font-medium">
+        ⚠️ Tu cuenta no tiene un plan activo. Para continuar utilizando la app,
+        debés seleccionar y pagar un plan.{" "}
+        <a
+          href="/dashboard/empresa/planes"
+          className="underline hover:text-blue-100 ml-1"
+        >
+          Ir al portal de planes
+        </a>
+      </div>
+    );
+  }
+
+  if (loading || (!planNombre && !estaSuspendida)) return null;
+
   if (planNombre === "Trial" && diasRestantes !== null && diasRestantes >= 0) {
     return (
       <div
@@ -192,8 +217,7 @@ export default function PlanStatusBanner() {
     );
   }
 
-  // 🧩 BANNER PARA PLANES PAGOS ACTIVOS
-  if (planNombre !== "Trial" && diasRestantes !== null && diasRestantes >= 0) {
+  if (planNombre && planNombre !== "Trial" && diasRestantes !== null && diasRestantes >= 0) {
     return (
       <div className="p-3 text-sm text-white bg-blue-600 text-center font-medium">
         <div>
@@ -201,7 +225,6 @@ export default function PlanStatusBanner() {
           {fechaFin?.toLocaleDateString("es-AR")}.
         </div>
 
-        {/* 🔔 Upsell específico para Business Tracker / Analytics cuando el plan NO lo incluye */}
         {tieneTracker === false && (
           <div className="mt-1 text-xs sm:text-sm">
             📊 Para usar <strong>Business Tracker</strong> y{" "}
@@ -219,8 +242,8 @@ export default function PlanStatusBanner() {
     );
   }
 
-  // 🧩 BANNER PARA PLANES PAGOS VENCIDOS (DENTRO DE 48HS)
   if (
+    planNombre &&
     planNombre !== "Trial" &&
     diasRestantes !== null &&
     diasRestantes < 0 &&

@@ -26,6 +26,16 @@ function getBaseUrl(): string | null {
   return envUrl.startsWith("http") ? envUrl : `https://${envUrl}`;
 }
 
+function getTodayISODateOnly(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function addDaysToDateOnly(dateOnly: string, days: number): string {
+  const d = new Date(`${dateOnly}T00:00:00.000Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
 function calcularDiasCicloYRestantes(params: {
   cicloInicioISO: string;
   cicloFinISO: string;
@@ -197,7 +207,7 @@ async function crearMovimientoPending(params: {
   cicloInicio: string;
   cicloFin: string;
   subtipo: string;
-  planActualId: string;
+  planActualId?: string | null;
   nuevoPlanId: string;
   deltaNeto: number;
   iva: number;
@@ -206,12 +216,12 @@ async function crearMovimientoPending(params: {
   diasRestantes: number;
   factor: number;
   maxAsesoresOverride?: number;
-  actualConfig: any;
+  actualConfig?: any | null;
   nuevoConfig: any;
 }) {
   const metadata: any = {
     subtipo: params.subtipo,
-    plan_actual_id: params.planActualId,
+    plan_actual_id: params.planActualId ?? null,
     nuevo_plan_id: params.nuevoPlanId,
     ciclo_inicio: params.cicloInicio,
     ciclo_fin: params.cicloFin,
@@ -220,18 +230,20 @@ async function crearMovimientoPending(params: {
     factor: params.factor,
     iva: round2(params.iva),
     total: round2(params.total),
-    pricing_actual: {
-      precio_base_neto: params.actualConfig.precio_base_neto,
-      precio_neto_final: params.actualConfig.precio_neto_final,
-      modo_iva: params.actualConfig.modo_iva,
-      iva_pct: params.actualConfig.iva_pct,
-      iva_importe: params.actualConfig.iva_importe,
-      precio_total_final: params.actualConfig.precio_total_final,
-      pricing_source: params.actualConfig.pricing_source,
-      agreement_applied: params.actualConfig.agreement_applied,
-      agreement_id: params.actualConfig.agreement_id,
-      agreement_tipo: params.actualConfig.agreement_tipo,
-    },
+    pricing_actual: params.actualConfig
+      ? {
+          precio_base_neto: params.actualConfig.precio_base_neto,
+          precio_neto_final: params.actualConfig.precio_neto_final,
+          modo_iva: params.actualConfig.modo_iva,
+          iva_pct: params.actualConfig.iva_pct,
+          iva_importe: params.actualConfig.iva_importe,
+          precio_total_final: params.actualConfig.precio_total_final,
+          pricing_source: params.actualConfig.pricing_source,
+          agreement_applied: params.actualConfig.agreement_applied,
+          agreement_id: params.actualConfig.agreement_id,
+          agreement_tipo: params.actualConfig.agreement_tipo,
+        }
+      : null,
     pricing_nuevo: {
       precio_base_neto: params.nuevoConfig.precio_base_neto,
       precio_neto_final: params.nuevoConfig.precio_neto_final,
@@ -286,6 +298,7 @@ async function crearMovimientoPending(params: {
  *
  * Reglas:
  * - Nunca activa plan sin pago.
+ * - Alta/reactivación sin plan actual: checkout por ciclo completo.
  * - Upgrade: checkout por diferencia o ciclo completo.
  * - Mismo plan vencido: checkout de renovación del ciclo completo.
  * - Downgrade: programa el cambio al próximo ciclo.
@@ -324,13 +337,121 @@ export async function POST(req: Request) {
     }
 
     const sus = await getSuscripcionEstado(supabase, empresaId);
+
+    // =========================================================
+    // ALTA / REACTIVACIÓN: empresa sin plan actual o sin ciclo
+    // =========================================================
     if (!sus?.plan_actual_id || !sus?.ciclo_inicio || !sus?.ciclo_fin) {
+      const nuevoConfig = await resolveEmpresaBillingConfig({
+        supabase,
+        empresaId,
+        planId: nuevoPlanId,
+        maxAsesoresOverride,
+        forzarSinAcuerdo: true,
+      });
+
+      const hoy = getTodayISODateOnly();
+      const diasCiclo =
+        typeof nuevoConfig.plan_duracion_dias === "number" &&
+        nuevoConfig.plan_duracion_dias > 0
+          ? Number(nuevoConfig.plan_duracion_dias)
+          : 30;
+      const cicloFinEstimado = addDaysToDateOnly(hoy, diasCiclo);
+
+      const existing = await buscarMovimientoPending({
+        empresaId,
+        cicloInicio: hoy,
+        cicloFin: cicloFinEstimado,
+        subtipo: "alta_reactivacion_ciclo",
+      });
+
+      if (existing?.id) {
+        const checkoutUrl = await crearPreferenciaMercadoPago({
+          movimientoId: existing.id as string,
+          empresaId,
+          totalConIVA: Number(existing.total ?? nuevoConfig.precio_total_final ?? 0),
+        });
+
+        return NextResponse.json(
+          {
+            accion: "alta_reactivacion",
+            movimiento_id: existing.id,
+            checkoutUrl,
+            delta: {
+              neto: round2(Number(existing.monto_neto ?? nuevoConfig.precio_neto_final ?? 0)),
+              iva: round2(Number(existing.iva ?? nuevoConfig.iva_importe ?? 0)),
+              total: round2(Number(existing.total ?? nuevoConfig.precio_total_final ?? 0)),
+              moneda: "ARS",
+            },
+            pricing_nuevo: {
+              precio_base_neto: nuevoConfig.precio_base_neto,
+              precio_neto_final: nuevoConfig.precio_neto_final,
+              modo_iva: nuevoConfig.modo_iva,
+              iva_pct: nuevoConfig.iva_pct,
+              iva_importe: nuevoConfig.iva_importe,
+              precio_total_final: nuevoConfig.precio_total_final,
+              pricing_source: nuevoConfig.pricing_source,
+              agreement_applied: nuevoConfig.agreement_applied,
+              agreement_id: nuevoConfig.agreement_id,
+              agreement_tipo: nuevoConfig.agreement_tipo,
+            },
+            nota: "Se reutilizó un checkout pendiente para reactivar la cuenta.",
+          },
+          { status: 200 }
+        );
+      }
+
+      const movimientoId = await crearMovimientoPending({
+        empresaId,
+        descripcion: "Alta / reactivación de plan (ciclo completo)",
+        cicloInicio: hoy,
+        cicloFin: cicloFinEstimado,
+        subtipo: "alta_reactivacion_ciclo",
+        planActualId: null,
+        nuevoPlanId,
+        deltaNeto: round2(nuevoConfig.precio_neto_final),
+        iva: round2(nuevoConfig.iva_importe),
+        total: round2(nuevoConfig.precio_total_final),
+        diasCiclo,
+        diasRestantes: diasCiclo,
+        factor: 1,
+        maxAsesoresOverride,
+        actualConfig: null,
+        nuevoConfig,
+      });
+
+      const checkoutUrl = await crearPreferenciaMercadoPago({
+        movimientoId: movimientoId as string,
+        empresaId,
+        totalConIVA: nuevoConfig.precio_total_final,
+      });
+
       return NextResponse.json(
         {
-          error:
-            "Empresa sin plan actual o sin ciclo vigente completo para cambiar.",
+          accion: "alta_reactivacion",
+          movimiento_id: movimientoId,
+          checkoutUrl,
+          delta: {
+            neto: round2(nuevoConfig.precio_neto_final),
+            iva: round2(nuevoConfig.iva_importe),
+            total: round2(nuevoConfig.precio_total_final),
+            moneda: "ARS",
+          },
+          pricing_nuevo: {
+            precio_base_neto: nuevoConfig.precio_base_neto,
+            precio_neto_final: nuevoConfig.precio_neto_final,
+            modo_iva: nuevoConfig.modo_iva,
+            iva_pct: nuevoConfig.iva_pct,
+            iva_importe: nuevoConfig.iva_importe,
+            precio_total_final: nuevoConfig.precio_total_final,
+            pricing_source: nuevoConfig.pricing_source,
+            agreement_applied: nuevoConfig.agreement_applied,
+            agreement_id: nuevoConfig.agreement_id,
+            agreement_tipo: nuevoConfig.agreement_tipo,
+          },
+          nota: "Al completar el pago en Mercado Pago, el plan se activará por el valor completo del nuevo ciclo.",
         },
-        { status: 409 }
+        { status: 200 }
       );
     }
 

@@ -28,6 +28,10 @@ function toNum(x: any): number {
   return Number(x) || 0;
 }
 
+function todayDateOnlyUTC(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
 export async function GET(req: Request) {
   try {
     // 1) Auth + contexto
@@ -53,10 +57,23 @@ export async function GET(req: Request) {
     // 3) Empresa / Asesor: resolver empresa propia ignorando empresaIdParam
     if (!isAdminLike) {
       const a: any = actor;
-
       const actorUserId = a.userId ?? a.id ?? a.sub ?? null;
 
-      // 3.1: intentar siempre primero desde profiles.empresa_id
+      // 3.1 intentar primero profiles.user_id
+      if (!empresaId && actorUserId) {
+        const { data: profileRowByUserId, error: profileErrByUserId } =
+          await supabaseAdmin
+            .from("profiles")
+            .select("empresa_id")
+            .eq("user_id", actorUserId)
+            .maybeSingle();
+
+        if (!profileErrByUserId && profileRowByUserId?.empresa_id) {
+          empresaId = profileRowByUserId.empresa_id;
+        }
+      }
+
+      // 3.2 fallback profiles.id
       if (!empresaId && actorUserId) {
         const { data: profileRow, error: profileErr } = await supabaseAdmin
           .from("profiles")
@@ -69,7 +86,7 @@ export async function GET(req: Request) {
         }
       }
 
-      // 3.2: fallback para EMPRESA → tabla empresas.user_id
+      // 3.3 fallback para EMPRESA → tabla empresas.user_id
       if (!empresaId && role === "empresa" && actorUserId) {
         const { data: empFromUser, error: empUserErr } = await supabaseAdmin
           .from("empresas")
@@ -82,7 +99,7 @@ export async function GET(req: Request) {
         }
       }
 
-      // 3.3: fallback para ASESOR → tabla asesores.email
+      // 3.4 fallback para ASESOR → tabla asesores.email
       if (!empresaId && role === "asesor") {
         const email = a.email ?? a.user_metadata?.email ?? null;
 
@@ -130,28 +147,20 @@ export async function GET(req: Request) {
       );
     }
 
-    // 5) Plan activo o último por fecha_inicio
-    const { data: activo } = await supabaseAdmin
+    // 5) SOLO plan activo vigente (sin fallback al último histórico)
+    const { data: planEP, error: planEpErr } = await supabaseAdmin
       .from("empresas_planes")
       .select(
         "id, plan_id, fecha_inicio, fecha_fin, activo, max_asesores_override"
       )
       .eq("empresa_id", empresaId)
       .eq("activo", true)
+      .order("fecha_inicio", { ascending: false })
+      .limit(1)
       .maybeSingle();
 
-    let planEP = activo;
-    if (!planEP) {
-      const { data: ultimo } = await supabaseAdmin
-        .from("empresas_planes")
-        .select(
-          "id, plan_id, fecha_inicio, fecha_fin, activo, max_asesores_override"
-        )
-        .eq("empresa_id", empresaId)
-        .order("fecha_inicio", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      planEP = ultimo ?? null;
+    if (planEpErr) {
+      return NextResponse.json({ error: planEpErr.message }, { status: 400 });
     }
 
     // Vista de suscripción/“próximo plan”
@@ -161,53 +170,13 @@ export async function GET(req: Request) {
       .eq("empresa_id", empresaId)
       .maybeSingle();
 
-    // 6) Flags de ciclo / vencimiento
-    const now = new Date();
-    let plan_vencido = false;
-    let dias_desde_vencimiento: number | null = null;
-    let en_periodo_gracia = false;
-    let proximoCobro: string | null = null;
-
-    if (planEP?.fecha_fin) {
-      const fin = new Date(planEP.fecha_fin as string);
-      if (!Number.isNaN(fin.getTime())) {
-        proximoCobro = fin.toISOString();
-        const diffMs = now.getTime() - fin.getTime(); // >0 si ya venció
-        const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-        dias_desde_vencimiento = diffDays;
-
-        if (diffDays >= 0) {
-          plan_vencido = true;
-          en_periodo_gracia = diffDays <= 2;
-        }
-      }
-    } else if (planEP?.fecha_inicio) {
-      // Estimar fecha_fin con duracion_dias si no existe
-      const { data: planRowDur, error: planErrDur } = await supabaseAdmin
-        .from("planes")
-        .select("duracion_dias")
-        .eq("id", planEP.plan_id)
-        .maybeSingle();
-
-      if (!planErrDur && planRowDur?.duracion_dias) {
-        try {
-          const base = new Date(planEP.fecha_inicio as string);
-          const d = new Date(base.getTime());
-          d.setDate(d.getDate() + Number(planRowDur.duracion_dias));
-          proximoCobro = d.toISOString();
-        } catch {
-          proximoCobro = null;
-        }
-      }
-    }
-
+    // Si no hay plan activo → empresa sin cobertura
     if (!planEP) {
       const suspendidaSinPlan = true;
       const suspensionMotivoSinPlan =
         empRow.suspension_motivo ??
         "Sin plan activo. Debe seleccionar un plan para continuar.";
 
-      // No hay registro en empresas_planes → empresa sin cobertura
       return NextResponse.json(
         {
           plan: null,
@@ -228,14 +197,13 @@ export async function GET(req: Request) {
             dias_desde_vencimiento: 0,
             en_periodo_gracia: false,
             requiere_seleccion_plan: true,
+            requiere_pago_inicial_acuerdo: false,
           },
-          // Nuevo bloque: features por defecto cuando no hay plan
           features: {
             tipo_plan: null,
             incluye_valuador: false,
             incluye_tracker: false,
           },
-          // Nuevo bloque: pricing / acuerdo comercial cuando no hay plan
           pricing: null,
           acuerdoComercial: null,
           cupos: {
@@ -249,11 +217,11 @@ export async function GET(req: Request) {
       );
     }
 
-    // 7) Datos del plan (precio + tipo_plan / features)
+    // 6) Datos del plan activo
     const { data: planRow, error: planErr } = await supabaseAdmin
       .from("planes")
       .select(
-        "id, nombre, precio, duracion_dias, max_asesores, precio_extra_por_asesor, tipo_plan, incluye_valuador, incluye_tracker, es_trial"
+        "id, nombre, nombre_comercial, precio, duracion_dias, max_asesores, precio_extra_por_asesor, tipo_plan, incluye_valuador, incluye_tracker, es_trial"
       )
       .eq("id", planEP.plan_id)
       .maybeSingle();
@@ -262,7 +230,7 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: planErr.message }, { status: 400 });
     }
 
-    // 7.1) Resolución central de billing (precio/cupo/IVA/acuerdo)
+    // 7) Resolución central de billing
     const billingConfig = await resolveEmpresaBillingConfig({
       supabase: supabaseAdmin,
       empresaId,
@@ -273,7 +241,6 @@ export async function GET(req: Request) {
           : Number(planEP.max_asesores_override),
     });
 
-    // Compatibilidad con payload previo
     const precioNeto = toNum(billingConfig.precio_neto_final);
     const iva = toNum(billingConfig.iva_importe);
     const totalConIVA = toNum(billingConfig.precio_total_final);
@@ -282,41 +249,91 @@ export async function GET(req: Request) {
     const { data: susRow } = await supabaseAdmin
       .from("suscripciones")
       .select(
-        "estado, inicio, fin, externo_customer_id, externo_subscription_id"
+        "estado, inicio, fin, plan_id, externo_customer_id, externo_subscription_id, created_at"
       )
       .eq("empresa_id", empresaId)
       .order("inicio", { ascending: false })
+      .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
 
-    // 9) Si billingConfig ya resolvió ciclo, priorizarlo.
-    // Si no, usar el cálculo / fallback actual.
+    // 9) Ciclo
     const cicloInicio = billingConfig.ciclo_inicio ?? planEP.fecha_inicio ?? null;
     const cicloFin = billingConfig.ciclo_fin ?? planEP.fecha_fin ?? null;
 
-    if (!proximoCobro) {
-      if (cicloFin) {
-        try {
-          proximoCobro = new Date(cicloFin as string).toISOString();
-        } catch {
-          proximoCobro = null;
+    // 10) Próximo cobro / vencimiento normal
+    const now = new Date();
+    let plan_vencido = false;
+    let dias_desde_vencimiento: number | null = null;
+    let en_periodo_gracia = false;
+    let proximoCobro: string | null = null;
+
+    if (cicloFin) {
+      try {
+        const fin = new Date(cicloFin as string);
+        proximoCobro = fin.toISOString();
+        const diffMs = now.getTime() - fin.getTime();
+        const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+        dias_desde_vencimiento = diffDays;
+
+        if (diffDays >= 0) {
+          plan_vencido = true;
+          en_periodo_gracia = diffDays <= 2;
         }
-      } else if (cicloInicio && (billingConfig.plan_duracion_dias ?? planRow?.duracion_dias)) {
-        try {
-          const base = new Date(cicloInicio as string);
-          const d = new Date(base.getTime());
-          d.setDate(
-            d.getDate() +
-              Number(billingConfig.plan_duracion_dias ?? planRow?.duracion_dias ?? 30)
-          );
-          proximoCobro = d.toISOString();
-        } catch {
-          proximoCobro = null;
-        }
+      } catch {
+        proximoCobro = null;
+      }
+    } else if (cicloInicio && (billingConfig.plan_duracion_dias ?? planRow?.duracion_dias)) {
+      try {
+        const base = new Date(cicloInicio as string);
+        const d = new Date(base.getTime());
+        d.setDate(
+          d.getDate() +
+            Number(billingConfig.plan_duracion_dias ?? planRow?.duracion_dias ?? 30)
+        );
+        proximoCobro = d.toISOString();
+      } catch {
+        proximoCobro = null;
       }
     }
 
-    // Normalizamos flags de features para que siempre haya algo consistente
+    // 11) Estado especial: acuerdo comercial activo pero primer pago pendiente
+    const hoy = todayDateOnlyUTC();
+
+    const acuerdoActivo = !!billingConfig.agreement_applied;
+    const acuerdoInicio = billingConfig.agreement_fecha_inicio ?? null;
+    const acuerdoFin = billingConfig.agreement_fecha_fin ?? null;
+
+    const acuerdoVigenteHoy =
+      acuerdoActivo &&
+      !!acuerdoInicio &&
+      acuerdoInicio <= hoy &&
+      (!acuerdoFin || acuerdoFin >= hoy);
+
+    const suscripcionActivaActual =
+      !!susRow &&
+      susRow.estado === "activa" &&
+      (!susRow.plan_id || String(susRow.plan_id) === String(planEP.plan_id)) &&
+      (!!susRow.fin ? String(susRow.fin).slice(0, 10) >= hoy : true);
+
+    const requierePagoInicialAcuerdo =
+      acuerdoVigenteHoy && !suscripcionActivaActual;
+
+    const suspendidaPorAcuerdo =
+      requierePagoInicialAcuerdo === true;
+
+    const suspendidaFinal =
+      suspendidaPorAcuerdo || !!empRow.suspendida;
+
+    const suspensionMotivoFinal = suspendidaPorAcuerdo
+      ? "Acuerdo comercial pendiente de pago inicial."
+      : empRow.suspension_motivo ?? null;
+
+    const enPeriodoGraciaFinal = suspendidaPorAcuerdo
+      ? false
+      : en_periodo_gracia;
+
+    // 12) Features
     const tipoPlan = planRow?.tipo_plan ?? null;
     const incluyeValuador = !!planRow?.incluye_valuador;
     const incluyeTracker = !!planRow?.incluye_tracker;
@@ -326,13 +343,13 @@ export async function GET(req: Request) {
         plan: planRow
           ? {
               id: planRow.id,
-              nombre: planRow.nombre,
+              nombre:
+                (planRow as any).nombre_comercial ??
+                planRow.nombre,
 
-              // Compatibilidad payload anterior
               precioNeto,
               totalConIVA,
 
-              // Nuevo detalle de pricing
               precioBaseNeto: billingConfig.precio_base_neto,
               precioNetoFinal: billingConfig.precio_neto_final,
               ivaModo: billingConfig.modo_iva,
@@ -341,14 +358,15 @@ export async function GET(req: Request) {
               precioTotalFinal: billingConfig.precio_total_final,
               pricingSource: billingConfig.pricing_source,
 
-              // info del tipo de plan / features
-              tipo_plan: tipoPlan, // "core" | "combo" | "tracker_only" | "trial"
+              tipo_plan: tipoPlan,
               incluye_valuador: incluyeValuador,
               incluye_tracker: incluyeTracker,
               es_trial: billingConfig.plan_es_trial ?? !!planRow.es_trial,
               duracion_dias:
                 billingConfig.plan_duracion_dias ??
-                (planRow?.duracion_dias == null ? null : Number(planRow.duracion_dias)),
+                (planRow?.duracion_dias == null
+                  ? null
+                  : Number(planRow.duracion_dias)),
             }
           : null,
         ciclo: {
@@ -358,7 +376,7 @@ export async function GET(req: Request) {
         },
         suscripcion: susRow
           ? {
-              estado: susRow.estado, // activa | suspendida | cancelada | pendiente
+              estado: susRow.estado,
               externoCustomerId: susRow.externo_customer_id ?? null,
               externoSubscriptionId: susRow.externo_subscription_id ?? null,
             }
@@ -371,21 +389,20 @@ export async function GET(req: Request) {
           : null,
         cambioProgramadoPara: vEstado?.cambio_programado_para ?? null,
         estado: {
-          suspendida: !!empRow.suspendida,
-          suspendida_motivo: empRow.suspension_motivo ?? null,
+          suspendida: suspendidaFinal,
+          suspendida_motivo: suspensionMotivoFinal,
           suspendida_at: empRow.suspendida_at ?? null,
-          plan_vencido,
+          plan_vencido: plan_vencido,
           dias_desde_vencimiento,
-          en_periodo_gracia,
+          en_periodo_gracia: enPeriodoGraciaFinal,
           requiere_seleccion_plan: false,
+          requiere_pago_inicial_acuerdo: requierePagoInicialAcuerdo,
         },
-        // bloque explícito de features del plan actual
         features: {
           tipo_plan: tipoPlan,
           incluye_valuador: incluyeValuador,
           incluye_tracker: incluyeTracker,
         },
-        // Nuevo bloque explícito de pricing
         pricing: {
           precio_base_neto: billingConfig.precio_base_neto,
           precio_neto_final: billingConfig.precio_neto_final,
@@ -399,7 +416,6 @@ export async function GET(req: Request) {
           suscripcion_precio_neto_override:
             billingConfig.suscripcion_precio_neto_override,
         },
-        // Nuevo bloque explícito de cupos
         cupos: {
           max_asesores_plan: billingConfig.max_asesores_plan,
           max_asesores_final: billingConfig.max_asesores_final,
@@ -408,7 +424,6 @@ export async function GET(req: Request) {
           precio_extra_por_asesor_final:
             billingConfig.precio_extra_por_asesor_final,
         },
-        // Nuevo bloque explícito de acuerdo comercial
         acuerdoComercial: billingConfig.agreement_applied
           ? {
               activo: true,

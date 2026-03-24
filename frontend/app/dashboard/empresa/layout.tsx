@@ -11,6 +11,7 @@ type BillingEstadoFlags = {
   plan_vencido: boolean;
   dias_desde_vencimiento: number | null;
   en_periodo_gracia: boolean;
+  requiere_seleccion_plan?: boolean;
 };
 
 type BillingEstadoResponse = {
@@ -118,10 +119,11 @@ export default function EmpresaLayout({
         }
 
         const debeSuspender =
-          estado.suspendida ||
-          (estado.plan_vencido && !estado.en_periodo_gracia);
+          !!estado.suspendida ||
+          !!estado.requiere_seleccion_plan ||
+          (!!estado.plan_vencido && !estado.en_periodo_gracia);
 
-        // 🔒 Si la cuenta está suspendida / vencida (sin gracia) -> siempre a pantalla de suspendido
+        // 🔒 Si la cuenta está suspendida / vencida (sin gracia) / sin plan -> siempre a pantalla de suspendido
         if (debeSuspender) {
           router.replace("/dashboard/empresa/suspendido");
           return;

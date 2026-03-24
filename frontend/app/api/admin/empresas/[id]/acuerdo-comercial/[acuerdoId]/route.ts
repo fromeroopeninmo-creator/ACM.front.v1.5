@@ -198,6 +198,10 @@ function isDateInRangeToday(fechaInicio: string, fechaFin?: string | null) {
   return true;
 }
 
+function getTodayISODateOnly(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
 function addDaysToDateOnly(dateOnly: string, days: number): string {
   const d = new Date(`${dateOnly}T00:00:00.000Z`);
   d.setUTCDate(d.getUTCDate() + days);
@@ -331,6 +335,56 @@ async function syncEmpresaPlanOperativoConAcuerdo(params: {
     reason: "inserted_new_active_plan",
     planRowId: inserted?.id ? String(inserted.id) : null,
     fechaFinAplicada,
+  };
+}
+
+async function clearEmpresaPlanOperativoPorDesactivacionAcuerdo(params: {
+  empresaId: string;
+}) {
+  const hoy = getTodayISODateOnly();
+
+  const { data: planesActivos, error: readErr } = await supabaseAdmin
+    .from("empresas_planes")
+    .select("id, fecha_inicio, fecha_fin, activo")
+    .eq("empresa_id", params.empresaId)
+    .eq("activo", true);
+
+  if (readErr) {
+    throw new Error(
+      `Error leyendo planes activos para desactivación por acuerdo comercial: ${readErr.message}`
+    );
+  }
+
+  if (!planesActivos || planesActivos.length === 0) {
+    return {
+      synced: true,
+      reason: "no_active_plan_to_clear",
+      planRowId: null as string | null,
+      fechaFinAplicada: hoy,
+    };
+  }
+
+  const ids = planesActivos.map((row) => String(row.id));
+
+  const { error: clearErr } = await supabaseAdmin
+    .from("empresas_planes")
+    .update({
+      activo: false,
+      fecha_fin: hoy,
+    })
+    .in("id", ids);
+
+  if (clearErr) {
+    throw new Error(
+      `Error desactivando plan operativo por desactivación de acuerdo: ${clearErr.message}`
+    );
+  }
+
+  return {
+    synced: true,
+    reason: "cleared_active_plan_by_acuerdo_deactivation",
+    planRowId: ids[0] ?? null,
+    fechaFinAplicada: hoy,
   };
 }
 
@@ -525,6 +579,23 @@ export async function PUT(
             error:
               syncErr?.message ||
               "No se pudo sincronizar empresas_planes con el acuerdo comercial editado.",
+          },
+          { status: 500 }
+        );
+      }
+    }
+
+    if (mergedActivo === false) {
+      try {
+        planSync = await clearEmpresaPlanOperativoPorDesactivacionAcuerdo({
+          empresaId,
+        });
+      } catch (clearErr: any) {
+        return NextResponse.json(
+          {
+            error:
+              clearErr?.message ||
+              "No se pudo limpiar empresas_planes al desactivar el acuerdo comercial.",
           },
           { status: 500 }
         );

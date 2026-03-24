@@ -202,7 +202,12 @@ export async function GET(req: Request) {
     }
 
     if (!planEP) {
-      // No hay registro en empresas_planes → todo null salvo estado de suspensión
+      const suspendidaSinPlan = true;
+      const suspensionMotivoSinPlan =
+        empRow.suspension_motivo ??
+        "Sin plan activo. Debe seleccionar un plan para continuar.";
+
+      // No hay registro en empresas_planes → empresa sin cobertura
       return NextResponse.json(
         {
           plan: null,
@@ -216,12 +221,13 @@ export async function GET(req: Request) {
             : null,
           cambioProgramadoPara: vEstado?.cambio_programado_para ?? null,
           estado: {
-            suspendida: !!empRow.suspendida,
-            suspendida_motivo: empRow.suspension_motivo ?? null,
+            suspendida: suspendidaSinPlan,
+            suspendida_motivo: suspensionMotivoSinPlan,
             suspendida_at: empRow.suspendida_at ?? null,
-            plan_vencido: false,
-            dias_desde_vencimiento: null,
+            plan_vencido: true,
+            dias_desde_vencimiento: 0,
             en_periodo_gracia: false,
+            requiere_seleccion_plan: true,
           },
           // Nuevo bloque: features por defecto cuando no hay plan
           features: {
@@ -371,6 +377,7 @@ export async function GET(req: Request) {
           plan_vencido,
           dias_desde_vencimiento,
           en_periodo_gracia,
+          requiere_seleccion_plan: false,
         },
         // bloque explícito de features del plan actual
         features: {

@@ -48,14 +48,17 @@ export type EmpresaAcuerdoComercialActivo = {
 export type PlanBaseConfig = {
   id: string;
   nombre: string | null;
+  nombre_comercial: string | null;
   precio: number;
   max_asesores: number | null;
   precio_extra_por_asesor: number;
   duracion_dias: number | null;
   tipo_plan: string | null;
+  tier_plan: string | null;
   incluye_valuador: boolean | null;
   incluye_tracker: boolean | null;
   es_trial: boolean | null;
+  es_desarrollo: boolean | null;
 };
 
 export type MontosConIVA = {
@@ -256,7 +259,7 @@ export async function getSuscripcionEstado(
   if (plan_actual_id) {
     const { data: planRow, error: planErr } = await supabase
       .from("planes")
-      .select("nombre, duracion_dias")
+      .select("nombre, nombre_comercial, duracion_dias")
       .eq("id", plan_actual_id)
       .maybeSingle();
 
@@ -266,7 +269,10 @@ export async function getSuscripcionEstado(
       );
     }
 
-    plan_actual_nombre = ((planRow as any)?.nombre ?? null) as string | null;
+    plan_actual_nombre =
+      ((planRow as any)?.nombre_comercial ??
+        (planRow as any)?.nombre ??
+        null) as string | null;
 
     if (!fecha_fin && fecha_inicio) {
       const dur =
@@ -305,14 +311,17 @@ export async function getPlanBaseConfig(
       [
         "id",
         "nombre",
+        "nombre_comercial",
         "precio",
         "max_asesores",
         "precio_extra_por_asesor",
         "duracion_dias",
         "tipo_plan",
+        "tier_plan",
         "incluye_valuador",
         "incluye_tracker",
         "es_trial",
+        "es_desarrollo",
       ].join(", ")
     )
     .eq("id", planId)
@@ -327,6 +336,7 @@ export async function getPlanBaseConfig(
   return {
     id: (plan as any).id as string,
     nombre: ((plan as any).nombre ?? null) as string | null,
+    nombre_comercial: ((plan as any).nombre_comercial ?? null) as string | null,
     precio: Number((plan as any).precio ?? 0),
     max_asesores:
       (plan as any).max_asesores == null
@@ -340,6 +350,7 @@ export async function getPlanBaseConfig(
         ? null
         : Number((plan as any).duracion_dias),
     tipo_plan: ((plan as any).tipo_plan ?? null) as string | null,
+    tier_plan: ((plan as any).tier_plan ?? null) as string | null,
     incluye_valuador:
       (plan as any).incluye_valuador == null
         ? null
@@ -350,6 +361,10 @@ export async function getPlanBaseConfig(
         : Boolean((plan as any).incluye_tracker),
     es_trial:
       (plan as any).es_trial == null ? null : Boolean((plan as any).es_trial),
+    es_desarrollo:
+      (plan as any).es_desarrollo == null
+        ? null
+        : Boolean((plan as any).es_desarrollo),
   };
 }
 
@@ -552,8 +567,9 @@ export async function getEmpresaPlanActivoOverrides(
 }
 
 /**
- * Resuelve el precio neto base del plan, manteniendo la lógica actual
- * del plan "Personalizado".
+ * Resuelve el precio neto base del plan usando la nueva estructura:
+ * - tier_plan define si es personalizado
+ * - personalizado = premium del mismo tipo_plan + extras
  */
 export async function resolvePlanNetoBase(params: {
   supabase: SupabaseClient;
@@ -572,11 +588,11 @@ export async function resolvePlanNetoBase(params: {
     throw new Error("Plan no encontrado");
   }
 
-  const nombre = (plan.nombre ?? "").toLowerCase();
   const tipoPlan = (plan.tipo_plan ?? "").toLowerCase();
+  const tierPlan = (plan.tier_plan ?? "").toLowerCase();
   const base = Number(plan.precio ?? 0);
 
-  if (nombre !== "personalizado") {
+  if (tierPlan !== "personalizado") {
     return {
       precio_base_neto: round2(base),
       pricing_source: "plan",
@@ -603,6 +619,8 @@ export async function resolvePlanNetoBase(params: {
     }
   }
 
+  // Si no hay override usable, devolvemos el precio mínimo configurable
+  // guardado en la fila del personalizado (21 asesores).
   if (!targetCount || targetCount <= 20) {
     return {
       precio_base_neto: round2(base),
@@ -611,10 +629,6 @@ export async function resolvePlanNetoBase(params: {
     };
   }
 
-  // Base Premium correcta por familia de plan:
-  // - core -> Core Premium (max_asesores = 20)
-  // - tracker_only -> Tracker Premium (max_asesores = 20)
-  // - combo -> Full Premium (max_asesores = 20)
   let basePremium = base;
 
   if (tipoPlan) {
@@ -622,7 +636,7 @@ export async function resolvePlanNetoBase(params: {
       .from("planes")
       .select("precio")
       .eq("tipo_plan", tipoPlan)
-      .eq("max_asesores", 20)
+      .eq("tier_plan", "premium")
       .limit(1)
       .maybeSingle();
 
@@ -733,7 +747,8 @@ export async function resolveEmpresaBillingConfig(params: {
   let effectivePlanId = planId ?? null;
 
   if (!effectivePlanId) {
-    effectivePlanId = planActivo?.plan_id ?? suscripcionEstado?.plan_actual_id ?? null;
+    effectivePlanId =
+      planActivo?.plan_id ?? suscripcionEstado?.plan_actual_id ?? null;
   }
 
   if (!effectivePlanId) {
@@ -832,7 +847,7 @@ export async function resolveEmpresaBillingConfig(params: {
   return {
     empresa_id: empresaId,
     plan_id: effectivePlanId,
-    plan_nombre: plan.nombre ?? null,
+    plan_nombre: plan.nombre_comercial ?? plan.nombre ?? null,
     plan_duracion_dias:
       plan.duracion_dias == null ? null : Number(plan.duracion_dias),
 
@@ -870,7 +885,7 @@ export async function resolveEmpresaBillingConfig(params: {
 }
 
 /**
- * Precio neto preferido (manejo de plan "Personalizado").
+ * Precio neto preferido (manejo de plan personalizado).
  * - Se mantiene por compatibilidad con código existente.
  */
 export async function getPlanPrecioNetoPreferido(

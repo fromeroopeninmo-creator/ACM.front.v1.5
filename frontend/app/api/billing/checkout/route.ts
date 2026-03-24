@@ -5,6 +5,7 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { supabaseServer } from "#lib/supabaseServer";
+import { resolveEmpresaBillingConfig, round2 } from "#lib/billing/utils";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -69,11 +70,12 @@ export async function POST(req: Request) {
     const user = auth?.user || null;
     const userId = user?.id ?? null;
 
-    if (!userId)
+    if (!userId) {
       return NextResponse.json(
         { error: "No autenticado." },
         { status: 401 }
       );
+    }
 
     // Role
     const role = await resolveUserRole(userId);
@@ -86,15 +88,8 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json().catch(() => null as any);
-    const planId: string | undefined = body?.planId;
+    const planIdBody: string | undefined = body?.planId;
     const empresaIdParam: string | undefined = body?.empresaId; // solo admins pueden pasarla
-
-    if (!planId) {
-      return NextResponse.json(
-        { error: "Falta 'planId'." },
-        { status: 400 }
-      );
-    }
 
     // Resolver empresaId según rol
     let empresaId: string | null = null;
@@ -117,31 +112,100 @@ export async function POST(req: Request) {
       }
     }
 
+    let effectivePlanId = planIdBody ?? null;
+
+    // Si no viene planId, intentamos resolverlo desde acuerdo activo o plan operativo activo
+    if (!effectivePlanId) {
+      const hoy = new Date().toISOString().slice(0, 10);
+
+      const { data: acuerdoActivo } = await supabaseAdmin
+        .from("empresa_acuerdos_comerciales")
+        .select("plan_id")
+        .eq("empresa_id", empresaId)
+        .eq("activo", true)
+        .lte("fecha_inicio", hoy)
+        .or(`fecha_fin.is.null,fecha_fin.gte.${hoy}`)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (acuerdoActivo?.plan_id) {
+        effectivePlanId = String(acuerdoActivo.plan_id);
+      } else {
+        const { data: planActivo } = await supabaseAdmin
+          .from("empresas_planes")
+          .select("plan_id")
+          .eq("empresa_id", empresaId)
+          .eq("activo", true)
+          .order("fecha_inicio", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (planActivo?.plan_id) {
+          effectivePlanId = String(planActivo.plan_id);
+        }
+      }
+    }
+
+    if (!effectivePlanId) {
+      return NextResponse.json(
+        { error: "Falta 'planId' y no se pudo resolver un plan para el checkout." },
+        { status: 400 }
+      );
+    }
+
     // Validar plan
     const { data: planRow, error: planErr } = await supabaseAdmin
       .from("planes")
       .select(
         "id, nombre, precio, duracion_dias, max_asesores, precio_extra_por_asesor"
       )
-      .eq("id", planId)
+      .eq("id", effectivePlanId)
       .maybeSingle();
-    if (planErr)
+
+    if (planErr) {
       return NextResponse.json(
         { error: planErr.message },
         { status: 400 }
       );
-    if (!planRow)
+    }
+
+    if (!planRow) {
       return NextResponse.json(
         { error: "Plan no encontrado." },
         { status: 404 }
       );
+    }
+
+    // Resolver pricing efectivo: si hay acuerdo comercial vigente, manda el acuerdo
+    const billingConfig = await resolveEmpresaBillingConfig({
+      supabase: supabaseAdmin,
+      empresaId,
+      planId: effectivePlanId,
+    });
+
+    const montoNeto = round2(Number(billingConfig.precio_neto_final ?? 0));
+    const montoTotal = round2(Number(billingConfig.precio_total_final ?? montoNeto));
+    const montoCobrar = montoTotal > 0 ? montoTotal : montoNeto;
+
+    if (!Number.isFinite(montoCobrar) || montoCobrar <= 0) {
+      return NextResponse.json(
+        { error: "No se pudo resolver un monto válido para el checkout." },
+        { status: 400 }
+      );
+    }
+
+    const hayAcuerdo = !!billingConfig.agreement_applied;
+    const title = hayAcuerdo
+      ? `Acuerdo Comercial - ${billingConfig.plan_nombre ?? planRow.nombre}`
+      : `Plan ${billingConfig.plan_nombre ?? planRow.nombre}`;
 
     // Crear registro de suscripción "pendiente"
     const { data: sus, error: susErr } = await supabaseAdmin
       .from("suscripciones")
       .insert({
         empresa_id: empresaId,
-        plan_id: planId,
+        plan_id: effectivePlanId,
         estado: "pendiente",
         inicio: new Date().toISOString(),
         fin: null,
@@ -151,16 +215,27 @@ export async function POST(req: Request) {
           initiated_by: userId,
           role,
           source: MP_ACCESS_TOKEN ? "checkout_mercadopago" : "checkout_sandbox",
+          pricing_source: billingConfig.pricing_source,
+          agreement_applied: billingConfig.agreement_applied,
+          agreement_id: billingConfig.agreement_id,
+          agreement_tipo: billingConfig.agreement_tipo,
+          precio_base_neto: billingConfig.precio_base_neto,
+          precio_neto_final: billingConfig.precio_neto_final,
+          iva_importe: billingConfig.iva_importe,
+          precio_total_final: billingConfig.precio_total_final,
+          modo_iva: billingConfig.modo_iva,
+          iva_pct: billingConfig.iva_pct,
         } as any,
       })
       .select("id")
       .maybeSingle();
 
-    if (susErr)
+    if (susErr) {
       return NextResponse.json(
         { error: susErr.message },
         { status: 400 }
       );
+    }
 
     const suscripcionId = sus?.id as string | undefined;
 
@@ -168,9 +243,6 @@ export async function POST(req: Request) {
     //  MODO MERCADO PAGO REAL
     // =============================
     if (MP_ACCESS_TOKEN) {
-      const monto = Number(planRow.precio) || 0;
-      const title = `Plan ${planRow.nombre}`;
-
       // email del usuario para el payer
       const payerEmail =
         (user as any)?.email ||
@@ -182,16 +254,26 @@ export async function POST(req: Request) {
           {
             title,
             quantity: 1,
-            unit_price: monto,
+            unit_price: montoCobrar,
             currency_id: "ARS",
           },
         ],
         payer: payerEmail ? { email: payerEmail } : undefined,
-        external_reference: `${empresaId}:${planId}:${suscripcionId ?? ""}`,
+        external_reference: `${empresaId}:${effectivePlanId}:${suscripcionId ?? ""}`,
         metadata: {
           empresaId,
-          planId,
+          planId: effectivePlanId,
           suscripcionId: suscripcionId ?? null,
+          pricing_source: billingConfig.pricing_source,
+          agreement_applied: billingConfig.agreement_applied,
+          agreement_id: billingConfig.agreement_id,
+          agreement_tipo: billingConfig.agreement_tipo,
+          precio_base_neto: billingConfig.precio_base_neto,
+          precio_neto_final: billingConfig.precio_neto_final,
+          iva_importe: billingConfig.iva_importe,
+          precio_total_final: billingConfig.precio_total_final,
+          modo_iva: billingConfig.modo_iva,
+          iva_pct: billingConfig.iva_pct,
         },
         notification_url: `${SITE_URL}/api/pagos/webhook`,
         back_urls: {
@@ -234,7 +316,21 @@ export async function POST(req: Request) {
         );
       }
 
-      return NextResponse.json({ checkoutUrl }, { status: 200 });
+      return NextResponse.json(
+        {
+          checkoutUrl,
+          pricing: {
+            source: billingConfig.pricing_source,
+            agreement_applied: billingConfig.agreement_applied,
+            agreement_id: billingConfig.agreement_id,
+            precio_base_neto: billingConfig.precio_base_neto,
+            precio_neto_final: billingConfig.precio_neto_final,
+            iva_importe: billingConfig.iva_importe,
+            precio_total_final: billingConfig.precio_total_final,
+          },
+        },
+        { status: 200 }
+      );
     }
 
     // =============================
@@ -243,10 +339,24 @@ export async function POST(req: Request) {
     const checkoutUrl = `${SITE_URL}/checkout/sandbox?empresaId=${encodeURIComponent(
       empresaId
     )}&planId=${encodeURIComponent(
-      planId
+      effectivePlanId
     )}&suscripcionId=${encodeURIComponent(suscripcionId ?? "")}`;
 
-    return NextResponse.json({ checkoutUrl }, { status: 200 });
+    return NextResponse.json(
+      {
+        checkoutUrl,
+        pricing: {
+          source: billingConfig.pricing_source,
+          agreement_applied: billingConfig.agreement_applied,
+          agreement_id: billingConfig.agreement_id,
+          precio_base_neto: billingConfig.precio_base_neto,
+          precio_neto_final: billingConfig.precio_neto_final,
+          iva_importe: billingConfig.iva_importe,
+          precio_total_final: billingConfig.precio_total_final,
+        },
+      },
+      { status: 200 }
+    );
   } catch (e: any) {
     return NextResponse.json(
       { error: e?.message || "Error inesperado" },

@@ -7,6 +7,7 @@ import { supabaseServer } from "#lib/supabaseServer";
 import {
   assertAuthAndGetContext,
   resolveEmpresaBillingConfig,
+  round2,
 } from "#lib/billing/utils";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;

@@ -316,8 +316,13 @@ export async function GET(req: Request) {
       (!susRow.plan_id || String(susRow.plan_id) === String(planEP.plan_id)) &&
       (!!susRow.fin ? String(susRow.fin).slice(0, 10) >= hoy : true);
 
+    // NUEVA REGLA:
+    // si el acuerdo está vigente pero el total final a pagar es 0,
+    // no se exige pago inicial y no se bloquea la cuenta.
     const requierePagoInicialAcuerdo =
-      acuerdoVigenteHoy && !suscripcionActivaActual;
+      acuerdoVigenteHoy &&
+      !suscripcionActivaActual &&
+      round2(totalConIVA) > 0;
 
     const suspendidaPorAcuerdo =
       requierePagoInicialAcuerdo === true;

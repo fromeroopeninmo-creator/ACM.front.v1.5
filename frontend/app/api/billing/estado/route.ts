@@ -34,7 +34,6 @@ function todayDateOnlyUTC(): string {
 
 export async function GET(req: Request) {
   try {
-    // 1) Auth + contexto
     const server = supabaseServer();
     const actor = await assertAuthAndGetContext(server);
     const role = (actor.role ?? "") as Role;
@@ -49,17 +48,14 @@ export async function GET(req: Request) {
 
     let empresaId: string | null = null;
 
-    // 2) Admin / soporte: pueden pasar empresaId por querystring
     if (isAdminLike && empresaIdParam) {
       empresaId = empresaIdParam;
     }
 
-    // 3) Empresa / Asesor: resolver empresa propia ignorando empresaIdParam
     if (!isAdminLike) {
       const a: any = actor;
       const actorUserId = a.userId ?? a.id ?? a.sub ?? null;
 
-      // 3.1 intentar primero profiles.user_id
       if (!empresaId && actorUserId) {
         const { data: profileRowByUserId, error: profileErrByUserId } =
           await supabaseAdmin
@@ -73,7 +69,6 @@ export async function GET(req: Request) {
         }
       }
 
-      // 3.2 fallback profiles.id
       if (!empresaId && actorUserId) {
         const { data: profileRow, error: profileErr } = await supabaseAdmin
           .from("profiles")
@@ -86,7 +81,6 @@ export async function GET(req: Request) {
         }
       }
 
-      // 3.3 fallback para EMPRESA → tabla empresas.user_id
       if (!empresaId && role === "empresa" && actorUserId) {
         const { data: empFromUser, error: empUserErr } = await supabaseAdmin
           .from("empresas")
@@ -99,7 +93,6 @@ export async function GET(req: Request) {
         }
       }
 
-      // 3.4 fallback para ASESOR → tabla asesores.email
       if (!empresaId && role === "asesor") {
         const email = a.email ?? a.user_metadata?.email ?? null;
 
@@ -128,7 +121,6 @@ export async function GET(req: Request) {
       );
     }
 
-    // 4) Verificar empresa existente (incluye suspensión)
     const { data: empRow, error: empErr } = await supabaseAdmin
       .from("empresas")
       .select(
@@ -147,7 +139,6 @@ export async function GET(req: Request) {
       );
     }
 
-    // 5) SOLO plan activo vigente (sin fallback al último histórico)
     const { data: planEP, error: planEpErr } = await supabaseAdmin
       .from("empresas_planes")
       .select(
@@ -163,14 +154,12 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: planEpErr.message }, { status: 400 });
     }
 
-    // Vista de suscripción/“próximo plan”
     const { data: vEstado } = await supabaseAdmin
       .from("v_suscripcion_estado")
       .select("plan_proximo_id, plan_proximo_nombre, cambio_programado_para")
       .eq("empresa_id", empresaId)
       .maybeSingle();
 
-    // Si no hay plan activo → empresa sin cobertura
     if (!planEP) {
       const suspendidaSinPlan = true;
       const suspensionMotivoSinPlan =
@@ -217,7 +206,6 @@ export async function GET(req: Request) {
       );
     }
 
-    // 6) Datos del plan activo
     const { data: planRow, error: planErr } = await supabaseAdmin
       .from("planes")
       .select(
@@ -230,7 +218,6 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: planErr.message }, { status: 400 });
     }
 
-    // 7) Resolución central de billing
     const billingConfig = await resolveEmpresaBillingConfig({
       supabase: supabaseAdmin,
       empresaId,
@@ -245,7 +232,6 @@ export async function GET(req: Request) {
     const iva = toNum(billingConfig.iva_importe);
     const totalConIVA = toNum(billingConfig.precio_total_final);
 
-    // 8) Última suscripción si existe
     const { data: susRow } = await supabaseAdmin
       .from("suscripciones")
       .select(
@@ -257,11 +243,9 @@ export async function GET(req: Request) {
       .limit(1)
       .maybeSingle();
 
-    // 9) Ciclo
     const cicloInicio = billingConfig.ciclo_inicio ?? planEP.fecha_inicio ?? null;
     const cicloFin = billingConfig.ciclo_fin ?? planEP.fecha_fin ?? null;
 
-    // 10) Próximo cobro / vencimiento normal
     const now = new Date();
     let plan_vencido = false;
     let dias_desde_vencimiento: number | null = null;
@@ -297,7 +281,6 @@ export async function GET(req: Request) {
       }
     }
 
-    // 11) Estado especial: acuerdo comercial activo pero primer pago pendiente
     const hoy = todayDateOnlyUTC();
 
     const acuerdoActivo = !!billingConfig.agreement_applied;
@@ -310,25 +293,22 @@ export async function GET(req: Request) {
       acuerdoInicio <= hoy &&
       (!acuerdoFin || acuerdoFin >= hoy);
 
+    const acuerdoGratisOVirtual = acuerdoVigenteHoy && round2(totalConIVA) <= 0;
+
     const suscripcionActivaActual =
       !!susRow &&
       susRow.estado === "activa" &&
       (!susRow.plan_id || String(susRow.plan_id) === String(planEP.plan_id)) &&
       (!!susRow.fin ? String(susRow.fin).slice(0, 10) >= hoy : true);
 
-    // NUEVA REGLA:
-    // si el acuerdo está vigente pero el total final a pagar es 0,
-    // no se exige pago inicial y no se bloquea la cuenta.
     const requierePagoInicialAcuerdo =
       acuerdoVigenteHoy &&
-      !suscripcionActivaActual &&
-      round2(totalConIVA) > 0;
+      !acuerdoGratisOVirtual &&
+      !suscripcionActivaActual;
 
-    const suspendidaPorAcuerdo =
-      requierePagoInicialAcuerdo === true;
+    const suspendidaPorAcuerdo = requierePagoInicialAcuerdo === true;
 
-    const suspendidaFinal =
-      suspendidaPorAcuerdo || !!empRow.suspendida;
+    const suspendidaFinal = suspendidaPorAcuerdo || !!empRow.suspendida;
 
     const suspensionMotivoFinal = suspendidaPorAcuerdo
       ? "Acuerdo comercial pendiente de pago inicial."
@@ -338,7 +318,11 @@ export async function GET(req: Request) {
       ? false
       : en_periodo_gracia;
 
-    // 12) Features
+    const planVencidoFinal = acuerdoGratisOVirtual ? false : plan_vencido;
+    const diasDesdeVencimientoFinal = acuerdoGratisOVirtual
+      ? null
+      : dias_desde_vencimiento;
+
     const tipoPlan = planRow?.tipo_plan ?? null;
     const incluyeValuador = !!planRow?.incluye_valuador;
     const incluyeTracker = !!planRow?.incluye_tracker;
@@ -397,8 +381,8 @@ export async function GET(req: Request) {
           suspendida: suspendidaFinal,
           suspendida_motivo: suspensionMotivoFinal,
           suspendida_at: empRow.suspendida_at ?? null,
-          plan_vencido: plan_vencido,
-          dias_desde_vencimiento,
+          plan_vencido: planVencidoFinal,
+          dias_desde_vencimiento: diasDesdeVencimientoFinal,
           en_periodo_gracia: enPeriodoGraciaFinal,
           requiere_seleccion_plan: false,
           requiere_pago_inicial_acuerdo: requierePagoInicialAcuerdo,

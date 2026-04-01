@@ -9,6 +9,66 @@ interface Props {
   onCreated: () => void;
 }
 
+function normalizarTexto(value: string | null | undefined): string {
+  return (value || "").trim().toLowerCase();
+}
+
+function resolverLimiteFallback(plan: {
+  nombre?: string | null;
+  nombre_comercial?: string | null;
+  tipo_plan?: string | null;
+  tier_plan?: string | null;
+  es_trial?: boolean | null;
+}): number {
+  if (plan?.es_trial) return 0;
+
+  const nombre = normalizarTexto(plan?.nombre);
+  const nombreComercial = normalizarTexto(plan?.nombre_comercial);
+  const tipoPlan = normalizarTexto(plan?.tipo_plan);
+  const tierPlan = normalizarTexto(plan?.tier_plan);
+
+  if (tipoPlan === "trial" || nombre === "trial" || nombreComercial === "trial") {
+    return 0;
+  }
+
+  if (tipoPlan === "core" || tipoPlan === "combo" || tipoPlan === "tracker_only") {
+    switch (tierPlan) {
+      case "inicial":
+        return 4;
+      case "pro":
+        return 10;
+      case "premium":
+        return 20;
+      case "personalizado":
+        return 50;
+      default:
+        break;
+    }
+  }
+
+  if (nombre.includes("desarrollo") || nombreComercial.includes("desarrollo")) {
+    return 50;
+  }
+
+  if (nombre.includes("personalizado") || nombreComercial.includes("personalizado")) {
+    return 50;
+  }
+
+  if (nombre.includes("premium") || nombreComercial.includes("premium")) {
+    return 20;
+  }
+
+  if (nombre === "pro" || nombreComercial === "pro") {
+    return 10;
+  }
+
+  if (nombre === "inicial" || nombreComercial === "inicial") {
+    return 4;
+  }
+
+  return 0;
+}
+
 export default function NewAsesorForm({ empresaId, onCreated }: Props) {
   const { user } = useAuth();
 
@@ -19,7 +79,7 @@ export default function NewAsesorForm({ empresaId, onCreated }: Props) {
   const [apellido, setApellido] = useState("");
   const [email, setEmail] = useState("");
   const [telefono, setTelefono] = useState("");
-  const [password, setPassword] = useState(""); // ✅ contraseña del asesor
+  const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -27,18 +87,6 @@ export default function NewAsesorForm({ empresaId, onCreated }: Props) {
   const [planLimite, setPlanLimite] = useState<number | null>(null);
   const [asesoresActivos, setAsesoresActivos] = useState<number>(0);
 
-  // 📦 Límites por plan
-  const limitesPlanes: Record<string, number> = {
-    Trial: 0,
-    Prueba: 0,
-    Inicial: 4,
-    Pro: 10,
-    Premium: 20,
-    Personalizado: 50,
-    Desarrollo: 50,
-  };
-
-  // 🔍 Resolver empresa_id automáticamente si no se pasó como prop
   useEffect(() => {
     const fetchEmpresaId = async () => {
       if (resolvedEmpresaId || !user) return;
@@ -61,12 +109,12 @@ export default function NewAsesorForm({ empresaId, onCreated }: Props) {
     fetchEmpresaId();
   }, [user, resolvedEmpresaId]);
 
-  // 🔍 Función reutilizable: cargar plan activo y cantidad de asesores
   const fetchPlanInfo = async (empId: string) => {
-    // Plan activo
+    setError(null);
+
     const { data: empresaPlan, error: errorEmpresaPlan } = await supabase
       .from("empresas_planes")
-      .select("plan_id")
+      .select("plan_id, max_asesores_override")
       .eq("empresa_id", empId)
       .eq("activo", true)
       .maybeSingle();
@@ -79,37 +127,92 @@ export default function NewAsesorForm({ empresaId, onCreated }: Props) {
 
     if (!empresaPlan?.plan_id) {
       setError("No se encontró plan activo para esta empresa.");
+      setPlanNombre(null);
+      setPlanLimite(0);
       return;
     }
 
-    const { data: planData } = await supabase
-      .from("planes")
-      .select("nombre")
-      .eq("id", empresaPlan.plan_id)
+    let acuerdoActivo: {
+      plan_id?: string | null;
+      max_asesores_override?: number | null;
+    } | null = null;
+
+    const { data: acuerdoData, error: acuerdoError } = await supabase
+      .from("empresa_acuerdos_comerciales")
+      .select("plan_id, max_asesores_override")
+      .eq("empresa_id", empId)
+      .eq("activo", true)
       .maybeSingle();
 
-    const nombrePlan = planData?.nombre || "Trial";
-    setPlanNombre(nombrePlan);
-    setPlanLimite(limitesPlanes[nombrePlan] ?? 0);
+    if (acuerdoError) {
+      console.warn(
+        "⚠️ No se pudo leer acuerdo comercial activo; se continúa con plan operativo:",
+        acuerdoError
+      );
+    } else if (acuerdoData) {
+      acuerdoActivo = acuerdoData;
+    }
 
-    // Cantidad de asesores activos
-    const { count } = await supabase
+    const planIdFuente = acuerdoActivo?.plan_id || empresaPlan.plan_id;
+
+    const { data: planData, error: planError } = await supabase
+      .from("planes")
+      .select("id, nombre, nombre_comercial, tipo_plan, tier_plan, max_asesores, es_trial")
+      .eq("id", planIdFuente)
+      .maybeSingle();
+
+    if (planError) {
+      console.error("Error obteniendo datos del plan:", planError);
+      setError("Error al obtener la configuración del plan.");
+      return;
+    }
+
+    if (!planData) {
+      setError("No se encontró el plan asociado a la empresa.");
+      setPlanNombre(null);
+      setPlanLimite(0);
+      return;
+    }
+
+    const nombreVisible =
+      planData.nombre_comercial?.trim() || planData.nombre?.trim() || "Plan actual";
+
+    let limiteEfectivo: number;
+
+    if (typeof acuerdoActivo?.max_asesores_override === "number") {
+      limiteEfectivo = acuerdoActivo.max_asesores_override;
+    } else if (typeof empresaPlan.max_asesores_override === "number") {
+      limiteEfectivo = empresaPlan.max_asesores_override;
+    } else if (typeof planData.max_asesores === "number") {
+      limiteEfectivo = planData.max_asesores;
+    } else {
+      limiteEfectivo = resolverLimiteFallback(planData);
+    }
+
+    setPlanNombre(nombreVisible);
+    setPlanLimite(limiteEfectivo);
+
+    const { count, error: asesoresCountError } = await supabase
       .from("asesores")
       .select("*", { count: "exact", head: true })
       .eq("empresa_id", empId)
       .eq("activo", true);
 
+    if (asesoresCountError) {
+      console.error("Error contando asesores activos:", asesoresCountError);
+      setError("Error al obtener la cantidad de asesores activos.");
+      return;
+    }
+
     setAsesoresActivos(count || 0);
   };
 
-  // Cargar plan + cantidad al montar cuando ya tenemos empresa
   useEffect(() => {
     if (!resolvedEmpresaId) return;
     fetchPlanInfo(resolvedEmpresaId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resolvedEmpresaId]);
 
-  // 🧩 Enviar datos al backend seguro
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -125,7 +228,7 @@ export default function NewAsesorForm({ empresaId, onCreated }: Props) {
 
     if (planLimite !== null && asesoresActivos >= planLimite) {
       setError(
-        `Tu plan (${planNombre}) permite un máximo de ${planLimite} asesores activos.`
+        `Tu plan (${planNombre || "actual"}) permite un máximo de ${planLimite} asesores activos.`
       );
       return;
     }
@@ -134,7 +237,6 @@ export default function NewAsesorForm({ empresaId, onCreated }: Props) {
     setError(null);
 
     try {
-      // 🚀 Enviar al endpoint backend seguro
       const res = await fetch("/api/crear-asesor", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -151,17 +253,13 @@ export default function NewAsesorForm({ empresaId, onCreated }: Props) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "No se pudo crear el asesor.");
 
-      // 🔄 Reset form
       setNombre("");
       setApellido("");
       setEmail("");
       setTelefono("");
       setPassword("");
 
-      // 🔄 Recalcular plan + cantidad real desde la base
       await fetchPlanInfo(resolvedEmpresaId);
-
-      // Notificar al padre (para recargar listado)
       onCreated();
     } catch (err: any) {
       console.error("Error al crear asesor:", err);
@@ -171,7 +269,6 @@ export default function NewAsesorForm({ empresaId, onCreated }: Props) {
     }
   };
 
-  // 💡 Fallback visual
   if (!resolvedEmpresaId) {
     return <p className="text-gray-500 text-sm">Cargando datos de la empresa...</p>;
   }
@@ -225,7 +322,6 @@ export default function NewAsesorForm({ empresaId, onCreated }: Props) {
           className="border p-2 rounded"
         />
 
-        {/* ✅ Campo de contraseña visible/oculto */}
         <div className="col-span-2 relative">
           <input
             type={showPassword ? "text" : "password"}

@@ -299,7 +299,6 @@ export async function GET(req: Request) {
     const suscripcionActivaActual =
       !!susRow &&
       susRow.estado === "activa" &&
-      (!susRow.plan_id || String(susRow.plan_id) === String(planEP.plan_id)) &&
       (!!susRow.fin ? String(susRow.fin).slice(0, 10) >= hoy : true);
 
     const requierePagoInicialAcuerdo =

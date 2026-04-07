@@ -96,10 +96,12 @@ export async function GET(
       return NextResponse.json({ error: "Empresa no encontrada." }, { status: 404 });
     }
 
-    // 2) Logo/color + datos adicionales de empresa
+    // 2) Logo/color + datos adicionales de empresa + estado real
     const { data: empresaRow } = await supabaseAdmin
       .from("empresas")
-      .select("logo_url, color, condicion_fiscal, telefono, direccion, localidad, provincia")
+      .select(
+        "logo_url, color, condicion_fiscal, telefono, direccion, localidad, provincia, suspendida, suspendida_at, suspension_motivo"
+      )
       .eq("id", empresaId)
       .maybeSingle();
 
@@ -119,7 +121,7 @@ export async function GET(
       const { data: planDb } = await supabaseAdmin
         .from("planes")
         .select(
-          "id, nombre, precio, duracion_dias, max_asesores, precio_extra_por_asesor, tipo_plan, incluye_valuador, incluye_tracker, es_trial"
+          "id, nombre, nombre_comercial, precio, duracion_dias, max_asesores, precio_extra_por_asesor, tipo_plan, incluye_valuador, incluye_tracker, es_trial"
         )
         .eq("id", planOperativo.plan_id)
         .maybeSingle();
@@ -318,6 +320,11 @@ export async function GET(
       return NextResponse.json({ error: infErr.message }, { status: 400 });
     }
 
+    const empresaSuspendida = !!empresaRow?.suspendida;
+    const empresaSuspensionMotivo = empresaRow?.suspension_motivo ?? null;
+    const empresaSuspendidaAt = empresaRow?.suspendida_at ?? null;
+    const planActivo = !!planOperativo;
+
     // 6) Respuesta
     const resp = {
       empresa: {
@@ -331,11 +338,22 @@ export async function GET(
         direccion: empresaRow?.direccion ?? null,
         localidad: empresaRow?.localidad ?? null,
         provincia: empresaRow?.provincia ?? null,
+        suspendida: empresaSuspendida,
+        suspendida_at: empresaSuspendidaAt,
+        suspension_motivo: empresaSuspensionMotivo,
+      },
+      estado: {
+        empresa_activa: !empresaSuspendida,
+        empresa_suspendida: empresaSuspendida,
+        suspension_motivo: empresaSuspensionMotivo,
+        suspendida_at: empresaSuspendidaAt,
+        plan_operativo_activo: planActivo,
+        estado_plan: planActivo ? "vigente" : "sin_plan",
       },
       plan: planOperativo && planBaseRow
         ? {
             id: planBaseRow?.id ?? null,
-            nombre: planBaseRow?.nombre ?? null,
+            nombre: planBaseRow?.nombre_comercial ?? planBaseRow?.nombre ?? null,
             maxAsesores:
               planBaseRow?.max_asesores == null ? null : Number(planBaseRow.max_asesores),
             override:

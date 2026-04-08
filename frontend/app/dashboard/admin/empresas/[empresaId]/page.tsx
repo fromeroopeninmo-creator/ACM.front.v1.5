@@ -123,6 +123,7 @@ export default async function AdminEmpresaDetallePage({
 
   let detalle: EmpresaDetalle | null = null;
   let errorMsg: string | null = null;
+
   try {
     detalle = await getEmpresaDetalle(params.empresaId, {
       headers: { cookie: cookieHeader },
@@ -131,37 +132,33 @@ export default async function AdminEmpresaDetallePage({
     errorMsg = e?.message || "Error al cargar el detalle de la empresa.";
   }
 
-  const plan =
-    (detalle as any)?.plan ??
-    (detalle as any)?.empresa?.plan ??
-    null;
+  const detalleAny = (detalle ?? {}) as any;
 
-  const override =
-    (detalle as any)?.override ??
-    (detalle as any)?.empresa?.override ??
-    null;
+  const plan = detalleAny?.plan ?? detalleAny?.empresa?.plan ?? null;
+  const override = detalleAny?.override ?? detalleAny?.empresa?.override ?? null;
+  const acuerdo = detalleAny?.acuerdoComercial ?? detalleAny?.acuerdo_comercial ?? null;
+  const estado = detalleAny?.estado ?? null;
 
-  const acuerdo =
-    (detalle as any)?.acuerdoComercial ??
-    (detalle as any)?.acuerdo_comercial ??
-    null;
-
-  const estado = (detalle as any)?.estado ?? null;
+  const empresa = detalleAny?.empresa ?? {};
+  const metrics = detalleAny?.metrics ?? {};
+  const asesores = Array.isArray(detalleAny?.asesores) ? detalleAny.asesores : [];
+  const informes = Array.isArray(detalleAny?.informes) ? detalleAny.informes : [];
+  const accionesSoporte = Array.isArray(detalleAny?.ultimasAccionesSoporte)
+    ? detalleAny.ultimasAccionesSoporte
+    : Array.isArray(detalleAny?.acciones_soporte)
+    ? detalleAny.acciones_soporte
+    : [];
 
   const suspendida =
     typeof estado?.empresa_suspendida === "boolean"
       ? estado.empresa_suspendida
-      : !!((detalle as any)?.empresa?.suspendida);
+      : !!empresa?.suspendida;
 
   const suspendidaMotivo =
-    estado?.suspension_motivo ??
-    (detalle as any)?.empresa?.suspension_motivo ??
-    null;
+    estado?.suspension_motivo ?? empresa?.suspension_motivo ?? null;
 
   const suspendidaAt =
-    estado?.suspendida_at ??
-    (detalle as any)?.empresa?.suspendida_at ??
-    null;
+    estado?.suspendida_at ?? empresa?.suspendida_at ?? null;
 
   const cicloInicio =
     plan?.fechaInicio ??
@@ -203,14 +200,13 @@ export default async function AdminEmpresaDetallePage({
       ? "Vencido"
       : "Vigente";
 
-  const estadoPlanKind =
+  const estadoPlanKind: "ok" | "warn" | "danger" | "neutral" =
     estadoPlanRaw === "vigente"
       ? "ok"
       : estadoPlanRaw === "vencido"
       ? "danger"
       : "warn";
 
-  const planVencido = estadoPlanRaw === "vencido";
   const esTrial = !!plan?.es_trial;
   const tieneAcuerdoActivo = !!acuerdo?.activo;
 
@@ -287,7 +283,8 @@ export default async function AdminEmpresaDetallePage({
                   </span>
                 </div>
                 <div className="mt-2 text-sm text-gray-600">
-                  Vigencia: {fmtDateOnly(acuerdo?.fechaInicio ?? acuerdo?.fecha_inicio)} — {fmtDateOnly(acuerdo?.fechaFin ?? acuerdo?.fecha_fin)}
+                  Vigencia: {fmtDateOnly(acuerdo?.fechaInicio ?? acuerdo?.fecha_inicio)} —{" "}
+                  {fmtDateOnly(acuerdo?.fechaFin ?? acuerdo?.fecha_fin)}
                 </div>
               </div>
 
@@ -295,15 +292,22 @@ export default async function AdminEmpresaDetallePage({
                 <div className="text-xs text-gray-500 mb-1">Plan operativo actual</div>
                 <div className="font-medium">{plan?.nombre || "—"}</div>
                 <div className="mt-2 text-sm text-gray-600">
-                  Cupo final: {fmtNumber(plan?.maxAsesoresFinal ?? plan?.max_asesores_final ?? plan?.maxAsesores ?? plan?.max_asesores ?? null)}
+                  Cupo final:{" "}
+                  {fmtNumber(
+                    plan?.maxAsesoresFinal ??
+                      plan?.max_asesores_final ??
+                      plan?.maxAsesores ??
+                      plan?.max_asesores ??
+                      null
+                  )}
                 </div>
               </div>
 
               <div className="rounded-xl border p-3">
                 <div className="text-xs text-gray-500 mb-1">Última actividad</div>
-                <div className="font-medium">{fmtDate((detalle as any).metrics?.ultima_actividad_at)}</div>
+                <div className="font-medium">{fmtDate(metrics?.ultima_actividad_at)}</div>
                 <div className="mt-2 text-sm text-gray-600">
-                  Informes 30 días: {fmtNumber((detalle as any).metrics?.informes_30d)}
+                  Informes 30 días: {fmtNumber(metrics?.informes_30d)}
                 </div>
               </div>
             </div>
@@ -312,9 +316,9 @@ export default async function AdminEmpresaDetallePage({
           <section className="rounded-2xl border p-4 bg-white dark:bg-neutral-900">
             <div className="flex items-start gap-4">
               <div className="w-16 h-16 rounded-xl border flex items-center justify-center overflow-hidden bg-white dark:bg-neutral-950">
-                {(detalle as any).empresa.logoUrl || (detalle as any).empresa.logo_url ? (
+                {empresa?.logoUrl || empresa?.logo_url ? (
                   <img
-                    src={(detalle as any).empresa.logoUrl || (detalle as any).empresa.logo_url}
+                    src={empresa?.logoUrl || empresa?.logo_url}
                     alt="Logo empresa"
                     className="w-full h-full object-contain"
                   />
@@ -325,21 +329,17 @@ export default async function AdminEmpresaDetallePage({
 
               <div className="flex-1">
                 <h2 className="text-lg font-semibold">
-                  {(detalle as any).empresa.nombre || (detalle as any).empresa.razon_social}
+                  {empresa?.nombre || empresa?.razon_social || "Empresa"}
                 </h2>
                 <div className="text-sm text-gray-600 dark:text-gray-300">
-                  <div>CUIT: {(detalle as any).empresa.cuit || "—"}</div>
+                  <div>CUIT: {empresa?.cuit || "—"}</div>
                   <div>
-                    {[
-                      (detalle as any).empresa.direccion,
-                      (detalle as any).empresa.localidad,
-                      (detalle as any).empresa.provincia,
-                    ]
+                    {[empresa?.direccion, empresa?.localidad, empresa?.provincia]
                       .filter(Boolean)
                       .join(", ") || "—"}
                   </div>
-                  <div>Condición fiscal: {(detalle as any).empresa.condicion_fiscal || "—"}</div>
-                  <div>Teléfono: {(detalle as any).empresa.telefono || "—"}</div>
+                  <div>Condición fiscal: {empresa?.condicion_fiscal || "—"}</div>
+                  <div>Teléfono: {empresa?.telefono || "—"}</div>
                 </div>
               </div>
 
@@ -349,13 +349,11 @@ export default async function AdminEmpresaDetallePage({
                   <div
                     className="w-6 h-6 rounded-md border"
                     style={{
-                      backgroundColor: (detalle as any).empresa.color || "#e5e7eb",
+                      backgroundColor: empresa?.color || "#e5e7eb",
                     }}
-                    title={(detalle as any).empresa.color || "—"}
+                    title={empresa?.color || "—"}
                   />
-                  <code className="text-xs">
-                    {(detalle as any).empresa.color || "—"}
-                  </code>
+                  <code className="text-xs">{empresa?.color || "—"}</code>
                 </div>
               </div>
             </div>
@@ -363,9 +361,7 @@ export default async function AdminEmpresaDetallePage({
             <div className="mt-4 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
               <div className="rounded-xl border p-3">
                 <div className="text-xs text-gray-500">Plan</div>
-                <div className="font-medium">
-                  {plan?.nombre || "—"}
-                </div>
+                <div className="font-medium">{plan?.nombre || "—"}</div>
                 <dl className="mt-2 text-sm space-y-1">
                   <div className="flex justify-between gap-3">
                     <dt>Trial</dt>
@@ -383,7 +379,14 @@ export default async function AdminEmpresaDetallePage({
                   </div>
                   <div className="flex justify-between gap-3">
                     <dt>Cupo final</dt>
-                    <dd>{fmtNumber(plan?.maxAsesoresFinal ?? plan?.max_asesores_final ?? plan?.maxAsesores ?? plan?.max_asesores)}</dd>
+                    <dd>
+                      {fmtNumber(
+                        plan?.maxAsesoresFinal ??
+                          plan?.max_asesores_final ??
+                          plan?.maxAsesores ??
+                          plan?.max_asesores
+                      )}
+                    </dd>
                   </div>
                   <div className="flex justify-between gap-3">
                     <dt>Duración</dt>
@@ -411,7 +414,11 @@ export default async function AdminEmpresaDetallePage({
                   </div>
                   <div className="flex justify-between gap-3">
                     <dt>IVA %</dt>
-                    <dd>{(plan?.ivaPct ?? plan?.iva_pct) != null ? `${plan?.ivaPct ?? plan?.iva_pct}%` : "—"}</dd>
+                    <dd>
+                      {(plan?.ivaPct ?? plan?.iva_pct) != null
+                        ? `${plan?.ivaPct ?? plan?.iva_pct}%`
+                        : "—"}
+                    </dd>
                   </div>
                   <div className="flex justify-between gap-3">
                     <dt>IVA importe</dt>
@@ -464,15 +471,15 @@ export default async function AdminEmpresaDetallePage({
                 <dl className="mt-1 text-sm space-y-1">
                   <div className="flex justify-between gap-3">
                     <dt>Asesores</dt>
-                    <dd>{fmtNumber((detalle as any).metrics?.asesores_count)}</dd>
+                    <dd>{fmtNumber(metrics?.asesores_count)}</dd>
                   </div>
                   <div className="flex justify-between gap-3">
                     <dt>Informes (30 días)</dt>
-                    <dd>{fmtNumber((detalle as any).metrics?.informes_30d)}</dd>
+                    <dd>{fmtNumber(metrics?.informes_30d)}</dd>
                   </div>
                   <div className="flex justify-between gap-3">
                     <dt>Última actividad</dt>
-                    <dd>{fmtDate((detalle as any).metrics?.ultima_actividad_at)}</dd>
+                    <dd>{fmtDate(metrics?.ultima_actividad_at)}</dd>
                   </div>
                 </dl>
               </div>
@@ -482,7 +489,14 @@ export default async function AdminEmpresaDetallePage({
                   <div className="text-xs text-gray-500 mb-1">Plan actual</div>
                   <div className="font-medium">{plan?.nombre || "—"}</div>
                   <div className="mt-1 text-sm text-gray-600">
-                    Cupo final: {fmtNumber(plan?.maxAsesoresFinal ?? plan?.max_asesores_final ?? plan?.maxAsesores ?? plan?.max_asesores ?? null)}
+                    Cupo final:{" "}
+                    {fmtNumber(
+                      plan?.maxAsesoresFinal ??
+                        plan?.max_asesores_final ??
+                        plan?.maxAsesores ??
+                        plan?.max_asesores ??
+                        null
+                    )}
                   </div>
                   <div className="mt-3">
                     <a
@@ -537,7 +551,11 @@ export default async function AdminEmpresaDetallePage({
                       </div>
                       <div className="flex justify-between gap-3">
                         <dt>IVA %</dt>
-                        <dd>{(acuerdo.ivaPct ?? acuerdo.iva_pct) != null ? `${acuerdo.ivaPct ?? acuerdo.iva_pct}%` : "—"}</dd>
+                        <dd>
+                          {(acuerdo.ivaPct ?? acuerdo.iva_pct) != null
+                            ? `${acuerdo.ivaPct ?? acuerdo.iva_pct}%`
+                            : "—"}
+                        </dd>
                       </div>
                       <div className="flex justify-between gap-3">
                         <dt>IVA importe</dt>
@@ -564,7 +582,8 @@ export default async function AdminEmpresaDetallePage({
                       <div className="flex justify-between gap-3">
                         <dt>Vigencia</dt>
                         <dd>
-                          {fmtDateOnly(acuerdo.fechaInicio ?? acuerdo.fecha_inicio)} — {fmtDateOnly(acuerdo.fechaFin ?? acuerdo.fecha_fin)}
+                          {fmtDateOnly(acuerdo.fechaInicio ?? acuerdo.fecha_inicio)} —{" "}
+                          {fmtDateOnly(acuerdo.fechaFin ?? acuerdo.fecha_fin)}
                         </dd>
                       </div>
                     </dl>
@@ -597,14 +616,14 @@ export default async function AdminEmpresaDetallePage({
                     </tr>
                   </thead>
                   <tbody>
-                    {(detalle as any).asesores.length === 0 ? (
+                    {asesores.length === 0 ? (
                       <tr>
                         <td colSpan={4} className="px-3 py-6 text-center text-gray-500">
                           Sin asesores.
                         </td>
                       </tr>
                     ) : (
-                      (detalle as any).asesores.map((a: any) => (
+                      asesores.map((a: any) => (
                         <tr key={a.id} className="border-t">
                           <td className="px-3 py-2">
                             {a.nombre} {a.apellido || ""}
@@ -645,14 +664,14 @@ export default async function AdminEmpresaDetallePage({
                     </tr>
                   </thead>
                   <tbody>
-                    {(detalle as any).informes.length === 0 ? (
+                    {informes.length === 0 ? (
                       <tr>
                         <td colSpan={4} className="px-3 py-6 text-center text-gray-500">
                           Sin informes recientes.
                         </td>
                       </tr>
                     ) : (
-                      (detalle as any).informes.map((inf: any) => (
+                      informes.map((inf: any) => (
                         <tr key={inf.id} className="border-t">
                           <td className="px-3 py-2">{inf.titulo || "Informe VAI"}</td>
                           <td className="px-3 py-2">{inf.estado}</td>
@@ -687,16 +706,16 @@ export default async function AdminEmpresaDetallePage({
                     </tr>
                   </thead>
                   <tbody>
-                    {(detalle as any).ultimasAccionesSoporte.length === 0 ? (
+                    {accionesSoporte.length === 0 ? (
                       <tr>
                         <td colSpan={3} className="px-3 py-6 text-center text-gray-500">
                           Sin acciones registradas.
                         </td>
                       </tr>
                     ) : (
-                      (detalle as any).ultimasAccionesSoporte.map((ac: any, idx: number) => (
+                      accionesSoporte.map((ac: any, idx: number) => (
                         <tr key={idx} className="border-t">
-                          <td className="px-3 py-2">{ac.soporteId || "—"}</td>
+                          <td className="px-3 py-2">{ac.soporte || ac.soporteId || "—"}</td>
                           <td className="px-3 py-2">{ac.descripcion}</td>
                           <td className="px-3 py-2">{fmtDate(ac.timestamp)}</td>
                         </tr>
@@ -779,7 +798,13 @@ export default async function AdminEmpresaDetallePage({
                     <div className="rounded-xl border p-3">
                       <div className="text-xs text-gray-500 mb-1">Cupo final</div>
                       <div className="font-medium">
-                        {fmtNumber(plan?.maxAsesoresFinal ?? plan?.max_asesores_final ?? plan?.maxAsesores ?? plan?.max_asesores ?? null)}
+                        {fmtNumber(
+                          plan?.maxAsesoresFinal ??
+                            plan?.max_asesores_final ??
+                            plan?.maxAsesores ??
+                            plan?.max_asesores ??
+                            null
+                        )}
                       </div>
                     </div>
                     <div className="rounded-xl border p-3">
@@ -790,9 +815,7 @@ export default async function AdminEmpresaDetallePage({
                     </div>
                     <div className="rounded-xl border p-3">
                       <div className="text-xs text-gray-500 mb-1">Estado</div>
-                      <div className="font-medium">
-                        {estadoPlanLabel}
-                      </div>
+                      <div className="font-medium">{estadoPlanLabel}</div>
                     </div>
                   </div>
                 </div>

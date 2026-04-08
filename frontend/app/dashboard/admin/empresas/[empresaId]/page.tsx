@@ -165,11 +165,15 @@ export default async function AdminEmpresaDetallePage({
 
   const cicloInicio =
     plan?.fechaInicio ??
+    plan?.fecha_inicio ??
+    override?.fechaInicio ??
     override?.fecha_inicio ??
     null;
 
   const cicloFin =
     plan?.fechaFin ??
+    plan?.fecha_fin ??
+    override?.fechaFin ??
     override?.fecha_fin ??
     null;
 
@@ -261,7 +265,7 @@ export default async function AdminEmpresaDetallePage({
               <div className="rounded-xl border p-3">
                 <div className="text-xs text-gray-500 mb-1">Estado plan</div>
                 <div className="flex flex-wrap gap-2">
-                  <span className={statusBadgeClass(estadoPlanKind as any)}>
+                  <span className={statusBadgeClass(estadoPlanKind)}>
                     {estadoPlanLabel}
                   </span>
                   {esTrial ? (
@@ -309,7 +313,6 @@ export default async function AdminEmpresaDetallePage({
             <div className="flex items-start gap-4">
               <div className="w-16 h-16 rounded-xl border flex items-center justify-center overflow-hidden bg-white dark:bg-neutral-950">
                 {(detalle as any).empresa.logoUrl || (detalle as any).empresa.logo_url ? (
-                  // eslint-disable-next-line @next/next/no-img-element
                   <img
                     src={(detalle as any).empresa.logoUrl || (detalle as any).empresa.logo_url}
                     alt="Logo empresa"
@@ -428,7 +431,9 @@ export default async function AdminEmpresaDetallePage({
                   </div>
                   <div className="flex justify-between gap-3">
                     <dt>Origen pricing</dt>
-                    <dd className="text-right break-all">{plan?.pricingSource ?? plan?.pricing_source || "—"}</dd>
+                    <dd className="text-right break-all">
+                      {(plan?.pricingSource ?? plan?.pricing_source) || "—"}
+                    </dd>
                   </div>
                 </dl>
               </div>
@@ -552,7 +557,9 @@ export default async function AdminEmpresaDetallePage({
                       </div>
                       <div className="flex justify-between gap-3">
                         <dt>Origen pricing</dt>
-                        <dd className="text-right break-all">{acuerdo.pricingSource ?? acuerdo.pricing_source || "—"}</dd>
+                        <dd className="text-right break-all">
+                          {(acuerdo.pricingSource ?? acuerdo.pricing_source) || "—"}
+                        </dd>
                       </div>
                       <div className="flex justify-between gap-3">
                         <dt>Vigencia</dt>

@@ -184,9 +184,12 @@ export async function GET(req: Request) {
             suspendida_motivo: suspensionMotivoSinPlan,
             suspendida_at: empRow.suspendida_at ?? null,
             plan_vencido: true,
+            estado_plan: "sin_plan",
+            tipo_cobertura_actual: "sin_cobertura",
             dias_desde_vencimiento: 0,
             en_periodo_gracia: false,
             requiere_seleccion_plan: true,
+            requiere_pago: false,
             requiere_pago_inicial_acuerdo: false,
           },
           features: {
@@ -230,7 +233,6 @@ export async function GET(req: Request) {
     });
 
     const precioNeto = toNum(billingConfig.precio_neto_final);
-    const iva = toNum(billingConfig.iva_importe);
     const totalConIVA = toNum(billingConfig.precio_total_final);
 
     const { data: susRow } = await supabaseAdmin
@@ -257,6 +259,7 @@ export async function GET(req: Request) {
       try {
         const fin = new Date(cicloFin as string);
         proximoCobro = fin.toISOString();
+
         const diffMs = now.getTime() - fin.getTime();
         const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
         dias_desde_vencimiento = diffDays;
@@ -268,7 +271,10 @@ export async function GET(req: Request) {
       } catch {
         proximoCobro = null;
       }
-    } else if (cicloInicio && (billingConfig.plan_duracion_dias ?? planRow?.duracion_dias)) {
+    } else if (
+      cicloInicio &&
+      (billingConfig.plan_duracion_dias ?? planRow?.duracion_dias)
+    ) {
       try {
         const base = new Date(cicloInicio as string);
         const d = new Date(base.getTime());
@@ -284,6 +290,7 @@ export async function GET(req: Request) {
 
     const hoy = todayDateOnlyUTC();
 
+    const esTrial = billingConfig.plan_es_trial ?? !!planRow?.es_trial;
     const acuerdoActivo = !!billingConfig.agreement_applied;
     const acuerdoInicio = billingConfig.agreement_fecha_inicio ?? null;
     const acuerdoFin = billingConfig.agreement_fecha_fin ?? null;
@@ -294,38 +301,85 @@ export async function GET(req: Request) {
       acuerdoInicio <= hoy &&
       (!acuerdoFin || acuerdoFin >= hoy);
 
-    const acuerdoGratisOVirtual = acuerdoVigenteHoy && round2(totalConIVA) <= 0;
+    const acuerdoGratisOVirtual =
+      acuerdoVigenteHoy && round2(totalConIVA) <= 0;
 
     const suscripcionActivaActual =
       !!susRow &&
       susRow.estado === "activa" &&
       (!!susRow.fin ? String(susRow.fin).slice(0, 10) >= hoy : true);
 
+    // Acuerdo comercial vigente con cobro mensual:
+    // si no hay suscripción/ciclo vigente actual, debe pedir pago.
     const requierePagoInicialAcuerdo =
       acuerdoVigenteHoy &&
       !acuerdoGratisOVirtual &&
       !suscripcionActivaActual;
 
-    const suspendidaPorAcuerdo = requierePagoInicialAcuerdo === true;
+    // Trial vencido fuera de gracia
+    const requiereSeleccionPlan =
+      !!esTrial && plan_vencido && !en_periodo_gracia;
 
-    const suspendidaFinal = suspendidaPorAcuerdo || !!empRow.suspendida;
+    // Plan normal vencido fuera de gracia
+    const requierePagoPlanNormal =
+      !esTrial &&
+      !acuerdoVigenteHoy &&
+      plan_vencido &&
+      !en_periodo_gracia;
+
+    const suspendidaPorAcuerdo = requierePagoInicialAcuerdo === true;
+    const suspendidaPorTrial = requiereSeleccionPlan === true;
+    const suspendidaPorPlanNormal = requierePagoPlanNormal === true;
+
+    const suspendidaFinal =
+      suspendidaPorAcuerdo ||
+      suspendidaPorTrial ||
+      suspendidaPorPlanNormal ||
+      !!empRow.suspendida;
 
     const suspensionMotivoFinal = suspendidaPorAcuerdo
-      ? "Acuerdo comercial pendiente de pago inicial."
+      ? "Acuerdo comercial pendiente de pago del ciclo actual."
+      : suspendidaPorTrial
+      ? "Trial vencido. Debe seleccionar un plan para continuar."
+      : suspendidaPorPlanNormal
+      ? "Cuenta temporalmente suspendida por falta de pago."
       : empRow.suspension_motivo ?? null;
 
-    const enPeriodoGraciaFinal = suspendidaPorAcuerdo
-      ? false
-      : en_periodo_gracia;
+    const enPeriodoGraciaFinal =
+      suspendidaPorAcuerdo ? false : en_periodo_gracia;
 
-    const planVencidoFinal = acuerdoGratisOVirtual ? false : plan_vencido;
-    const diasDesdeVencimientoFinal = acuerdoGratisOVirtual
-      ? null
-      : dias_desde_vencimiento;
+    const planVencidoFinal =
+      acuerdoGratisOVirtual ? false : plan_vencido;
+
+    const diasDesdeVencimientoFinal =
+      acuerdoGratisOVirtual ? null : dias_desde_vencimiento;
 
     const tipoPlan = planRow?.tipo_plan ?? null;
     const incluyeValuador = !!planRow?.incluye_valuador;
     const incluyeTracker = !!planRow?.incluye_tracker;
+
+    let tipoCoberturaActual:
+      | "trial"
+      | "plan"
+      | "acuerdo_comercial"
+      | "sin_cobertura" = "plan";
+
+    if (esTrial) {
+      tipoCoberturaActual = "trial";
+    } else if (acuerdoVigenteHoy) {
+      tipoCoberturaActual = "acuerdo_comercial";
+    } else {
+      tipoCoberturaActual = "plan";
+    }
+
+    let estadoPlan: "vigente" | "vencido" | "sin_plan" = "vigente";
+    if (!planEP) {
+      estadoPlan = "sin_plan";
+    } else if (plan_vencido) {
+      estadoPlan = "vencido";
+    } else {
+      estadoPlan = "vigente";
+    }
 
     return NextResponse.json(
       {
@@ -350,7 +404,7 @@ export async function GET(req: Request) {
               tipo_plan: tipoPlan,
               incluye_valuador: incluyeValuador,
               incluye_tracker: incluyeTracker,
-              es_trial: billingConfig.plan_es_trial ?? !!planRow.es_trial,
+              es_trial: esTrial,
               duracion_dias:
                 billingConfig.plan_duracion_dias ??
                 (planRow?.duracion_dias == null
@@ -382,9 +436,12 @@ export async function GET(req: Request) {
           suspendida_motivo: suspensionMotivoFinal,
           suspendida_at: empRow.suspendida_at ?? null,
           plan_vencido: planVencidoFinal,
+          estado_plan: estadoPlan,
+          tipo_cobertura_actual: tipoCoberturaActual,
           dias_desde_vencimiento: diasDesdeVencimientoFinal,
           en_periodo_gracia: enPeriodoGraciaFinal,
-          requiere_seleccion_plan: false,
+          requiere_seleccion_plan: requiereSeleccionPlan,
+          requiere_pago: suspendidaPorAcuerdo || suspendidaPorPlanNormal,
           requiere_pago_inicial_acuerdo: requierePagoInicialAcuerdo,
         },
         features: {

@@ -44,6 +44,46 @@ function addDaysToISO(iso: string, days: number): string {
   return d.toISOString();
 }
 
+function safeIsoFromAny(value: any): string | null {
+  if (!value || typeof value !== "string") return null;
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toISOString();
+}
+
+function resolveCoverageStartISO(data: any): string {
+  const candidates = [
+    data?.raw_payment?.date_approved,
+    data?.raw_payment?.date_created,
+    data?.raw_payment?.money_release_date,
+    data?.inicio,
+    data?.start_at,
+    data?.started_at,
+  ];
+
+  for (const candidate of candidates) {
+    const iso = safeIsoFromAny(candidate);
+    if (iso) return iso;
+  }
+
+  return nowISO();
+}
+
+function buildSuscripcionMetadata(data: any): any {
+  const base =
+    (data?.raw_payment?.metadata && typeof data.raw_payment.metadata === "object")
+      ? { ...data.raw_payment.metadata }
+      : {};
+
+  return {
+    ...base,
+    payment_status: data?.paymentStatus ?? null,
+    payment_status_detail: data?.paymentStatusDetail ?? null,
+    externo_payment_id: data?.externoPaymentId ?? null,
+    synced_by_webhook: true,
+  };
+}
+
 async function getPlanDuracionDias(planId: string | null | undefined): Promise<number> {
   if (!planId) return 30;
 
@@ -139,6 +179,50 @@ async function findSuscripcion(data: any): Promise<SuscripcionRow | null> {
   }
 
   return null;
+}
+
+async function createSuscripcionIfMissing(params: {
+  empresaId?: string | null;
+  planId?: string | null;
+  estado: SuscripcionEstado;
+  data?: any;
+}) {
+  const { empresaId, planId, estado, data } = params;
+
+  if (!empresaId || !planId) return null;
+
+  const inicio = resolveCoverageStartISO(data);
+  const duracionDias = await getPlanDuracionDias(planId);
+  const fin = addDaysToISO(inicio, duracionDias);
+
+  const insertPayload: any = {
+    empresa_id: empresaId,
+    plan_id: planId,
+    estado,
+    inicio,
+    fin,
+    metadata: buildSuscripcionMetadata(data),
+  };
+
+  if (data?.externoCustomerId) {
+    insertPayload.externo_customer_id = data.externoCustomerId;
+  }
+  if (data?.externoSubscriptionId) {
+    insertPayload.externo_subscription_id = data.externoSubscriptionId;
+  }
+
+  const { data: inserted, error } = await supabaseAdmin
+    .from("suscripciones")
+    .insert(insertPayload)
+    .select("id, empresa_id, plan_id, estado, inicio")
+    .maybeSingle();
+
+  if (error) {
+    console.error("createSuscripcionIfMissing error:", error.message);
+    return null;
+  }
+
+  return (inserted ?? null) as SuscripcionRow | null;
 }
 
 // -----------------------------
@@ -405,16 +489,21 @@ async function normalizeMercadoPagoEvent(
     eventType = "invoice_payment_failed";
   }
 
-  let empresaId =
+  const empresaId =
     payment?.metadata?.empresa_id ||
     payment?.metadata?.empresaId ||
     null;
-  let planId =
-    payment?.metadata?.plan_id || payment?.metadata?.planId || null;
-  let suscripcionId =
+
+  const planId =
+    payment?.metadata?.plan_id ||
+    payment?.metadata?.planId ||
+    null;
+
+  const suscripcionId =
     payment?.metadata?.suscripcion_id ||
     payment?.metadata?.suscripcionId ||
     null;
+
   let movimientoId =
     payment?.metadata?.movimiento_id ||
     payment?.metadata?.movimientoId ||
@@ -436,6 +525,9 @@ async function normalizeMercadoPagoEvent(
       paymentStatus: payment.status,
       paymentStatusDetail: payment.status_detail,
       externoPaymentId: payment.id,
+      externoCustomerId:
+        payment?.payer?.id != null ? String(payment.payer.id) : null,
+      externoSubscriptionId: null,
       raw_payment: payment,
     },
   };
@@ -665,7 +757,16 @@ export async function POST(req: Request) {
     }
 
     if (newEstado) {
-      const sus = await findSuscripcion(data);
+      let sus = await findSuscripcion(data);
+
+      if (!sus?.id && newEstado === "activa" && empresaId && planId) {
+        sus = await createSuscripcionIfMissing({
+          empresaId,
+          planId,
+          estado: newEstado,
+          data,
+        });
+      }
 
       if (sus?.id) {
         const patch: any = { estado: newEstado };
@@ -675,7 +776,7 @@ export async function POST(req: Request) {
           eventType === "payment_succeeded" ||
           eventType === "subscription_resumed"
         ) {
-          const inicio = sus.inicio ?? nowISO();
+          const inicio = resolveCoverageStartISO(data);
           const duracionDias = await getPlanDuracionDias(
             sus.plan_id ?? data?.planId ?? null
           );
@@ -688,6 +789,11 @@ export async function POST(req: Request) {
           }
           if (data?.externoSubscriptionId) {
             patch.externo_subscription_id = data.externoSubscriptionId;
+          }
+
+          const metadata = buildSuscripcionMetadata(data);
+          if (metadata && Object.keys(metadata).length > 0) {
+            patch.metadata = metadata;
           }
         }
 

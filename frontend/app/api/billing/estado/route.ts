@@ -33,6 +33,82 @@ function todayDateOnlyUTC(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+function nowISO(): string {
+  return new Date().toISOString();
+}
+
+/**
+ * Determina si una suspensión persistida parece haber sido generada por billing.
+ * La usamos para limpiar automáticamente solo suspensiones operativas de pago/plan,
+ * sin tocar posibles bloqueos manuales administrativos, fraude, abuso, baja comercial, etc.
+ */
+function isBillingSuspensionMotivo(motivo?: string | null): boolean {
+  if (!motivo) return true;
+
+  const m = motivo.toLowerCase().trim();
+
+  const knownBillingMotivos = [
+    "acuerdo comercial pendiente de pago",
+    "trial vencido",
+    "cuenta temporalmente suspendida por falta de pago",
+    "pago no acreditado",
+    "suscripción suspendida",
+    "suscripcion suspendida",
+    "suscripción cancelada",
+    "suscripcion cancelada",
+    "sin plan activo",
+    "plan vencido",
+    "falta de pago",
+  ];
+
+  return knownBillingMotivos.some((needle) => m.includes(needle));
+}
+
+async function persistirSuspensionEmpresa(params: {
+  empresaId: string;
+  motivo: string;
+}) {
+  const { empresaId, motivo } = params;
+
+  const { error } = await supabaseAdmin
+    .from("empresas")
+    .update({
+      suspendida: true,
+      suspendida_at: nowISO(),
+      suspension_motivo: motivo,
+      updated_at: nowISO(),
+    })
+    .eq("id", empresaId);
+
+  if (error) {
+    console.warn(
+      "billing/estado: no se pudo persistir suspensión:",
+      error.message
+    );
+  }
+}
+
+async function limpiarSuspensionEmpresa(params: { empresaId: string }) {
+  const { empresaId } = params;
+
+  const { error } = await supabaseAdmin
+    .from("empresas")
+    .update({
+      suspendida: false,
+      suspendida_at: null,
+      suspension_motivo: null,
+      updated_at: nowISO(),
+    })
+    .eq("id", empresaId);
+
+  if (error) {
+    console.warn(
+      "billing/estado: no se pudo limpiar suspensión:",
+      error.message
+    );
+  }
+}
+
 export async function GET(req: Request) {
   try {
     const server = supabaseServer();
@@ -162,10 +238,16 @@ export async function GET(req: Request) {
       .maybeSingle();
 
     if (!planEP) {
-      const suspendidaSinPlan = true;
       const suspensionMotivoSinPlan =
         empRow.suspension_motivo ??
         "Sin plan activo. Debe seleccionar un plan para continuar.";
+
+      if (!empRow.suspendida) {
+        await persistirSuspensionEmpresa({
+          empresaId,
+          motivo: suspensionMotivoSinPlan,
+        });
+      }
 
       return NextResponse.json(
         {
@@ -180,9 +262,9 @@ export async function GET(req: Request) {
             : null,
           cambioProgramadoPara: vEstado?.cambio_programado_para ?? null,
           estado: {
-            suspendida: suspendidaSinPlan,
+            suspendida: true,
             suspendida_motivo: suspensionMotivoSinPlan,
-            suspendida_at: empRow.suspendida_at ?? null,
+            suspendida_at: empRow.suspendida_at ?? nowISO(),
             plan_vencido: true,
             estado_plan: "sin_plan",
             tipo_cobertura_actual: "sin_cobertura",
@@ -331,19 +413,62 @@ export async function GET(req: Request) {
     const suspendidaPorTrial = requiereSeleccionPlan === true;
     const suspendidaPorPlanNormal = requierePagoPlanNormal === true;
 
-    const suspendidaFinal =
+    const suspendidaCalculada =
       suspendidaPorAcuerdo ||
       suspendidaPorTrial ||
-      suspendidaPorPlanNormal ||
-      !!empRow.suspendida;
+      suspendidaPorPlanNormal;
 
-    const suspensionMotivoFinal = suspendidaPorAcuerdo
+    const suspensionMotivoCalculado = suspendidaPorAcuerdo
       ? "Acuerdo comercial pendiente de pago del ciclo actual."
       : suspendidaPorTrial
       ? "Trial vencido. Debe seleccionar un plan para continuar."
       : suspendidaPorPlanNormal
       ? "Cuenta temporalmente suspendida por falta de pago."
-      : empRow.suspension_motivo ?? null;
+      : null;
+
+    let suspendidaPersistidaFinal = !!empRow.suspendida;
+    let suspendidaAtFinal = empRow.suspendida_at ?? null;
+    let motivoPersistidoFinal = empRow.suspension_motivo ?? null;
+
+    /**
+     * Sincronización oportunista:
+     * - Si el cálculo dice que debe suspenderse, persistimos suspensión.
+     * - Si el cálculo dice que NO debe suspenderse y la suspensión persistida era de billing,
+     *   la limpiamos automáticamente.
+     * - Si la suspensión persistida parece manual/administrativa no-billing, la respetamos.
+     */
+    if (suspendidaCalculada && suspensionMotivoCalculado) {
+      const debeActualizarMotivo =
+        !empRow.suspendida ||
+        empRow.suspension_motivo !== suspensionMotivoCalculado;
+
+      if (debeActualizarMotivo) {
+        await persistirSuspensionEmpresa({
+          empresaId,
+          motivo: suspensionMotivoCalculado,
+        });
+      }
+
+      suspendidaPersistidaFinal = true;
+      suspendidaAtFinal = empRow.suspendida_at ?? nowISO();
+      motivoPersistidoFinal = suspensionMotivoCalculado;
+    } else if (
+      empRow.suspendida &&
+      isBillingSuspensionMotivo(empRow.suspension_motivo)
+    ) {
+      await limpiarSuspensionEmpresa({ empresaId });
+
+      suspendidaPersistidaFinal = false;
+      suspendidaAtFinal = null;
+      motivoPersistidoFinal = null;
+    }
+
+    const suspendidaFinal =
+      suspendidaCalculada || suspendidaPersistidaFinal;
+
+    const suspensionMotivoFinal = suspendidaCalculada
+      ? suspensionMotivoCalculado
+      : motivoPersistidoFinal;
 
     const enPeriodoGraciaFinal =
       suspendidaPorAcuerdo ? false : en_periodo_gracia;
@@ -434,7 +559,7 @@ export async function GET(req: Request) {
         estado: {
           suspendida: suspendidaFinal,
           suspendida_motivo: suspensionMotivoFinal,
-          suspendida_at: empRow.suspendida_at ?? null,
+          suspendida_at: suspendidaAtFinal,
           plan_vencido: planVencidoFinal,
           estado_plan: estadoPlan,
           tipo_cobertura_actual: tipoCoberturaActual,

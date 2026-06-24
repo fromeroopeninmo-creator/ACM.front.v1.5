@@ -71,7 +71,7 @@ function resolveCoverageStartISO(data: any): string {
 
 function buildSuscripcionMetadata(data: any): any {
   const base =
-    (data?.raw_payment?.metadata && typeof data.raw_payment.metadata === "object")
+    data?.raw_payment?.metadata && typeof data.raw_payment.metadata === "object"
       ? { ...data.raw_payment.metadata }
       : {};
 
@@ -98,12 +98,9 @@ async function getPlanDuracionDias(planId: string | null | undefined): Promise<n
     return 30;
   }
 
-  const dur =
-    typeof data?.duracion_dias === "number" && data.duracion_dias > 0
-      ? data.duracion_dias
-      : 30;
-
-  return dur;
+  return typeof data?.duracion_dias === "number" && data.duracion_dias > 0
+    ? data.duracion_dias
+    : 30;
 }
 
 async function clearEmpresaSuspension(empresaId: string) {
@@ -238,14 +235,12 @@ async function activatePlan(
   const duracionDias = await getPlanDuracionDias(planId);
   const fechaFin = addDaysToDateOnly(today, duracionDias);
 
-  // 1) Desactivar cualquier plan activo actual
   await supabaseAdmin
     .from("empresas_planes")
     .update({ activo: false, updated_at: nowIso })
     .eq("empresa_id", empresaId)
     .eq("activo", true);
 
-  // 2) Reactivar si ya existía ese plan
   const { data: existente } = await supabaseAdmin
     .from("empresas_planes")
     .select("id")
@@ -329,8 +324,7 @@ async function settleUpgradeMovimiento(params: {
   referenciaPasarela?: string | null;
   payload?: any;
 }) {
-  const { empresaId, nuevoPlanId, estado, referenciaPasarela, payload } =
-    params;
+  const { empresaId, nuevoPlanId, estado, referenciaPasarela, payload } = params;
 
   let query = supabaseAdmin
     .from("movimientos_financieros")
@@ -460,7 +454,7 @@ async function normalizeMercadoPagoEvent(
   }
 
   const paymentRes = await fetch(
-    `https://api.mercadopago.com/v1/payments/${mpDataId}`,
+    `https://api.mercadopago.com/v1/payments/${encodeURIComponent(String(mpDataId))}`,
     {
       method: "GET",
       headers: {
@@ -486,7 +480,7 @@ async function normalizeMercadoPagoEvent(
   } else if (status === "rejected" || status === "cancelled") {
     eventType = "invoice_payment_failed";
   } else {
-    eventType = "invoice_payment_failed";
+    return null;
   }
 
   const empresaId =
@@ -511,6 +505,11 @@ async function normalizeMercadoPagoEvent(
 
   if (!movimientoId && typeof payment.external_reference === "string") {
     movimientoId = payment.external_reference;
+  }
+
+  if (!empresaId && !movimientoId) {
+    console.warn("Webhook MP sin empresaId ni movimientoId en metadata/external_reference.");
+    return null;
   }
 
   return {
@@ -540,58 +539,20 @@ export async function POST(req: Request) {
   try {
     const rawBody = await req.json().catch(() => null as any);
 
-    const looksLikeMP =
-      !!rawBody &&
-      (
-        rawBody?.type === "payment" ||
-        rawBody?.topic === "payment" ||
-        (typeof rawBody?.action === "string" &&
-          rawBody.action.toLowerCase().startsWith("payment.")) ||
-        (rawBody?.data && (rawBody?.data?.id || rawBody?.data?.payment?.id))
+    const mpNormalized = await normalizeMercadoPagoEvent(rawBody);
+
+    if (!mpNormalized) {
+      console.warn("Webhook rechazado: evento no verificable o no soportado.");
+      return NextResponse.json(
+        { ok: false, error: "Evento no verificable." },
+        { status: 401 }
       );
-
-    const fallbackProvider: string =
-      rawBody?.provider ??
-      (looksLikeMP ? "mercadopago" : "unknown");
-
-    const fallbackExternalEventId: string | undefined =
-      rawBody?.externalEventId ??
-      rawBody?.external_event_id ??
-      (rawBody?.data?.id != null ? String(rawBody.data.id) : undefined) ??
-      (rawBody?.data?.payment?.id != null ? String(rawBody.data.payment.id) : undefined) ??
-      (rawBody?.id != null ? String(rawBody.id) : undefined);
-
-    const fallbackEventType: string | undefined =
-      rawBody?.eventType ??
-      rawBody?.event_type ??
-      (typeof rawBody?.action === "string" ? rawBody.action : undefined) ??
-      (typeof rawBody?.type === "string" ? rawBody.type : undefined) ??
-      (typeof rawBody?.topic === "string" ? rawBody.topic : undefined);
-
-    let provider: string | undefined = rawBody?.provider;
-    let externalEventId: string | undefined = rawBody?.externalEventId;
-    let eventType: string | undefined = rawBody?.eventType;
-    let data: any = rawBody?.data ?? {};
-
-    const isNormalized =
-      !!provider && !!externalEventId && !!eventType;
-
-    if (!isNormalized) {
-      const mpNormalized = await normalizeMercadoPagoEvent(rawBody);
-      if (mpNormalized) {
-        provider = mpNormalized.provider;
-        externalEventId = mpNormalized.externalEventId;
-        eventType = mpNormalized.eventType;
-        data = mpNormalized.data;
-      }
     }
 
-    provider = provider ?? fallbackProvider;
-    externalEventId =
-      externalEventId ??
-      fallbackExternalEventId ??
-      `fallback_${Date.now()}`;
-    eventType = eventType ?? fallbackEventType ?? "unknown_event";
+    const provider = mpNormalized.provider;
+    const externalEventId = mpNormalized.externalEventId;
+    const eventType = mpNormalized.eventType;
+    const data = mpNormalized.data;
 
     {
       const { data: exists } = await supabaseAdmin
@@ -637,8 +598,8 @@ export async function POST(req: Request) {
 
       console.error("No se pudo registrar webhook_events:", whErr.message);
       return NextResponse.json(
-        { ok: true, warning: "No se pudo registrar webhook_events" },
-        { status: 200 }
+        { ok: false, error: "No se pudo registrar el webhook." },
+        { status: 500 }
       );
     }
 
@@ -649,9 +610,7 @@ export async function POST(req: Request) {
     let newEstado: SuscripcionEstado | null = null;
 
     switch (eventType) {
-      case "subscription_active":
-      case "payment_succeeded":
-      case "subscription_resumed": {
+      case "payment_succeeded": {
         if (movimientoId) {
           await settleMovimientoPorIdYActivarPlan({
             movimientoId,
@@ -689,7 +648,6 @@ export async function POST(req: Request) {
         break;
       }
 
-      case "subscription_paused":
       case "invoice_payment_failed": {
         if (movimientoId) {
           await settleMovimientoPorIdYActivarPlan({
@@ -715,28 +673,14 @@ export async function POST(req: Request) {
             payload: data,
           });
 
-          if (empresaId) {
-            await suspendPlan(empresaId);
-            await markEmpresaSuspended(
-              empresaId,
-              "Pago no acreditado o suscripción suspendida."
-            );
-          }
+          await suspendPlan(empresaId);
+          await markEmpresaSuspended(
+            empresaId,
+            "Pago no acreditado o suscripción suspendida."
+          );
         }
 
         newEstado = "suspendida";
-        break;
-      }
-
-      case "subscription_canceled": {
-        if (empresaId) {
-          await cancelPlan(empresaId);
-          await markEmpresaSuspended(
-            empresaId,
-            "Suscripción cancelada."
-          );
-        }
-        newEstado = "cancelada";
         break;
       }
 
@@ -771,11 +715,7 @@ export async function POST(req: Request) {
       if (sus?.id) {
         const patch: any = { estado: newEstado };
 
-        if (
-          eventType === "subscription_active" ||
-          eventType === "payment_succeeded" ||
-          eventType === "subscription_resumed"
-        ) {
+        if (eventType === "payment_succeeded") {
           const inicio = resolveCoverageStartISO(data);
           const duracionDias = await getPlanDuracionDias(
             sus.plan_id ?? data?.planId ?? null
@@ -797,10 +737,6 @@ export async function POST(req: Request) {
           }
         }
 
-        if (eventType === "subscription_canceled") {
-          patch.fin = nowISO();
-        }
-
         await supabaseAdmin
           .from("suscripciones")
           .update(patch)
@@ -817,8 +753,8 @@ export async function POST(req: Request) {
   } catch (e: any) {
     console.error("Error en /api/pagos/webhook:", e?.message || e);
     return NextResponse.json(
-      { ok: true, warning: e?.message || "Error inesperado" },
-      { status: 200 }
+      { ok: false, error: "Error interno procesando webhook." },
+      { status: 500 }
     );
   }
 }

@@ -32,6 +32,7 @@ async function resolveUserRole(userId: string): Promise<Role | null> {
     .select("role")
     .eq("user_id", userId)
     .maybeSingle();
+
   if (p1?.role) return p1.role as Role;
 
   const { data: p2 } = await supabaseAdmin
@@ -39,6 +40,7 @@ async function resolveUserRole(userId: string): Promise<Role | null> {
     .select("role")
     .eq("id", userId)
     .maybeSingle();
+
   return (p2?.role as Role) ?? null;
 }
 
@@ -51,6 +53,7 @@ async function resolveEmpresaIdForUser(
     .select("id")
     .eq("user_id", userId)
     .maybeSingle();
+
   if (emp?.id) return emp.id as string;
 
   // 2) Perfil vinculado
@@ -59,6 +62,7 @@ async function resolveEmpresaIdForUser(
     .select("empresa_id")
     .eq("user_id", userId)
     .maybeSingle();
+
   return (prof?.empresa_id as string) ?? null;
 }
 
@@ -80,6 +84,7 @@ export async function POST(req: Request) {
     // Role
     const role = await resolveUserRole(userId);
     const allowed: Role[] = ["empresa", "super_admin", "super_admin_root"];
+
     if (!role || !allowed.includes(role)) {
       return NextResponse.json(
         { error: "Acceso denegado." },
@@ -93,8 +98,10 @@ export async function POST(req: Request) {
 
     // Resolver empresaId según rol
     let empresaId: string | null = null;
+
     if (role === "empresa") {
       empresaId = await resolveEmpresaIdForUser(userId);
+
       if (!empresaId) {
         return NextResponse.json(
           { error: "No se pudo resolver la empresa del usuario." },
@@ -104,6 +111,7 @@ export async function POST(req: Request) {
     } else {
       // super_admin / root
       empresaId = empresaIdParam ?? (await resolveEmpresaIdForUser(userId));
+
       if (!empresaId) {
         return NextResponse.json(
           { error: "Falta 'empresaId' para crear checkout." },
@@ -149,7 +157,10 @@ export async function POST(req: Request) {
 
     if (!effectivePlanId) {
       return NextResponse.json(
-        { error: "Falta 'planId' y no se pudo resolver un plan para el checkout." },
+        {
+          error:
+            "Falta 'planId' y no se pudo resolver un plan para el checkout.",
+        },
         { status: 400 }
       );
     }
@@ -185,7 +196,9 @@ export async function POST(req: Request) {
     });
 
     const montoNeto = round2(Number(billingConfig.precio_neto_final ?? 0));
-    const montoTotal = round2(Number(billingConfig.precio_total_final ?? montoNeto));
+    const montoTotal = round2(
+      Number(billingConfig.precio_total_final ?? montoNeto)
+    );
     const montoCobrar = montoTotal > 0 ? montoTotal : montoNeto;
 
     if (!Number.isFinite(montoCobrar) || montoCobrar <= 0) {
@@ -259,11 +272,23 @@ export async function POST(req: Request) {
           },
         ],
         payer: payerEmail ? { email: payerEmail } : undefined,
-        external_reference: `${empresaId}:${effectivePlanId}:${suscripcionId ?? ""}`,
+
+        // Preferimos que external_reference apunte a la suscripción pendiente,
+        // porque el webhook puede usarla como referencia estable del ciclo de pago.
+        external_reference: suscripcionId ?? `${empresaId}:${effectivePlanId}`,
+
         metadata: {
+          // Duplicamos snake_case y camelCase por robustez ante normalizaciones
+          // del proveedor o cambios futuros del normalizador del webhook.
+          empresa_id: empresaId,
           empresaId,
+
+          plan_id: effectivePlanId,
           planId: effectivePlanId,
+
+          suscripcion_id: suscripcionId ?? null,
           suscripcionId: suscripcionId ?? null,
+
           pricing_source: billingConfig.pricing_source,
           agreement_applied: billingConfig.agreement_applied,
           agreement_id: billingConfig.agreement_id,
@@ -299,6 +324,7 @@ export async function POST(req: Request) {
       if (!mpRes.ok) {
         const errText = await mpRes.text().catch(() => "");
         console.error("Error creando preferencia MP:", errText);
+
         return NextResponse.json(
           { error: "No se pudo crear la preferencia de pago." },
           { status: 500 }

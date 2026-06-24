@@ -87,6 +87,8 @@ type BillingEstado = {
     dias_desde_vencimiento?: number | null;
     en_periodo_gracia?: boolean;
     requiere_seleccion_plan?: boolean;
+    requiere_pago?: boolean;
+    requiere_pago_inicial_acuerdo?: boolean;
   } | null;
   pricing?: {
     precio_base_neto?: number | null;
@@ -483,6 +485,8 @@ export default function EmpresaPlanesPage() {
   const estaSuspendida = !!billingEstado?.estado?.suspendida;
   const enPeriodoGracia = !!billingEstado?.estado?.en_periodo_gracia;
   const requiereSeleccionPlan = !!billingEstado?.estado?.requiere_seleccion_plan;
+  const requierePagoInicialAcuerdo =
+    !!billingEstado?.estado?.requiere_pago_inicial_acuerdo;
 
   const proximoCobro = billingEstado?.ciclo?.proximoCobro ?? planActual?.fecha_fin ?? null;
   const acuerdoFechaInicio = billingEstado?.acuerdoComercial?.fecha_inicio ?? null;
@@ -827,7 +831,9 @@ export default function EmpresaPlanesPage() {
       <section className="bg-white shadow-sm rounded-xl p-6 border border-gray-200">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
-            <h1 className="text-2xl font-semibold">Suscripción Mensual</h1>
+            <h1 className="text-2xl font-semibold">
+              {acuerdoVisible ? "Acuerdo y Suscripción Mensual" : "Suscripción Mensual"}
+            </h1>
             <p className="text-gray-600 mt-1">
               Plan actual:{" "}
               <span className="font-semibold">{planActualNombre || "Sin plan"}</span>
@@ -836,7 +842,7 @@ export default function EmpresaPlanesPage() {
 
           {acuerdoVisible ? (
             <span className="inline-flex self-start md:self-auto items-center rounded-full bg-blue-100 text-blue-700 text-sm font-medium px-3 py-1">
-              Esta cuenta posee Acuerdo Comercial
+              Acuerdo Comercial Vigente
             </span>
           ) : null}
         </div>
@@ -846,10 +852,14 @@ export default function EmpresaPlanesPage() {
         <section className="bg-red-50 border border-red-200 text-red-800 rounded-xl p-4">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
             <div className="space-y-1">
-              <h2 className="font-semibold">Tu plan se encuentra vencido</h2>
+              <h2 className="font-semibold">
+                {acuerdoVisible
+                  ? "Suscripción mensual pendiente de regularización"
+                  : "Tu plan se encuentra vencido"}
+              </h2>
               <p className="text-sm">
                 {acuerdoVisible
-                  ? "Tu acuerdo comercial venció o requiere renovación para seguir utilizando la plataforma."
+                  ? "Tu empresa posee un acuerdo comercial vigente, pero la suscripción mensual se encuentra vencida o pendiente de regularización. Para restablecer el acceso, aboná el ciclo correspondiente a tu acuerdo."
                   : "Tu suscripción venció y necesitás regularizar el pago para seguir utilizando la plataforma."}
               </p>
               {proximoCobro ? (
@@ -869,7 +879,11 @@ export default function EmpresaPlanesPage() {
               disabled={loadingPago}
               className="rounded-lg bg-red-600 hover:bg-red-700 text-white px-4 py-2 text-sm font-medium disabled:opacity-60"
             >
-              {loadingPago ? "Redirigiendo..." : "Ir a pagar"}
+              {loadingPago
+                ? "Redirigiendo..."
+                : acuerdoVisible
+                ? "Regularizar pago"
+                : "Ir a pagar"}
             </button>
           </div>
         </section>
@@ -883,7 +897,9 @@ export default function EmpresaPlanesPage() {
                 {planActualNombre || "Sin plan activo"}
               </h2>
               <p className="text-sm text-gray-600">
-                Detalle actual de la suscripción mensual.
+                {acuerdoVisible
+                  ? "Detalle actual del acuerdo comercial y del ciclo mensual."
+                  : "Detalle actual de la suscripción mensual."}
               </p>
             </div>
 
@@ -894,7 +910,9 @@ export default function EmpresaPlanesPage() {
               </div>
 
               <div className="rounded-lg border p-3">
-                <div className="text-xs text-gray-500 mb-1">Importe mensual a abonar</div>
+                <div className="text-xs text-gray-500 mb-1">
+                  {acuerdoVisible ? "Importe mensual del acuerdo" : "Importe mensual a abonar"}
+                </div>
                 <div className="font-medium">{fmtMoney(importeMensual)}</div>
               </div>
 
@@ -928,14 +946,19 @@ export default function EmpresaPlanesPage() {
               disabled={loadingPago || (!billingEstado?.plan?.id && !planActual?.plan_id)}
               className="rounded-lg bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 text-sm font-medium disabled:opacity-60"
             >
-              {loadingPago ? "Redirigiendo..." : "Ir a pagar"}
+              {loadingPago
+                ? "Redirigiendo..."
+                : acuerdoVisible
+                ? "Regularizar pago"
+                : "Ir a pagar"}
             </button>
 
             {acuerdoVisible ? (
               <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
-                Esta cuenta posee un acuerdo comercial vigente. Para solicitar
-                cambios, mejoras o desactivación, comunicate con tu asesor
-                comercial o con administración.
+                Esta cuenta posee un acuerdo comercial vigente. Los cambios de
+                plan, cupo o condiciones comerciales deben gestionarse con
+                administración. Desde esta pantalla podés regularizar el pago
+                del ciclo mensual correspondiente al acuerdo.
               </div>
             ) : null}
           </div>
@@ -979,12 +1002,32 @@ export default function EmpresaPlanesPage() {
             </div>
 
             <div className="rounded-lg border p-3">
-              <div className="text-xs text-gray-500 mb-1">Vigencia</div>
+              <div className="text-xs text-gray-500 mb-1">Vigencia del acuerdo</div>
               <div className="font-medium">
                 {fmtDateOnly(acuerdoFechaInicio)} — {fmtDateOnly(acuerdoFechaFin)}
               </div>
             </div>
           </div>
+
+          {requierePagoInicialAcuerdo ? (
+            <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+              <p className="font-medium">
+                El acuerdo está vigente, pero falta regularizar el pago del ciclo mensual actual.
+              </p>
+              <p className="mt-1">
+                Al abonar este ciclo, el acceso debería restablecerse automáticamente.
+              </p>
+            </div>
+          ) : (
+            <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
+              <p className="font-medium">
+                El acuerdo comercial está vigente.
+              </p>
+              <p className="mt-1">
+                Si el pago mensual se encuentra al día, la cuenta podrá operar normalmente.
+              </p>
+            </div>
+          )}
         </section>
       )}
 
@@ -994,7 +1037,7 @@ export default function EmpresaPlanesPage() {
         </section>
       )}
 
-      {planesFull.length > 0 && (
+      {!acuerdoVisible && planesFull.length > 0 && (
         <section className="space-y-4">
           <div>
             <h2 className="text-lg font-semibold">Planes Full VAI (todo incluido)</h2>
@@ -1015,7 +1058,7 @@ export default function EmpresaPlanesPage() {
         </section>
       )}
 
-      {planesCore.length > 0 && (
+      {!acuerdoVisible && planesCore.length > 0 && (
         <section className="space-y-4">
           <div>
             <h2 className="text-lg font-semibold">Planes Core VAI</h2>
@@ -1033,7 +1076,7 @@ export default function EmpresaPlanesPage() {
         </section>
       )}
 
-      {planesTracker.length > 0 && (
+      {!acuerdoVisible && planesTracker.length > 0 && (
         <section className="space-y-4">
           <div>
             <h2 className="text-lg font-semibold">Planes Business Tracker</h2>

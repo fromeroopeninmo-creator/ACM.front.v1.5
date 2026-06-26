@@ -34,23 +34,36 @@ export default function AsesorCuentaPage() {
 
   const [showPasswords, setShowPasswords] = useState(false);
 
-  // 🔄 Prefill desde profiles si existe (toma prioridad)
+  // 🔄 Prefill desde profiles si existe.
+  // La tabla profiles tiene prioridad sobre user_metadata.
   useEffect(() => {
     const loadFromProfile = async () => {
       if (!user) return;
+
       const { data, error } = await supabase
         .from("profiles")
-        .select("nombre, apellido, telefono")
-        .eq("id", user.id)
+        .select("nombre, apellido, telefono, role")
+        .or(`id.eq.${user.id},user_id.eq.${user.id}`)
         .maybeSingle();
-      if (!error && data) {
-        setPerfil((p) => ({
-          nombre: data.nombre ?? p.nombre,
-          apellido: data.apellido ?? p.apellido,
-          telefono: data.telefono ?? p.telefono,
-        }));
+
+      if (error) {
+        console.error("Error cargando profile asesor:", error);
+        return;
       }
+
+      if (!data) return;
+
+      if (data.role && data.role !== "asesor") {
+        console.warn("⚠️ El usuario actual no tiene role asesor:", data.role);
+      }
+
+      setPerfil((p) => ({
+        nombre: data.nombre ?? p.nombre,
+        apellido: data.apellido ?? p.apellido,
+        telefono: data.telefono ?? p.telefono,
+      }));
     };
+
     loadFromProfile();
   }, [user]);
 
@@ -59,40 +72,73 @@ export default function AsesorCuentaPage() {
   // ==============================
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user) return;
+
+    if (!user) {
+      setMsgProfile("❌ No se encontró usuario autenticado.");
+      return;
+    }
 
     setSavingProfile(true);
     setMsgProfile(null);
 
     try {
-      // 1) Actualizar tabla profiles (RLS self-update)
+      // 1) Verificar profile real antes de actualizar.
+      // No confiamos en user_metadata.
+      const { data: currentProfile, error: profileCheckError } = await supabase
+        .from("profiles")
+        .select("id, user_id, role")
+        .or(`id.eq.${user.id},user_id.eq.${user.id}`)
+        .maybeSingle();
+
+      if (profileCheckError) {
+        console.error("Error validando profile asesor:", profileCheckError);
+        throw new Error("No se pudo validar el perfil del asesor.");
+      }
+
+      if (!currentProfile) {
+        throw new Error("No existe un perfil asociado a este usuario.");
+      }
+
+      if (currentProfile.role !== "asesor") {
+        throw new Error("Este usuario no está autorizado como asesor.");
+      }
+
+      // 2) Actualizar solo datos personales permitidos.
+      // No tocamos role, empresa_id, activo ni campos sensibles.
       const { error: pErr } = await supabase
         .from("profiles")
         .update({
           nombre: perfil.nombre || null,
           apellido: perfil.apellido || null,
           telefono: perfil.telefono || null,
+          updated_at: new Date().toISOString(),
         })
-        .eq("id", user.id);
+        .or(`id.eq.${user.id},user_id.eq.${user.id}`);
 
-      if (pErr) throw pErr;
+      if (pErr) {
+        throw pErr;
+      }
 
-      // 2) Actualizar metadata del usuario en Auth
+      // 3) Actualizar metadata simple del usuario en Auth.
+      // IMPORTANTE:
+      // No escribimos role desde frontend.
+      // El rol real siempre debe salir desde profiles.role.
       const { error: metaErr } = await supabase.auth.updateUser({
         data: {
           nombre: perfil.nombre || "",
           apellido: perfil.apellido || "",
           telefono: perfil.telefono || "",
-          role: "asesor",
         },
       });
 
-      if (metaErr) throw metaErr;
+      if (metaErr) {
+        throw metaErr;
+      }
 
       setMsgProfile("✅ Datos personales actualizados.");
     } catch (err: any) {
       console.error("Error guardando perfil:", err);
-      setMsgProfile("❌ Error al actualizar los datos personales.");
+      setMsgProfile(`❌ ${err?.message || "Error al actualizar los datos personales."}`);
     } finally {
       setSavingProfile(false);
     }
@@ -103,7 +149,11 @@ export default function AsesorCuentaPage() {
   // ==============================
   const handleSaveCreds = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user) return;
+
+    if (!user) {
+      setMsgCreds("❌ No se encontró usuario autenticado.");
+      return;
+    }
 
     setSavingCreds(true);
     setMsgCreds(null);
@@ -114,13 +164,14 @@ export default function AsesorCuentaPage() {
         email: user.email!,
         password: passwordForm.currentPassword,
       });
+
       if (signInError) {
         setMsgCreds("❌ Contraseña actual incorrecta.");
         setSavingCreds(false);
         return;
       }
 
-      // Cambiar email (opcional)
+      // Cambiar email opcional
       if (
         emailForm.newEmail &&
         emailForm.newEmail !== user.email &&
@@ -129,28 +180,36 @@ export default function AsesorCuentaPage() {
         const { error: emailErr } = await supabase.auth.updateUser({
           email: emailForm.newEmail,
         });
-        if (emailErr) throw emailErr;
+
+        if (emailErr) {
+          throw emailErr;
+        }
       }
 
-      // Cambiar password (opcional)
+      // Cambiar password opcional
       if (passwordForm.newPassword) {
         if (passwordForm.newPassword !== passwordForm.confirmPassword) {
           setMsgCreds("❌ Las contraseñas nuevas no coinciden.");
           setSavingCreds(false);
           return;
         }
+
         const { error: passErr } = await supabase.auth.updateUser({
           password: passwordForm.newPassword,
         });
-        if (passErr) throw passErr;
+
+        if (passErr) {
+          throw passErr;
+        }
       }
 
-      // Limpieza de formularios
       setMsgCreds("✅ Credenciales actualizadas.");
+
       setEmailForm({
         actualEmail: emailForm.newEmail || user.email!,
         newEmail: "",
       });
+
       setPasswordForm({
         currentPassword: "",
         newPassword: "",
@@ -158,7 +217,7 @@ export default function AsesorCuentaPage() {
       });
     } catch (err: any) {
       console.error("Error guardando credenciales:", err);
-      setMsgCreds("❌ Error al actualizar credenciales.");
+      setMsgCreds(`❌ ${err?.message || "Error al actualizar credenciales."}`);
     } finally {
       setSavingCreds(false);
     }
@@ -171,33 +230,61 @@ export default function AsesorCuentaPage() {
       {/* DATOS PERSONALES */}
       <section>
         <h2 className="text-lg font-semibold mb-4">Datos personales</h2>
-        <form onSubmit={handleSaveProfile} className="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+        <form
+          onSubmit={handleSaveProfile}
+          className="grid grid-cols-1 md:grid-cols-2 gap-6"
+        >
           <div>
-            <label className="block text-sm font-medium text-gray-700">Nombre</label>
+            <label className="block text-sm font-medium text-gray-700">
+              Nombre
+            </label>
+
             <input
               type="text"
               value={perfil.nombre}
-              onChange={(e) => setPerfil({ ...perfil, nombre: e.target.value })}
+              onChange={(e) =>
+                setPerfil({
+                  ...perfil,
+                  nombre: e.target.value,
+                })
+              }
               className="mt-1 w-full border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-sky-400"
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700">Apellido</label>
+            <label className="block text-sm font-medium text-gray-700">
+              Apellido
+            </label>
+
             <input
               type="text"
               value={perfil.apellido}
-              onChange={(e) => setPerfil({ ...perfil, apellido: e.target.value })}
+              onChange={(e) =>
+                setPerfil({
+                  ...perfil,
+                  apellido: e.target.value,
+                })
+              }
               className="mt-1 w-full border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-sky-400"
             />
           </div>
 
           <div className="md:col-span-2">
-            <label className="block text-sm font-medium text-gray-700">Teléfono</label>
+            <label className="block text-sm font-medium text-gray-700">
+              Teléfono
+            </label>
+
             <input
               type="text"
               value={perfil.telefono}
-              onChange={(e) => setPerfil({ ...perfil, telefono: e.target.value })}
+              onChange={(e) =>
+                setPerfil({
+                  ...perfil,
+                  telefono: e.target.value,
+                })
+              }
               className="mt-1 w-full border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-sky-400"
               placeholder="Ej: 11-1234-5678"
             />
@@ -232,9 +319,16 @@ export default function AsesorCuentaPage() {
       {/* CREDENCIALES */}
       <section>
         <h2 className="text-lg font-semibold mb-4">Email y contraseña</h2>
-        <form onSubmit={handleSaveCreds} className="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+        <form
+          onSubmit={handleSaveCreds}
+          className="grid grid-cols-1 md:grid-cols-2 gap-6"
+        >
           <div>
-            <label className="block text-sm font-medium text-gray-700">Email actual</label>
+            <label className="block text-sm font-medium text-gray-700">
+              Email actual
+            </label>
+
             <input
               type="email"
               value={emailForm.actualEmail}
@@ -244,47 +338,78 @@ export default function AsesorCuentaPage() {
           </div>
 
           <div>
-            <label className="block text sm font-medium text-gray-700">Nuevo email</label>
+            <label className="block text-sm font-medium text-gray-700">
+              Nuevo email
+            </label>
+
             <input
               type="email"
               value={emailForm.newEmail}
-              onChange={(e) => setEmailForm({ ...emailForm, newEmail: e.target.value })}
+              onChange={(e) =>
+                setEmailForm({
+                  ...emailForm,
+                  newEmail: e.target.value,
+                })
+              }
               placeholder="Opcional"
               className="mt-1 w-full border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-sky-400"
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700">Contraseña actual</label>
+            <label className="block text-sm font-medium text-gray-700">
+              Contraseña actual
+            </label>
+
             <input
               type={showPasswords ? "text" : "password"}
               value={passwordForm.currentPassword}
-              onChange={(e) => setPasswordForm({ ...passwordForm, currentPassword: e.target.value })}
+              onChange={(e) =>
+                setPasswordForm({
+                  ...passwordForm,
+                  currentPassword: e.target.value,
+                })
+              }
               className="mt-1 w-full border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-sky-400"
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700">Nueva contraseña</label>
+            <label className="block text-sm font-medium text-gray-700">
+              Nueva contraseña
+            </label>
+
             <input
               type={showPasswords ? "text" : "password"}
               value={passwordForm.newPassword}
-              onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })}
+              onChange={(e) =>
+                setPasswordForm({
+                  ...passwordForm,
+                  newPassword: e.target.value,
+                })
+              }
               placeholder="Opcional"
               className="mt-1 w-full border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-sky-400"
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700">Confirmar nueva contraseña</label>
+            <label className="block text-sm font-medium text-gray-700">
+              Confirmar nueva contraseña
+            </label>
+
             <input
               type={showPasswords ? "text" : "password"}
               value={passwordForm.confirmPassword}
               onChange={(e) =>
-                setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })
+                setPasswordForm({
+                  ...passwordForm,
+                  confirmPassword: e.target.value,
+                })
               }
               className="mt-1 w-full border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-sky-400"
             />
+
             <button
               type="button"
               onClick={() => setShowPasswords(!showPasswords)}

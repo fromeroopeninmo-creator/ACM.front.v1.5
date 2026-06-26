@@ -880,43 +880,6 @@ const handleDownloadPDF = async () => {
     }
   };
 
-  const addImageCover = (
-    src: string,
-    x: number,
-    yImg: number,
-    boxW: number,
-    boxH: number
-  ) => {
-    try {
-      const props = (doc as any).getImageProperties(src);
-      const imgW = Number(props?.width) || boxW;
-      const imgH = Number(props?.height) || boxH;
-      const ratio = Math.max(boxW / imgW, boxH / imgH);
-      const drawW = imgW * ratio;
-      const drawH = imgH * ratio;
-      const drawX = x + (boxW - drawW) / 2;
-      const drawY = yImg + (boxH - drawH) / 2;
-
-      (doc as any).saveGraphicsState?.();
-      doc.rect(x, yImg, boxW, boxH, "S");
-      (doc as any).clip?.();
-      doc.addImage(
-        src,
-        imageFormat(src),
-        drawX,
-        drawY,
-        drawW,
-        drawH,
-        undefined,
-        "FAST"
-      );
-      (doc as any).restoreGraphicsState?.();
-    } catch (e) {
-      console.warn("No se pudo insertar imagen recortada en PDF:", e);
-      addImageContain(src, x, yImg, boxW, boxH);
-    }
-  };
-
   const ensureSpace = (needed: number) => {
     if (y + needed > pageH - 58) {
       doc.addPage();
@@ -943,29 +906,30 @@ const handleDownloadPDF = async () => {
     yLine: number,
     maxW = 220
   ) => {
+    const labelText = `${label}: `;
     doc.setFont("helvetica", "bold");
     doc.setFontSize(9);
     doc.setTextColor(muted.r, muted.g, muted.b);
-    doc.text(`${label}:`, x, yLine);
+    doc.text(labelText, x, yLine);
 
     doc.setFont("helvetica", "normal");
     doc.setTextColor(dark.r, dark.g, dark.b);
-    const labelW = doc.getTextWidth(`${label}: `);
-    const lines = doc.splitTextToSize(value || "-", maxW - labelW);
-    doc.text(lines as any, x + labelW + 7, yLine);
+    const labelW = doc.getTextWidth(labelText);
+    const lines = doc.splitTextToSize(value || "-", maxW - labelW - 8);
+    doc.text(lines as any, x + labelW + 8, yLine);
     doc.setTextColor(0, 0, 0);
     return Array.isArray(lines) ? lines.length * 11 : 11;
   };
 
   const drawTextBlock = (title: string, text: string) => {
     const cleanText = text?.trim() || "-";
-    ensureSpace(38);
+    ensureSpace(46);
 
     doc.setFont("helvetica", "bold");
     doc.setFontSize(11);
     doc.setTextColor(pc.r, pc.g, pc.b);
     doc.text(title, margin, y);
-    y += 18;
+    y += 22;
 
     doc.setFont("helvetica", "normal");
     doc.setFontSize(9.5);
@@ -981,49 +945,49 @@ const handleDownloadPDF = async () => {
       y += 12.5;
     }
 
-    y += 16;
+    y += 20;
     doc.setTextColor(0, 0, 0);
   };
 
-  // =========================
-  // Portada / encabezado
-  // =========================
-  doc.setFillColor(pc.r, pc.g, pc.b);
-  doc.rect(0, 0, pageW, 74, "F");
+  const startHeaderPage = async () => {
+    // Encabezado superior de la primera página
+    doc.setFillColor(pc.r, pc.g, pc.b);
+    doc.rect(0, 0, pageW, 74, "F");
 
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(18);
-  doc.setTextColor(255, 255, 255);
-  doc.text("Valuación de Activo Inmobiliario", margin, 32);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(18);
+    doc.setTextColor(255, 255, 255);
+    doc.text("Valuación de Activo Inmobiliario", margin, 32);
 
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(9.5);
-  doc.text(
-    `${inmobiliaria || "—"}  |  ${new Date(formData.date).toLocaleDateString("es-AR")}`,
-    margin,
-    52
-  );
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9.5);
+    doc.text(
+      `${inmobiliaria || "—"}  |  ${new Date(formData.date).toLocaleDateString("es-AR")}`,
+      margin,
+      52
+    );
 
-  if (themeLogo) {
-    try {
-      const logoData = await fetchToDataURL(themeLogo);
-      if (logoData) {
-        // Logo contenido dentro del encabezado, sin recortar ni deformar.
-        // Evitamos usar clip/cover porque en algunos entornos de jsPDF puede afectar
-        // el render posterior de la página.
-        const logoBoxW = 86;
-        const logoBoxH = 54;
-        const logoX = pageW - margin - logoBoxW;
-        const logoY = 10;
-        addImageContain(logoData, logoX, logoY, logoBoxW, logoBoxH);
+    if (themeLogo) {
+      try {
+        const logoData = await fetchToDataURL(themeLogo);
+        if (logoData) {
+          // Un poco más grande que la versión anterior, pero contenido dentro del encabezado.
+          const logoBoxW = 100;
+          const logoBoxH = 58;
+          const logoX = pageW - margin - logoBoxW;
+          const logoY = 8;
+          addImageContain(logoData, logoX, logoY, logoBoxW, logoBoxH);
+        }
+      } catch (err) {
+        console.warn("⚠️ No se pudo cargar el logo del tema en el PDF", err);
       }
-    } catch (err) {
-      console.warn("⚠️ No se pudo cargar el logo del tema en el PDF", err);
     }
-  }
 
-  doc.setTextColor(0, 0, 0);
-  y = 96;
+    doc.setTextColor(0, 0, 0);
+    y = 96;
+  };
+
+  await startHeaderPage();
 
   // Datos de cabecera
   doc.setFillColor(soft.r, soft.g, soft.b);
@@ -1037,25 +1001,25 @@ const handleDownloadPDF = async () => {
   y += 82;
 
   // =========================
-  // Datos de la propiedad
+  // Página 1: Datos de la propiedad
   // =========================
   drawSectionTitle("Datos de la Propiedad");
 
   const cardX = margin;
   const cardY = y;
   const cardW = pageW - margin * 2;
-  const photoW = 170;
-  const photoH = 112;
-  const cardH = 258;
+  const photoW = 230;
+  const photoH = 168;
+  const cardH = 366;
 
   doc.setFillColor(255, 255, 255);
   doc.setDrawColor(border.r, border.g, border.b);
   doc.rect(cardX, cardY, cardW, cardH, "FD");
 
-  const leftX = cardX + 14;
-  const midX = cardX + 182;
-  const photoX = cardX + cardW - photoW - 14;
-  const infoMaxW = 154;
+  const leftX = cardX + 18;
+  const midX = cardX + 194;
+  const photoX = cardX + cardW - photoW - 18;
+  const infoMaxW = 162;
 
   const drawKV = (
     label: string,
@@ -1066,21 +1030,21 @@ const handleDownloadPDF = async () => {
   ) => {
     const labelText = `${label}: `;
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(8.6);
+    doc.setFontSize(8.8);
     doc.setTextColor(muted.r, muted.g, muted.b);
     doc.text(labelText, x, yLine);
 
     const labelW = doc.getTextWidth(labelText);
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(8.6);
+    doc.setFontSize(8.8);
     doc.setTextColor(dark.r, dark.g, dark.b);
 
     const safeValue = value || "-";
-    const lines = doc.splitTextToSize(safeValue, maxValueW - labelW);
-    doc.text(lines as any, x + labelW + 7, yLine);
+    const lines = doc.splitTextToSize(safeValue, maxValueW - labelW - 8);
+    doc.text(lines as any, x + labelW + 8, yLine);
     doc.setTextColor(0, 0, 0);
 
-    return Math.max(12, (Array.isArray(lines) ? (lines as string[]).length : 1) * 10);
+    return Math.max(13, (Array.isArray(lines) ? (lines as string[]).length : 1) * 10);
   };
 
   const datosA = [
@@ -1091,15 +1055,15 @@ const handleDownloadPDF = async () => {
     ["Barrio", formData.neighborhood || "-"],
     ["Localidad", formData.locality || "-"],
     ["Operación", operationLabel],
-    ["Moneda", currency === "USD" ? "Dólar Estadounidense (USD)" : "Pesos ($)"],
+    ["Moneda", currency],
   ];
 
   datosA.forEach(([label, value], idx) => {
     const col = idx % 2;
     const row = Math.floor(idx / 2);
     const x = col === 0 ? leftX : midX;
-    const yy = cardY + 22 + row * 24;
-    drawKV(label, value, x, yy, col === 0 ? 156 : 158);
+    const yy = cardY + 28 + row * 30;
+    drawKV(label, value, x, yy, col === 0 ? 162 : 160);
   });
 
   let principalDataURL: string | null = null;
@@ -1108,13 +1072,13 @@ const handleDownloadPDF = async () => {
 
   doc.setFillColor(248, 250, 252);
   doc.setDrawColor(border.r, border.g, border.b);
-  doc.rect(photoX, cardY + 16, photoW, photoH, "FD");
+  doc.rect(photoX, cardY + 22, photoW, photoH, "FD");
   if (principalDataURL) {
-    addImageContain(principalDataURL, photoX + 4, cardY + 20, photoW - 8, photoH - 8);
+    addImageContain(principalDataURL, photoX + 5, cardY + 27, photoW - 10, photoH - 10);
   }
 
-  // Segunda parte de datos, debajo del primer bloque.
-  const secondY = cardY + 126;
+  // Segunda parte de datos, con más aire.
+  const secondY = cardY + 168;
   const datosB = [
     ["Tipología", String(formData.propertyType || "-")],
     ["m² Terreno", numero(Number(formData.landArea) || 0)],
@@ -1132,11 +1096,11 @@ const handleDownloadPDF = async () => {
     const col = idx % 2;
     const row = Math.floor(idx / 2);
     const x = col === 0 ? leftX : midX;
-    const yy = secondY + row * 22;
-    drawKV(label, value, x, yy, col === 0 ? 156 : 158);
+    const yy = secondY + row * 28;
+    drawKV(label, value, x, yy, col === 0 ? 162 : 160);
   });
 
-  // Servicios compactos debajo de la foto, sin invadir los datos.
+  // Servicios debajo de la foto.
   const servicios = [
     `Luz: ${formData.services.luz ? "Sí" : "No"}`,
     `Agua: ${formData.services.agua ? "Sí" : "No"}`,
@@ -1145,31 +1109,31 @@ const handleDownloadPDF = async () => {
     `Pavimento: ${formData.services.pavimento ? "Sí" : "No"}`,
   ];
 
-  const servY = cardY + 148;
+  const servY = cardY + 215;
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(8.8);
+  doc.setFontSize(9);
   doc.setTextColor(muted.r, muted.g, muted.b);
   doc.text("Servicios", photoX, servY);
 
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(8.6);
+  doc.setFontSize(8.8);
   doc.setTextColor(dark.r, dark.g, dark.b);
   servicios.forEach((line, idx) => {
-    doc.text(line, photoX, servY + 15 + idx * 14);
+    doc.text(line, photoX, servY + 18 + idx * 17);
   });
   doc.setTextColor(0, 0, 0);
 
-  y = cardY + cardH + 26;
-
   // =========================
-  // Comparables
+  // Página 2 en adelante: Comparables
   // =========================
+  doc.addPage();
+  y = margin;
   drawSectionTitle("Propiedades Comparadas en la Zona");
 
   const cols = 2;
   const gap = 12;
   const compCardW = (pageW - margin * 2 - gap) / cols;
-  const compCardH = 216;
+  const compCardH = 228;
   let cx = margin;
   let cy = y;
 
@@ -1255,7 +1219,7 @@ const handleDownloadPDF = async () => {
       doc.setFontSize(8.5);
       doc.setTextColor(71, 85, 105);
       const textLines = doc.splitTextToSize(desc, maxTextW);
-      const clipped = (textLines as string[]).slice(0, 2);
+      const clipped = (textLines as string[]).slice(0, 4);
       doc.text(clipped as any, textX, textY);
       doc.setTextColor(0, 0, 0);
     }
@@ -1269,7 +1233,9 @@ const handleDownloadPDF = async () => {
 
     if (cy + compCardH > pageH - 72) {
       doc.addPage();
-      cy = margin;
+      y = margin;
+      drawSectionTitle("Propiedades Comparadas en la Zona (cont.)");
+      cy = y;
       cx = margin;
     }
 
@@ -1278,38 +1244,190 @@ const handleDownloadPDF = async () => {
     cx += compCardW + gap;
   }
 
-  y = cy + compCardH + 22;
-  ensureSpace(90);
+  // =========================
+  // Página siguiente: Precio sugerido y conclusión
+  // =========================
+  doc.addPage();
+  y = margin;
 
-  // =========================
-  // Precio sugerido
-  // =========================
   doc.setFillColor(255, 251, 235);
   doc.setDrawColor(245, 158, 11);
-  doc.rect(margin, y, pageW - margin * 2, 58, "FD");
+  doc.rect(margin, y, pageW - margin * 2, 64, "FD");
 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(13);
   doc.setTextColor(146, 64, 14);
-  doc.text(suggestedPriceTitle, margin + 14, y + 34);
+  doc.text(suggestedPriceTitle, margin + 14, y + 38);
 
-  doc.setFontSize(23);
+  doc.setFontSize(24);
   doc.setTextColor(dark.r, dark.g, dark.b);
-  doc.text(money(suggestedPrice), pageW - margin - 14, y + 36, { align: "right" });
+  doc.text(money(suggestedPrice), pageW - margin - 14, y + 39, { align: "right" });
 
   doc.setTextColor(0, 0, 0);
-  y += 84;
+  y += 94;
 
-  // =========================
-  // Conclusión
-  // =========================
   drawSectionTitle("Conclusión");
-  y += 16;
+  y += 20;
 
   drawTextBlock("Observaciones", formData.observations);
   drawTextBlock("Fortalezas", formData.strengths);
   drawTextBlock("Debilidades", formData.weaknesses);
   drawTextBlock("A considerar", formData.considerations);
+
+  // =========================
+  // Última página: Gráficos
+  // =========================
+  doc.addPage();
+  y = margin;
+  drawSectionTitle("Gráficos y Referencias");
+
+  const drawPERGraph = (graphX: number, graphY: number, graphW: number, graphH: number) => {
+    const plotPadL = 42;
+    const plotPadR = 18;
+    const plotPadT = 28;
+    const plotPadB = 34;
+    const x0 = graphX + plotPadL;
+    const y0 = graphY + graphH - plotPadB;
+    const plotW = graphW - plotPadL - plotPadR;
+    const plotH = graphH - plotPadT - plotPadB;
+    const xMin = 5;
+    const xMax = 30;
+    const yMax = 20;
+    const mapX = (v: number) => x0 + ((v - xMin) / (xMax - xMin)) * plotW;
+    const mapY = (v: number) => y0 - (v / yMax) * plotH;
+
+    doc.setFillColor(255, 255, 255);
+    doc.setDrawColor(border.r, border.g, border.b);
+    doc.rect(graphX, graphY, graphW, graphH, "FD");
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.setTextColor(dark.r, dark.g, dark.b);
+    doc.text("Relación PER y Rentabilidad Anual", graphX + graphW / 2, graphY + 17, { align: "center" });
+
+    // Zonas de referencia
+    doc.setFillColor(209, 250, 229);
+    doc.rect(mapX(5), graphY + plotPadT, mapX(15) - mapX(5), plotH, "F");
+    doc.setFillColor(254, 243, 199);
+    doc.rect(mapX(15), graphY + plotPadT, mapX(20) - mapX(15), plotH, "F");
+    doc.setFillColor(254, 226, 226);
+    doc.rect(mapX(20), graphY + plotPadT, mapX(30) - mapX(20), plotH, "F");
+
+    // Grilla
+    doc.setDrawColor(229, 231, 235);
+    doc.setLineWidth(0.4);
+    [5, 10, 15, 20, 25, 30].forEach((tick) => {
+      const tx = mapX(tick);
+      doc.line(tx, graphY + plotPadT, tx, y0);
+    });
+    [0, 5, 10, 15, 20].forEach((tick) => {
+      const ty = mapY(tick);
+      doc.line(x0, ty, x0 + plotW, ty);
+    });
+
+    // Ejes
+    doc.setDrawColor(71, 85, 105);
+    doc.setLineWidth(0.8);
+    doc.line(x0, y0, x0 + plotW, y0);
+    doc.line(x0, graphY + plotPadT, x0, y0);
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7.2);
+    doc.setTextColor(71, 85, 105);
+    [5, 10, 15, 20, 25, 30].forEach((tick) => {
+      doc.text(String(tick), mapX(tick), y0 + 11, { align: "center" });
+    });
+    [0, 5, 10, 15, 20].forEach((tick) => {
+      doc.text(`${tick}%`, x0 - 6, mapY(tick) + 2, { align: "right" });
+    });
+    doc.text("PER (años de alquiler)", graphX + graphW / 2, graphY + graphH - 9, { align: "center" });
+    doc.text("Rentabilidad anual (%)", graphX + 9, graphY + graphH / 2, { angle: 90, align: "center" } as any);
+
+    // Límites 15 y 20
+    doc.setDrawColor(34, 197, 94);
+    doc.setLineDashPattern([3, 3], 0);
+    doc.line(mapX(15), graphY + plotPadT, mapX(15), y0);
+    doc.setDrawColor(245, 158, 11);
+    doc.line(mapX(20), graphY + plotPadT, mapX(20), y0);
+    doc.setLineDashPattern([], 0);
+
+    // Curva aproximada de rentabilidad: 100 / PER
+    doc.setDrawColor(220, 38, 38);
+    doc.setLineWidth(1.4);
+    let prevX = mapX(5);
+    let prevY = mapY(20);
+    for (let per = 5.25; per <= 30; per += 0.25) {
+      const rent = Math.min(20, 100 / per);
+      const px = mapX(per);
+      const py = mapY(rent);
+      doc.line(prevX, prevY, px, py);
+      prevX = px;
+      prevY = py;
+    }
+
+    // Referencias internas, cerca del eje X para que no tapen el marcador.
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(7.4);
+    doc.setTextColor(22, 101, 52);
+    doc.text("Buena", mapX(10), y0 - 5, { align: "center" });
+    doc.setTextColor(146, 64, 14);
+    doc.text("Aceptable", mapX(17.5), y0 - 5, { align: "center" });
+    doc.setTextColor(153, 27, 27);
+    doc.text("Riesgosa", mapX(25), y0 - 5, { align: "center" });
+
+    // Marcador del PER calculado
+    if (canCalculatePER && perValue) {
+      const p = Math.max(5, Math.min(30, perValue));
+      const rent = Math.min(20, 100 / p);
+      const markerX = mapX(p);
+      const markerY = mapY(rent);
+      doc.setFillColor(pc.r, pc.g, pc.b);
+      doc.circle(markerX, markerY, 3.2, "F");
+
+      const label = `PER ${numero(perValue, 1)}`;
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(7.2);
+      const labelW = doc.getTextWidth(label) + 10;
+      const labelX = p > 22 ? markerX - labelW - 6 : markerX + 7;
+      const labelY = markerY - 12;
+      doc.setFillColor(255, 255, 255);
+      doc.setDrawColor(border.r, border.g, border.b);
+      doc.roundedRect(labelX, labelY - 8, labelW, 13, 2, 2, "FD");
+      doc.setTextColor(pc.r, pc.g, pc.b);
+      doc.text(label, labelX + 5, labelY);
+    }
+
+    // Leyenda con marco y fondo blanco para mejorar contraste.
+    const legX = graphX + graphW - 164;
+    const legY = graphY + 32;
+    const legW = 138;
+    const legH = 43;
+    doc.setFillColor(255, 255, 255);
+    doc.setDrawColor(148, 163, 184);
+    doc.roundedRect(legX - 7, legY - 8, legW, legH, 3, 3, "FD");
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7);
+    doc.setTextColor(30, 41, 59);
+
+    doc.setFillColor(187, 247, 208);
+    doc.setDrawColor(34, 197, 94);
+    doc.rect(legX, legY, 9, 7, "FD");
+    doc.text("Buena (PER < 15)", legX + 13, legY + 6);
+
+    doc.setFillColor(253, 230, 138);
+    doc.setDrawColor(245, 158, 11);
+    doc.rect(legX, legY + 12, 9, 7, "FD");
+    doc.text("Aceptable (15 a 20)", legX + 13, legY + 18);
+
+    doc.setFillColor(252, 165, 165);
+    doc.setDrawColor(185, 28, 28);
+    doc.rect(legX, legY + 24, 9, 7, "FD");
+    doc.text("Riesgosa (PER > 20)", legX + 13, legY + 30);
+
+    doc.setTextColor(0, 0, 0);
+    doc.setLineWidth(0.8);
+  };
 
   if ((formData as any).includePER && operationType === "venta") {
     const perText = canCalculatePER
@@ -1318,177 +1436,29 @@ const handleDownloadPDF = async () => {
       ? "PER (Price Earnings Ratio): para calcularlo, el valor sugerido de venta debe estar expresado en USD."
       : "PER (Price Earnings Ratio): no se pudo calcular por falta de alquiler estimativo mensual en USD.";
 
-    const drawPERGraph = (graphX: number, graphY: number, graphW: number, graphH: number) => {
-      const plotPadL = 38;
-      const plotPadR = 14;
-      const plotPadT = 24;
-      const plotPadB = 28;
-      const x0 = graphX + plotPadL;
-      const y0 = graphY + graphH - plotPadB;
-      const plotW = graphW - plotPadL - plotPadR;
-      const plotH = graphH - plotPadT - plotPadB;
-      const xMin = 5;
-      const xMax = 30;
-      const yMax = 20;
-      const mapX = (v: number) => x0 + ((v - xMin) / (xMax - xMin)) * plotW;
-      const mapY = (v: number) => y0 - (v / yMax) * plotH;
-
-      doc.setFillColor(255, 255, 255);
-      doc.setDrawColor(border.r, border.g, border.b);
-      doc.rect(graphX, graphY, graphW, graphH, "FD");
-
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(11);
-      doc.setTextColor(dark.r, dark.g, dark.b);
-      doc.text("Relación PER y Rentabilidad Anual", graphX + graphW / 2, graphY + 15, { align: "center" });
-
-      // Zonas de referencia
-      doc.setFillColor(209, 250, 229);
-      doc.rect(mapX(5), graphY + plotPadT, mapX(15) - mapX(5), plotH, "F");
-      doc.setFillColor(254, 243, 199);
-      doc.rect(mapX(15), graphY + plotPadT, mapX(20) - mapX(15), plotH, "F");
-      doc.setFillColor(254, 226, 226);
-      doc.rect(mapX(20), graphY + plotPadT, mapX(30) - mapX(20), plotH, "F");
-
-      // Grilla
-      doc.setDrawColor(229, 231, 235);
-      doc.setLineWidth(0.4);
-      [5, 10, 15, 20, 25, 30].forEach((tick) => {
-        const tx = mapX(tick);
-        doc.line(tx, graphY + plotPadT, tx, y0);
-      });
-      [0, 5, 10, 15, 20].forEach((tick) => {
-        const ty = mapY(tick);
-        doc.line(x0, ty, x0 + plotW, ty);
-      });
-
-      // Ejes
-      doc.setDrawColor(71, 85, 105);
-      doc.setLineWidth(0.8);
-      doc.line(x0, y0, x0 + plotW, y0);
-      doc.line(x0, graphY + plotPadT, x0, y0);
-
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(7.2);
-      doc.setTextColor(71, 85, 105);
-      [5, 10, 15, 20, 25, 30].forEach((tick) => {
-        doc.text(String(tick), mapX(tick), y0 + 11, { align: "center" });
-      });
-      [0, 5, 10, 15, 20].forEach((tick) => {
-        doc.text(`${tick}%`, x0 - 6, mapY(tick) + 2, { align: "right" });
-      });
-      doc.text("PER (años de alquiler)", graphX + graphW / 2, graphY + graphH - 8, { align: "center" });
-      doc.text("Rentabilidad anual (%)", graphX + 7, graphY + graphH / 2, { angle: 90, align: "center" } as any);
-
-      // Límites 15 y 20
-      doc.setDrawColor(34, 197, 94);
-      doc.setLineDashPattern([3, 3], 0);
-      doc.line(mapX(15), graphY + plotPadT, mapX(15), y0);
-      doc.setDrawColor(245, 158, 11);
-      doc.line(mapX(20), graphY + plotPadT, mapX(20), y0);
-      doc.setLineDashPattern([], 0);
-
-      // Curva aproximada de rentabilidad: 100 / PER
-      doc.setDrawColor(220, 38, 38);
-      doc.setLineWidth(1.4);
-      let prevX = mapX(5);
-      let prevY = mapY(20);
-      for (let per = 5.25; per <= 30; per += 0.25) {
-        const rent = Math.min(20, 100 / per);
-        const px = mapX(per);
-        const py = mapY(rent);
-        doc.line(prevX, prevY, px, py);
-        prevX = px;
-        prevY = py;
-      }
-
-      // Marcador del PER calculado
-      if (canCalculatePER && perValue) {
-        const p = Math.max(5, Math.min(30, perValue));
-        const rent = Math.min(20, 100 / p);
-        const markerX = mapX(p);
-        const markerY = mapY(rent);
-        doc.setFillColor(pc.r, pc.g, pc.b);
-        doc.circle(markerX, markerY, 3.2, "F");
-
-        const label = `PER ${numero(perValue, 1)}`;
-        const labelW = doc.getTextWidth(label) + 8;
-        const labelX = p > 22 ? markerX - labelW - 5 : markerX + 6;
-        const labelY = markerY - 12;
-        doc.setFillColor(255, 255, 255);
-        doc.setDrawColor(border.r, border.g, border.b);
-        doc.roundedRect(labelX, labelY - 8, labelW, 12, 2, 2, "FD");
-        doc.setFont("helvetica", "bold");
-        doc.setFontSize(7.2);
-        doc.setTextColor(pc.r, pc.g, pc.b);
-        doc.text(label, labelX + 4, labelY);
-      }
-
-      // Referencias internas
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(7.2);
-      doc.setTextColor(22, 101, 52);
-      doc.text("Buena", mapX(10), y0 - 10, { align: "center" });
-      doc.setTextColor(146, 64, 14);
-      doc.text("Aceptable", mapX(17.5), y0 - 10, { align: "center" });
-      doc.setTextColor(153, 27, 27);
-      doc.text("Riesgosa", mapX(25), y0 - 10, { align: "center" });
-
-      // Leyenda con marco para que se lea bien sobre la zona roja
-      const legX = graphX + graphW - 158;
-      const legY = graphY + 28;
-      const legW = 132;
-      const legH = 40;
-      doc.setFillColor(255, 255, 255);
-      doc.setDrawColor(203, 213, 225);
-      doc.roundedRect(legX - 7, legY - 8, legW, legH, 3, 3, "FD");
-
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(7);
-      doc.setTextColor(30, 41, 59);
-      doc.setFillColor(187, 247, 208);
-      doc.setDrawColor(34, 197, 94);
-      doc.rect(legX, legY, 9, 7, "FD");
-      doc.text("Buena (PER < 15)", legX + 13, legY + 6);
-      doc.setFillColor(253, 230, 138);
-      doc.setDrawColor(245, 158, 11);
-      doc.rect(legX, legY + 11, 9, 7, "FD");
-      doc.text("Aceptable (15 a 20)", legX + 13, legY + 17);
-      doc.setFillColor(252, 165, 165);
-      doc.setDrawColor(220, 38, 38);
-      doc.rect(legX, legY + 22, 9, 7, "FD");
-      doc.text("Riesgosa (PER > 20)", legX + 13, legY + 28);
-
-      doc.setTextColor(0, 0, 0);
-      doc.setLineWidth(0.8);
-    };
-
-    ensureSpace(canCalculatePER ? 258 : 86);
     doc.setFillColor(248, 250, 252);
     doc.setDrawColor(border.r, border.g, border.b);
-    doc.rect(margin, y, pageW - margin * 2, canCalculatePER ? 238 : 76, "FD");
+    doc.rect(margin, y, pageW - margin * 2, canCalculatePER ? 264 : 82, "FD");
 
     doc.setFont("helvetica", "bold");
     doc.setFontSize(11);
     doc.setTextColor(pc.r, pc.g, pc.b);
-    doc.text("PER (Price Earnings Ratio)", margin + 12, y + 19);
+    doc.text("PER (Price Earnings Ratio)", margin + 12, y + 20);
 
     doc.setFont("helvetica", "normal");
     doc.setFontSize(9.5);
     doc.setTextColor(dark.r, dark.g, dark.b);
-    doc.text(perText, margin + 12, y + 38);
+    doc.text(perText, margin + 12, y + 42);
 
     if (canCalculatePER) {
-      drawPERGraph(margin + 18, y + 54, pageW - margin * 2 - 36, 168);
+      drawPERGraph(margin + 18, y + 62, pageW - margin * 2 - 36, 184);
     }
 
     doc.setTextColor(0, 0, 0);
-    y += canCalculatePER ? 256 : 94;
+    y += canCalculatePER ? 286 : 104;
   }
 
-  // =========================
-  // Imagen final opcional
-  // =========================
+  // Imagen final opcional, grande y centrada en la página de gráficos.
   try {
     const graficoUrl = "/grafico1-pdf.png";
     const img = await fetch(graficoUrl);
@@ -1500,13 +1470,12 @@ const handleDownloadPDF = async () => {
     reader.readAsDataURL(blob);
     const base64Img = await base64Promise;
 
-    y += 18;
-    ensureSpace(350);
-
-    const imgW = pageW * 0.92;
-    const imgH = 310;
+    const availableH = pageH - y - 82;
+    const imgW = pageW * 0.94;
+    const imgH = Math.max(330, Math.min(430, availableH));
     const imgX = (pageW - imgW) / 2;
 
+    y += 18;
     addImageContain(base64Img, imgX, y, imgW, imgH);
     y += imgH + 22;
   } catch (err) {

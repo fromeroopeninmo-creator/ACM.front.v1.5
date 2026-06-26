@@ -1010,23 +1010,22 @@ const handleDownloadPDF = async () => {
   const cardW = pageW - margin * 2;
   const photoW = 230;
   const photoH = 168;
-  const cardH = 366;
+  const cardH = 398;
 
   doc.setFillColor(255, 255, 255);
   doc.setDrawColor(border.r, border.g, border.b);
   doc.rect(cardX, cardY, cardW, cardH, "FD");
 
   const leftX = cardX + 18;
-  const midX = cardX + 194;
   const photoX = cardX + cardW - photoW - 18;
-  const infoMaxW = 162;
+  const topInfoW = photoX - leftX - 20;
 
   const drawKV = (
     label: string,
     value: string,
     x: number,
     yLine: number,
-    maxValueW = infoMaxW
+    maxValueW = 170
   ) => {
     const labelText = `${label}: `;
     doc.setFont("helvetica", "bold");
@@ -1040,11 +1039,12 @@ const handleDownloadPDF = async () => {
     doc.setTextColor(dark.r, dark.g, dark.b);
 
     const safeValue = value || "-";
-    const lines = doc.splitTextToSize(safeValue, maxValueW - labelW - 8);
-    doc.text(lines as any, x + labelW + 8, yLine);
+    const valueW = Math.max(45, maxValueW - labelW - 9);
+    const lines = doc.splitTextToSize(safeValue, valueW);
+    doc.text(lines as any, x + labelW + 9, yLine);
     doc.setTextColor(0, 0, 0);
 
-    return Math.max(13, (Array.isArray(lines) ? (lines as string[]).length : 1) * 10);
+    return Math.max(14, (Array.isArray(lines) ? (lines as string[]).length : 1) * 10 + 3);
   };
 
   const datosA = [
@@ -1058,12 +1058,11 @@ const handleDownloadPDF = async () => {
     ["Moneda", currency],
   ];
 
-  datosA.forEach(([label, value], idx) => {
-    const col = idx % 2;
-    const row = Math.floor(idx / 2);
-    const x = col === 0 ? leftX : midX;
-    const yy = cardY + 28 + row * 30;
-    drawKV(label, value, x, yy, col === 0 ? 162 : 160);
+  // Bloque superior: datos principales en una sola columna + foto a la derecha.
+  // Esto evita que los textos largos invadan la imagen principal.
+  let topY = cardY + 25;
+  datosA.forEach(([label, value]) => {
+    topY += drawKV(label, value, leftX, topY, topInfoW) + 6;
   });
 
   let principalDataURL: string | null = null;
@@ -1077,8 +1076,23 @@ const handleDownloadPDF = async () => {
     addImageContain(principalDataURL, photoX + 5, cardY + 27, photoW - 10, photoH - 10);
   }
 
-  // Segunda parte de datos, con más aire.
-  const secondY = cardY + 168;
+  // Línea divisoria interna para separar la ficha principal de las características.
+  const dividerY = cardY + 214;
+  doc.setDrawColor(border.r, border.g, border.b);
+  doc.line(cardX + 18, dividerY, cardX + cardW - 18, dividerY);
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(9.2);
+  doc.setTextColor(muted.r, muted.g, muted.b);
+  doc.text("Características", leftX, dividerY + 22);
+
+  // Segunda parte de datos, debajo de la foto, usando 3 columnas para aprovechar el ancho.
+  const secondY = dividerY + 45;
+  const col1X = leftX;
+  const col2X = leftX + 174;
+  const col3X = leftX + 348;
+  const colW = 158;
+
   const datosB = [
     ["Tipología", String(formData.propertyType || "-")],
     ["m² Terreno", numero(Number(formData.landArea) || 0)],
@@ -1093,14 +1107,14 @@ const handleDownloadPDF = async () => {
   ];
 
   datosB.forEach(([label, value], idx) => {
-    const col = idx % 2;
-    const row = Math.floor(idx / 2);
-    const x = col === 0 ? leftX : midX;
-    const yy = secondY + row * 28;
-    drawKV(label, value, x, yy, col === 0 ? 162 : 160);
+    const col = idx % 3;
+    const row = Math.floor(idx / 3);
+    const x = col === 0 ? col1X : col === 1 ? col2X : col3X;
+    const yy = secondY + row * 26;
+    drawKV(label, value, x, yy, colW);
   });
 
-  // Servicios debajo de la foto.
+  // Servicios en formato horizontal, al pie de la ficha, para no competir con la foto.
   const servicios = [
     `Luz: ${formData.services.luz ? "Sí" : "No"}`,
     `Agua: ${formData.services.agua ? "Sí" : "No"}`,
@@ -1109,18 +1123,18 @@ const handleDownloadPDF = async () => {
     `Pavimento: ${formData.services.pavimento ? "Sí" : "No"}`,
   ];
 
-  const servY = cardY + 215;
+  const servY = cardY + cardH - 42;
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(9);
+  doc.setFontSize(9.2);
   doc.setTextColor(muted.r, muted.g, muted.b);
-  doc.text("Servicios", photoX, servY);
+  doc.text("Servicios", leftX, servY);
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8.8);
   doc.setTextColor(dark.r, dark.g, dark.b);
-  servicios.forEach((line, idx) => {
-    doc.text(line, photoX, servY + 18 + idx * 17);
-  });
+  const servText = servicios.join("   ·   ");
+  const servLines = doc.splitTextToSize(servText, cardW - 36);
+  doc.text(servLines as any, leftX, servY + 16);
   doc.setTextColor(0, 0, 0);
 
   // =========================

@@ -31,8 +31,67 @@ function dataUrlToFile(dataUrl: string, filename: string) {
   return new File([u8arr], filename, { type: mime });
 }
 
-const peso = (n: number) =>
-  isNaN(n) ? '-' : n.toLocaleString('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 });
+type OperationType = "venta" | "alquiler";
+type CurrencyType = "ARS" | "USD";
+type ACMFormDataWithExtras = ACMFormData & {
+  operationType: OperationType;
+  currency: CurrencyType;
+  includePER: boolean;
+  estimatedMonthlyRentUSD: number | string;
+};
+
+const MAX_COMPARABLES = 8;
+
+const comparableSlots = [
+  "comp1",
+  "comp2",
+  "comp3",
+  "comp4",
+  "comp5",
+  "comp6",
+  "comp7",
+  "comp8",
+] as const;
+
+const operationOptions: Array<{ label: string; value: OperationType }> = [
+  { label: "Venta", value: "venta" },
+  { label: "Alquiler", value: "alquiler" },
+];
+
+const currencyOptions: Array<{ label: string; value: CurrencyType }> = [
+  { label: "Pesos ($)", value: "ARS" },
+  { label: "Dólar Estadounidense (USD)", value: "USD" },
+];
+
+const formatMoney = (n: number, currency: CurrencyType = "ARS") => {
+  if (isNaN(n)) return "-";
+
+  if (currency === "USD") {
+    return `USD ${n.toLocaleString("es-AR", { maximumFractionDigits: 0 })}`;
+  }
+
+  return n.toLocaleString("es-AR", {
+    style: "currency",
+    currency: "ARS",
+    maximumFractionDigits: 0,
+  });
+};
+
+const getPERInfo = (per: number | null) => {
+  if (!per || !isFinite(per)) {
+    return { label: "Sin calcular", className: "text-gray-600", pdfColor: [90, 90, 90] as const };
+  }
+
+  if (per < 15) {
+    return { label: "Buena Oportunidad", className: "text-green-700", pdfColor: [22, 163, 74] as const };
+  }
+
+  if (per <= 20) {
+    return { label: "Oportunidad Aceptable", className: "text-yellow-700", pdfColor: [202, 138, 4] as const };
+  }
+
+  return { label: "Oportunidad Riesgosa", className: "text-red-700", pdfColor: [220, 38, 38] as const };
+};
 
 const numero = (n: number, dec = 0) =>
   isNaN(n) ? '-' : n.toLocaleString('es-AR', { maximumFractionDigits: dec, minimumFractionDigits: dec });
@@ -72,8 +131,12 @@ const emptyComparable: ComparableProperty = {
   photoBase64: undefined,
 };
 
-const makeInitialData = (): ACMFormData => ({
+const makeInitialData = (): ACMFormDataWithExtras => ({
   date: new Date().toISOString(),
+  operationType: "venta",
+  currency: "USD",
+  includePER: false,
+  estimatedMonthlyRentUSD: "",
   clientName: '',
   phone: '',
   email: '',
@@ -102,16 +165,13 @@ const makeInitialData = (): ACMFormData => ({
 
 export default function ACMForm() {
   const { user } = useAuth();
-  const [formData, setFormData] = useState<ACMFormData>(() => makeInitialData());
+  const [formData, setFormData] = useState<ACMFormDataWithExtras>(() => makeInitialData());
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // --- Mensajes inline y manejo de carga/ID ---
   type InlineMsg = { type: "success" | "error"; text: string } | null;
   const [saveMsg, setSaveMsg] = useState<InlineMsg>(null);
-  const [loadMsg, setLoadMsg] = useState<InlineMsg>(null);
   const [informeId, setInformeId] = useState<string | null>(null);
-  const [loadOpen, setLoadOpen] = useState(false);
-  const [loadIdInput, setLoadIdInput] = useState("");
 
   // Theme...
   const theme = useTheme();
@@ -149,12 +209,7 @@ useEffect(() => {
       if (!payload) throw new Error("El informe no contiene datos_json");
 
       const principalUrl: string = inf?.imagen_principal_url || "";
-      const compUrls: string[] = [
-        inf?.comp1_url || "",
-        inf?.comp2_url || "",
-        inf?.comp3_url || "",
-        inf?.comp4_url || "",
-      ];
+      const compUrls: string[] = comparableSlots.map((slot) => inf?.[`${slot}_url`] || "");
 
       // Cargar URLs en photoUrl y dejar photoBase64 vacío (no guardar URL como base64)
       const comparablesCargados = Array.isArray(payload?.comparables)
@@ -190,13 +245,14 @@ const handleFieldChange = (
   const booleanFields = new Set([
     'hasPlans',
     'isRented',
+    'includePER',
     'services.luz',
     'services.agua',
     'services.gas',
     'services.cloacas',
     'services.pavimento',
   ]);
-  const numberFields = new Set(['landArea', 'builtArea', 'age']);
+  const numberFields = new Set(['landArea', 'builtArea', 'age', 'estimatedMonthlyRentUSD']);
 
   if (name.startsWith('services.')) {
     const key = name.split('.')[1] as keyof Services;
@@ -302,7 +358,7 @@ const updateComparable = <K extends keyof ComparableProperty>(
 
 const addComparable = () => {
   setFormData((prev) => {
-    if (prev.comparables.length >= 4) return prev;
+    if (prev.comparables.length >= MAX_COMPARABLES) return prev;
     return {
       ...prev,
       comparables: [...prev.comparables, { ...emptyComparable }],
@@ -449,14 +505,14 @@ const handleComparablePhotoSelect = async (index: number, e: React.ChangeEvent<H
   e.target.value = '';
 };
 
-/** ========= Guardar / Cargar Informe (API) ========= */
+/** ========= Guardar Informe (API) ========= */
 const saveInforme = async () => {
   try {
     setIsSubmitting(true);
     setSaveMsg(null);
 
     // 1) Clonar y limpiar base64 para no guardar blobs enormes en datos_json
-    const datosLimpios = structuredClone(formData) as ACMFormData;
+    const datosLimpios = structuredClone(formData) as ACMFormDataWithExtras;
     const mainB64 = datosLimpios.mainPhotoBase64; // (YA COMPRIMIDO)
     datosLimpios.mainPhotoBase64 = undefined;
 
@@ -490,7 +546,7 @@ const saveInforme = async () => {
     // 3) Subir imágenes (si había base64) y recolectar URLs NUEVAS en variables locales
     const newUrls = {
       principal: "",
-      comps: ["", "", "", ""] as string[],
+      comps: Array(MAX_COMPARABLES).fill("") as string[],
     };
 
     // Principal (usa base64 YA COMPRIMIDO)
@@ -509,11 +565,11 @@ const saveInforme = async () => {
       }
     }
 
-    // Comparables 1..4 (base64 YA COMPRIMIDOS)
-    for (let i = 0; i < Math.min(formData.comparables.length, 4); i++) {
+    // Comparables 1..8 (base64 YA COMPRIMIDOS)
+    for (let i = 0; i < Math.min(formData.comparables.length, MAX_COMPARABLES); i++) {
       const b64 = compsB64[i];
       if (!isDataUrl(b64)) continue;
-      const slot = `comp${i + 1}` as "comp1" | "comp2" | "comp3" | "comp4";
+      const slot = comparableSlots[i];
       const file = dataUrlToFile(b64!, `${slot}.jpg`);
       const fd = new FormData();
       fd.append("file", file);
@@ -529,8 +585,8 @@ const saveInforme = async () => {
     }
 
     // 4) Persistir en datos_json las URLs ya subidas (sin depender de setState)
-    const datosConUrls: ACMFormData = (() => {
-      const copy = structuredClone(datosLimpios) as ACMFormData;
+    const datosConUrls: ACMFormDataWithExtras = (() => {
+      const copy = structuredClone(datosLimpios) as ACMFormDataWithExtras;
       // principal
       copy.mainPhotoUrl =
         newUrls.principal || formData.mainPhotoUrl || copy.mainPhotoUrl || "";
@@ -579,73 +635,6 @@ const saveInforme = async () => {
 };
 
 
-// === Abrir modal de carga (reemplaza el prompt) ===
-const loadInforme = () => {
-  setLoadMsg(null);
-  setLoadIdInput("");
-  setLoadOpen(true);
-};
-
-// === Confirmar carga desde el modal ===
-const handleConfirmLoad = async () => {
-  if (!loadIdInput) {
-    setLoadMsg({ type: "error", text: "Por favor, ingresá un ID válido." });
-    return;
-  }
-  try {
-    setLoadMsg(null);
-
-    const res = await fetch(`/api/informes/get?id=${encodeURIComponent(loadIdInput)}`);
-    const data = await res.json();
-
-    if (!res.ok) {
-      throw new Error(data?.error || "No se pudo obtener el informe");
-    }
-
-    // La API devuelve { ok: true, informe: {...} }
-    const inf = data?.informe ?? data;
-    const payload = inf?.datos_json;
-    if (!payload) {
-      throw new Error("El informe no contiene datos_json");
-    }
-
-    // URLs guardadas en storage (si existen)
-    const principalUrl: string = inf?.imagen_principal_url || "";
-    const compUrls: string[] = [
-      inf?.comp1_url || "",
-      inf?.comp2_url || "",
-      inf?.comp3_url || "",
-      inf?.comp4_url || "",
-    ];
-
-    // Ajustar comparables: colocar las URLs en photoUrl (no en base64)
-    const comparablesCargados = Array.isArray(payload?.comparables)
-      ? payload.comparables.map((c: any, idx: number) => ({
-          ...c,
-          photoUrl: compUrls[idx] || c?.photoUrl || "",
-          photoBase64: "", // no usar URL como base64
-        }))
-      : formData.comparables;
-
-    setFormData((prev) => ({
-      ...prev,
-      ...payload,
-      mainPhotoUrl: principalUrl || prev.mainPhotoUrl || "",
-      mainPhotoBase64: "", // no guardar URL en base64
-      comparables: comparablesCargados,
-    }));
-
-    const loadedId = inf?.id || loadIdInput;
-    setInformeId(loadedId);
-
-    setLoadMsg({ type: "success", text: `Informe cargado correctamente (ID: ${loadedId}).` });
-    setLoadOpen(false);
-  } catch (err: any) {
-    console.error("Cargar Informe", err);
-    setLoadMsg({ type: "error", text: `Error al cargar: ${err?.message || "desconocido"}` });
-  }
-};
-
   /** ========= Cálculos ========= */
 const adjustedPricePerM2List = useMemo(
   () =>
@@ -674,6 +663,25 @@ const suggestedPrice = useMemo(() => {
   const built = Number(formData.builtArea) || 0;
   return Math.round(averageAdjustedPricePerM2 * built);
 }, [averageAdjustedPricePerM2, formData.builtArea]);
+
+const operationType = ((formData as any).operationType || "venta") as OperationType;
+const currency = ((formData as any).currency || "ARS") as CurrencyType;
+const operationLabel = operationType === "alquiler" ? "Alquiler" : "Venta";
+const operationLabelLower = operationType === "alquiler" ? "alquiler" : "venta";
+const suggestedPriceTitle = `Precio sugerido de ${operationLabelLower}`;
+const comparablePriceLabel = `Precio ${operationType === "alquiler" ? "del alquiler" : "de venta"} (${currency === "USD" ? "USD" : "$"})`;
+const money = (n: number) => formatMoney(n, currency);
+
+const estimatedMonthlyRentUSD = Number((formData as any).estimatedMonthlyRentUSD) || 0;
+const canCalculatePER =
+  operationType === "venta" &&
+  currency === "USD" &&
+  suggestedPrice > 0 &&
+  estimatedMonthlyRentUSD > 0;
+const perValue = canCalculatePER
+  ? suggestedPrice / (estimatedMonthlyRentUSD * 12)
+  : null;
+const perInfo = getPERInfo(perValue);
 
 /** ========= Helpers PDF ========= */
 const fetchToDataURL = async (url?: string | null): Promise<string | null> => {
@@ -770,7 +778,7 @@ const handleDownloadPDF = async () => {
   doc.setFont("helvetica", "bold");
   doc.setFontSize(16);
   doc.setTextColor(pc.r, pc.g, pc.b);
-  doc.text("Valuación de Activo Inmobiliario", pageW / 2, y, { align: "center" });
+  doc.text(`Informe de Valor Sugerido de ${operationLabel}`, pageW / 2, y, { align: "center" });
   doc.setTextColor(0, 0, 0);
   y += 30;
 
@@ -832,6 +840,8 @@ const handleDownloadPDF = async () => {
     `Dirección: ${formData.address || "-"}`,
     `Barrio: ${formData.neighborhood || "-"}`,
     `Localidad: ${formData.locality || "-"}`,
+    `Operación: ${operationLabel}`,
+    `Moneda: ${currency === "USD" ? "Dólar Estadounidense (USD)" : "Pesos ($)"}`,
     `Tipología: ${formData.propertyType}`,
     `m² Terreno: ${numero(Number(formData.landArea) || 0)}`,
     `m² Cubiertos: ${numero(Number(formData.builtArea) || 0)}`,
@@ -896,10 +906,10 @@ const handleDownloadPDF = async () => {
   doc.setTextColor(0, 0, 0);
   y += 16;
 
-  const cols = 4;
-  const gap = 10;
+  const cols = 2;
+  const gap = 12;
   const cardW = (pageW - margin * 2 - gap * (cols - 1)) / cols;
-  const cardH = 250;
+  const cardH = 190;
   let cx = margin;
   let cy = y;
 
@@ -928,8 +938,8 @@ const handleDownloadPDF = async () => {
 
     if (cmpDataURL) {
       try {
-        doc.addImage(cmpDataURL, "JPEG", x + innerPad, cursorY, cardW - innerPad * 2, 80, undefined, "FAST");
-        cursorY += 95;
+        doc.addImage(cmpDataURL, "JPEG", x + innerPad, cursorY, cardW - innerPad * 2, 55, undefined, "FAST");
+        cursorY += 67;
       } catch {}
     }
 
@@ -955,14 +965,14 @@ const handleDownloadPDF = async () => {
     doc.setFont("helvetica", "normal");
     doc.setFontSize(10);
 
-    let precioLines = doc.splitTextToSize(`Precio: ${peso(priceNum)}`, cardW - innerPad * 2);
+    let precioLines = doc.splitTextToSize(`Precio: ${money(priceNum)}`, cardW - innerPad * 2);
     doc.text(precioLines, x + innerPad, cursorY);
     cursorY += (precioLines as string[]).length * 12;
 
     doc.text(`m² Cubiertos: ${numero(builtAreaNum)}`, x + innerPad, cursorY);
     cursorY += 14;
 
-    doc.text(`Precio/m²: ${peso(ppm2Adj)}`, x + innerPad, cursorY);
+    doc.text(`Precio/m²: ${money(ppm2Adj)}`, x + innerPad, cursorY);
     cursorY += 14;
 
     if (c.listingUrl) {
@@ -974,17 +984,24 @@ const handleDownloadPDF = async () => {
 
     const desc = c.description || "";
     const textLines = doc.splitTextToSize(desc, cardW - innerPad * 2);
-    const maxLines = 5;
+    const maxLines = 3;
     const clipped = (textLines as string[]).slice(0, maxLines);
     doc.text(clipped as any, x + innerPad, cursorY);
   };
 
-  // Respetamos await por el fetch de imágenes
+  // Respetamos await por el fetch de imágenes y paginamos para hasta 8 comparables
   for (let i = 0; i < formData.comparables.length; i++) {
     if (i > 0 && i % cols === 0) {
       cy += cardH + gap;
       cx = margin;
     }
+
+    if (cy + cardH > pageH - 80) {
+      doc.addPage();
+      cy = margin;
+      cx = margin;
+    }
+
     // eslint-disable-next-line no-await-in-loop
     await drawComparableCard(formData.comparables[i], cx, cy, i);
     cx += cardW + gap;
@@ -1003,13 +1020,13 @@ const handleDownloadPDF = async () => {
   doc.setFont("helvetica", "bold");
   doc.setFontSize(12);
   doc.setTextColor(pc.r, pc.g, pc.b);
-  doc.text("Precio sugerido de venta", margin, y);
+  doc.text(suggestedPriceTitle, margin, y);
   doc.setTextColor(0, 0, 0);
   y += 16;
 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(18);
-  doc.text(peso(suggestedPrice), pageW / 2, y, { align: "center" });
+  doc.text(money(suggestedPrice), pageW / 2, y, { align: "center" });
   y += 30;
 
   doc.setDrawColor(pc.r, pc.g, pc.b);
@@ -1043,6 +1060,16 @@ const handleDownloadPDF = async () => {
   block("Fortalezas", formData.strengths);
   block("Debilidades", formData.weaknesses);
   block("A considerar", formData.considerations);
+
+  if ((formData as any).includePER && operationType === "venta") {
+    const perText = canCalculatePER
+      ? `PER (Price Earnings Ratio): ${numero(perValue || 0, 1)} años - ${perInfo.label}.`
+      : currency !== "USD"
+      ? "PER (Price Earnings Ratio): para calcularlo, el valor sugerido de venta debe estar expresado en USD."
+      : "PER (Price Earnings Ratio): no se pudo calcular por falta de alquiler estimativo mensual en USD.";
+
+    block("PER (Price Earnings Ratio)", perText);
+  }
 
   // === Imagen final opcional ===
   try {
@@ -1088,7 +1115,20 @@ const handleDownloadPDF = async () => {
 
 
 /** ========= Opciones ========= */
-const propertyTypeOptions = useMemo(() => enumToOptions(PropertyType), []);
+const propertyTypeOptions = useMemo(() => {
+  const base = enumToOptions(PropertyType);
+  const extras = [
+    "Complejo de cabañas",
+    "Hotel",
+    "Cochera/Garage",
+    "Campo",
+    "Depósito/Bodega",
+    "Quinta",
+  ].map((v) => ({ label: v, value: v }));
+
+  const exists = new Set(base.map((o) => o.value));
+  return [...base, ...extras.filter((o) => !exists.has(o.value))];
+}, []);
 const titleOptions = useMemo(() => enumToOptions(TitleType), []);
 const conditionOptions = useMemo(() => enumToOptions(PropertyCondition), []);
 const locationOptions = useMemo(() => enumToOptions(LocationQuality), []);
@@ -1122,6 +1162,40 @@ return (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 p-4 sm:p-6">
           {/* Columna izquierda */}
           <div className="lg:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-5">
+            {/* Operación */}
+            <div className="space-y-1">
+              <label className="block text-sm font-medium text-gray-700">Operación</label>
+              <select
+                name="operationType"
+                value={operationType}
+                onChange={handleFieldChange}
+                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
+              >
+                {operationOptions.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Moneda */}
+            <div className="space-y-1">
+              <label className="block text-sm font-medium text-gray-700">Moneda</label>
+              <select
+                name="currency"
+                value={currency}
+                onChange={handleFieldChange}
+                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
+              >
+                {currencyOptions.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
             {/* Cliente */}
             <div className="space-y-1">
               <label className="block text-sm font-medium text-gray-700">Cliente</label>
@@ -1358,7 +1432,7 @@ return (
             <div className="space-y-3 md:col-span-2">
               <h3 className="text-sm font-semibold text-gray-800">Servicios</h3>
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
-                {(["luz", "agua", "gas", "cloacas", "pavimento"] as Array<keyof Services>).map((k) => (
+                {(["luz", "agua", "gas", "cloacas", "pavimento"] as Array<Extract<keyof Services, string>>).map((k) => (
                   <div key={k} className="space-y-1">
                     <label className="block text-xs font-medium text-gray-600 capitalize">{k}</label>
                     <select
@@ -1473,9 +1547,9 @@ return (
       <div className="mt-6 rounded-xl border border-amber-200 bg-amber-50 p-4 sm:p-6">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
           <h3 className="text-base sm:text-lg font-semibold text-center sm:text-left" style={{ color: effectivePrimaryColor }}>
-            Precio sugerido de venta
+            {suggestedPriceTitle}
           </h3>
-          <span className="text-xl sm:text-2xl font-bold text-center sm:text-right">{peso(suggestedPrice)}</span>
+          <span className="text-xl sm:text-2xl font-bold text-center sm:text-right">{money(suggestedPrice)}</span>
         </div>
         <p className="mt-2 text-xs sm:text-sm text-amber-700 text-center sm:text-left">
           Calculado como promedio del precio/m² ajustado de comparables × m² a valuar de la propiedad principal.
@@ -1647,7 +1721,7 @@ return (
 
                     {/* Precio */}
                     <div className="space-y-1">
-                      <label className="block text-sm font-medium text-gray-700">Precio ($)</label>
+                      <label className="block text-sm font-medium text-gray-700">{comparablePriceLabel}</label>
                       <input
                         type="text"
                         inputMode="numeric"
@@ -1662,7 +1736,7 @@ return (
                           updateComparable(i, "price", numericValue);
                         }}
                         className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-right focus:outline-none focus:ring-2 focus:ring-offset-1"
-                        placeholder="Ej: 1.200.000"
+                        placeholder={currency === "USD" ? "Ej: 120.000" : "Ej: 1.200.000"}
                       />
                     </div>
 
@@ -1717,7 +1791,7 @@ return (
                     <div className="space-y-1">
                       <label className="block text-sm font-medium text-gray-700">Precio por m² (ajustado por coeficiente)</label>
                       <div className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm">
-                        {peso(ppm2Adj)}
+                        {money(ppm2Adj)}
                       </div>
                     </div>
 
@@ -1742,7 +1816,7 @@ return (
             <button
               type="button"
               onClick={addComparable}
-              disabled={formData.comparables.length >= 4}
+              disabled={formData.comparables.length >= MAX_COMPARABLES}
               className="inline-flex items-center justify-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
             >
               Agregar comparable
@@ -1750,6 +1824,91 @@ return (
           </div>
         </div>
       </div>
+
+
+      {/* PER opcional */}
+      {operationType === "venta" && (
+        <div className="mt-6 rounded-xl border border-gray-200 bg-white shadow-sm">
+          <div className="border-b border-gray-200 p-4 sm:p-6">
+            <h2 className="text-base sm:text-lg font-semibold text-center sm:text-left" style={{ color: effectivePrimaryColor }}>
+              PER (Price Earnings Ratio)
+            </h2>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-5 p-4 sm:p-6">
+            <label className="md:col-span-1 flex items-center gap-3 text-sm font-medium text-gray-700">
+              <input
+                type="checkbox"
+                checked={Boolean((formData as any).includePER)}
+                onChange={(e) =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    includePER: e.target.checked,
+                  }))
+                }
+                className="h-4 w-4"
+              />
+              Incluir cálculo PER
+            </label>
+
+            {Boolean((formData as any).includePER) && (
+              <>
+                <div className="space-y-1">
+                  <label className="block text-sm font-medium text-gray-700">
+                    Alquiler estimativo mensual (USD)
+                  </label>
+                  <input
+                    name="estimatedMonthlyRentUSD"
+                    type="number"
+                    inputMode="decimal"
+                    value={(formData as any).estimatedMonthlyRentUSD ?? ""}
+                    onChange={(e) => {
+                      const value = e.target.value === "" ? "" : parseFloat(e.target.value);
+                      handleFieldChange({
+                        target: { name: "estimatedMonthlyRentUSD", value },
+                      } as any);
+                    }}
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
+                    placeholder="Ej: 700"
+                  />
+                </div>
+
+                <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
+                  <p className="text-xs text-gray-500">Resultado PER</p>
+                  {canCalculatePER ? (
+                    <>
+                      <p className="text-lg font-bold text-gray-900">
+                        {numero(perValue || 0, 1)} años
+                      </p>
+                      <p className={`text-sm font-semibold ${perInfo.className}`}>
+                        {perInfo.label}
+                      </p>
+                    </>
+                  ) : (
+                    <p className="text-sm text-gray-600">
+                      {currency !== "USD"
+                        ? "Para calcular PER, seleccioná USD como moneda de venta."
+                        : "Completá el alquiler mensual estimativo en USD."}
+                    </p>
+                  )}
+                </div>
+
+                <div className="md:col-span-3 grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+                  <div className="rounded-md border border-green-200 bg-green-50 px-3 py-2 text-green-700">
+                    Menor a 15 = Buena Oportunidad
+                  </div>
+                  <div className="rounded-md border border-yellow-200 bg-yellow-50 px-3 py-2 text-yellow-700">
+                    Entre 15 y 20 = Oportunidad Aceptable
+                  </div>
+                  <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-red-700">
+                    Más de 20 = Oportunidad Riesgosa
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Conclusión */}
       <div className="mt-6 rounded-xl border border-gray-200 bg-white shadow-sm">
@@ -1823,14 +1982,6 @@ return (
             >
               {isSubmitting ? "Guardando..." : "Guardar Informe"}
             </button>
-
-            <button
-              type="button"
-              onClick={loadInforme}
-              className="inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-semibold w-full sm:w-auto text-center border"
-            >
-              Cargar Informe
-            </button>
           </div>
 
           <div>
@@ -1850,49 +2001,11 @@ return (
           {saveMsg && (
             <p className={saveMsg.type === "success" ? "text-green-600" : "text-red-600"}>{saveMsg.text}</p>
           )}
-          {loadMsg && (
-            <p className={loadMsg.type === "success" ? "text-green-600" : "text-red-600"}>{loadMsg.text}</p>
-          )}
           {informeId && <p className="text-xs text-gray-500">ID actual del informe: {informeId}</p>}
         </div>
       </div>
     </div>
 
-    {/* === Modal de Carga de Informe === */}
-    {loadOpen && (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-        <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-5">
-          <h3 className="text-lg font-semibold text-gray-800 mb-1">Valuador de Activos Inmobiliarios</h3>
-          <p className="text-sm text-gray-600 mb-4">Ingrese el ID del informe que desea cargar</p>
-
-          <input
-            type="text"
-            value={loadIdInput}
-            onChange={(e) => setLoadIdInput(e.target.value)}
-            className="w-full border rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-sky-500"
-            placeholder="Ej: 4b3a6d1e-...."
-          />
-
-          <div className="mt-5 flex items-center justify-end gap-3">
-            <button
-              type="button"
-              onClick={() => setLoadOpen(false)}
-              className="px-4 py-2 rounded-lg border text-gray-700 hover:bg-gray-50"
-            >
-              Cancelar
-            </button>
-            <button
-              type="button"
-              onClick={handleConfirmLoad}
-              className="px-4 py-2 rounded-lg text-white"
-              style={{ backgroundColor: effectivePrimaryColor }}
-            >
-              Cargar
-            </button>
-          </div>
-        </div>
-      </div>
-    )}
   </>
 );
 }

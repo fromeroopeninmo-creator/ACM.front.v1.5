@@ -513,10 +513,16 @@ const saveInforme = async () => {
 
     // 1) Clonar y limpiar base64 para no guardar blobs enormes en datos_json
     const datosLimpios = structuredClone(formData) as ACMFormDataWithExtras;
+
+    // Actualiza la fecha del informe cada vez que se guarda.
+    // Esto evita que un informe viejo siga mostrando la fecha original.
+    datosLimpios.date = new Date().toISOString();
+
     const mainB64 = datosLimpios.mainPhotoBase64; // (YA COMPRIMIDO)
     datosLimpios.mainPhotoBase64 = undefined;
 
     const compsB64 = formData.comparables.map((c) => c.photoBase64 || undefined);
+
     datosLimpios.comparables = datosLimpios.comparables.map((c) => ({
       ...c,
       photoBase64: undefined,
@@ -528,18 +534,26 @@ const saveInforme = async () => {
       datos: datosLimpios,
       titulo: (formData as any)?.titulo || "Informe VAI",
     };
+
     const res = await fetch("/api/informes/create", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+      },
       body: JSON.stringify(payload),
     });
+
     if (!res.ok) {
       const errTxt = await res.text().catch(() => "");
       throw new Error(`Error al guardar el informe. ${errTxt}`);
     }
+
     const data = await res.json();
     const id = data?.informe?.id as string | undefined;
-    if (!id) throw new Error("No se recibió ID de informe.");
+
+    if (!id) {
+      throw new Error("No se recibió ID de informe.");
+    }
 
     setInformeId(id);
 
@@ -553,11 +567,18 @@ const saveInforme = async () => {
     if (isDataUrl(mainB64)) {
       const file = dataUrlToFile(mainB64!, "principal.jpg");
       const fd = new FormData();
+
       fd.append("file", file);
       fd.append("informeId", id);
       fd.append("slot", "principal");
-      const up = await fetch("/api/informes/upload", { method: "POST", body: fd });
+
+      const up = await fetch("/api/informes/upload", {
+        method: "POST",
+        body: fd,
+      });
+
       const upData = await up.json();
+
       if (up.ok && upData?.url) {
         newUrls.principal = String(upData.url);
       } else {
@@ -566,17 +587,30 @@ const saveInforme = async () => {
     }
 
     // Comparables 1..8 (base64 YA COMPRIMIDOS)
-    for (let i = 0; i < Math.min(formData.comparables.length, MAX_COMPARABLES); i++) {
+    for (
+      let i = 0;
+      i < Math.min(formData.comparables.length, MAX_COMPARABLES);
+      i++
+    ) {
       const b64 = compsB64[i];
+
       if (!isDataUrl(b64)) continue;
+
       const slot = comparableSlots[i];
       const file = dataUrlToFile(b64!, `${slot}.jpg`);
       const fd = new FormData();
+
       fd.append("file", file);
       fd.append("informeId", id);
       fd.append("slot", slot);
-      const up = await fetch("/api/informes/upload", { method: "POST", body: fd });
+
+      const up = await fetch("/api/informes/upload", {
+        method: "POST",
+        body: fd,
+      });
+
       const upData = await up.json();
+
       if (up.ok && upData?.url) {
         newUrls.comps[i] = String(upData.url);
       } else {
@@ -587,15 +621,24 @@ const saveInforme = async () => {
     // 4) Persistir en datos_json las URLs ya subidas (sin depender de setState)
     const datosConUrls: ACMFormDataWithExtras = (() => {
       const copy = structuredClone(datosLimpios) as ACMFormDataWithExtras;
+
+      // Mantener la fecha nueva también en el segundo guardado
+      copy.date = datosLimpios.date;
+
       // principal
       copy.mainPhotoUrl =
         newUrls.principal || formData.mainPhotoUrl || copy.mainPhotoUrl || "";
+
       copy.mainPhotoBase64 = undefined;
 
       // comparables
       copy.comparables = copy.comparables.map((c, idx) => ({
         ...c,
-        photoUrl: newUrls.comps[idx] || formData.comparables[idx]?.photoUrl || c.photoUrl || "",
+        photoUrl:
+          newUrls.comps[idx] ||
+          formData.comparables[idx]?.photoUrl ||
+          c.photoUrl ||
+          "",
         photoBase64: undefined as any,
       }));
 
@@ -604,36 +647,57 @@ const saveInforme = async () => {
 
     const upd = await fetch("/api/informes/update", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id, datos: datosConUrls }),
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        id,
+        datos: datosConUrls,
+      }),
     });
+
     if (!upd.ok) {
       const t = await upd.text().catch(() => "");
       console.warn("Update datos_json con URLs falló:", t);
     }
 
-    // Opcional: refrescar el estado visual con las URLs finales
+    // Opcional: refrescar el estado visual con las URLs finales y la fecha nueva
     setFormData((prev) => {
-      const withUrls = structuredClone(prev);
-      if (datosConUrls.mainPhotoUrl) withUrls.mainPhotoUrl = datosConUrls.mainPhotoUrl;
+      const withUrls = structuredClone(prev) as ACMFormDataWithExtras;
+
+      // Actualizar también el estado en pantalla
+      withUrls.date = datosConUrls.date;
+
+      if (datosConUrls.mainPhotoUrl) {
+        withUrls.mainPhotoUrl = datosConUrls.mainPhotoUrl;
+      }
+
       withUrls.mainPhotoBase64 = "";
+
       withUrls.comparables = withUrls.comparables.map((c, i) => ({
         ...c,
         photoUrl: datosConUrls.comparables[i]?.photoUrl || c.photoUrl || "",
         photoBase64: "",
       }));
+
       return withUrls;
     });
 
-    setSaveMsg({ type: "success", text: `Informe guardado con éxito. ID: ${id}` });
+    setSaveMsg({
+      type: "success",
+      text: `Informe guardado con éxito. ID: ${id}`,
+    });
   } catch (err: any) {
     console.error("Guardar Informe", err);
-    setSaveMsg({ type: "error", text: err?.message || "No se pudo guardar el informe" });
+
+    setSaveMsg({
+      type: "error",
+      text: err?.message || "No se pudo guardar el informe",
+    });
   } finally {
     setIsSubmitting(false);
   }
 };
-
 
   /** ========= Cálculos ========= */
 const adjustedPricePerM2List = useMemo(
@@ -888,7 +952,7 @@ const handleDownloadPDF = async () => {
     doc.setTextColor(dark.r, dark.g, dark.b);
     const labelW = doc.getTextWidth(`${label}: `);
     const lines = doc.splitTextToSize(value || "-", maxW - labelW);
-    doc.text(lines as any, x + labelW + 3, yLine);
+    doc.text(lines as any, x + labelW + 7, yLine);
     doc.setTextColor(0, 0, 0);
     return Array.isArray(lines) ? lines.length * 11 : 11;
   };
@@ -947,10 +1011,10 @@ const handleDownloadPDF = async () => {
         // Logo contenido dentro del encabezado, sin recortar ni deformar.
         // Evitamos usar clip/cover porque en algunos entornos de jsPDF puede afectar
         // el render posterior de la página.
-        const logoBoxW = 72;
-        const logoBoxH = 46;
+        const logoBoxW = 86;
+        const logoBoxH = 54;
         const logoX = pageW - margin - logoBoxW;
-        const logoY = 14;
+        const logoY = 10;
         addImageContain(logoData, logoX, logoY, logoBoxW, logoBoxH);
       }
     } catch (err) {
@@ -1013,7 +1077,7 @@ const handleDownloadPDF = async () => {
 
     const safeValue = value || "-";
     const lines = doc.splitTextToSize(safeValue, maxValueW - labelW);
-    doc.text(lines as any, x + labelW + 3, yLine);
+    doc.text(lines as any, x + labelW + 7, yLine);
     doc.setTextColor(0, 0, 0);
 
     return Math.max(12, (Array.isArray(lines) ? (lines as string[]).length : 1) * 10);
@@ -1240,7 +1304,7 @@ const handleDownloadPDF = async () => {
   // Conclusión
   // =========================
   drawSectionTitle("Conclusión");
-  y += 8;
+  y += 16;
 
   drawTextBlock("Observaciones", formData.observations);
   drawTextBlock("Fortalezas", formData.strengths);
@@ -1342,39 +1406,58 @@ const handleDownloadPDF = async () => {
       if (canCalculatePER && perValue) {
         const p = Math.max(5, Math.min(30, perValue));
         const rent = Math.min(20, 100 / p);
+        const markerX = mapX(p);
+        const markerY = mapY(rent);
         doc.setFillColor(pc.r, pc.g, pc.b);
-        doc.circle(mapX(p), mapY(rent), 3.2, "F");
+        doc.circle(markerX, markerY, 3.2, "F");
+
+        const label = `PER ${numero(perValue, 1)}`;
+        const labelW = doc.getTextWidth(label) + 8;
+        const labelX = p > 22 ? markerX - labelW - 5 : markerX + 6;
+        const labelY = markerY - 12;
+        doc.setFillColor(255, 255, 255);
+        doc.setDrawColor(border.r, border.g, border.b);
+        doc.roundedRect(labelX, labelY - 8, labelW, 12, 2, 2, "FD");
         doc.setFont("helvetica", "bold");
-        doc.setFontSize(7.5);
+        doc.setFontSize(7.2);
         doc.setTextColor(pc.r, pc.g, pc.b);
-        doc.text(`PER ${numero(perValue, 1)}`, mapX(p) + 5, mapY(rent) - 4);
+        doc.text(label, labelX + 4, labelY);
       }
 
       // Referencias internas
       doc.setFont("helvetica", "bold");
       doc.setFontSize(7.2);
       doc.setTextColor(22, 101, 52);
-      doc.text("Buena", mapX(9.5), mapY(10.5), { align: "center" });
+      doc.text("Buena", mapX(10), y0 - 10, { align: "center" });
       doc.setTextColor(146, 64, 14);
-      doc.text("Aceptable", mapX(17.5), mapY(6.8), { align: "center" });
+      doc.text("Aceptable", mapX(17.5), y0 - 10, { align: "center" });
       doc.setTextColor(153, 27, 27);
-      doc.text("Riesgosa", mapX(25), mapY(4.8), { align: "center" });
+      doc.text("Riesgosa", mapX(25), y0 - 10, { align: "center" });
 
-      // Leyenda
-      const legX = graphX + graphW - 150;
+      // Leyenda con marco para que se lea bien sobre la zona roja
+      const legX = graphX + graphW - 158;
       const legY = graphY + 28;
+      const legW = 132;
+      const legH = 40;
+      doc.setFillColor(255, 255, 255);
+      doc.setDrawColor(203, 213, 225);
+      doc.roundedRect(legX - 7, legY - 8, legW, legH, 3, 3, "FD");
+
       doc.setFont("helvetica", "normal");
       doc.setFontSize(7);
       doc.setTextColor(30, 41, 59);
-      doc.setFillColor(209, 250, 229);
-      doc.rect(legX, legY, 8, 6, "F");
-      doc.text("Buena (PER < 15)", legX + 12, legY + 5);
-      doc.setFillColor(254, 243, 199);
-      doc.rect(legX, legY + 11, 8, 6, "F");
-      doc.text("Aceptable (15 a 20)", legX + 12, legY + 16);
-      doc.setFillColor(254, 226, 226);
-      doc.rect(legX, legY + 22, 8, 6, "F");
-      doc.text("Riesgosa (PER > 20)", legX + 12, legY + 27);
+      doc.setFillColor(187, 247, 208);
+      doc.setDrawColor(34, 197, 94);
+      doc.rect(legX, legY, 9, 7, "FD");
+      doc.text("Buena (PER < 15)", legX + 13, legY + 6);
+      doc.setFillColor(253, 230, 138);
+      doc.setDrawColor(245, 158, 11);
+      doc.rect(legX, legY + 11, 9, 7, "FD");
+      doc.text("Aceptable (15 a 20)", legX + 13, legY + 17);
+      doc.setFillColor(252, 165, 165);
+      doc.setDrawColor(220, 38, 38);
+      doc.rect(legX, legY + 22, 9, 7, "FD");
+      doc.text("Riesgosa (PER > 20)", legX + 13, legY + 28);
 
       doc.setTextColor(0, 0, 0);
       doc.setLineWidth(0.8);
@@ -1418,10 +1501,10 @@ const handleDownloadPDF = async () => {
     const base64Img = await base64Promise;
 
     y += 18;
-    ensureSpace(310);
+    ensureSpace(350);
 
-    const imgW = pageW * 0.82;
-    const imgH = 260;
+    const imgW = pageW * 0.92;
+    const imgH = 310;
     const imgX = (pageW - imgW) / 2;
 
     addImageContain(base64Img, imgX, y, imgW, imgH);
@@ -1451,7 +1534,7 @@ const handleDownloadPDF = async () => {
 
   doc.save("Informe_VAI.pdf");
 };
-
+    
 /** ========= Opciones ========= */
 const propertyTypeOptions = useMemo(() => {
   const base = enumToOptions(PropertyType);

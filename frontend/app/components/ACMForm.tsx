@@ -888,7 +888,7 @@ const handleDownloadPDF = async () => {
     doc.setTextColor(dark.r, dark.g, dark.b);
     const labelW = doc.getTextWidth(`${label}: `);
     const lines = doc.splitTextToSize(value || "-", maxW - labelW);
-    doc.text(lines as any, x + labelW, yLine);
+    doc.text(lines as any, x + labelW + 3, yLine);
     doc.setTextColor(0, 0, 0);
     return Array.isArray(lines) ? lines.length * 11 : 11;
   };
@@ -901,7 +901,7 @@ const handleDownloadPDF = async () => {
     doc.setFontSize(11);
     doc.setTextColor(pc.r, pc.g, pc.b);
     doc.text(title, margin, y);
-    y += 14;
+    y += 18;
 
     doc.setFont("helvetica", "normal");
     doc.setFontSize(9.5);
@@ -917,7 +917,7 @@ const handleDownloadPDF = async () => {
       y += 12.5;
     }
 
-    y += 10;
+    y += 16;
     doc.setTextColor(0, 0, 0);
   };
 
@@ -944,16 +944,14 @@ const handleDownloadPDF = async () => {
     try {
       const logoData = await fetchToDataURL(themeLogo);
       if (logoData) {
-        // El logo ocupa todo su contenedor del encabezado sin deformarse.
-        // Si la imagen trae márgenes blancos propios, se recorta levemente para evitar
-        // que quede como una “etiqueta” perdida dentro del encabezado.
-        const logoBoxW = 86;
-        const logoBoxH = 56;
+        // Logo contenido dentro del encabezado, sin recortar ni deformar.
+        // Evitamos usar clip/cover porque en algunos entornos de jsPDF puede afectar
+        // el render posterior de la página.
+        const logoBoxW = 72;
+        const logoBoxH = 46;
         const logoX = pageW - margin - logoBoxW;
-        const logoY = 9;
-        doc.setFillColor(pc.r, pc.g, pc.b);
-        doc.rect(logoX, logoY, logoBoxW, logoBoxH, "F");
-        addImageCover(logoData, logoX, logoY, logoBoxW, logoBoxH);
+        const logoY = 14;
+        addImageContain(logoData, logoX, logoY, logoBoxW, logoBoxH);
       }
     } catch (err) {
       console.warn("⚠️ No se pudo cargar el logo del tema en el PDF", err);
@@ -984,16 +982,16 @@ const handleDownloadPDF = async () => {
   const cardW = pageW - margin * 2;
   const photoW = 170;
   const photoH = 112;
-  const cardH = 252;
+  const cardH = 258;
 
   doc.setFillColor(255, 255, 255);
   doc.setDrawColor(border.r, border.g, border.b);
   doc.rect(cardX, cardY, cardW, cardH, "FD");
 
   const leftX = cardX + 14;
-  const midX = cardX + 174;
+  const midX = cardX + 182;
   const photoX = cardX + cardW - photoW - 14;
-  const infoMaxW = 146;
+  const infoMaxW = 154;
 
   const drawKV = (
     label: string,
@@ -1015,7 +1013,7 @@ const handleDownloadPDF = async () => {
 
     const safeValue = value || "-";
     const lines = doc.splitTextToSize(safeValue, maxValueW - labelW);
-    doc.text(lines as any, x + labelW, yLine);
+    doc.text(lines as any, x + labelW + 3, yLine);
     doc.setTextColor(0, 0, 0);
 
     return Math.max(12, (Array.isArray(lines) ? (lines as string[]).length : 1) * 10);
@@ -1037,7 +1035,7 @@ const handleDownloadPDF = async () => {
     const row = Math.floor(idx / 2);
     const x = col === 0 ? leftX : midX;
     const yy = cardY + 22 + row * 24;
-    drawKV(label, value, x, yy, col === 0 ? 148 : 150);
+    drawKV(label, value, x, yy, col === 0 ? 156 : 158);
   });
 
   let principalDataURL: string | null = null;
@@ -1071,7 +1069,7 @@ const handleDownloadPDF = async () => {
     const row = Math.floor(idx / 2);
     const x = col === 0 ? leftX : midX;
     const yy = secondY + row * 22;
-    drawKV(label, value, x, yy, col === 0 ? 148 : 150);
+    drawKV(label, value, x, yy, col === 0 ? 156 : 158);
   });
 
   // Servicios compactos debajo de la foto, sin invadir los datos.
@@ -1242,6 +1240,7 @@ const handleDownloadPDF = async () => {
   // Conclusión
   // =========================
   drawSectionTitle("Conclusión");
+  y += 8;
 
   drawTextBlock("Observaciones", formData.observations);
   drawTextBlock("Fortalezas", formData.strengths);
@@ -1277,7 +1276,7 @@ const handleDownloadPDF = async () => {
       doc.setFont("helvetica", "bold");
       doc.setFontSize(11);
       doc.setTextColor(dark.r, dark.g, dark.b);
-      doc.text("Relación PER ↔ Rentabilidad Anual", graphX + graphW / 2, graphY + 15, { align: "center" });
+      doc.text("Relación PER y Rentabilidad Anual", graphX + graphW / 2, graphY + 15, { align: "center" });
 
       // Zonas de referencia
       doc.setFillColor(209, 250, 229);
@@ -1355,11 +1354,11 @@ const handleDownloadPDF = async () => {
       doc.setFont("helvetica", "bold");
       doc.setFontSize(7.2);
       doc.setTextColor(22, 101, 52);
-      doc.text("BUENA", mapX(9.5), mapY(10.5), { align: "center" });
+      doc.text("Buena", mapX(9.5), mapY(10.5), { align: "center" });
       doc.setTextColor(146, 64, 14);
-      doc.text("ACEPTABLE", mapX(17.5), mapY(6.8), { align: "center" });
+      doc.text("Aceptable", mapX(17.5), mapY(6.8), { align: "center" });
       doc.setTextColor(153, 27, 27);
-      doc.text("RIESGOSA", mapX(25), mapY(4.8), { align: "center" });
+      doc.text("Riesgosa", mapX(25), mapY(4.8), { align: "center" });
 
       // Leyenda
       const legX = graphX + graphW - 150;
@@ -1381,10 +1380,10 @@ const handleDownloadPDF = async () => {
       doc.setLineWidth(0.8);
     };
 
-    ensureSpace(canCalculatePER ? 238 : 86);
+    ensureSpace(canCalculatePER ? 258 : 86);
     doc.setFillColor(248, 250, 252);
     doc.setDrawColor(border.r, border.g, border.b);
-    doc.rect(margin, y, pageW - margin * 2, canCalculatePER ? 218 : 76, "FD");
+    doc.rect(margin, y, pageW - margin * 2, canCalculatePER ? 238 : 76, "FD");
 
     doc.setFont("helvetica", "bold");
     doc.setFontSize(11);
@@ -1397,11 +1396,11 @@ const handleDownloadPDF = async () => {
     doc.text(perText, margin + 12, y + 38);
 
     if (canCalculatePER) {
-      drawPERGraph(margin + 12, y + 52, pageW - margin * 2 - 24, 154);
+      drawPERGraph(margin + 18, y + 54, pageW - margin * 2 - 36, 168);
     }
 
     doc.setTextColor(0, 0, 0);
-    y += canCalculatePER ? 236 : 94;
+    y += canCalculatePER ? 256 : 94;
   }
 
   // =========================
@@ -1452,7 +1451,6 @@ const handleDownloadPDF = async () => {
 
   doc.save("Informe_VAI.pdf");
 };
-
 
 /** ========= Opciones ========= */
 const propertyTypeOptions = useMemo(() => {

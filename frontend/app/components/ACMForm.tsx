@@ -816,6 +816,43 @@ const handleDownloadPDF = async () => {
     }
   };
 
+  const addImageCover = (
+    src: string,
+    x: number,
+    yImg: number,
+    boxW: number,
+    boxH: number
+  ) => {
+    try {
+      const props = (doc as any).getImageProperties(src);
+      const imgW = Number(props?.width) || boxW;
+      const imgH = Number(props?.height) || boxH;
+      const ratio = Math.max(boxW / imgW, boxH / imgH);
+      const drawW = imgW * ratio;
+      const drawH = imgH * ratio;
+      const drawX = x + (boxW - drawW) / 2;
+      const drawY = yImg + (boxH - drawH) / 2;
+
+      (doc as any).saveGraphicsState?.();
+      doc.rect(x, yImg, boxW, boxH, "S");
+      (doc as any).clip?.();
+      doc.addImage(
+        src,
+        imageFormat(src),
+        drawX,
+        drawY,
+        drawW,
+        drawH,
+        undefined,
+        "FAST"
+      );
+      (doc as any).restoreGraphicsState?.();
+    } catch (e) {
+      console.warn("No se pudo insertar imagen recortada en PDF:", e);
+      addImageContain(src, x, yImg, boxW, boxH);
+    }
+  };
+
   const ensureSpace = (needed: number) => {
     if (y + needed > pageH - 58) {
       doc.addPage();
@@ -907,9 +944,16 @@ const handleDownloadPDF = async () => {
     try {
       const logoData = await fetchToDataURL(themeLogo);
       if (logoData) {
-        doc.setFillColor(255, 255, 255);
-        doc.rect(pageW - margin - 76, 12, 76, 50, "F");
-        addImageContain(logoData, pageW - margin - 72, 16, 68, 42);
+        // El logo ocupa todo su contenedor del encabezado sin deformarse.
+        // Si la imagen trae márgenes blancos propios, se recorta levemente para evitar
+        // que quede como una “etiqueta” perdida dentro del encabezado.
+        const logoBoxW = 86;
+        const logoBoxH = 56;
+        const logoX = pageW - margin - logoBoxW;
+        const logoY = 9;
+        doc.setFillColor(pc.r, pc.g, pc.b);
+        doc.rect(logoX, logoY, logoBoxW, logoBoxH, "F");
+        addImageCover(logoData, logoX, logoY, logoBoxW, logoBoxH);
       }
     } catch (err) {
       console.warn("⚠️ No se pudo cargar el logo del tema en el PDF", err);
@@ -1211,10 +1255,136 @@ const handleDownloadPDF = async () => {
       ? "PER (Price Earnings Ratio): para calcularlo, el valor sugerido de venta debe estar expresado en USD."
       : "PER (Price Earnings Ratio): no se pudo calcular por falta de alquiler estimativo mensual en USD.";
 
-    ensureSpace(96);
+    const drawPERGraph = (graphX: number, graphY: number, graphW: number, graphH: number) => {
+      const plotPadL = 38;
+      const plotPadR = 14;
+      const plotPadT = 24;
+      const plotPadB = 28;
+      const x0 = graphX + plotPadL;
+      const y0 = graphY + graphH - plotPadB;
+      const plotW = graphW - plotPadL - plotPadR;
+      const plotH = graphH - plotPadT - plotPadB;
+      const xMin = 5;
+      const xMax = 30;
+      const yMax = 20;
+      const mapX = (v: number) => x0 + ((v - xMin) / (xMax - xMin)) * plotW;
+      const mapY = (v: number) => y0 - (v / yMax) * plotH;
+
+      doc.setFillColor(255, 255, 255);
+      doc.setDrawColor(border.r, border.g, border.b);
+      doc.rect(graphX, graphY, graphW, graphH, "FD");
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(11);
+      doc.setTextColor(dark.r, dark.g, dark.b);
+      doc.text("Relación PER ↔ Rentabilidad Anual", graphX + graphW / 2, graphY + 15, { align: "center" });
+
+      // Zonas de referencia
+      doc.setFillColor(209, 250, 229);
+      doc.rect(mapX(5), graphY + plotPadT, mapX(15) - mapX(5), plotH, "F");
+      doc.setFillColor(254, 243, 199);
+      doc.rect(mapX(15), graphY + plotPadT, mapX(20) - mapX(15), plotH, "F");
+      doc.setFillColor(254, 226, 226);
+      doc.rect(mapX(20), graphY + plotPadT, mapX(30) - mapX(20), plotH, "F");
+
+      // Grilla
+      doc.setDrawColor(229, 231, 235);
+      doc.setLineWidth(0.4);
+      [5, 10, 15, 20, 25, 30].forEach((tick) => {
+        const tx = mapX(tick);
+        doc.line(tx, graphY + plotPadT, tx, y0);
+      });
+      [0, 5, 10, 15, 20].forEach((tick) => {
+        const ty = mapY(tick);
+        doc.line(x0, ty, x0 + plotW, ty);
+      });
+
+      // Ejes
+      doc.setDrawColor(71, 85, 105);
+      doc.setLineWidth(0.8);
+      doc.line(x0, y0, x0 + plotW, y0);
+      doc.line(x0, graphY + plotPadT, x0, y0);
+
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(7.2);
+      doc.setTextColor(71, 85, 105);
+      [5, 10, 15, 20, 25, 30].forEach((tick) => {
+        doc.text(String(tick), mapX(tick), y0 + 11, { align: "center" });
+      });
+      [0, 5, 10, 15, 20].forEach((tick) => {
+        doc.text(`${tick}%`, x0 - 6, mapY(tick) + 2, { align: "right" });
+      });
+      doc.text("PER (años de alquiler)", graphX + graphW / 2, graphY + graphH - 8, { align: "center" });
+      doc.text("Rentabilidad anual (%)", graphX + 7, graphY + graphH / 2, { angle: 90, align: "center" } as any);
+
+      // Límites 15 y 20
+      doc.setDrawColor(34, 197, 94);
+      doc.setLineDashPattern([3, 3], 0);
+      doc.line(mapX(15), graphY + plotPadT, mapX(15), y0);
+      doc.setDrawColor(245, 158, 11);
+      doc.line(mapX(20), graphY + plotPadT, mapX(20), y0);
+      doc.setLineDashPattern([], 0);
+
+      // Curva aproximada de rentabilidad: 100 / PER
+      doc.setDrawColor(220, 38, 38);
+      doc.setLineWidth(1.4);
+      let prevX = mapX(5);
+      let prevY = mapY(20);
+      for (let per = 5.25; per <= 30; per += 0.25) {
+        const rent = Math.min(20, 100 / per);
+        const px = mapX(per);
+        const py = mapY(rent);
+        doc.line(prevX, prevY, px, py);
+        prevX = px;
+        prevY = py;
+      }
+
+      // Marcador del PER calculado
+      if (canCalculatePER && perValue) {
+        const p = Math.max(5, Math.min(30, perValue));
+        const rent = Math.min(20, 100 / p);
+        doc.setFillColor(pc.r, pc.g, pc.b);
+        doc.circle(mapX(p), mapY(rent), 3.2, "F");
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(7.5);
+        doc.setTextColor(pc.r, pc.g, pc.b);
+        doc.text(`PER ${numero(perValue, 1)}`, mapX(p) + 5, mapY(rent) - 4);
+      }
+
+      // Referencias internas
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(7.2);
+      doc.setTextColor(22, 101, 52);
+      doc.text("BUENA", mapX(9.5), mapY(10.5), { align: "center" });
+      doc.setTextColor(146, 64, 14);
+      doc.text("ACEPTABLE", mapX(17.5), mapY(6.8), { align: "center" });
+      doc.setTextColor(153, 27, 27);
+      doc.text("RIESGOSA", mapX(25), mapY(4.8), { align: "center" });
+
+      // Leyenda
+      const legX = graphX + graphW - 150;
+      const legY = graphY + 28;
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(7);
+      doc.setTextColor(30, 41, 59);
+      doc.setFillColor(209, 250, 229);
+      doc.rect(legX, legY, 8, 6, "F");
+      doc.text("Buena (PER < 15)", legX + 12, legY + 5);
+      doc.setFillColor(254, 243, 199);
+      doc.rect(legX, legY + 11, 8, 6, "F");
+      doc.text("Aceptable (15 a 20)", legX + 12, legY + 16);
+      doc.setFillColor(254, 226, 226);
+      doc.rect(legX, legY + 22, 8, 6, "F");
+      doc.text("Riesgosa (PER > 20)", legX + 12, legY + 27);
+
+      doc.setTextColor(0, 0, 0);
+      doc.setLineWidth(0.8);
+    };
+
+    ensureSpace(canCalculatePER ? 238 : 86);
     doc.setFillColor(248, 250, 252);
     doc.setDrawColor(border.r, border.g, border.b);
-    doc.rect(margin, y, pageW - margin * 2, 76, "FD");
+    doc.rect(margin, y, pageW - margin * 2, canCalculatePER ? 218 : 76, "FD");
 
     doc.setFont("helvetica", "bold");
     doc.setFontSize(11);
@@ -1227,27 +1397,11 @@ const handleDownloadPDF = async () => {
     doc.text(perText, margin + 12, y + 38);
 
     if (canCalculatePER) {
-      const scaleX = margin + 12;
-      const scaleY = y + 52;
-      const scaleW = pageW - margin * 2 - 24;
-      const partW = scaleW / 3;
-
-      doc.setFillColor(34, 197, 94);
-      doc.rect(scaleX, scaleY, partW, 8, "F");
-      doc.setFillColor(234, 179, 8);
-      doc.rect(scaleX + partW, scaleY, partW, 8, "F");
-      doc.setFillColor(239, 68, 68);
-      doc.rect(scaleX + partW * 2, scaleY, partW, 8, "F");
-
-      doc.setFontSize(7.5);
-      doc.setTextColor(muted.r, muted.g, muted.b);
-      doc.text("< 15 Buena oportunidad", scaleX, scaleY + 20);
-      doc.text("15 a 20 Aceptable", scaleX + partW, scaleY + 20);
-      doc.text("> 20 Riesgosa", scaleX + partW * 2, scaleY + 20);
+      drawPERGraph(margin + 12, y + 52, pageW - margin * 2 - 24, 154);
     }
 
     doc.setTextColor(0, 0, 0);
-    y += 94;
+    y += canCalculatePER ? 236 : 94;
   }
 
   // =========================
@@ -1264,15 +1418,15 @@ const handleDownloadPDF = async () => {
     reader.readAsDataURL(blob);
     const base64Img = await base64Promise;
 
-    y += 16;
-    ensureSpace(245);
+    y += 18;
+    ensureSpace(310);
 
-    const imgW = pageW * 0.58;
-    const imgH = 190;
+    const imgW = pageW * 0.82;
+    const imgH = 260;
     const imgX = (pageW - imgW) / 2;
 
     addImageContain(base64Img, imgX, y, imgW, imgH);
-    y += imgH + 20;
+    y += imgH + 22;
   } catch (err) {
     console.warn("⚠️ No se pudo agregar la imagen final al PDF", err);
   }
@@ -1298,6 +1452,7 @@ const handleDownloadPDF = async () => {
 
   doc.save("Informe_VAI.pdf");
 };
+
 
 /** ========= Opciones ========= */
 const propertyTypeOptions = useMemo(() => {

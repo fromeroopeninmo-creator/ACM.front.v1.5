@@ -893,7 +893,7 @@ const handleDownloadPDF = async () => {
   doc.setFont("helvetica", "bold");
   doc.setFontSize(18);
   doc.setTextColor(255, 255, 255);
-  doc.text(`Informe de Valor Sugerido de ${operationLabel}`, margin, 32);
+  doc.text("Valuación de Activo Inmobiliario", margin, 32);
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9.5);
@@ -938,18 +938,44 @@ const handleDownloadPDF = async () => {
   const cardX = margin;
   const cardY = y;
   const cardW = pageW - margin * 2;
-  const photoW = 190;
-  const photoH = 132;
-  const cardH = 232;
+  const photoW = 170;
+  const photoH = 112;
+  const cardH = 252;
 
   doc.setFillColor(255, 255, 255);
   doc.setDrawColor(border.r, border.g, border.b);
   doc.rect(cardX, cardY, cardW, cardH, "FD");
 
   const leftX = cardX + 14;
-  const midX = cardX + 220;
+  const midX = cardX + 174;
   const photoX = cardX + cardW - photoW - 14;
-  let rowY = cardY + 20;
+  const infoMaxW = 146;
+
+  const drawKV = (
+    label: string,
+    value: string,
+    x: number,
+    yLine: number,
+    maxValueW = infoMaxW
+  ) => {
+    const labelText = `${label}: `;
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8.6);
+    doc.setTextColor(muted.r, muted.g, muted.b);
+    doc.text(labelText, x, yLine);
+
+    const labelW = doc.getTextWidth(labelText);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8.6);
+    doc.setTextColor(dark.r, dark.g, dark.b);
+
+    const safeValue = value || "-";
+    const lines = doc.splitTextToSize(safeValue, maxValueW - labelW);
+    doc.text(lines as any, x + labelW, yLine);
+    doc.setTextColor(0, 0, 0);
+
+    return Math.max(12, (Array.isArray(lines) ? (lines as string[]).length : 1) * 10);
+  };
 
   const datosA = [
     ["Cliente", formData.clientName || "-"],
@@ -963,9 +989,11 @@ const handleDownloadPDF = async () => {
   ];
 
   datosA.forEach(([label, value], idx) => {
-    const x = idx < 4 ? leftX : midX;
-    const yy = cardY + 20 + (idx % 4) * 22;
-    drawLabelValue(label, value, x, yy, idx < 4 ? 190 : 185);
+    const col = idx % 2;
+    const row = Math.floor(idx / 2);
+    const x = col === 0 ? leftX : midX;
+    const yy = cardY + 22 + row * 24;
+    drawKV(label, value, x, yy, col === 0 ? 148 : 150);
   });
 
   let principalDataURL: string | null = null;
@@ -974,10 +1002,13 @@ const handleDownloadPDF = async () => {
 
   doc.setFillColor(248, 250, 252);
   doc.setDrawColor(border.r, border.g, border.b);
-  doc.rect(photoX, cardY + 14, photoW, photoH, "FD");
-  if (principalDataURL) addImageContain(principalDataURL, photoX + 4, cardY + 18, photoW - 8, photoH - 8);
+  doc.rect(photoX, cardY + 16, photoW, photoH, "FD");
+  if (principalDataURL) {
+    addImageContain(principalDataURL, photoX + 4, cardY + 20, photoW - 8, photoH - 8);
+  }
 
-  rowY = cardY + 124;
+  // Segunda parte de datos, debajo del primer bloque.
+  const secondY = cardY + 126;
   const datosB = [
     ["Tipología", String(formData.propertyType || "-")],
     ["m² Terreno", numero(Number(formData.landArea) || 0)],
@@ -993,11 +1024,13 @@ const handleDownloadPDF = async () => {
 
   datosB.forEach(([label, value], idx) => {
     const col = idx % 2;
+    const row = Math.floor(idx / 2);
     const x = col === 0 ? leftX : midX;
-    const yy = rowY + Math.floor(idx / 2) * 20;
-    drawLabelValue(label, value, x, yy, col === 0 ? 190 : 185);
+    const yy = secondY + row * 22;
+    drawKV(label, value, x, yy, col === 0 ? 148 : 150);
   });
 
+  // Servicios compactos debajo de la foto, sin invadir los datos.
   const servicios = [
     `Luz: ${formData.services.luz ? "Sí" : "No"}`,
     `Agua: ${formData.services.agua ? "Sí" : "No"}`,
@@ -1006,15 +1039,17 @@ const handleDownloadPDF = async () => {
     `Pavimento: ${formData.services.pavimento ? "Sí" : "No"}`,
   ];
 
+  const servY = cardY + 148;
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(9);
+  doc.setFontSize(8.8);
   doc.setTextColor(muted.r, muted.g, muted.b);
-  doc.text("Servicios", photoX, rowY);
+  doc.text("Servicios", photoX, servY);
 
   doc.setFont("helvetica", "normal");
+  doc.setFontSize(8.6);
   doc.setTextColor(dark.r, dark.g, dark.b);
   servicios.forEach((line, idx) => {
-    doc.text(line, photoX, rowY + 18 + idx * 17);
+    doc.text(line, photoX, servY + 15 + idx * 14);
   });
   doc.setTextColor(0, 0, 0);
 
@@ -1138,34 +1173,26 @@ const handleDownloadPDF = async () => {
   }
 
   y = cy + compCardH + 22;
-  ensureSpace(110);
+  ensureSpace(90);
 
   // =========================
   // Precio sugerido
   // =========================
   doc.setFillColor(255, 251, 235);
   doc.setDrawColor(245, 158, 11);
-  doc.rect(margin, y, pageW - margin * 2, 78, "FD");
+  doc.rect(margin, y, pageW - margin * 2, 58, "FD");
 
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(12);
+  doc.setFontSize(13);
   doc.setTextColor(146, 64, 14);
-  doc.text(suggestedPriceTitle, margin + 14, y + 23);
+  doc.text(suggestedPriceTitle, margin + 14, y + 34);
 
-  doc.setFontSize(22);
+  doc.setFontSize(23);
   doc.setTextColor(dark.r, dark.g, dark.b);
-  doc.text(money(suggestedPrice), pageW - margin - 14, y + 34, { align: "right" });
+  doc.text(money(suggestedPrice), pageW - margin - 14, y + 36, { align: "right" });
 
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(8.8);
-  doc.setTextColor(146, 64, 14);
-  doc.text(
-    "Calculado como promedio del precio/m² ajustado de comparables × m² a valuar.",
-    margin + 14,
-    y + 56
-  );
   doc.setTextColor(0, 0, 0);
-  y += 104;
+  y += 84;
 
   // =========================
   // Conclusión
@@ -1271,8 +1298,6 @@ const handleDownloadPDF = async () => {
 
   doc.save("Informe_VAI.pdf");
 };
-
-
 
 /** ========= Opciones ========= */
 const propertyTypeOptions = useMemo(() => {

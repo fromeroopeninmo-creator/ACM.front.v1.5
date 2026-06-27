@@ -87,10 +87,10 @@ const getPERInfo = (per: number | null) => {
   }
 
   if (per <= 20) {
-    return { label: "Oportunidad Aceptable", className: "text-yellow-700", pdfColor: [202, 138, 4] as const };
+    return { label: "Rentabilidad Aceptable", className: "text-yellow-700", pdfColor: [202, 138, 4] as const };
   }
 
-  return { label: "Oportunidad Riesgosa", className: "text-red-700", pdfColor: [220, 38, 38] as const };
+  return { label: "Inversión Riesgosa", className: "text-red-700", pdfColor: [220, 38, 38] as const };
 };
 
 const numero = (n: number, dec = 0) =>

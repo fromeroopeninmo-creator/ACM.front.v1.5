@@ -552,20 +552,47 @@ export async function POST(req: Request) {
 
     const warnings: string[] = [];
 
-    const data: ImportedComparable = {
-      source,
-      url: rawUrl,
-      address: jsonLd.address || guessed.address || "",
-      neighborhood: jsonLd.neighborhood || guessed.neighborhood || "",
-      price: jsonLd.price || priceFromText.price || "",
-      currency: jsonLd.currency || priceFromText.currency || "",
-      builtArea: jsonLd.builtArea || areas.builtArea || "",
-      landArea: jsonLd.landArea || areas.landArea || "",
-      daysPublished: days.daysPublished,
-      daysPublishedText: days.daysPublishedText,
-      imageUrl: jsonLd.imageUrl || ogImage || "",
-      warnings,
-    };
+    const normalizeNumberField = (value: unknown): number | "" => {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return Math.round(value);
+  }
+
+  if (typeof value === "string" && value.trim()) {
+    const parsed = parseNumber(value);
+    return parsed === "" ? "" : parsed;
+  }
+
+  return "";
+};
+
+const normalizeCurrencyField = (value: unknown): "USD" | "ARS" | "" => {
+  const clean = String(value || "").toUpperCase();
+
+  if (clean.includes("USD") || clean.includes("U$S") || clean.includes("US$")) {
+    return "USD";
+  }
+
+  if (clean.includes("ARS") || clean.includes("$")) {
+    return "ARS";
+  }
+
+  return "";
+};
+
+const data: ImportedComparable = {
+  source,
+  url: rawUrl,
+  address: jsonLd.address || guessed.address || "",
+  neighborhood: jsonLd.neighborhood || guessed.neighborhood || "",
+  price: normalizeNumberField(jsonLd.price || priceFromText.price),
+  currency: normalizeCurrencyField(jsonLd.currency || priceFromText.currency),
+  builtArea: normalizeNumberField(jsonLd.builtArea || areas.builtArea),
+  landArea: normalizeNumberField(jsonLd.landArea || areas.landArea),
+  daysPublished: normalizeNumberField(days.daysPublished),
+  daysPublishedText: days.daysPublishedText,
+  imageUrl: jsonLd.imageUrl || ogImage || "",
+  warnings,
+};
 
     if (!data.address) warnings.push("No se pudo detectar dirección.");
     if (!data.neighborhood) warnings.push("No se pudo detectar barrio/zona.");

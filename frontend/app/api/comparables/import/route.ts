@@ -19,20 +19,22 @@ type ImportedComparable = {
   warnings: string[];
 };
 
-const ALLOWED_ROOT_DOMAINS = [
-  "argenprop.com",
-  "mercadolibre.com.ar",
-  "clasificados.lavoz.com.ar",
-  "clasificadoslavoz.com.ar",
-  // Lo dejamos reconocido para devolver un mensaje claro, no para intentar leerlo.
-  "zonaprop.com.ar",
-];
+const SUPPORTED_ROOT_DOMAINS = ["argenprop.com", "mercadolibre.com.ar"];
 
-function isAllowedHost(host: string) {
-  const cleanHost = host.toLowerCase();
-  return ALLOWED_ROOT_DOMAINS.some(
-    (domain) => cleanHost === domain || cleanHost.endsWith(`.${domain}`)
-  );
+const UNSUPPORTED_MESSAGE =
+  "El botón de Autocompletar solo funciona para Argenprop y Mercado Libre por el momento. Cargá los datos manualmente.";
+
+function isHostFromDomain(host: string, domain: string) {
+  const cleanHost = String(host || "").toLowerCase();
+  return cleanHost === domain || cleanHost.endsWith(`.${domain}`);
+}
+
+function isSupportedHost(host: string) {
+  return SUPPORTED_ROOT_DOMAINS.some((domain) => isHostFromDomain(host, domain));
+}
+
+function isMercadoLibreHost(host: string) {
+  return isHostFromDomain(host, "mercadolibre.com.ar");
 }
 
 function normalizeSpaces(text: string) {
@@ -203,10 +205,8 @@ function findAreaNearLabel(text: string, labels: string[]): number | "" {
 }
 
 function extractAreas(text: string) {
-  // IMPORTANTE:
   // builtArea intenta traer superficie CUBIERTA / construida.
   // landArea intenta traer superficie TOTAL / lote / terreno.
-  // No usamos "superficie" genérico como cubierta para evitar cargar total como m² cubiertos.
   const builtArea =
     findAreaNearLabel(text, [
       "m² cubiertos",
@@ -424,8 +424,8 @@ function extractFromJsonLd(html: string) {
       if (locality) result.neighborhood = normalizeSpaces(String(locality));
     }
 
-    // OJO: floorSize en algunos portales puede ser total, por eso no lo usamos
-    // como fuente principal de builtArea si el HTML no aclara que es "cubierta".
+    // No usamos floorSize como builtArea si el HTML no aclara que es "cubierta",
+    // porque en algunos portales puede representar superficie total.
   }
 
   return result;
@@ -443,12 +443,11 @@ function guessAddressAndNeighborhoodFromText(text: string, url: string) {
     neighborhood: "",
   };
 
-  const titleLike = clean.slice(0, 700);
+  const titleLike = clean.slice(0, 900);
 
   const barrioMatch =
     titleLike.match(/(?:en|venta en|alquiler en)\s+([^,|.-]{3,60})(?:,|\||-)/i) ||
-    titleLike.match(/barrio\s+([^,|.-]{3,60})(?:,|\||-)/i) ||
-    titleLike.match(/fichaproductos_ciudad\s+(.+?)\s+(?:FichaInmueble_|U\$S|USD|\$)/i);
+    titleLike.match(/barrio\s+([^,|.-]{3,60})(?:,|\||-)/i);
 
   if (barrioMatch?.[1]) {
     result.neighborhood = normalizeSpaces(barrioMatch[1]);
@@ -469,7 +468,10 @@ function guessAddressAndNeighborhoodFromText(text: string, url: string) {
         .replace(/[-_]/g, " ")
         .replace(/\s+/g, " ");
 
-      const possible = slug.match(/(?:en|venta en|alquiler en)\s+([a-záéíóúñ\s]{3,50})/i);
+      const possible =
+        slug.match(/(?:en|venta en|alquiler en)\s+([a-záéíóúñ\s]{3,50})/i) ||
+        slug.match(/\b(?:casa|departamento|depto|edificio|terreno|lote)\s+en\s+([a-záéíóúñ\s]{3,50})/i);
+
       if (possible?.[1]) {
         result.neighborhood = normalizeSpaces(possible[1]);
       }
@@ -482,20 +484,22 @@ function guessAddressAndNeighborhoodFromText(text: string, url: string) {
 }
 
 function sourceFromHost(host: string) {
-  if (host.includes("zonaprop")) return "zonaprop";
   if (host.includes("argenprop")) return "argenprop";
   if (host.includes("mercadolibre")) return "mercadolibre";
-  if (host.includes("clasificados.lavoz") || host.includes("clasificadoslavoz")) {
-    return "clasificados_la_voz";
-  }
   return "desconocido";
 }
 
+/**
+ * Mercado Libre:
+ * - Links habituales: /MLA-1510029079-... o /MLA1510029079...
+ * - El ID final para la API debe quedar como MLA1510029079.
+ */
 function extractMercadoLibreItemId(url: string) {
   const decoded = decodeURIComponent(url);
 
   const patterns = [
     /(?:^|[/?#&_\-])((?:MLA|MLU|MLB|MLC|MCO|MPE|MLM|MEC)[-_]?\d{6,})(?:[^0-9]|$)/i,
+    /\b((?:MLA|MLU|MLB|MLC|MCO|MPE|MLM|MEC)[-_]?\d{6,})\b/i,
     /item[_-]?id=([A-Z]{3}[-_]?\d{6,})/i,
   ];
 
@@ -518,10 +522,7 @@ function attrValue(item: any, ids: string[], nameHints: string[] = []) {
     const id = String(a?.id || "").toUpperCase();
     const name = String(a?.name || "").toLowerCase();
 
-    return (
-      upperIds.includes(id) ||
-      lowerHints.some((hint) => name.includes(hint))
-    );
+    return upperIds.includes(id) || lowerHints.some((hint) => name.includes(hint));
   });
 
   if (!found) return "";
@@ -537,12 +538,59 @@ function attrValue(item: any, ids: string[], nameHints: string[] = []) {
 
 function areaFromMlAttr(value: unknown): number | "" {
   if (typeof value === "number") return normalizeNumberField(value);
-  const raw = String(value || "");
-  return normalizeNumberField(raw);
+  return normalizeNumberField(String(value || ""));
+}
+
+function locationTextFromML(item: any) {
+  const parts = [
+    item?.location?.address_line,
+    item?.seller_address?.address_line,
+    item?.location?.neighborhood?.name,
+    item?.seller_address?.neighborhood?.name,
+    item?.location?.city?.name,
+    item?.seller_address?.city?.name,
+    item?.location?.state?.name,
+    item?.seller_address?.state?.name,
+  ];
+
+  return normalizeSpaces(parts.filter(Boolean).join(" | "));
+}
+
+async function getMercadoLibreItem(itemId: string) {
+  const headers = {
+    Accept: "application/json",
+    "User-Agent": "VAIPropComparableImport/1.0 (+https://www.vaiprop.com)",
+  };
+
+  // Intento principal.
+  const direct = await fetch(`https://api.mercadolibre.com/items/${itemId}`, {
+    method: "GET",
+    headers,
+  });
+
+  if (direct.ok) {
+    const item = await direct.json().catch(() => null);
+    if (item?.id) return item;
+  }
+
+  // Fallback: endpoint batch.
+  const batch = await fetch(`https://api.mercadolibre.com/items?ids=${itemId}`, {
+    method: "GET",
+    headers,
+  });
+
+  if (batch.ok) {
+    const rows = await batch.json().catch(() => null);
+    const item = Array.isArray(rows) ? rows[0]?.body : null;
+    if (item?.id) return item;
+  }
+
+  return null;
 }
 
 async function fetchMercadoLibreData(rawUrl: string): Promise<ImportedComparable> {
   const itemId = extractMercadoLibreItemId(rawUrl);
+  const warnings: string[] = [];
 
   if (!itemId) {
     return {
@@ -564,15 +612,9 @@ async function fetchMercadoLibreData(rawUrl: string): Promise<ImportedComparable
     };
   }
 
-  const res = await fetch(`https://api.mercadolibre.com/items/${itemId}`, {
-    method: "GET",
-    headers: {
-      Accept: "application/json",
-      "User-Agent": "VAIPropComparableImport/1.0 (+https://www.vaiprop.com)",
-    },
-  });
+  const item = await getMercadoLibreItem(itemId);
 
-  if (!res.ok) {
+  if (!item) {
     return {
       source: "mercadolibre",
       url: rawUrl,
@@ -586,43 +628,37 @@ async function fetchMercadoLibreData(rawUrl: string): Promise<ImportedComparable
       daysPublishedText: "",
       imageUrl: "",
       warnings: [
-        `Mercado Libre respondió HTTP ${res.status}.`,
+        "No se pudo leer la publicación desde Mercado Libre.",
         "Cargá los datos manualmente.",
       ],
     };
   }
 
-  const item = await res.json();
-
-  const location = item?.location || {};
-  const sellerAddress = item?.seller_address || {};
-
-  const address =
-    normalizeSpaces(
-      location.address_line ||
-        location.addressLine ||
-        sellerAddress.address_line ||
-        sellerAddress.addressLine ||
-        ""
-    ) || "";
-
-  const neighborhood =
-    normalizeSpaces(
-      location.neighborhood?.name ||
-        location.neighborhood ||
-        sellerAddress.neighborhood?.name ||
-        sellerAddress.neighborhood ||
-        location.city?.name ||
-        sellerAddress.city?.name ||
-        ""
-    ) || "";
+  const title = normalizeSpaces(String(item?.title || ""));
+  const isLand = isLandLikeListing(title, rawUrl);
 
   const builtArea =
     areaFromMlAttr(
       attrValue(
         item,
-        ["COVERED_AREA", "COVERED_SURFACE", "BUILT_AREA", "CONSTRUCTED_AREA"],
-        ["cubierta", "cubiertos", "construida", "construidos"]
+        [
+          "COVERED_AREA",
+          "COVERED_SURFACE",
+          "COVERED_SURFACE_AREA",
+          "BUILT_AREA",
+          "CONSTRUCTED_AREA",
+          "PROPERTY_COVERED_AREA",
+        ],
+        [
+          "superficie cubierta",
+          "metros cubiertos",
+          "m² cubiertos",
+          "m2 cubiertos",
+          "cubierta",
+          "cubiertos",
+          "construida",
+          "construidos",
+        ]
       )
     ) || "";
 
@@ -630,13 +666,50 @@ async function fetchMercadoLibreData(rawUrl: string): Promise<ImportedComparable
     areaFromMlAttr(
       attrValue(
         item,
-        ["TOTAL_AREA", "TOTAL_SURFACE", "PROPERTY_SIZE", "AREA"],
-        ["total", "terreno", "lote", "superficie"]
+        [
+          "TOTAL_AREA",
+          "TOTAL_SURFACE",
+          "TOTAL_SURFACE_AREA",
+          "PROPERTY_SIZE",
+          "PROPERTY_TOTAL_AREA",
+          "LAND_AREA",
+          "LOT_AREA",
+          "AREA",
+        ],
+        [
+          "superficie total",
+          "metros totales",
+          "m² totales",
+          "m2 totales",
+          "terreno",
+          "lote",
+          "total",
+        ]
       )
     ) || "";
 
-  const title = String(item?.title || "");
-  const isLand = isLandLikeListing(title, rawUrl);
+  const locationText = locationTextFromML(item);
+  const guessed = guessAddressAndNeighborhoodFromText(`${title} | ${locationText}`, rawUrl);
+
+  const address =
+    normalizeSpaces(
+      item?.location?.address_line ||
+        item?.location?.addressLine ||
+        item?.seller_address?.address_line ||
+        item?.seller_address?.addressLine ||
+        guessed.address ||
+        title
+    ) || "";
+
+  const neighborhood =
+    normalizeSpaces(
+      item?.location?.neighborhood?.name ||
+        item?.seller_address?.neighborhood?.name ||
+        guessed.neighborhood ||
+        item?.location?.city?.name ||
+        item?.seller_address?.city?.name ||
+        ""
+    ) || "";
 
   const dateCreated = item?.date_created ? new Date(item.date_created) : null;
   let daysPublished: number | "" = "";
@@ -648,8 +721,6 @@ async function fetchMercadoLibreData(rawUrl: string): Promise<ImportedComparable
     daysPublished = days;
     daysPublishedText = `${days} días`;
   }
-
-  const warnings: string[] = [];
 
   const data: ImportedComparable = {
     source: "mercadolibre",
@@ -665,6 +736,7 @@ async function fetchMercadoLibreData(rawUrl: string): Promise<ImportedComparable
     imageUrl:
       item?.pictures?.[0]?.secure_url ||
       item?.pictures?.[0]?.url ||
+      item?.secure_thumbnail ||
       item?.thumbnail ||
       "",
     warnings,
@@ -685,17 +757,6 @@ async function fetchMercadoLibreData(rawUrl: string): Promise<ImportedComparable
   }
 
   return data;
-}
-
-function extractClasificadosLaVozArea(text: string, isLand: boolean) {
-  const match = normalizeSpaces(text).match(/FichaInmueble_superficie\s+([\d.,]+)\s*m\s*2/i);
-  const area = match?.[1] ? parseNumber(match[1]) : "";
-
-  if (!area) return { builtArea: "" as number | "", landArea: "" as number | "" };
-
-  return isLand
-    ? { builtArea: "" as number | "", landArea: area }
-    : { builtArea: area, landArea: "" as number | "" };
 }
 
 async function fetchHtml(rawUrl: string) {
@@ -775,12 +836,11 @@ export async function POST(req: Request) {
 
     const host = parsedUrl.hostname.toLowerCase();
 
-    if (!isAllowedHost(host)) {
+    if (!isSupportedHost(host)) {
       return NextResponse.json(
         {
           ok: false,
-          error:
-            "Portal no soportado. Cargá los datos manualmente o probá con Mercado Libre, Argenprop o Clasificados La Voz.",
+          error: UNSUPPORTED_MESSAGE,
         },
         { status: 400 }
       );
@@ -788,18 +848,7 @@ export async function POST(req: Request) {
 
     const source = sourceFromHost(host);
 
-    if (source === "zonaprop") {
-      return NextResponse.json(
-        {
-          ok: false,
-          error:
-            "Zonaprop no está soportado para autocompletar porque bloquea la lectura automática. Cargá los datos manualmente o probá con Mercado Libre, Argenprop o Clasificados La Voz.",
-        },
-        { status: 400 }
-      );
-    }
-
-    if (source === "mercadolibre") {
+    if (isMercadoLibreHost(host) || source === "mercadolibre") {
       const data = await fetchMercadoLibreData(rawUrl);
       return NextResponse.json({ ok: true, data });
     }
@@ -844,25 +893,11 @@ export async function POST(req: Request) {
     );
 
     const isLand = isLandLikeListing(combinedText, rawUrl);
-    const laVozArea =
-      source === "clasificados_la_voz"
-        ? extractClasificadosLaVozArea(combinedText, isLand)
-        : { builtArea: "" as number | "", landArea: "" as number | "" };
-
     const warnings: string[] = [];
 
-    const builtCandidate =
-      laVozArea.builtArea ||
-      areas.builtArea ||
-      (isLand ? "" : jsonLd.builtArea) ||
-      "";
-
+    const builtCandidate = areas.builtArea || (isLand ? "" : jsonLd.builtArea) || "";
     const landCandidate =
-      laVozArea.landArea ||
-      areas.landArea ||
-      (isLand ? jsonLd.builtArea : "") ||
-      jsonLd.landArea ||
-      "";
+      areas.landArea || (isLand ? jsonLd.builtArea : "") || jsonLd.landArea || "";
 
     const data: ImportedComparable = {
       source,

@@ -1,12 +1,16 @@
 import { NextResponse } from "next/server";
 
+export const dynamic = "force-dynamic";
+
+type Currency = "USD" | "ARS" | "";
+
 type ImportedComparable = {
   source: string;
   url: string;
   address: string;
   neighborhood: string;
   price: number | "";
-  currency: "USD" | "ARS" | "";
+  currency: Currency;
   builtArea: number | "";
   landArea: number | "";
   daysPublished: number | "";
@@ -15,20 +19,26 @@ type ImportedComparable = {
   warnings: string[];
 };
 
-const ALLOWED_HOSTS = [
-  "zonaprop.com.ar",
-  "www.zonaprop.com.ar",
+const ALLOWED_ROOT_DOMAINS = [
   "argenprop.com",
-  "www.argenprop.com",
   "mercadolibre.com.ar",
-  "www.mercadolibre.com.ar",
-  "inmuebles.mercadolibre.com.ar",
+  "clasificados.lavoz.com.ar",
+  "clasificadoslavoz.com.ar",
+  // Lo dejamos reconocido para devolver un mensaje claro, no para intentar leerlo.
+  "zonaprop.com.ar",
 ];
+
+function isAllowedHost(host: string) {
+  const cleanHost = host.toLowerCase();
+  return ALLOWED_ROOT_DOMAINS.some(
+    (domain) => cleanHost === domain || cleanHost.endsWith(`.${domain}`)
+  );
+}
 
 function normalizeSpaces(text: string) {
   return String(text || "")
-    .replace(/\s+/g, " ")
     .replace(/\u00a0/g, " ")
+    .replace(/\s+/g, " ")
     .trim();
 }
 
@@ -113,7 +123,34 @@ function parseNumber(raw: string): number | "" {
   return Math.round(n);
 }
 
-function extractPrice(text: string): { price: number | ""; currency: "USD" | "ARS" | "" } {
+function normalizeNumberField(value: unknown): number | "" {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return Math.round(value);
+  }
+
+  if (typeof value === "string" && value.trim()) {
+    const parsed = parseNumber(value);
+    return parsed === "" ? "" : parsed;
+  }
+
+  return "";
+}
+
+function normalizeCurrencyField(value: unknown): Currency {
+  const clean = String(value || "").toUpperCase();
+
+  if (clean.includes("USD") || clean.includes("U$S") || clean.includes("US$")) {
+    return "USD";
+  }
+
+  if (clean.includes("ARS") || clean.includes("$")) {
+    return "ARS";
+  }
+
+  return "";
+}
+
+function extractPrice(text: string): { price: number | ""; currency: Currency } {
   const clean = normalizeSpaces(text);
 
   const usdMatch =
@@ -148,8 +185,8 @@ function findAreaNearLabel(text: string, labels: string[]): number | "" {
     const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
     const patterns = [
-      new RegExp(`([\\d.,]+)\\s*m(?:²|2)?\\s*(?:${escaped})`, "i"),
-      new RegExp(`(?:${escaped})\\s*:?\\s*([\\d.,]+)\\s*m(?:²|2)?`, "i"),
+      new RegExp(`([\\d.,]+)\\s*m\\s*(?:²|2)?\\s*(?:${escaped})`, "i"),
+      new RegExp(`(?:${escaped})\\s*:?\\s*([\\d.,]+)\\s*m\\s*(?:²|2)?`, "i"),
       new RegExp(`([\\d.,]+)\\s*(?:${escaped})`, "i"),
     ];
 
@@ -166,18 +203,29 @@ function findAreaNearLabel(text: string, labels: string[]): number | "" {
 }
 
 function extractAreas(text: string) {
+  // IMPORTANTE:
+  // builtArea intenta traer superficie CUBIERTA / construida.
+  // landArea intenta traer superficie TOTAL / lote / terreno.
+  // No usamos "superficie" genérico como cubierta para evitar cargar total como m² cubiertos.
   const builtArea =
     findAreaNearLabel(text, [
       "m² cubiertos",
       "m2 cubiertos",
+      "m² cubiertas",
+      "m2 cubiertas",
       "m² cub.",
       "m2 cub.",
       "m² cub",
       "m2 cub",
+      "metros cubiertos",
+      "superficie cubierta",
+      "sup. cubierta",
       "cubiertos",
       "cubierto",
-      "sup. cubierta",
-      "superficie cubierta",
+      "construidos",
+      "construido",
+      "m² construidos",
+      "m2 construidos",
     ]) || "";
 
   const landArea =
@@ -186,14 +234,17 @@ function extractAreas(text: string) {
       "m2 totales",
       "m² total",
       "m2 total",
+      "metros totales",
+      "superficie total",
+      "sup. total",
       "m² terreno",
       "m2 terreno",
+      "metros terreno",
       "m² lote",
       "m2 lote",
+      "metros lote",
       "terreno",
       "lote",
-      "sup. total",
-      "superficie total",
     ]) || "";
 
   return { builtArea, landArea };
@@ -312,6 +363,7 @@ function firstString(value: any): string {
   }
 
   if (typeof value === "object") {
+    if (typeof value.secure_url === "string") return normalizeSpaces(value.secure_url);
     if (typeof value.url === "string") return normalizeSpaces(value.url);
     if (typeof value.contentUrl === "string") return normalizeSpaces(value.contentUrl);
   }
@@ -326,7 +378,7 @@ function extractFromJsonLd(html: string) {
     address: "",
     neighborhood: "",
     price: "" as number | "",
-    currency: "" as "USD" | "ARS" | "",
+    currency: "" as Currency,
     builtArea: "" as number | "",
     landArea: "" as number | "",
     imageUrl: "",
@@ -349,9 +401,7 @@ function extractFromJsonLd(html: string) {
     }
 
     if (!result.currency && priceCurrencyRaw) {
-      const c = String(priceCurrencyRaw).toUpperCase();
-      if (c.includes("USD")) result.currency = "USD";
-      if (c.includes("ARS") || c.includes("ARG")) result.currency = "ARS";
+      result.currency = normalizeCurrencyField(priceCurrencyRaw);
     }
 
     const address = obj.address || obj.location?.address || {};
@@ -374,14 +424,16 @@ function extractFromJsonLd(html: string) {
       if (locality) result.neighborhood = normalizeSpaces(String(locality));
     }
 
-    const floorSize = obj.floorSize || obj.accommodationFloorSize || {};
-    if (!result.builtArea && floorSize.value) {
-      const parsed = parseNumber(String(floorSize.value));
-      if (parsed !== "") result.builtArea = parsed;
-    }
+    // OJO: floorSize en algunos portales puede ser total, por eso no lo usamos
+    // como fuente principal de builtArea si el HTML no aclara que es "cubierta".
   }
 
   return result;
+}
+
+function isLandLikeListing(text: string, url: string) {
+  const clean = `${text} ${url}`.toLowerCase();
+  return /\b(lote|terreno|campo|fracci[oó]n|hect[aá]rea|ha\.?)\b/i.test(clean);
 }
 
 function guessAddressAndNeighborhoodFromText(text: string, url: string) {
@@ -391,20 +443,17 @@ function guessAddressAndNeighborhoodFromText(text: string, url: string) {
     neighborhood: "",
   };
 
-  // Intenta con títulos comunes tipo:
-  // "Casa en venta en Urca, Córdoba"
-  // "Terreno en Los Boulevares..."
-  const titleLike = clean.slice(0, 500);
+  const titleLike = clean.slice(0, 700);
 
   const barrioMatch =
     titleLike.match(/(?:en|venta en|alquiler en)\s+([^,|.-]{3,60})(?:,|\||-)/i) ||
-    titleLike.match(/barrio\s+([^,|.-]{3,60})(?:,|\||-)/i);
+    titleLike.match(/barrio\s+([^,|.-]{3,60})(?:,|\||-)/i) ||
+    titleLike.match(/fichaproductos_ciudad\s+(.+?)\s+(?:FichaInmueble_|U\$S|USD|\$)/i);
 
   if (barrioMatch?.[1]) {
     result.neighborhood = normalizeSpaces(barrioMatch[1]);
   }
 
-  // Para dirección, intentamos detectar frases con número.
   const addressMatch =
     clean.match(/([A-ZÁÉÍÓÚÑ][A-Za-zÁÉÍÓÚÑáéíóúñ0-9\s.'-]{3,70}\s+\d{2,5})/) ||
     clean.match(/direcci[oó]n\s*:?\s*([^|,]{4,90})/i);
@@ -413,7 +462,6 @@ function guessAddressAndNeighborhoodFromText(text: string, url: string) {
     result.address = normalizeSpaces(addressMatch[1]);
   }
 
-  // Si no hay barrio, intentamos inferir desde slug de URL.
   if (!result.neighborhood) {
     try {
       const u = new URL(url);
@@ -437,7 +485,262 @@ function sourceFromHost(host: string) {
   if (host.includes("zonaprop")) return "zonaprop";
   if (host.includes("argenprop")) return "argenprop";
   if (host.includes("mercadolibre")) return "mercadolibre";
+  if (host.includes("clasificados.lavoz") || host.includes("clasificadoslavoz")) {
+    return "clasificados_la_voz";
+  }
   return "desconocido";
+}
+
+function extractMercadoLibreItemId(url: string) {
+  const decoded = decodeURIComponent(url);
+
+  const patterns = [
+    /(?:^|[/?#&_\-])((?:MLA|MLU|MLB|MLC|MCO|MPE|MLM|MEC)[-_]?\d{6,})(?:[^0-9]|$)/i,
+    /item[_-]?id=([A-Z]{3}[-_]?\d{6,})/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = decoded.match(pattern);
+    if (match?.[1]) {
+      return match[1].replace(/[-_]/g, "").toUpperCase();
+    }
+  }
+
+  return "";
+}
+
+function attrValue(item: any, ids: string[], nameHints: string[] = []) {
+  const attrs: any[] = Array.isArray(item?.attributes) ? item.attributes : [];
+  const upperIds = ids.map((v) => v.toUpperCase());
+  const lowerHints = nameHints.map((v) => v.toLowerCase());
+
+  const found = attrs.find((a) => {
+    const id = String(a?.id || "").toUpperCase();
+    const name = String(a?.name || "").toLowerCase();
+
+    return (
+      upperIds.includes(id) ||
+      lowerHints.some((hint) => name.includes(hint))
+    );
+  });
+
+  if (!found) return "";
+
+  return (
+    found.value_name ||
+    found.value_struct?.number ||
+    found.values?.[0]?.name ||
+    found.values?.[0]?.struct?.number ||
+    ""
+  );
+}
+
+function areaFromMlAttr(value: unknown): number | "" {
+  if (typeof value === "number") return normalizeNumberField(value);
+  const raw = String(value || "");
+  return normalizeNumberField(raw);
+}
+
+async function fetchMercadoLibreData(rawUrl: string): Promise<ImportedComparable> {
+  const itemId = extractMercadoLibreItemId(rawUrl);
+
+  if (!itemId) {
+    return {
+      source: "mercadolibre",
+      url: rawUrl,
+      address: "",
+      neighborhood: "",
+      price: "",
+      currency: "",
+      builtArea: "",
+      landArea: "",
+      daysPublished: "",
+      daysPublishedText: "",
+      imageUrl: "",
+      warnings: [
+        "No se pudo detectar el ID de Mercado Libre en el link.",
+        "Cargá los datos manualmente.",
+      ],
+    };
+  }
+
+  const res = await fetch(`https://api.mercadolibre.com/items/${itemId}`, {
+    method: "GET",
+    headers: {
+      Accept: "application/json",
+      "User-Agent": "VAIPropComparableImport/1.0 (+https://www.vaiprop.com)",
+    },
+  });
+
+  if (!res.ok) {
+    return {
+      source: "mercadolibre",
+      url: rawUrl,
+      address: "",
+      neighborhood: "",
+      price: "",
+      currency: "",
+      builtArea: "",
+      landArea: "",
+      daysPublished: "",
+      daysPublishedText: "",
+      imageUrl: "",
+      warnings: [
+        `Mercado Libre respondió HTTP ${res.status}.`,
+        "Cargá los datos manualmente.",
+      ],
+    };
+  }
+
+  const item = await res.json();
+
+  const location = item?.location || {};
+  const sellerAddress = item?.seller_address || {};
+
+  const address =
+    normalizeSpaces(
+      location.address_line ||
+        location.addressLine ||
+        sellerAddress.address_line ||
+        sellerAddress.addressLine ||
+        ""
+    ) || "";
+
+  const neighborhood =
+    normalizeSpaces(
+      location.neighborhood?.name ||
+        location.neighborhood ||
+        sellerAddress.neighborhood?.name ||
+        sellerAddress.neighborhood ||
+        location.city?.name ||
+        sellerAddress.city?.name ||
+        ""
+    ) || "";
+
+  const builtArea =
+    areaFromMlAttr(
+      attrValue(
+        item,
+        ["COVERED_AREA", "COVERED_SURFACE", "BUILT_AREA", "CONSTRUCTED_AREA"],
+        ["cubierta", "cubiertos", "construida", "construidos"]
+      )
+    ) || "";
+
+  const totalArea =
+    areaFromMlAttr(
+      attrValue(
+        item,
+        ["TOTAL_AREA", "TOTAL_SURFACE", "PROPERTY_SIZE", "AREA"],
+        ["total", "terreno", "lote", "superficie"]
+      )
+    ) || "";
+
+  const title = String(item?.title || "");
+  const isLand = isLandLikeListing(title, rawUrl);
+
+  const dateCreated = item?.date_created ? new Date(item.date_created) : null;
+  let daysPublished: number | "" = "";
+  let daysPublishedText = "";
+
+  if (dateCreated && !Number.isNaN(dateCreated.getTime())) {
+    const diffMs = Date.now() - dateCreated.getTime();
+    const days = Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)));
+    daysPublished = days;
+    daysPublishedText = `${days} días`;
+  }
+
+  const warnings: string[] = [];
+
+  const data: ImportedComparable = {
+    source: "mercadolibre",
+    url: rawUrl,
+    address,
+    neighborhood,
+    price: normalizeNumberField(item?.price),
+    currency: normalizeCurrencyField(item?.currency_id),
+    builtArea: isLand ? "" : builtArea,
+    landArea: totalArea,
+    daysPublished,
+    daysPublishedText,
+    imageUrl:
+      item?.pictures?.[0]?.secure_url ||
+      item?.pictures?.[0]?.url ||
+      item?.thumbnail ||
+      "",
+    warnings,
+  };
+
+  if (!data.address) warnings.push("No se pudo detectar dirección.");
+  if (!data.neighborhood) warnings.push("No se pudo detectar barrio/zona.");
+  if (!data.price) warnings.push("No se pudo detectar precio.");
+  if (!data.builtArea && !data.landArea) warnings.push("No se pudo detectar superficie.");
+  if (!data.daysPublished && data.daysPublished !== 0) {
+    warnings.push("No se pudo detectar días de publicación.");
+  }
+
+  if (!data.builtArea && data.landArea && !isLand) {
+    warnings.push(
+      "Mercado Libre informó superficie total, pero no superficie cubierta. Revisá los m² antes de guardar."
+    );
+  }
+
+  return data;
+}
+
+function extractClasificadosLaVozArea(text: string, isLand: boolean) {
+  const match = normalizeSpaces(text).match(/FichaInmueble_superficie\s+([\d.,]+)\s*m\s*2/i);
+  const area = match?.[1] ? parseNumber(match[1]) : "";
+
+  if (!area) return { builtArea: "" as number | "", landArea: "" as number | "" };
+
+  return isLand
+    ? { builtArea: "" as number | "", landArea: area }
+    : { builtArea: area, landArea: "" as number | "" };
+}
+
+async function fetchHtml(rawUrl: string) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 12000);
+
+  try {
+    const res = await fetch(rawUrl, {
+      method: "GET",
+      signal: controller.signal,
+      redirect: "follow",
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
+        Accept:
+          "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "es-AR,es;q=0.9,en;q=0.7",
+      },
+    });
+
+    if (!res.ok) {
+      return {
+        ok: false as const,
+        status: res.status,
+        html: "",
+      };
+    }
+
+    const contentType = res.headers.get("content-type") || "";
+    if (!contentType.includes("text/html")) {
+      return {
+        ok: false as const,
+        status: 0,
+        html: "",
+      };
+    }
+
+    return {
+      ok: true as const,
+      status: res.status,
+      html: await res.text(),
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 export async function POST(req: Request) {
@@ -472,63 +775,51 @@ export async function POST(req: Request) {
 
     const host = parsedUrl.hostname.toLowerCase();
 
-    if (!ALLOWED_HOSTS.includes(host)) {
+    if (!isAllowedHost(host)) {
       return NextResponse.json(
         {
           ok: false,
           error:
-            "Portal no soportado por ahora. Probá con Zonaprop, Argenprop o Mercado Libre.",
+            "Portal no soportado. Cargá los datos manualmente o probá con Mercado Libre, Argenprop o Clasificados La Voz.",
         },
         { status: 400 }
       );
     }
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 12000);
+    const source = sourceFromHost(host);
 
-    let html = "";
-
-    try {
-      const res = await fetch(rawUrl, {
-        method: "GET",
-        signal: controller.signal,
-        redirect: "follow",
-        headers: {
-          "User-Agent":
-            "Mozilla/5.0 (compatible; VAIPropComparableImport/1.0; +https://www.vaiprop.com)",
-          Accept:
-            "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-          "Accept-Language": "es-AR,es;q=0.9,en;q=0.7",
+    if (source === "zonaprop") {
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            "Zonaprop no está soportado para autocompletar porque bloquea la lectura automática. Cargá los datos manualmente o probá con Mercado Libre, Argenprop o Clasificados La Voz.",
         },
-      });
-
-      if (!res.ok) {
-        return NextResponse.json(
-          {
-            ok: false,
-            error: `No se pudo leer la publicación. Estado HTTP ${res.status}.`,
-          },
-          { status: 502 }
-        );
-      }
-
-      const contentType = res.headers.get("content-type") || "";
-      if (!contentType.includes("text/html")) {
-        return NextResponse.json(
-          {
-            ok: false,
-            error: "La URL no devolvió una página HTML válida.",
-          },
-          { status: 400 }
-        );
-      }
-
-      html = await res.text();
-    } finally {
-      clearTimeout(timeout);
+        { status: 400 }
+      );
     }
 
-    const source = sourceFromHost(host);
+    if (source === "mercadolibre") {
+      const data = await fetchMercadoLibreData(rawUrl);
+      return NextResponse.json({ ok: true, data });
+    }
+
+    const fetched = await fetchHtml(rawUrl);
+
+    if (!fetched.ok) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            fetched.status > 0
+              ? `No se pudo leer la publicación. Estado HTTP ${fetched.status}.`
+              : "La URL no devolvió una página HTML válida.",
+        },
+        { status: fetched.status === 403 ? 400 : 502 }
+      );
+    }
+
+    const html = fetched.html;
 
     const ogTitle = getMetaContent(html, "og:title");
     const ogDescription = getMetaContent(html, "og:description");
@@ -538,7 +829,9 @@ export async function POST(req: Request) {
 
     const visibleText = stripTags(html);
     const combinedText = normalizeSpaces(
-      [ogTitle, ogDescription, metaDescription, title, visibleText].filter(Boolean).join(" | ")
+      [ogTitle, ogDescription, metaDescription, title, visibleText]
+        .filter(Boolean)
+        .join(" | ")
     );
 
     const jsonLd = extractFromJsonLd(html);
@@ -550,49 +843,41 @@ export async function POST(req: Request) {
       rawUrl
     );
 
+    const isLand = isLandLikeListing(combinedText, rawUrl);
+    const laVozArea =
+      source === "clasificados_la_voz"
+        ? extractClasificadosLaVozArea(combinedText, isLand)
+        : { builtArea: "" as number | "", landArea: "" as number | "" };
+
     const warnings: string[] = [];
 
-    const normalizeNumberField = (value: unknown): number | "" => {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return Math.round(value);
-  }
+    const builtCandidate =
+      laVozArea.builtArea ||
+      areas.builtArea ||
+      (isLand ? "" : jsonLd.builtArea) ||
+      "";
 
-  if (typeof value === "string" && value.trim()) {
-    const parsed = parseNumber(value);
-    return parsed === "" ? "" : parsed;
-  }
+    const landCandidate =
+      laVozArea.landArea ||
+      areas.landArea ||
+      (isLand ? jsonLd.builtArea : "") ||
+      jsonLd.landArea ||
+      "";
 
-  return "";
-};
-
-const normalizeCurrencyField = (value: unknown): "USD" | "ARS" | "" => {
-  const clean = String(value || "").toUpperCase();
-
-  if (clean.includes("USD") || clean.includes("U$S") || clean.includes("US$")) {
-    return "USD";
-  }
-
-  if (clean.includes("ARS") || clean.includes("$")) {
-    return "ARS";
-  }
-
-  return "";
-};
-
-const data: ImportedComparable = {
-  source,
-  url: rawUrl,
-  address: jsonLd.address || guessed.address || "",
-  neighborhood: jsonLd.neighborhood || guessed.neighborhood || "",
-  price: normalizeNumberField(jsonLd.price || priceFromText.price),
-  currency: normalizeCurrencyField(jsonLd.currency || priceFromText.currency),
-  builtArea: normalizeNumberField(jsonLd.builtArea || areas.builtArea),
-  landArea: normalizeNumberField(jsonLd.landArea || areas.landArea),
-  daysPublished: normalizeNumberField(days.daysPublished),
-  daysPublishedText: days.daysPublishedText,
-  imageUrl: jsonLd.imageUrl || ogImage || "",
-  warnings,
-};
+    const data: ImportedComparable = {
+      source,
+      url: rawUrl,
+      address: jsonLd.address || guessed.address || "",
+      neighborhood: jsonLd.neighborhood || guessed.neighborhood || "",
+      price: normalizeNumberField(jsonLd.price || priceFromText.price),
+      currency: normalizeCurrencyField(jsonLd.currency || priceFromText.currency),
+      builtArea: normalizeNumberField(builtCandidate),
+      landArea: normalizeNumberField(landCandidate),
+      daysPublished: normalizeNumberField(days.daysPublished),
+      daysPublishedText: days.daysPublishedText,
+      imageUrl: jsonLd.imageUrl || ogImage || "",
+      warnings,
+    };
 
     if (!data.address) warnings.push("No se pudo detectar dirección.");
     if (!data.neighborhood) warnings.push("No se pudo detectar barrio/zona.");
@@ -602,6 +887,12 @@ const data: ImportedComparable = {
     }
     if (!data.daysPublished) {
       warnings.push("No se pudo detectar días de publicación.");
+    }
+
+    if (!data.builtArea && data.landArea && !isLand) {
+      warnings.push(
+        "Se detectó superficie total/lote, pero no superficie cubierta. Revisá los m² antes de guardar."
+      );
     }
 
     return NextResponse.json({

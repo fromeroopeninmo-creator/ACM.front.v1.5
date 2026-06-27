@@ -19,6 +19,8 @@ type ImportedComparable = {
   warnings: string[];
 };
 
+type PartialComparable = Partial<Omit<ImportedComparable, "warnings" | "source" | "url">>;
+
 const SUPPORTED_ROOT_DOMAINS = [
   // Portales visibles/soportados para clientes
   "argenprop.com",
@@ -47,11 +49,12 @@ function isSupportedHost(host: string) {
   return SUPPORTED_ROOT_DOMAINS.some((domain) => isHostFromDomain(host, domain));
 }
 
-
 function normalizeSpaces(text: string) {
   return String(text || "")
     .replace(/\u00a0/g, " ")
-    .replace(/\s+/g, " ")
+    .replace(/[ \t\r\f\v]+/g, " ")
+    .replace(/\s*\|\s*/g, " | ")
+    .replace(/\|{2,}/g, "|")
     .trim();
 }
 
@@ -67,15 +70,14 @@ function decodeBasicHtmlEntities(text: string) {
     .replace(/&gt;/g, ">");
 }
 
-function stripTags(html: string) {
-  return normalizeSpaces(
-    decodeBasicHtmlEntities(
-      String(html || "")
-        .replace(/<script[\s\S]*?<\/script>/gi, " ")
-        .replace(/<style[\s\S]*?<\/style>/gi, " ")
-        .replace(/<[^>]+>/g, " ")
-    )
-  );
+function htmlToReadableText(html: string) {
+  const withSeparators = String(html || "")
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<\/?(?:p|div|section|article|li|ul|ol|tr|td|th|br|h1|h2|h3|h4|h5|h6|dt|dd)[^>]*>/gi, " | ")
+    .replace(/<[^>]+>/g, " ");
+
+  return normalizeSpaces(decodeBasicHtmlEntities(withSeparators));
 }
 
 function safeJsonParse(value: string): any | null {
@@ -122,16 +124,44 @@ function getTitle(html: string) {
 }
 
 function parseNumber(raw: string): number | "" {
-  const clean = String(raw || "")
+  let clean = String(raw || "")
+    .replace(/\s/g, "")
     .replace(/[^\d.,]/g, "")
     .trim();
 
   if (!clean) return "";
 
-  // Argentina: 1.234.567,89 o 1.234.567
-  const withoutThousands = clean.replace(/\./g, "").replace(",", ".");
-  const n = Number(withoutThousands);
+  const hasDot = clean.includes(".");
+  const hasComma = clean.includes(",");
 
+  if (hasDot && hasComma) {
+    const lastDot = clean.lastIndexOf(".");
+    const lastComma = clean.lastIndexOf(",");
+
+    // Si la coma aparece al final con 1-2 decimales, la tratamos como decimal.
+    // Si la coma tiene 3 dígitos después, la tratamos como separador de miles.
+    if (lastComma > lastDot) {
+      const after = clean.slice(lastComma + 1);
+      clean = after.length === 3
+        ? clean.replace(/[.,]/g, "")
+        : clean.replace(/\./g, "").replace(",", ".");
+    } else {
+      const after = clean.slice(lastDot + 1);
+      clean = after.length === 3
+        ? clean.replace(/[.,]/g, "")
+        : clean.replace(/,/g, "");
+    }
+  } else if (hasComma) {
+    const parts = clean.split(",");
+    const last = parts[parts.length - 1] || "";
+    clean = last.length === 3 ? clean.replace(/,/g, "") : clean.replace(",", ".");
+  } else if (hasDot) {
+    const parts = clean.split(".");
+    const last = parts[parts.length - 1] || "";
+    clean = last.length === 3 ? clean.replace(/\./g, "") : clean;
+  }
+
+  const n = Number(clean);
   if (!Number.isFinite(n)) return "";
   return Math.round(n);
 }
@@ -163,41 +193,89 @@ function normalizeCurrencyField(value: unknown): Currency {
   return "";
 }
 
+function sliceAround(text: string, start: number, size = 80) {
+  return text.slice(Math.max(0, start - size), Math.min(text.length, start + size));
+}
+
 function extractPrice(text: string): { price: number | ""; currency: Currency } {
   const clean = normalizeSpaces(text);
+  const candidates: Array<{ price: number; currency: Currency; idx: number; raw: string; score: number }> = [];
 
-  const usdMatch =
-    clean.match(/(?:USD|U\$S|US\$)\s*([\d.,]+)/i) ||
-    clean.match(/([\d.,]+)\s*(?:USD|U\$S|US\$)/i);
+  const patterns = [
+    /(?:USD|U\$S|US\$)\s*([\d.,]+)/gi,
+    /([\d.,]+)\s*(?:USD|U\$S|US\$)/gi,
+    /(?:ARS)\s*([\d.,]+)/gi,
+    /\$\s*([\d.,]+)/gi,
+  ];
 
-  if (usdMatch?.[1]) {
-    return {
-      price: parseNumber(usdMatch[1]),
-      currency: "USD",
-    };
+  for (const pattern of patterns) {
+    let match: RegExpExecArray | null;
+    while ((match = pattern.exec(clean)) !== null) {
+      const raw = match[1] || "";
+      const price = parseNumber(raw);
+      if (price === "" || price <= 0) continue;
+
+      const token = match[0] || "";
+      const currency = /USD|U\$S|US\$/i.test(token) ? "USD" : "ARS";
+      const context = sliceAround(clean, match.index, 90).toLowerCase();
+
+      // Evita tomar expensas, cuotas, impuestos, teléfonos o precios accesorios.
+      if (/expensas?|exp\.|cuota|anticipo|honorarios?|comisi[oó]n|whatsapp|tel[eé]fono|celular|matr[ií]cula|cpi/.test(context)) {
+        continue;
+      }
+
+      let score = 0;
+      if (currency === "USD") score += 30;
+      if (/venta|precio|valor|u\$s|usd/.test(context)) score += 10;
+      if (price >= 10000) score += 10;
+      if (price < 1000) score -= 20;
+      if (match.index < 1500) score += 5;
+
+      candidates.push({ price, currency, idx: match.index, raw: token, score });
+    }
   }
 
-  const arsMatch =
-    clean.match(/(?:ARS|\$)\s*([\d.,]+)/i) ||
-    clean.match(/([\d.,]+)\s*(?:ARS|\$)/i);
+  if (candidates.length === 0) return { price: "", currency: "" };
 
-  if (arsMatch?.[1]) {
-    return {
-      price: parseNumber(arsMatch[1]),
-      currency: "ARS",
-    };
+  candidates.sort((a, b) => b.score - a.score || a.idx - b.idx);
+  return { price: candidates[0].price, currency: candidates[0].currency };
+}
+
+function cleanExtractedValue(value: string) {
+  return normalizeSpaces(value)
+    .replace(/^[.:\-–—]+\s*/, "")
+    .replace(/\s*(Consultar|Volver|Características|Informaci[oó]n|Superficie|Dormitorios|Baños|Ambientes|Venta|Alquiler).*$/i, "")
+    .trim();
+}
+
+function extractValueAfterLabel(text: string, labels: string[], maxLen = 95) {
+  const clean = normalizeSpaces(text);
+
+  for (const label of labels) {
+    const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const pattern = new RegExp(
+      `(?:^|\\||\\n)\\s*${escaped}\\s*:?\\s*([^|\\n]{1,${maxLen}})`,
+      "i"
+    );
+    const match = clean.match(pattern);
+
+    if (match?.[1]) {
+      const value = cleanExtractedValue(match[1]);
+      if (value && !labels.some((l) => value.toLowerCase() === l.toLowerCase())) return value;
+    }
   }
 
-  return { price: "", currency: "" };
+  return "";
 }
 
 function findAreaNearLabel(text: string, labels: string[]): number | "" {
-  const clean = normalizeSpaces(text);
+  const clean = normalizeSpaces(text).replace(/m\s*\^?\s*\{?2\}?/gi, "m2");
 
   for (const label of labels) {
     const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
     const patterns = [
+      new RegExp(`(?:^|\\||\\n)\\s*(?:${escaped})\\s*:?\\s*([\\d.,]+)\\s*m\\s*(?:²|2)?`, "i"),
       new RegExp(`([\\d.,]+)\\s*m\\s*(?:²|2)?\\s*(?:${escaped})`, "i"),
       new RegExp(`(?:${escaped})\\s*:?\\s*([\\d.,]+)\\s*m\\s*(?:²|2)?`, "i"),
       new RegExp(`([\\d.,]+)\\s*(?:${escaped})`, "i"),
@@ -215,57 +293,71 @@ function findAreaNearLabel(text: string, labels: string[]): number | "" {
   return "";
 }
 
-function extractAreas(text: string) {
-  // builtArea intenta traer superficie CUBIERTA / construida.
-  // landArea intenta traer superficie TOTAL / lote / terreno.
+function extractAreas(text: string): { builtArea: number | ""; landArea: number | "" } {
   const builtArea =
     findAreaNearLabel(text, [
+      "superficie cubierta",
+      "sup. cubierta",
+      "sup cubierta",
       "m² cubiertos",
       "m2 cubiertos",
       "m² cubiertas",
       "m2 cubiertas",
-      "m² cub.",
-      "m2 cub.",
-      "m² cub",
-      "m2 cub",
       "metros cubiertos",
-      "superficie cubierta",
-      "sup. cubierta",
       "cubiertos",
       "cubierto",
+      "cubierta",
+      "total construido",
+      "total construído",
       "construidos",
       "construido",
       "m² construidos",
       "m2 construidos",
-      "sup cubierta",
-      "sup cub",
       "área cubierta",
       "area cubierta",
     ]) || "";
 
   const landArea =
     findAreaNearLabel(text, [
+      "superficie total / terreno",
+      "superficie total",
+      "sup. total",
+      "sup total",
       "m² totales",
       "m2 totales",
       "m² total",
       "m2 total",
       "metros totales",
-      "superficie total",
-      "sup. total",
+      "superficie del terreno",
+      "sup. terreno",
       "m² terreno",
       "m2 terreno",
       "metros terreno",
       "m² lote",
       "m2 lote",
       "metros lote",
-      "superficie del terreno",
-      "área total",
-      "area total",
       "terreno",
       "lote",
     ]) || "";
 
   return { builtArea, landArea };
+}
+
+function parseDateToDays(raw: string): { daysPublished: number | ""; daysPublishedText: string } {
+  const clean = normalizeSpaces(raw);
+  const match = clean.match(/(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2,4})/);
+  if (!match) return { daysPublished: "" as number | "", daysPublishedText: "" };
+
+  const dd = Number(match[1]);
+  const mm = Number(match[2]);
+  let yy = Number(match[3]);
+  if (yy < 100) yy += 2000;
+
+  const d = new Date(yy, mm - 1, dd);
+  if (Number.isNaN(d.getTime())) return { daysPublished: "" as number | "", daysPublishedText: "" };
+
+  const days = Math.max(0, Math.floor((Date.now() - d.getTime()) / (1000 * 60 * 60 * 24)));
+  return { daysPublished: days, daysPublishedText: `${days} días` };
 }
 
 function extractDaysPublished(text: string): {
@@ -318,6 +410,12 @@ function extractDaysPublished(text: string): {
       daysPublished: 365,
       daysPublishedText: "más de 1 año aprox.",
     };
+  }
+
+  const dateValue = extractValueAfterLabel(text, ["Fecha de ingreso", "Publicado", "Fecha publicación", "Fecha de publicación"], 45);
+  if (dateValue) {
+    const fromDate = parseDateToDays(dateValue);
+    if (fromDate.daysPublished !== "") return fromDate;
   }
 
   return {
@@ -441,9 +539,6 @@ function extractFromJsonLd(html: string) {
 
       if (locality) result.neighborhood = normalizeSpaces(String(locality));
     }
-
-    // No usamos floorSize como builtArea si el HTML no aclara que es "cubierta",
-    // porque en algunos portales puede representar superficie total.
   }
 
   return result;
@@ -454,6 +549,63 @@ function isLandLikeListing(text: string, url: string) {
   return /\b(lote|terreno|campo|fracci[oó]n|hect[aá]rea|ha\.?)\b/i.test(clean);
 }
 
+function looksLikeBadAddress(value: string) {
+  const clean = normalizeSpaces(value).toLowerCase();
+  if (!clean) return true;
+  if (clean.length > 90) return true;
+  if (/venta|alquiler|departamento|casa|duplex|dúplex|terreno|oportunidad|inversi[oó]n/.test(clean) && !/\d{1,5}/.test(clean)) return true;
+  if (/usd|u\$s|ars|precio|superficie|dormitorios|baños|ambientes/.test(clean)) return true;
+  return false;
+}
+
+function extractStreetAddress(text: string) {
+  const clean = normalizeSpaces(text);
+
+  const patterns = [
+    /\b([A-ZÁÉÍÓÚÑ][A-Za-zÁÉÍÓÚÑáéíóúñ0-9.'\s-]{2,70}\s+(?:al\s+)?\d{1,5})\b/,
+    /\b([A-ZÁÉÍÓÚÑ][A-Za-zÁÉÍÓÚÑáéíóúñ0-9.'\s-]{2,70}\s+N[°º]?\s*\d{1,5})\b/i,
+    /\b(?:calle|av\.?|avenida)\s+([A-ZÁÉÍÓÚÑ][A-Za-zÁÉÍÓÚÑáéíóúñ0-9.'\s-]{2,70}\s+(?:al\s+)?\d{1,5})\b/i,
+    /\b(?:ubicad[oa]\s+en|sito\s+en|en\s+calle)\s+([^|,.]{4,85}\s+(?:al\s+)?\d{1,5})\b/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = clean.match(pattern);
+    if (match?.[1]) {
+      const value = cleanExtractedValue(match[1]);
+      if (!looksLikeBadAddress(value)) return value;
+    }
+  }
+
+  return "";
+}
+
+function extractNeighborhoodFromSlug(url: string) {
+  try {
+    const u = new URL(url);
+    const slug = decodeURIComponent(u.pathname)
+      .replace(/[-_]/g, " ")
+      .replace(/\s+/g, " ")
+      .toLowerCase();
+
+    const patterns = [
+      /\ben\s+([a-záéíóúñ\s]{3,45})(?:\s+piso|\s+etapa|\s+cordoba|\s+c[oó]rdoba|$)/i,
+      /\bbarrio\s+([a-záéíóúñ\s]{3,45})(?:\s+complejo|\s+cordoba|\s+c[oó]rdoba|$)/i,
+      /\bventa\s+(?:de\s+)?(?:departamento|casa|duplex|dúplex|terreno|lote)[^\s]*\s+en\s+([a-záéíóúñ\s]{3,45})(?:\s|$)/i,
+    ];
+
+    for (const pattern of patterns) {
+      const match = slug.match(pattern);
+      if (match?.[1]) {
+        return normalizeSpaces(match[1]).replace(/\b(cordoba|córdoba|venta|departamento|casa)$/i, "").trim();
+      }
+    }
+  } catch {
+    // no-op
+  }
+
+  return "";
+}
+
 function guessAddressAndNeighborhoodFromText(text: string, url: string) {
   const clean = normalizeSpaces(text);
   const result = {
@@ -461,41 +613,36 @@ function guessAddressAndNeighborhoodFromText(text: string, url: string) {
     neighborhood: "",
   };
 
-  const titleLike = clean.slice(0, 900);
-
-  const barrioMatch =
-    titleLike.match(/(?:en|venta en|alquiler en)\s+([^,|.-]{3,60})(?:,|\||-)/i) ||
-    titleLike.match(/barrio\s+([^,|.-]{3,60})(?:,|\||-)/i);
-
-  if (barrioMatch?.[1]) {
-    result.neighborhood = normalizeSpaces(barrioMatch[1]);
+  const labeledAddress = extractValueAfterLabel(clean, ["Dirección", "Direccion", "Ubicación", "Ubicacion"], 90);
+  if (labeledAddress && !looksLikeBadAddress(labeledAddress)) {
+    result.address = labeledAddress;
   }
 
-  const addressMatch =
-    clean.match(/([A-ZÁÉÍÓÚÑ][A-Za-zÁÉÍÓÚÑáéíóúñ0-9\s.'-]{3,70}\s+\d{2,5})/) ||
-    clean.match(/direcci[oó]n\s*:?\s*([^|,]{4,90})/i);
+  if (!result.address) {
+    result.address = extractStreetAddress(clean);
+  }
 
-  if (addressMatch?.[1]) {
-    result.address = normalizeSpaces(addressMatch[1]);
+  const labeledNeighborhood = extractValueAfterLabel(clean, ["Barrio", "Zona", "Ubicación", "Ubicacion", "Localidad"], 70);
+  if (labeledNeighborhood && !/c[oó]rdoba capital|cordoba capital|argentina/i.test(labeledNeighborhood)) {
+    result.neighborhood = labeledNeighborhood;
   }
 
   if (!result.neighborhood) {
-    try {
-      const u = new URL(url);
-      const slug = decodeURIComponent(u.pathname)
-        .replace(/[-_]/g, " ")
-        .replace(/\s+/g, " ");
+    const titleLike = clean.slice(0, 1200);
+    const barrioMatch =
+      titleLike.match(/\bbarrio\s+([^,|.-]{3,60})(?:,|\||-|\s+complejo)/i) ||
+      titleLike.match(/\ben\s+([^,|.-]{3,60})(?:,|\||-|\s+piso|\s+etapa)/i);
 
-      const possible =
-        slug.match(/(?:en|venta en|alquiler en)\s+([a-záéíóúñ\s]{3,50})/i) ||
-        slug.match(/\b(?:casa|departamento|depto|edificio|terreno|lote)\s+en\s+([a-záéíóúñ\s]{3,50})/i);
-
-      if (possible?.[1]) {
-        result.neighborhood = normalizeSpaces(possible[1]);
+    if (barrioMatch?.[1]) {
+      const value = normalizeSpaces(barrioMatch[1]);
+      if (!/venta|alquiler|departamento|casa|duplex|dúplex/i.test(value)) {
+        result.neighborhood = value;
       }
-    } catch {
-      // no-op
     }
+  }
+
+  if (!result.neighborhood) {
+    result.neighborhood = extractNeighborhoodFromSlug(url);
   }
 
   return result;
@@ -510,6 +657,71 @@ function sourceFromHost(host: string) {
   if (host.includes("openinmo")) return "openinmo";
   if (host.includes("remax")) return "remax";
   return "desconocido";
+}
+
+function extractSourceSpecificData(source: string, text: string, metaText: string, url: string): PartialComparable {
+  const full = normalizeSpaces(`${metaText} | ${text}`);
+  const result: PartialComparable = {};
+
+  if (source === "openinmo") {
+    result.address = extractValueAfterLabel(full, ["Dirección", "Direccion"], 90);
+    result.neighborhood = extractValueAfterLabel(full, ["Ubicación", "Ubicacion"], 70);
+    result.builtArea = findAreaNearLabel(full, ["Cubierta", "Total construido", "Total construído", "Superficie cubierta"]);
+    result.landArea = findAreaNearLabel(full, ["Terreno", "Superficie total", "Sup. total"]);
+    return result;
+  }
+
+  if (source === "cordobaprop") {
+    result.address = extractValueAfterLabel(full, ["Dirección", "Direccion"], 90);
+    result.neighborhood = extractValueAfterLabel(full, ["Barrio"], 70);
+    result.builtArea = findAreaNearLabel(full, ["Superficie cubierta", "Sup. Cubierta"]);
+    result.landArea = findAreaNearLabel(full, ["Superficie total / terreno", "Sup. Terreno", "Superficie total"]);
+    const dateValue = extractValueAfterLabel(full, ["Fecha de ingreso"], 45);
+    if (dateValue) {
+      const days = parseDateToDays(dateValue);
+      result.daysPublished = days.daysPublished;
+      result.daysPublishedText = days.daysPublishedText;
+    }
+    return result;
+  }
+
+  if (source === "buscadorprop") {
+    result.address = extractStreetAddress(full);
+    result.neighborhood = extractNeighborhoodFromSlug(url) || "";
+    result.builtArea = findAreaNearLabel(full, ["Superficie cubierta", "Sup. cubierta", "m² cubiertos", "m2 cubiertos"]);
+    result.landArea = findAreaNearLabel(full, ["Superficie total", "Sup. total", "m² totales", "m2 totales"]);
+    return result;
+  }
+
+  if (source === "properati") {
+    // En Properati la dirección suele aparecer en la descripción; evitamos usar el título completo.
+    result.address = extractStreetAddress(full);
+    result.neighborhood = extractNeighborhoodFromSlug(url) || "";
+    const areas = extractAreas(full);
+    result.builtArea = areas.builtArea;
+    result.landArea = areas.landArea;
+    return result;
+  }
+
+  if (source === "remax") {
+    result.address = extractValueAfterLabel(full, ["Dirección", "Direccion", "Ubicación", "Ubicacion"], 90) || extractStreetAddress(full);
+    result.neighborhood = extractNeighborhoodFromSlug(url) || extractValueAfterLabel(full, ["Barrio", "Zona", "Localidad"], 70);
+    const areas = extractAreas(full);
+    result.builtArea = areas.builtArea;
+    result.landArea = areas.landArea;
+    return result;
+  }
+
+  if (source === "argenprop" || source === "inmoclick") {
+    result.address = extractValueAfterLabel(full, ["Dirección", "Direccion", "Ubicación", "Ubicacion"], 90) || extractStreetAddress(full);
+    result.neighborhood = extractValueAfterLabel(full, ["Barrio", "Zona", "Localidad", "Ubicación", "Ubicacion"], 70) || extractNeighborhoodFromSlug(url);
+    const areas = extractAreas(full);
+    result.builtArea = areas.builtArea;
+    result.landArea = areas.landArea;
+    return result;
+  }
+
+  return result;
 }
 
 async function fetchHtml(rawUrl: string) {
@@ -600,8 +812,6 @@ export async function POST(req: Request) {
     }
 
     const source = sourceFromHost(host);
-
-
     const fetched = await fetchHtml(rawUrl);
 
     if (!fetched.ok) {
@@ -625,40 +835,56 @@ export async function POST(req: Request) {
     const metaDescription = getMetaContent(html, "description");
     const title = getTitle(html);
 
-    const visibleText = stripTags(html);
-    const combinedText = normalizeSpaces(
-      [ogTitle, ogDescription, metaDescription, title, visibleText]
-        .filter(Boolean)
-        .join(" | ")
-    );
+    const visibleText = htmlToReadableText(html);
+    const metaText = normalizeSpaces([ogTitle, title, ogDescription, metaDescription].filter(Boolean).join(" | "));
+    const combinedText = normalizeSpaces([metaText, visibleText].filter(Boolean).join(" | "));
 
     const jsonLd = extractFromJsonLd(html);
     const priceFromText = extractPrice(combinedText);
     const areas = extractAreas(combinedText);
     const days = extractDaysPublished(combinedText);
-    const guessed = guessAddressAndNeighborhoodFromText(
-      [ogTitle, title, ogDescription, visibleText].filter(Boolean).join(" | "),
-      rawUrl
-    );
+    const guessed = guessAddressAndNeighborhoodFromText(combinedText, rawUrl);
+    const sourceSpecific = extractSourceSpecificData(source, visibleText, metaText, rawUrl);
 
     const isLand = isLandLikeListing(combinedText, rawUrl);
     const warnings: string[] = [];
 
-    const builtCandidate = areas.builtArea || (isLand ? "" : jsonLd.builtArea) || "";
+    const builtCandidate =
+      sourceSpecific.builtArea ||
+      areas.builtArea ||
+      (isLand ? "" : jsonLd.builtArea) ||
+      "";
+
     const landCandidate =
-      areas.landArea || (isLand ? jsonLd.builtArea : "") || jsonLd.landArea || "";
+      sourceSpecific.landArea ||
+      areas.landArea ||
+      (isLand ? jsonLd.builtArea : "") ||
+      jsonLd.landArea ||
+      "";
+
+    const addressCandidate =
+      sourceSpecific.address ||
+      (jsonLd.address && !looksLikeBadAddress(jsonLd.address) ? jsonLd.address : "") ||
+      guessed.address ||
+      "";
+
+    const neighborhoodCandidate =
+      sourceSpecific.neighborhood ||
+      jsonLd.neighborhood ||
+      guessed.neighborhood ||
+      "";
 
     const data: ImportedComparable = {
       source,
       url: rawUrl,
-      address: jsonLd.address || guessed.address || "",
-      neighborhood: jsonLd.neighborhood || guessed.neighborhood || "",
+      address: looksLikeBadAddress(addressCandidate) ? "" : normalizeSpaces(addressCandidate),
+      neighborhood: normalizeSpaces(neighborhoodCandidate),
       price: normalizeNumberField(jsonLd.price || priceFromText.price),
       currency: normalizeCurrencyField(jsonLd.currency || priceFromText.currency),
       builtArea: normalizeNumberField(builtCandidate),
       landArea: normalizeNumberField(landCandidate),
-      daysPublished: normalizeNumberField(days.daysPublished),
-      daysPublishedText: days.daysPublishedText,
+      daysPublished: normalizeNumberField(sourceSpecific.daysPublished || days.daysPublished),
+      daysPublishedText: sourceSpecific.daysPublishedText || days.daysPublishedText,
       imageUrl: jsonLd.imageUrl || ogImage || "",
       warnings,
     };

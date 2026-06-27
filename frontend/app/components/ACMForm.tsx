@@ -40,6 +40,27 @@ type ACMFormDataWithExtras = ACMFormData & {
   estimatedMonthlyRentUSD: number | string;
 };
 
+type ComparableImportState = {
+  loading: boolean;
+  type?: "success" | "error";
+  text?: string;
+};
+
+type ImportedComparableData = {
+  source?: string;
+  url?: string;
+  address?: string;
+  neighborhood?: string;
+  price?: number | "";
+  currency?: "USD" | "ARS" | "";
+  builtArea?: number | "";
+  landArea?: number | "";
+  daysPublished?: number | "";
+  daysPublishedText?: string;
+  imageUrl?: string;
+  warnings?: string[];
+};
+
 const MAX_COMPARABLES = 8;
 
 const comparableSlots = [
@@ -75,6 +96,15 @@ const formatMoney = (n: number, currency: CurrencyType = "ARS") => {
     currency: "ARS",
     maximumFractionDigits: 0,
   });
+};
+
+const isLandLikePropertyType = (propertyType: unknown) => {
+  const value = String(propertyType || "").toLowerCase();
+  return (
+    value.includes("lote") ||
+    value.includes("terreno") ||
+    value.includes("campo")
+  );
 };
 
 const getPERInfo = (per: number | null) => {
@@ -172,6 +202,7 @@ export default function ACMForm() {
   type InlineMsg = { type: "success" | "error"; text: string } | null;
   const [saveMsg, setSaveMsg] = useState<InlineMsg>(null);
   const [informeId, setInformeId] = useState<string | null>(null);
+  const [comparableImportStatus, setComparableImportStatus] = useState<Record<number, ComparableImportState>>({});
 
   // Theme...
   const theme = useTheme();
@@ -355,6 +386,110 @@ const updateComparable = <K extends keyof ComparableProperty>(
   });
 };
 
+
+const setComparableStatus = (index: number, status: ComparableImportState) => {
+  setComparableImportStatus((prev) => ({
+    ...prev,
+    [index]: status,
+  }));
+};
+
+const importComparableFromUrl = async (index: number) => {
+  const url = String(formData.comparables[index]?.listingUrl || "").trim();
+
+  if (!url) {
+    setComparableStatus(index, {
+      loading: false,
+      type: "error",
+      text: "Pegá primero el link de la publicación.",
+    });
+    return;
+  }
+
+  try {
+    setComparableStatus(index, {
+      loading: true,
+      text: "Importando datos públicos...",
+    });
+
+    const res = await fetch("/api/comparables/import", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ url }),
+    });
+
+    const json = await res.json().catch(() => ({}));
+
+    if (!res.ok || !json?.ok) {
+      throw new Error(json?.error || "No se pudo importar el comparable.");
+    }
+
+    const data = (json?.data || {}) as ImportedComparableData;
+
+    setFormData((prev) => {
+      const copy = { ...prev };
+      const arr = [...copy.comparables];
+      const current = arr[index];
+
+      if (!current) return prev;
+
+      const isLandLike = isLandLikePropertyType(copy.propertyType);
+      const importedArea = isLandLike
+        ? data.landArea || data.builtArea || ""
+        : data.builtArea || data.landArea || "";
+
+      const next: ComparableProperty = {
+        ...current,
+        listingUrl: url,
+        address: data.address || current.address || "",
+        neighborhood: data.neighborhood || current.neighborhood || "",
+        price:
+          typeof data.price === "number" && Number.isFinite(data.price)
+            ? data.price
+            : current.price,
+        builtArea:
+          typeof importedArea === "number" && Number.isFinite(importedArea)
+            ? importedArea
+            : current.builtArea,
+        daysPublished:
+          typeof data.daysPublished === "number" && Number.isFinite(data.daysPublished)
+            ? data.daysPublished
+            : current.daysPublished,
+      };
+
+      const built = Number(next.builtArea) || 0;
+      const price = Number(next.price) || 0;
+      next.pricePerM2 = built > 0 ? price / built : 0;
+
+      arr[index] = next;
+      copy.comparables = arr;
+      return copy;
+    });
+
+    const warnings = Array.isArray(data.warnings) ? data.warnings.filter(Boolean) : [];
+    const currencyWarning =
+      data.currency && data.currency !== currency
+        ? ` La publicación parece estar en ${data.currency}, pero el informe está en ${currency}. Revisá el precio.`
+        : "";
+
+    setComparableStatus(index, {
+      loading: false,
+      type: warnings.length ? "error" : "success",
+      text: warnings.length
+        ? `Datos importados parcialmente. Revisá/corregí antes de guardar.${currencyWarning}`
+        : `Datos importados. Revisá/corregí antes de guardar.${currencyWarning}`,
+    });
+  } catch (err: any) {
+    console.error("Importar comparable:", err);
+    setComparableStatus(index, {
+      loading: false,
+      type: "error",
+      text: err?.message || "No se pudo importar el comparable.",
+    });
+  }
+};
 
 const addComparable = () => {
   setFormData((prev) => {
@@ -2092,6 +2227,41 @@ return (
 
                   {/* Datos */}
                   <div className="lg:col-span-5 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                    {/* Link + autocompletar */}
+                    <div className="space-y-1 sm:col-span-2 md:col-span-3">
+                      <label className="block text-sm font-medium text-gray-700">Link de la publicación</label>
+                      <div className="flex flex-col sm:flex-row gap-2">
+                        <input
+                          value={c.listingUrl || ""}
+                          onChange={(e) => updateComparable(i, "listingUrl", e.target.value)}
+                          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
+                          placeholder="https://..."
+                        />
+                        <button
+                          type="button"
+                          onClick={() => importComparableFromUrl(i)}
+                          disabled={!!comparableImportStatus[i]?.loading || !String(c.listingUrl || "").trim()}
+                          className="inline-flex shrink-0 items-center justify-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {comparableImportStatus[i]?.loading ? "Importando..." : "Autocompletar datos"}
+                        </button>
+                      </div>
+                      {comparableImportStatus[i]?.text && (
+                        <p
+                          className={
+                            comparableImportStatus[i]?.type === "success"
+                              ? "text-xs text-green-600"
+                              : "text-xs text-amber-700"
+                          }
+                        >
+                          {comparableImportStatus[i]?.text}
+                        </p>
+                      )}
+                      <p className="text-xs text-gray-500">
+                        Completa datos públicos disponibles. Revisá y corregí manualmente antes de guardar.
+                      </p>
+                    </div>
+
                     {/* Dirección */}
                     <div className="space-y-1 sm:col-span-2">
                       <label className="block text-sm font-medium text-gray-700">Dirección</label>
@@ -2166,17 +2336,6 @@ return (
                         }}
                         className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
                         placeholder="Ej: 45"
-                      />
-                    </div>
-
-                    {/* Link */}
-                    <div className="space-y-1 sm:col-span-2">
-                      <label className="block text-sm font-medium text-gray-700">Link de la publicación</label>
-                      <input
-                        value={c.listingUrl || ""}
-                        onChange={(e) => updateComparable(i, "listingUrl", e.target.value)}
-                        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
-                        placeholder="https://..."
                       />
                     </div>
 

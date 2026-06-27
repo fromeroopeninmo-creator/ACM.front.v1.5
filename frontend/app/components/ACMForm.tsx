@@ -1147,7 +1147,7 @@ const handleDownloadPDF = async () => {
   const cols = 2;
   const gap = 12;
   const compCardW = (pageW - margin * 2 - gap) / cols;
-  const compCardH = 228;
+  const compCardH = 244;
   let cx = margin;
   let cy = y;
 
@@ -1219,6 +1219,9 @@ const handleDownloadPDF = async () => {
     doc.text(`m² Cubiertos: ${numero(builtAreaNum)}`, textX, textY);
     textY += 13;
     doc.text(`Precio/m²: ${money(ppm2Adj)}`, textX, textY);
+    textY += 13;
+
+    doc.text(`Días publicada: ${c.daysPublished || "-"}`, textX, textY);
     textY += 13;
 
     if (c.listingUrl) {
@@ -1381,13 +1384,18 @@ const handleDownloadPDF = async () => {
 
     // Referencias internas, cerca del eje X para que no tapen el marcador.
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(7.4);
+    doc.setFontSize(6.8);
     doc.setTextColor(22, 101, 52);
-    doc.text("Buena", mapX(10), y0 - 5, { align: "center" });
+    doc.text("Buena Inversión", mapX(10), y0 - 5, { align: "center" });
+
+    // En la franja amarilla lo partimos en dos líneas para que quede centrado
+    // y no se desborde hacia las franjas verde/roja.
     doc.setTextColor(146, 64, 14);
-    doc.text("Aceptable", mapX(17.5), y0 - 5, { align: "center" });
+    doc.text("Rentabilidad", mapX(17.5), y0 - 10, { align: "center" });
+    doc.text("Aceptable", mapX(17.5), y0 - 3, { align: "center" });
+
     doc.setTextColor(153, 27, 27);
-    doc.text("Riesgosa", mapX(25), y0 - 5, { align: "center" });
+    doc.text("Inversión Riesgosa", mapX(25), y0 - 5, { align: "center" });
 
     // Marcador del PER calculado
     if (canCalculatePER && perValue) {
@@ -1412,32 +1420,32 @@ const handleDownloadPDF = async () => {
     }
 
     // Leyenda con marco y fondo blanco para mejorar contraste.
-    const legX = graphX + graphW - 164;
+    const legX = graphX + graphW - 196;
     const legY = graphY + 32;
-    const legW = 138;
+    const legW = 172;
     const legH = 43;
     doc.setFillColor(255, 255, 255);
     doc.setDrawColor(148, 163, 184);
     doc.roundedRect(legX - 7, legY - 8, legW, legH, 3, 3, "FD");
 
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(7);
+    doc.setFontSize(6.7);
     doc.setTextColor(30, 41, 59);
 
     doc.setFillColor(187, 247, 208);
     doc.setDrawColor(34, 197, 94);
     doc.rect(legX, legY, 9, 7, "FD");
-    doc.text("Buena (PER < 15)", legX + 13, legY + 6);
+    doc.text("Buena inversión (PER < 15)", legX + 13, legY + 6);
 
     doc.setFillColor(253, 230, 138);
     doc.setDrawColor(245, 158, 11);
     doc.rect(legX, legY + 12, 9, 7, "FD");
-    doc.text("Aceptable (15 a 20)", legX + 13, legY + 18);
+    doc.text("Rentabilidad aceptable (15 a 20)", legX + 13, legY + 18);
 
     doc.setFillColor(252, 165, 165);
     doc.setDrawColor(185, 28, 28);
     doc.rect(legX, legY + 24, 9, 7, "FD");
-    doc.text("Riesgosa (PER > 20)", legX + 13, legY + 30);
+    doc.text("Inversión riesgosa (PER > 20)", legX + 13, legY + 30);
 
     doc.setTextColor(0, 0, 0);
     doc.setLineWidth(0.8);
@@ -1445,7 +1453,7 @@ const handleDownloadPDF = async () => {
 
   if ((formData as any).includePER && operationType === "venta") {
     const perText = canCalculatePER
-      ? `PER (Price Earnings Ratio): ${numero(perValue || 0, 1)} años - ${perInfo.label}.`
+      ? `PER (Price Earnings Ratio): ${numero(perValue || 0, 1)} años para recuperar la inversión - ${perInfo.label}.`
       : currency !== "USD"
       ? "PER (Price Earnings Ratio): para calcularlo, el valor sugerido de venta debe estar expresado en USD."
       : "PER (Price Earnings Ratio): no se pudo calcular por falta de alquiler estimativo mensual en USD.";

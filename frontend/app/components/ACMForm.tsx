@@ -2290,7 +2290,7 @@ return (
                   {canCalculatePER ? (
                     <>
                       <p className="text-lg font-bold text-gray-900">
-                        {numero(perValue || 0, 1)} años
+                        {numero(perValue || 0, 1)} años para recuperar la inversión
                       </p>
                       <p className={`text-sm font-semibold ${perInfo.className}`}>
                         {perInfo.label}
@@ -2310,10 +2310,10 @@ return (
                     Menor a 15 = Buena Oportunidad
                   </div>
                   <div className="rounded-md border border-yellow-200 bg-yellow-50 px-3 py-2 text-yellow-700">
-                    Entre 15 y 20 = Oportunidad Aceptable
+                    Entre 15 y 20 = Rentabilidad Aceptable
                   </div>
                   <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-red-700">
-                    Más de 20 = Oportunidad Riesgosa
+                    Más de 20 = Inversión Riesgosa
                   </div>
                 </div>
               </>

@@ -1212,41 +1212,46 @@ export default function EmpresaTrackerAnaliticoPage() {
     }
 
     return (
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-7">
-        <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
-          <p className="text-xs text-slate-500">Captaciones propias</p>
-          <p className="mt-1 text-2xl font-semibold text-slate-900">{totalCaptaciones}</p>
-          <p className="mt-1 text-[11px] text-slate-500">Propiedades captadas en el período.</p>
+      <section className="space-y-4">
+        <div className="grid gap-4 md:grid-cols-5">
+          <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
+            <p className="text-xs text-slate-500">Captaciones propias</p>
+            <p className="mt-1 text-2xl font-semibold text-slate-900">{totalCaptaciones}</p>
+            <p className="mt-1 text-[11px] text-slate-500">Propiedades captadas en el período.</p>
+          </div>
+          <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
+            <p className="text-xs text-slate-500">Cierres propios</p>
+            <p className="mt-1 text-2xl font-semibold text-slate-900">{ventasPropiasEnRango.length}</p>
+            <p className="mt-1 text-[11px] text-slate-500">Captaciones propias con fecha válida y precio de cierre.</p>
+          </div>
+          <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
+            <p className="text-xs text-slate-500">Ventas de terceros</p>
+            <p className="mt-1 text-2xl font-semibold text-slate-900">{totalTerceros}</p>
+            <p className="mt-1 text-[11px] text-slate-500">Suman a producción, no a captaciones.</p>
+          </div>
+          <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
+            <p className="text-xs text-slate-500">Ventas totales</p>
+            <p className="mt-1 text-2xl font-semibold text-slate-900">{totalOperaciones}</p>
+            <p className="mt-1 text-[11px] text-slate-500">Propias: {ventasPropiasEnRango.length} · Terceros: {ventasTercerosEnRango.length}</p>
+          </div>
+          <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
+            <p className="text-xs text-slate-500">Tasa de absorción</p>
+            <p className="mt-1 text-2xl font-semibold text-slate-900">{tasaAbsorcion != null ? `${tasaAbsorcion.toFixed(1)}%` : "—"}</p>
+            <p className="mt-1 text-[11px] text-slate-500">Cierres propios sobre captaciones propias.</p>
+          </div>
         </div>
-        <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
-          <p className="text-xs text-slate-500">Cierres propios</p>
-          <p className="mt-1 text-2xl font-semibold text-slate-900">{ventasPropiasEnRango.length}</p>
-          <p className="mt-1 text-[11px] text-slate-500">Captaciones propias con fecha válida y precio de cierre.</p>
-        </div>
-        <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
-          <p className="text-xs text-slate-500">Ventas de terceros</p>
-          <p className="mt-1 text-2xl font-semibold text-slate-900">{totalTerceros}</p>
-          <p className="mt-1 text-[11px] text-slate-500">Suman a producción, no a captaciones.</p>
-        </div>
-        <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
-          <p className="text-xs text-slate-500">Ventas totales</p>
-          <p className="mt-1 text-2xl font-semibold text-slate-900">{totalOperaciones}</p>
-          <p className="mt-1 text-[11px] text-slate-500">Propias: {ventasPropiasEnRango.length} · Terceros: {ventasTercerosEnRango.length}</p>
-        </div>
-        <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
-          <p className="text-xs text-slate-500">Monto total de cierres</p>
-          <p className="mt-1 text-xl font-semibold text-slate-900">{formatCurrencyTotals(ventasMontosTotales)}</p>
-          <p className="mt-1 text-[11px] text-slate-500">Suma de tickets propios + terceros.</p>
-        </div>
-        <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
-          <p className="text-xs text-slate-500">Honorarios totales</p>
-          <p className="mt-1 text-xl font-semibold text-slate-900">{formatCurrencyTotals(ventasHonorariosTotales)}</p>
-          <p className="mt-1 text-[11px] text-slate-500">Comprador + vendedor, propios + terceros.</p>
-        </div>
-        <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
-          <p className="text-xs text-slate-500">Tasa de absorción</p>
-          <p className="mt-1 text-2xl font-semibold text-slate-900">{tasaAbsorcion != null ? `${tasaAbsorcion.toFixed(1)}%` : "—"}</p>
-          <p className="mt-1 text-[11px] text-slate-500">Cierres propios sobre captaciones propias.</p>
+
+        <div className="grid gap-4 md:grid-cols-2 md:max-w-3xl md:mx-auto">
+          <div className="rounded-xl border border-gray-200 bg-white px-4 py-3 text-center md:text-left">
+            <p className="text-xs text-slate-500">Monto total de cierres</p>
+            <p className="mt-1 text-2xl font-semibold text-slate-900">{formatCurrencyTotals(ventasMontosTotales)}</p>
+            <p className="mt-1 text-[11px] text-slate-500">Suma de tickets propios + terceros.</p>
+          </div>
+          <div className="rounded-xl border border-gray-200 bg-white px-4 py-3 text-center md:text-left">
+            <p className="text-xs text-slate-500">Honorarios totales</p>
+            <p className="mt-1 text-2xl font-semibold text-slate-900">{formatCurrencyTotals(ventasHonorariosTotales)}</p>
+            <p className="mt-1 text-[11px] text-slate-500">Comprador + vendedor, propios + terceros.</p>
+          </div>
         </div>
       </section>
     );

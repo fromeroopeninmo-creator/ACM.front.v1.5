@@ -66,7 +66,6 @@ interface TrackerPropiedadTercero {
   tipologia: string | null;
   tipo_operacion: string | null;
   zona: string | null;
-  dormitorios: number | null;
   precio_cierre: number | null;
   moneda: string | null;
   fecha_cierre: string | null;
@@ -547,7 +546,6 @@ export default function EmpresaTrackerAnaliticoPage() {
               tipologia,
               tipo_operacion,
               zona,
-              dormitorios,
               precio_cierre,
               moneda,
               fecha_cierre,
@@ -1214,7 +1212,7 @@ export default function EmpresaTrackerAnaliticoPage() {
     }
 
     return (
-      <section className="grid gap-4 md:grid-cols-5">
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-7">
         <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
           <p className="text-xs text-slate-500">Captaciones propias</p>
           <p className="mt-1 text-2xl font-semibold text-slate-900">{totalCaptaciones}</p>
@@ -1234,7 +1232,16 @@ export default function EmpresaTrackerAnaliticoPage() {
           <p className="text-xs text-slate-500">Ventas totales</p>
           <p className="mt-1 text-2xl font-semibold text-slate-900">{totalOperaciones}</p>
           <p className="mt-1 text-[11px] text-slate-500">Propias: {ventasPropiasEnRango.length} · Terceros: {ventasTercerosEnRango.length}</p>
-          <p className="mt-1 text-[11px] font-medium text-slate-700">Honorarios TOTALES: {formatCurrencyTotals(ventasHonorariosTotales)}</p>
+        </div>
+        <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
+          <p className="text-xs text-slate-500">Monto total de cierres</p>
+          <p className="mt-1 text-xl font-semibold text-slate-900">{formatCurrencyTotals(ventasMontosTotales)}</p>
+          <p className="mt-1 text-[11px] text-slate-500">Suma de tickets propios + terceros.</p>
+        </div>
+        <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
+          <p className="text-xs text-slate-500">Honorarios totales</p>
+          <p className="mt-1 text-xl font-semibold text-slate-900">{formatCurrencyTotals(ventasHonorariosTotales)}</p>
+          <p className="mt-1 text-[11px] text-slate-500">Comprador + vendedor, propios + terceros.</p>
         </div>
         <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
           <p className="text-xs text-slate-500">Tasa de absorción</p>

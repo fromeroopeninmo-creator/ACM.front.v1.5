@@ -27,9 +27,9 @@ type TrackerActividadTipo =
   | "cierre";
 
 type TrackerTab = "contactos" | "propiedades" | "terceros";
-type KpiRange = "30d" | "90d" | "180d" | "365d";
+type KpiRange = "30d" | "90d" | "180d" | "365d" | "custom";
 type TrackerScope = "empresa" | "asesores" | "global";
-type TipoOperacionFiltro = "todas" | "venta" | "alquiler";
+type TipoOperacionFiltro = "venta" | "alquiler";
 
 interface TrackerContacto {
   id: string;
@@ -83,6 +83,25 @@ interface TrackerPropiedad {
   fecha_cierre: string | null;
   honorarios_pct_vendedor: number | null;
   honorarios_pct_comprador: number | null;
+  alquiler_valor_mensual_inicial: number | null;
+  alquiler_valor_mensual_actual: number | null;
+  alquiler_duracion_meses: number | null;
+  alquiler_fecha_inicio_contrato: string | null;
+  alquiler_fecha_fin_contrato: string | null;
+  alquiler_indice_actualizacion: string | null;
+  alquiler_frecuencia_actualizacion_meses: number | null;
+  alquiler_pct_actualizacion_estimado: number | null;
+  alquiler_comision_base: string | null;
+  alquiler_comision_pct: number | null;
+  alquiler_comision_monto: number | null;
+  alquiler_valor_total_contrato_base: number | null;
+  alquiler_valor_total_contrato_proyectado: number | null;
+  alquiler_valor_base_manual: number | null;
+  alquiler_administra: boolean | null;
+  alquiler_admin_pct: number | null;
+  alquiler_admin_monto_mensual: number | null;
+  alquiler_renovacion_fecha: string | null;
+  alquiler_observaciones: string | null;
   asesor_id: string | null;
   created_at: string;
   updated_at: string;
@@ -106,6 +125,25 @@ interface TrackerPropiedadTercero {
   fecha_cierre: string | null;
   honorarios_pct_comprador: number | null;
   honorarios_pct_vendedor: number | null;
+  alquiler_valor_mensual_inicial: number | null;
+  alquiler_valor_mensual_actual: number | null;
+  alquiler_duracion_meses: number | null;
+  alquiler_fecha_inicio_contrato: string | null;
+  alquiler_fecha_fin_contrato: string | null;
+  alquiler_indice_actualizacion: string | null;
+  alquiler_frecuencia_actualizacion_meses: number | null;
+  alquiler_pct_actualizacion_estimado: number | null;
+  alquiler_comision_base: string | null;
+  alquiler_comision_pct: number | null;
+  alquiler_comision_monto: number | null;
+  alquiler_valor_total_contrato_base: number | null;
+  alquiler_valor_total_contrato_proyectado: number | null;
+  alquiler_valor_base_manual: number | null;
+  alquiler_administra: boolean | null;
+  alquiler_admin_pct: number | null;
+  alquiler_admin_monto_mensual: number | null;
+  alquiler_renovacion_fecha: string | null;
+  alquiler_observaciones: string | null;
   empresa_share_pct: number | null;
   porcentaje_asesor: number | null;
   notas: string | null;
@@ -154,6 +192,25 @@ interface FormPropiedadState {
   honorarios_pct_vendedor: string;
   cobra_honorarios_comprador: boolean;
   honorarios_pct_comprador: string;
+  alquiler_valor_mensual_inicial: string;
+  alquiler_valor_mensual_actual: string;
+  alquiler_duracion_meses: string;
+  alquiler_fecha_inicio_contrato: string;
+  alquiler_fecha_fin_contrato: string;
+  alquiler_indice_actualizacion: string;
+  alquiler_frecuencia_actualizacion_meses: string;
+  alquiler_pct_actualizacion_estimado: string;
+  alquiler_comision_base: "base_sin_actualizacion" | "proyectado_con_actualizaciones" | "manual";
+  alquiler_comision_pct: string;
+  alquiler_comision_monto: string;
+  alquiler_valor_total_contrato_base: string;
+  alquiler_valor_total_contrato_proyectado: string;
+  alquiler_valor_base_manual: string;
+  alquiler_administra: boolean;
+  alquiler_admin_pct: string;
+  alquiler_admin_monto_mensual: string;
+  alquiler_renovacion_fecha: string;
+  alquiler_observaciones: string;
 }
 
 interface FormTerceroState {
@@ -198,6 +255,29 @@ const ESTADOS_CONTACTO: { value: TrackerContactoEstado; label: string }[] = [
   { value: "captado", label: "Captación" },
   { value: "cierre", label: "Cierre" },
   { value: "descarte", label: "Descartado" },
+];
+
+const ALQUILER_COMISION_BASE_OPTIONS = [
+  {
+    value: "base_sin_actualizacion",
+    label: "Alquiler base sin actualización",
+  },
+  {
+    value: "proyectado_con_actualizaciones",
+    label: "Alquiler proyectado con actualizaciones",
+  },
+  {
+    value: "manual",
+    label: "Monto manual",
+  },
+] as const;
+
+const INDICES_ACTUALIZACION = [
+  { value: "sin_actualizacion", label: "Sin actualización" },
+  { value: "ipc", label: "IPC" },
+  { value: "icl", label: "ICL" },
+  { value: "fijo", label: "Porcentaje fijo" },
+  { value: "otro", label: "Otro" },
 ];
 
 function toDateKey(d: Date): string {
@@ -285,6 +365,70 @@ function labelTipologia(value: string | null | undefined) {
   return found?.label ?? value ?? "—";
 }
 
+function clampDateKey(value: string | null | undefined) {
+  return isValidDateKey(value) ? dateKeyFromString(value) : "";
+}
+
+function isInRangeByKey(key: string, startKey: string, endKey: string) {
+  if (!key) return false;
+  return key >= startKey && key <= endKey;
+}
+
+function calcularValorTotalContratoBase(valorMensual: number | null, duracion: number | null) {
+  if (valorMensual == null || valorMensual <= 0 || duracion == null || duracion <= 0) {
+    return null;
+  }
+  return valorMensual * duracion;
+}
+
+function calcularValorTotalContratoProyectado(
+  valorMensual: number | null,
+  duracion: number | null,
+  frecuencia: number | null,
+  pctActualizacion: number | null
+) {
+  if (valorMensual == null || valorMensual <= 0 || duracion == null || duracion <= 0) {
+    return null;
+  }
+
+  if (frecuencia == null || frecuencia <= 0 || pctActualizacion == null || pctActualizacion <= 0) {
+    return valorMensual * duracion;
+  }
+
+  let total = 0;
+  let valorPeriodo = valorMensual;
+
+  for (let mes = 1; mes <= duracion; mes += 1) {
+    if (mes > 1 && (mes - 1) % frecuencia === 0) {
+      valorPeriodo = valorPeriodo * (1 + pctActualizacion / 100);
+    }
+    total += valorPeriodo;
+  }
+
+  return Math.round(total);
+}
+
+function calcularBaseComisionAlquiler(
+  base: string | null,
+  totalBase: number | null,
+  totalProyectado: number | null,
+  manual: number | null
+) {
+  if (base === "manual") return manual;
+  if (base === "proyectado_con_actualizaciones") return totalProyectado ?? totalBase;
+  return totalBase;
+}
+
+function isValidAlquilerContratado(record: Pick<TrackerPropiedad, "alquiler_fecha_inicio_contrato" | "alquiler_valor_mensual_inicial" | "alquiler_duracion_meses">) {
+  return (
+    isValidDateKey(record.alquiler_fecha_inicio_contrato) &&
+    record.alquiler_valor_mensual_inicial != null &&
+    record.alquiler_valor_mensual_inicial > 0 &&
+    record.alquiler_duracion_meses != null &&
+    record.alquiler_duracion_meses > 0
+  );
+}
+
 export default function EmpresaTrackerPage() {
   const { user } = useAuth();
 
@@ -301,10 +445,12 @@ export default function EmpresaTrackerPage() {
 
   const [activeTab, setActiveTab] = useState<TrackerTab>("contactos");
   const [kpiRange, setKpiRange] = useState<KpiRange>("30d");
+  const [customFechaDesde, setCustomFechaDesde] = useState<string>("");
+  const [customFechaHasta, setCustomFechaHasta] = useState<string>("");
   const [scope, setScope] = useState<TrackerScope>("empresa");
   const [selectedAsesorId, setSelectedAsesorId] = useState<string>("");
   const [tipoOperacionFiltro, setTipoOperacionFiltro] =
-    useState<TipoOperacionFiltro>("todas");
+    useState<TipoOperacionFiltro>("venta");
   const [tipologiaFiltro, setTipologiaFiltro] = useState<string>("");
   const [estadoFiltro, setEstadoFiltro] = useState<string>("");
 
@@ -366,6 +512,25 @@ export default function EmpresaTrackerPage() {
     honorarios_pct_vendedor: "3",
     cobra_honorarios_comprador: false,
     honorarios_pct_comprador: "0",
+    alquiler_valor_mensual_inicial: "",
+    alquiler_valor_mensual_actual: "",
+    alquiler_duracion_meses: "24",
+    alquiler_fecha_inicio_contrato: "",
+    alquiler_fecha_fin_contrato: "",
+    alquiler_indice_actualizacion: "ipc",
+    alquiler_frecuencia_actualizacion_meses: "3",
+    alquiler_pct_actualizacion_estimado: "",
+    alquiler_comision_base: "base_sin_actualizacion",
+    alquiler_comision_pct: "5",
+    alquiler_comision_monto: "",
+    alquiler_valor_total_contrato_base: "",
+    alquiler_valor_total_contrato_proyectado: "",
+    alquiler_valor_base_manual: "",
+    alquiler_administra: false,
+    alquiler_admin_pct: "",
+    alquiler_admin_monto_mensual: "",
+    alquiler_renovacion_fecha: "",
+    alquiler_observaciones: "",
   });
 
   const [formTercero, setFormTercero] = useState<FormTerceroState>({
@@ -445,6 +610,25 @@ export default function EmpresaTrackerPage() {
         fecha_cierre: row.fecha_cierre,
         honorarios_pct_vendedor: row.honorarios_pct_vendedor,
         honorarios_pct_comprador: row.honorarios_pct_comprador,
+        alquiler_valor_mensual_inicial: row.alquiler_valor_mensual_inicial,
+        alquiler_valor_mensual_actual: row.alquiler_valor_mensual_actual,
+        alquiler_duracion_meses: row.alquiler_duracion_meses,
+        alquiler_fecha_inicio_contrato: row.alquiler_fecha_inicio_contrato,
+        alquiler_fecha_fin_contrato: row.alquiler_fecha_fin_contrato,
+        alquiler_indice_actualizacion: row.alquiler_indice_actualizacion,
+        alquiler_frecuencia_actualizacion_meses: row.alquiler_frecuencia_actualizacion_meses,
+        alquiler_pct_actualizacion_estimado: row.alquiler_pct_actualizacion_estimado,
+        alquiler_comision_base: row.alquiler_comision_base,
+        alquiler_comision_pct: row.alquiler_comision_pct,
+        alquiler_comision_monto: row.alquiler_comision_monto,
+        alquiler_valor_total_contrato_base: row.alquiler_valor_total_contrato_base,
+        alquiler_valor_total_contrato_proyectado: row.alquiler_valor_total_contrato_proyectado,
+        alquiler_valor_base_manual: row.alquiler_valor_base_manual,
+        alquiler_administra: row.alquiler_administra,
+        alquiler_admin_pct: row.alquiler_admin_pct,
+        alquiler_admin_monto_mensual: row.alquiler_admin_monto_mensual,
+        alquiler_renovacion_fecha: row.alquiler_renovacion_fecha,
+        alquiler_observaciones: row.alquiler_observaciones,
         asesor_id: row.asesor_id,
         created_at: row.created_at,
         updated_at: row.updated_at,
@@ -502,6 +686,25 @@ export default function EmpresaTrackerPage() {
               fecha_cierre,
               honorarios_pct_vendedor,
               honorarios_pct_comprador,
+              alquiler_valor_mensual_inicial,
+              alquiler_valor_mensual_actual,
+              alquiler_duracion_meses,
+              alquiler_fecha_inicio_contrato,
+              alquiler_fecha_fin_contrato,
+              alquiler_indice_actualizacion,
+              alquiler_frecuencia_actualizacion_meses,
+              alquiler_pct_actualizacion_estimado,
+              alquiler_comision_base,
+              alquiler_comision_pct,
+              alquiler_comision_monto,
+              alquiler_valor_total_contrato_base,
+              alquiler_valor_total_contrato_proyectado,
+              alquiler_valor_base_manual,
+              alquiler_administra,
+              alquiler_admin_pct,
+              alquiler_admin_monto_mensual,
+              alquiler_renovacion_fecha,
+              alquiler_observaciones,
               asesor_id,
               created_at,
               updated_at,
@@ -602,7 +805,6 @@ export default function EmpresaTrackerPage() {
   };
 
   const recordMatchesOperacion = (tipo: string | null | undefined) => {
-    if (tipoOperacionFiltro === "todas") return true;
     return tipo === tipoOperacionFiltro;
   };
 
@@ -653,59 +855,91 @@ export default function EmpresaTrackerPage() {
     tipologiaFiltro,
   ]);
 
-  const startKpiDate = useMemo(() => kpiStartDate(kpiRange), [kpiRange]);
+  const periodoSeleccionado = useMemo(() => {
+    const today = new Date();
+    const defaultStart = kpiStartDate(kpiRange === "custom" ? "30d" : kpiRange);
+    const startKey =
+      kpiRange === "custom" && customFechaDesde
+        ? customFechaDesde
+        : toDateKey(defaultStart);
+    const endKey =
+      kpiRange === "custom" && customFechaHasta
+        ? customFechaHasta
+        : toDateKey(today);
+
+    return {
+      startKey: startKey <= endKey ? startKey : endKey,
+      endKey: endKey >= startKey ? endKey : startKey,
+    };
+  }, [kpiRange, customFechaDesde, customFechaHasta]);
 
   const kpis = useMemo(() => {
-    const startKey = toDateKey(startKpiDate);
+    const { startKey, endKey } = periodoSeleccionado;
+    const isVenta = tipoOperacionFiltro === "venta";
 
     const contactosInRange = contactos
       .filter((c) => recordMatchesScope(c.asesor_id))
       .filter((c) => recordMatchesOperacion(c.tipo_operacion))
-      .filter((c) => dateKeyFromString(c.created_at) >= startKey);
+      .filter((c) => isInRangeByKey(dateKeyFromString(c.created_at), startKey, endKey));
 
     const actividadesInRange = actividades
       .filter((a) => recordMatchesScope(a.asesor_id))
-      .filter((a) => dateKeyFromString(a.fecha_programada) >= startKey);
+      .filter((a) => isInRangeByKey(dateKeyFromString(a.fecha_programada), startKey, endKey));
 
-    const propiedadesInRange = propiedades
+    const propiedadesBase = propiedades
       .filter((p) => recordMatchesScope(p.asesor_id))
-      .filter((p) => recordMatchesOperacion(p.tipo_operacion))
-      .filter((p) => {
-        const fechaCaptacion =
-          dateKeyFromString(p.fecha_inicio_comercializacion) ||
-          dateKeyFromString(p.created_at);
-        return fechaCaptacion >= startKey;
-      });
+      .filter((p) => recordMatchesOperacion(p.tipo_operacion));
 
-    const cierresPropiosInRange = propiedades
-      .filter((p) => recordMatchesScope(p.asesor_id))
-      .filter((p) => recordMatchesOperacion(p.tipo_operacion))
+    const propiedadesInRange = propiedadesBase.filter((p) => {
+      const fechaCaptacion =
+        dateKeyFromString(p.fecha_inicio_comercializacion) ||
+        dateKeyFromString(p.created_at);
+      return isInRangeByKey(fechaCaptacion, startKey, endKey);
+    });
+
+    const cierresPropiosInRange = propiedadesBase
       .filter((p) => isValidClose(p))
-      .filter((p) => dateKeyFromString(p.fecha_cierre) >= startKey);
+      .filter((p) => isInRangeByKey(dateKeyFromString(p.fecha_cierre), startKey, endKey));
+
+    const alquileresContratadosInRange = propiedadesBase
+      .filter((p) => isValidAlquilerContratado(p))
+      .filter((p) =>
+        isInRangeByKey(
+          dateKeyFromString(p.alquiler_fecha_inicio_contrato),
+          startKey,
+          endKey
+        )
+      );
+
+    const alquileresAdministrados = alquileresContratadosInRange.filter(
+      (p) => p.alquiler_administra === true
+    );
 
     const tercerosInRange = propiedadesTerceros
       .filter((p) => recordMatchesScope(p.asesor_id))
-      .filter((p) => recordMatchesOperacion(p.tipo_operacion))
+      .filter((p) => p.tipo_operacion === "venta")
       .filter((p) => isValidTerceroClose(p))
-      .filter((p) => dateKeyFromString(p.fecha_cierre) >= startKey);
+      .filter((p) => isInRangeByKey(dateKeyFromString(p.fecha_cierre), startKey, endKey));
 
     const prelistingIds = new Set<string>();
 
-    contactosInRange.forEach((c) => {
-      if (
-        ["prelisting", "vai_factibilidad", "captado", "cierre"].includes(
-          c.estado
-        )
-      ) {
-        prelistingIds.add(c.id);
-      }
-    });
+    if (isVenta) {
+      contactosInRange.forEach((c) => {
+        if (
+          ["prelisting", "vai_factibilidad", "captado", "cierre"].includes(
+            c.estado
+          )
+        ) {
+          prelistingIds.add(c.id);
+        }
+      });
 
-    actividadesInRange.forEach((a) => {
-      if (a.tipo === "prelisting" && a.contacto_id) {
-        prelistingIds.add(a.contacto_id);
-      }
-    });
+      actividadesInRange.forEach((a) => {
+        if (a.tipo === "prelisting" && a.contacto_id) {
+          prelistingIds.add(a.contacto_id);
+        }
+      });
+    }
 
     const honorariosPropios = cierresPropiosInRange.reduce((acc, p) => {
       const precio = p.precio_cierre ?? 0;
@@ -721,6 +955,14 @@ export default function EmpresaTrackerPage() {
       return acc + (precio * (vendedor + comprador)) / 100;
     }, 0);
 
+    const honorariosAlquileres = alquileresContratadosInRange.reduce((acc, p) => {
+      return acc + (p.alquiler_comision_monto ?? 0);
+    }, 0);
+
+    const administracionMensual = alquileresAdministrados.reduce((acc, p) => {
+      return acc + (p.alquiler_admin_monto_mensual ?? 0);
+    }, 0);
+
     return {
       prospectos: contactosInRange.length,
       prelisting: prelistingIds.size,
@@ -728,18 +970,30 @@ export default function EmpresaTrackerPage() {
       cierresPropios: cierresPropiosInRange.length,
       ventasTerceros: tercerosInRange.length,
       ventasTotales: cierresPropiosInRange.length + tercerosInRange.length,
-      honorariosTotal: honorariosPropios + honorariosTerceros,
+      honorariosTotal: isVenta
+        ? honorariosPropios + honorariosTerceros
+        : honorariosAlquileres,
+      propiedadesEnAlquiler: propiedadesInRange.length,
+      propiedadesAlquiladas: alquileresContratadosInRange.length,
+      administracionesAlquiler: alquileresAdministrados.length,
+      administracionMensual,
     };
   }, [
     contactos,
     actividades,
     propiedades,
     propiedadesTerceros,
-    startKpiDate,
+    periodoSeleccionado,
     scope,
     selectedAsesorId,
     tipoOperacionFiltro,
   ]);
+
+  useEffect(() => {
+    if (tipoOperacionFiltro === "alquiler" && activeTab === "terceros") {
+      setActiveTab("propiedades");
+    }
+  }, [tipoOperacionFiltro, activeTab]);
 
   const openNuevoContacto = () => {
     setEditingContacto(null);
@@ -750,8 +1004,7 @@ export default function EmpresaTrackerPage() {
       telefono: "",
       email: "",
       tipologia: "",
-      tipo_operacion:
-        tipoOperacionFiltro === "todas" ? "venta" : tipoOperacionFiltro,
+      tipo_operacion: tipoOperacionFiltro,
       origen: "",
       zona: "",
       estado: "sin_contactar",
@@ -880,8 +1133,7 @@ export default function EmpresaTrackerPage() {
   const openNuevaPropiedad = (contactoId?: string) => {
     const contacto = contactoId ? contactoPorId(contactoId) : null;
     const tipoOperacion =
-      contacto?.tipo_operacion ??
-      (tipoOperacionFiltro === "todas" ? "venta" : tipoOperacionFiltro);
+      contacto?.tipo_operacion ?? tipoOperacionFiltro;
     const moneda = tipoOperacion === "alquiler" ? "ARS" : "USD";
 
     setEditingPropiedad(null);
@@ -905,6 +1157,25 @@ export default function EmpresaTrackerPage() {
       honorarios_pct_vendedor: tipoOperacion === "alquiler" ? "0" : "3",
       cobra_honorarios_comprador: false,
       honorarios_pct_comprador: "0",
+      alquiler_valor_mensual_inicial: "",
+      alquiler_valor_mensual_actual: "",
+      alquiler_duracion_meses: "24",
+      alquiler_fecha_inicio_contrato: "",
+      alquiler_fecha_fin_contrato: "",
+      alquiler_indice_actualizacion: "ipc",
+      alquiler_frecuencia_actualizacion_meses: "3",
+      alquiler_pct_actualizacion_estimado: "",
+      alquiler_comision_base: "base_sin_actualizacion",
+      alquiler_comision_pct: "5",
+      alquiler_comision_monto: "",
+      alquiler_valor_total_contrato_base: "",
+      alquiler_valor_total_contrato_proyectado: "",
+      alquiler_valor_base_manual: "",
+      alquiler_administra: false,
+      alquiler_admin_pct: "",
+      alquiler_admin_monto_mensual: "",
+      alquiler_renovacion_fecha: "",
+      alquiler_observaciones: "",
     });
     setShowPropiedadModal(true);
   };
@@ -937,6 +1208,55 @@ export default function EmpresaTrackerPage() {
       honorarios_pct_vendedor: String(pctVendedor),
       cobra_honorarios_comprador: pctComprador > 0,
       honorarios_pct_comprador: String(pctComprador),
+      alquiler_valor_mensual_inicial:
+        p.alquiler_valor_mensual_inicial != null
+          ? String(p.alquiler_valor_mensual_inicial)
+          : "",
+      alquiler_valor_mensual_actual:
+        p.alquiler_valor_mensual_actual != null
+          ? String(p.alquiler_valor_mensual_actual)
+          : "",
+      alquiler_duracion_meses:
+        p.alquiler_duracion_meses != null ? String(p.alquiler_duracion_meses) : "24",
+      alquiler_fecha_inicio_contrato:
+        dateKeyFromString(p.alquiler_fecha_inicio_contrato) || "",
+      alquiler_fecha_fin_contrato:
+        dateKeyFromString(p.alquiler_fecha_fin_contrato) || "",
+      alquiler_indice_actualizacion: p.alquiler_indice_actualizacion ?? "ipc",
+      alquiler_frecuencia_actualizacion_meses:
+        p.alquiler_frecuencia_actualizacion_meses != null
+          ? String(p.alquiler_frecuencia_actualizacion_meses)
+          : "3",
+      alquiler_pct_actualizacion_estimado:
+        p.alquiler_pct_actualizacion_estimado != null
+          ? String(p.alquiler_pct_actualizacion_estimado)
+          : "",
+      alquiler_comision_base:
+        (p.alquiler_comision_base as FormPropiedadState["alquiler_comision_base"]) ??
+        "base_sin_actualizacion",
+      alquiler_comision_pct:
+        p.alquiler_comision_pct != null ? String(p.alquiler_comision_pct) : "5",
+      alquiler_comision_monto:
+        p.alquiler_comision_monto != null ? String(p.alquiler_comision_monto) : "",
+      alquiler_valor_total_contrato_base:
+        p.alquiler_valor_total_contrato_base != null
+          ? String(p.alquiler_valor_total_contrato_base)
+          : "",
+      alquiler_valor_total_contrato_proyectado:
+        p.alquiler_valor_total_contrato_proyectado != null
+          ? String(p.alquiler_valor_total_contrato_proyectado)
+          : "",
+      alquiler_valor_base_manual:
+        p.alquiler_valor_base_manual != null ? String(p.alquiler_valor_base_manual) : "",
+      alquiler_administra: p.alquiler_administra === true,
+      alquiler_admin_pct:
+        p.alquiler_admin_pct != null ? String(p.alquiler_admin_pct) : "",
+      alquiler_admin_monto_mensual:
+        p.alquiler_admin_monto_mensual != null
+          ? String(p.alquiler_admin_monto_mensual)
+          : "",
+      alquiler_renovacion_fecha: dateKeyFromString(p.alquiler_renovacion_fecha) || "",
+      alquiler_observaciones: p.alquiler_observaciones ?? "",
     });
     setShowPropiedadModal(true);
   };
@@ -975,6 +1295,82 @@ export default function EmpresaTrackerPage() {
     formPropiedad.honorarios_pct_comprador,
     formPropiedad.cobra_honorarios_vendedor,
     formPropiedad.cobra_honorarios_comprador,
+  ]);
+
+  const alquilerEstimado = useMemo(() => {
+    const valorMensualInicial = parseNumberOrNull(
+      formPropiedad.alquiler_valor_mensual_inicial
+    );
+    const valorMensualActual =
+      parseNumberOrNull(formPropiedad.alquiler_valor_mensual_actual) ??
+      valorMensualInicial;
+    const duracionMeses = parseNumberOrNull(formPropiedad.alquiler_duracion_meses);
+    const frecuenciaMeses = parseNumberOrNull(
+      formPropiedad.alquiler_frecuencia_actualizacion_meses
+    );
+    const pctActualizacion = parseNumberOrNull(
+      formPropiedad.alquiler_pct_actualizacion_estimado
+    );
+    const pctComision = parseNumberOrNull(formPropiedad.alquiler_comision_pct) ?? 0;
+    const valorBaseManual = parseNumberOrNull(formPropiedad.alquiler_valor_base_manual);
+    const adminPct = formPropiedad.alquiler_administra
+      ? parseNumberOrNull(formPropiedad.alquiler_admin_pct) ?? 0
+      : 0;
+
+    const totalBase = calcularValorTotalContratoBase(
+      valorMensualInicial,
+      duracionMeses
+    );
+    const totalProyectado = calcularValorTotalContratoProyectado(
+      valorMensualInicial,
+      duracionMeses,
+      frecuenciaMeses,
+      pctActualizacion
+    );
+    const baseComision = calcularBaseComisionAlquiler(
+      formPropiedad.alquiler_comision_base,
+      totalBase,
+      totalProyectado,
+      valorBaseManual
+    );
+    const comision =
+      baseComision != null && baseComision > 0 && pctComision > 0
+        ? (baseComision * pctComision) / 100
+        : null;
+    const adminMensual =
+      formPropiedad.alquiler_administra &&
+      valorMensualActual != null &&
+      valorMensualActual > 0 &&
+      adminPct > 0
+        ? (valorMensualActual * adminPct) / 100
+        : null;
+
+    return {
+      valorMensualInicial,
+      valorMensualActual,
+      duracionMeses,
+      frecuenciaMeses,
+      pctActualizacion,
+      pctComision,
+      valorBaseManual,
+      totalBase,
+      totalProyectado,
+      baseComision,
+      comision,
+      adminPct,
+      adminMensual,
+    };
+  }, [
+    formPropiedad.alquiler_valor_mensual_inicial,
+    formPropiedad.alquiler_valor_mensual_actual,
+    formPropiedad.alquiler_duracion_meses,
+    formPropiedad.alquiler_frecuencia_actualizacion_meses,
+    formPropiedad.alquiler_pct_actualizacion_estimado,
+    formPropiedad.alquiler_comision_base,
+    formPropiedad.alquiler_comision_pct,
+    formPropiedad.alquiler_valor_base_manual,
+    formPropiedad.alquiler_administra,
+    formPropiedad.alquiler_admin_pct,
   ]);
 
   const honorariosTerceroEstimados = useMemo(() => {
@@ -1070,6 +1466,7 @@ export default function EmpresaTrackerPage() {
   const guardarPropiedad = async () => {
     if (!empresaId || savingPropiedad) return;
 
+    const esAlquiler = formPropiedad.tipo_operacion === "alquiler";
     const precioLista = parseNumberOrNull(formPropiedad.precio_lista_inicial);
     const precioCierre = parseNumberOrNull(formPropiedad.precio_cierre);
     const vendedorPct = normalizePercentInput(
@@ -1081,6 +1478,31 @@ export default function EmpresaTrackerPage() {
       formPropiedad.cobra_honorarios_comprador
     );
 
+    const alquilerValorMensualInicial = parseNumberOrNull(
+      formPropiedad.alquiler_valor_mensual_inicial
+    );
+    const alquilerValorMensualActual =
+      parseNumberOrNull(formPropiedad.alquiler_valor_mensual_actual) ??
+      alquilerValorMensualInicial;
+    const alquilerDuracionMeses = parseNumberOrNull(
+      formPropiedad.alquiler_duracion_meses
+    );
+    const alquilerFrecuenciaMeses = parseNumberOrNull(
+      formPropiedad.alquiler_frecuencia_actualizacion_meses
+    );
+    const alquilerPctActualizacion = parseNumberOrNull(
+      formPropiedad.alquiler_pct_actualizacion_estimado
+    );
+    const alquilerComisionPct = parseNumberOrNull(
+      formPropiedad.alquiler_comision_pct
+    );
+    const alquilerValorBaseManual = parseNumberOrNull(
+      formPropiedad.alquiler_valor_base_manual
+    );
+    const alquilerAdminPct = formPropiedad.alquiler_administra
+      ? parseNumberOrNull(formPropiedad.alquiler_admin_pct)
+      : null;
+
     if (!formPropiedad.tipologia) {
       showMessage("⚠️ Seleccioná una tipología.");
       return;
@@ -1091,32 +1513,95 @@ export default function EmpresaTrackerPage() {
       return;
     }
 
-    if (precioLista == null || precioLista <= 0) {
-      showMessage("⚠️ Cargá un precio inicial válido.");
-      return;
-    }
-
     if (!formPropiedad.fecha_inicio_comercializacion) {
       showMessage("⚠️ Cargá la fecha de inicio de comercialización.");
       return;
     }
 
-    if (precioCierre != null && precioCierre > 0 && !formPropiedad.fecha_cierre) {
-      showMessage("⚠️ Si cargás precio de cierre, también debés cargar fecha de cierre.");
-      return;
-    }
+    if (esAlquiler) {
+      if (alquilerValorMensualInicial == null || alquilerValorMensualInicial <= 0) {
+        showMessage("⚠️ Cargá un valor mensual inicial válido para el alquiler.");
+        return;
+      }
 
-    if (formPropiedad.fecha_cierre && (precioCierre == null || precioCierre <= 0)) {
-      showMessage("⚠️ Si cargás fecha de cierre, también debés cargar precio de cierre.");
-      return;
-    }
+      if (alquilerDuracionMeses == null || alquilerDuracionMeses <= 0) {
+        showMessage("⚠️ Cargá la duración del contrato en meses.");
+        return;
+      }
 
-    if (!validateHonorarios(vendedorPct, compradorPct)) return;
+      if (formPropiedad.alquiler_fecha_inicio_contrato && !formPropiedad.alquiler_fecha_fin_contrato) {
+        showMessage("⚠️ Si cargás inicio de contrato, también cargá fecha de finalización.");
+        return;
+      }
+
+      if ((alquilerComisionPct ?? 0) < 0 || (alquilerComisionPct ?? 0) > 100) {
+        showMessage("⚠️ La comisión del alquiler debe estar entre 0% y 100%.");
+        return;
+      }
+
+      if (formPropiedad.alquiler_comision_base === "manual" && (!alquilerValorBaseManual || alquilerValorBaseManual <= 0)) {
+        showMessage("⚠️ Cargá el monto manual para calcular la comisión.");
+        return;
+      }
+
+      if (formPropiedad.alquiler_administra && ((alquilerAdminPct ?? 0) <= 0 || (alquilerAdminPct ?? 0) > 100)) {
+        showMessage("⚠️ Cargá un porcentaje de administración válido.");
+        return;
+      }
+    } else {
+      if (precioLista == null || precioLista <= 0) {
+        showMessage("⚠️ Cargá un precio inicial válido.");
+        return;
+      }
+
+      if (precioCierre != null && precioCierre > 0 && !formPropiedad.fecha_cierre) {
+        showMessage("⚠️ Si cargás precio de cierre, también debés cargar fecha de cierre.");
+        return;
+      }
+
+      if (formPropiedad.fecha_cierre && (precioCierre == null || precioCierre <= 0)) {
+        showMessage("⚠️ Si cargás fecha de cierre, también debés cargar precio de cierre.");
+        return;
+      }
+
+      if (!validateHonorarios(vendedorPct, compradorPct)) return;
+    }
 
     setSavingPropiedad(true);
 
     try {
       const contactoId = await ensureContactoForPropiedad();
+      const alquilerTotalBase = calcularValorTotalContratoBase(
+        alquilerValorMensualInicial,
+        alquilerDuracionMeses
+      );
+      const alquilerTotalProyectado = calcularValorTotalContratoProyectado(
+        alquilerValorMensualInicial,
+        alquilerDuracionMeses,
+        alquilerFrecuenciaMeses,
+        alquilerPctActualizacion
+      );
+      const alquilerBaseComision = calcularBaseComisionAlquiler(
+        formPropiedad.alquiler_comision_base,
+        alquilerTotalBase,
+        alquilerTotalProyectado,
+        alquilerValorBaseManual
+      );
+      const alquilerComisionMonto =
+        alquilerBaseComision != null &&
+        alquilerBaseComision > 0 &&
+        alquilerComisionPct != null &&
+        alquilerComisionPct > 0
+          ? (alquilerBaseComision * alquilerComisionPct) / 100
+          : null;
+      const alquilerAdminMontoMensual =
+        formPropiedad.alquiler_administra &&
+        alquilerValorMensualActual != null &&
+        alquilerValorMensualActual > 0 &&
+        alquilerAdminPct != null &&
+        alquilerAdminPct > 0
+          ? (alquilerValorMensualActual * alquilerAdminPct) / 100
+          : null;
 
       const payload = {
         empresa_id: empresaId,
@@ -1129,16 +1614,62 @@ export default function EmpresaTrackerPage() {
         zona: formPropiedad.zona.trim() || null,
         m2_lote: parseNumberOrNull(formPropiedad.m2_lote),
         m2_cubiertos: parseNumberOrNull(formPropiedad.m2_cubiertos),
-        precio_lista_inicial: precioLista,
-        precio_actual:
-          parseNumberOrNull(formPropiedad.precio_actual) ?? precioLista,
-        precio_cierre: precioCierre,
-        moneda: formPropiedad.moneda || "USD",
+        precio_lista_inicial: esAlquiler
+          ? alquilerValorMensualInicial
+          : precioLista,
+        precio_actual: esAlquiler
+          ? alquilerValorMensualActual ?? alquilerValorMensualInicial
+          : parseNumberOrNull(formPropiedad.precio_actual) ?? precioLista,
+        precio_cierre: esAlquiler ? null : precioCierre,
+        moneda: formPropiedad.moneda || (esAlquiler ? "ARS" : "USD"),
         fecha_inicio_comercializacion:
           formPropiedad.fecha_inicio_comercializacion,
-        fecha_cierre: formPropiedad.fecha_cierre || null,
-        honorarios_pct_vendedor: vendedorPct,
-        honorarios_pct_comprador: compradorPct,
+        fecha_cierre: esAlquiler ? null : formPropiedad.fecha_cierre || null,
+        honorarios_pct_vendedor: esAlquiler ? 0 : vendedorPct,
+        honorarios_pct_comprador: esAlquiler ? 0 : compradorPct,
+        alquiler_valor_mensual_inicial: esAlquiler
+          ? alquilerValorMensualInicial
+          : null,
+        alquiler_valor_mensual_actual: esAlquiler
+          ? alquilerValorMensualActual
+          : null,
+        alquiler_duracion_meses: esAlquiler ? alquilerDuracionMeses : null,
+        alquiler_fecha_inicio_contrato: esAlquiler
+          ? formPropiedad.alquiler_fecha_inicio_contrato || null
+          : null,
+        alquiler_fecha_fin_contrato: esAlquiler
+          ? formPropiedad.alquiler_fecha_fin_contrato || null
+          : null,
+        alquiler_indice_actualizacion: esAlquiler
+          ? formPropiedad.alquiler_indice_actualizacion || null
+          : null,
+        alquiler_frecuencia_actualizacion_meses: esAlquiler
+          ? alquilerFrecuenciaMeses
+          : null,
+        alquiler_pct_actualizacion_estimado: esAlquiler
+          ? alquilerPctActualizacion
+          : null,
+        alquiler_comision_base: esAlquiler
+          ? formPropiedad.alquiler_comision_base
+          : null,
+        alquiler_comision_pct: esAlquiler ? alquilerComisionPct : null,
+        alquiler_comision_monto: esAlquiler ? alquilerComisionMonto : null,
+        alquiler_valor_total_contrato_base: esAlquiler
+          ? alquilerTotalBase
+          : null,
+        alquiler_valor_total_contrato_proyectado: esAlquiler
+          ? alquilerTotalProyectado
+          : null,
+        alquiler_valor_base_manual: esAlquiler ? alquilerValorBaseManual : null,
+        alquiler_administra: esAlquiler ? formPropiedad.alquiler_administra : false,
+        alquiler_admin_pct: esAlquiler ? alquilerAdminPct : null,
+        alquiler_admin_monto_mensual: esAlquiler ? alquilerAdminMontoMensual : null,
+        alquiler_renovacion_fecha: esAlquiler
+          ? formPropiedad.alquiler_renovacion_fecha || null
+          : null,
+        alquiler_observaciones: esAlquiler
+          ? formPropiedad.alquiler_observaciones.trim() || null
+          : null,
       };
 
       if (editingPropiedad) {
@@ -1168,7 +1699,7 @@ export default function EmpresaTrackerPage() {
         }
       }
 
-      showMessage("✅ Propiedad guardada.");
+      showMessage(esAlquiler ? "✅ Alquiler guardado." : "✅ Propiedad guardada.");
       setShowPropiedadModal(false);
       await refetchTrackerData();
     } catch (err) {
@@ -1205,8 +1736,7 @@ export default function EmpresaTrackerPage() {
   };
 
   const openNuevoTercero = () => {
-    const tipoOperacion =
-      tipoOperacionFiltro === "todas" ? "venta" : tipoOperacionFiltro;
+    const tipoOperacion = "venta";
     setEditingTercero(null);
     setFormTercero({
       asesor_id: defaultAsesorIdForNewRecord,
@@ -1308,8 +1838,6 @@ export default function EmpresaTrackerPage() {
       fecha_cierre: formTercero.fecha_cierre,
       honorarios_pct_vendedor: vendedorPct,
       honorarios_pct_comprador: compradorPct,
-      empresa_share_pct: parseNumberOrNull(formTercero.empresa_share_pct),
-      porcentaje_asesor: parseNumberOrNull(formTercero.porcentaje_asesor),
       notas: formTercero.notas.trim() || null,
     };
 
@@ -1574,9 +2102,8 @@ export default function EmpresaTrackerPage() {
                   }
                   className="rounded-full border border-gray-300 bg-white px-3 py-1 text-xs text-slate-700"
                 >
-                  <option value="todas">Todas</option>
-                  <option value="venta">Venta</option>
-                  <option value="alquiler">Alquiler</option>
+                  <option value="venta">Ventas</option>
+                  <option value="alquiler">Alquileres</option>
                 </select>
               </div>
             </div>
@@ -1628,69 +2155,151 @@ export default function EmpresaTrackerPage() {
                 <option value="90d">Últimos 3 meses</option>
                 <option value="180d">Últimos 6 meses</option>
                 <option value="365d">Último año</option>
+                <option value="custom">Personalizado</option>
               </select>
+              {kpiRange === "custom" && (
+                <>
+                  <input
+                    type="date"
+                    value={customFechaDesde}
+                    onChange={(e) => setCustomFechaDesde(e.target.value)}
+                    className="rounded-full border border-gray-300 bg-white px-3 py-1 text-xs text-slate-700"
+                  />
+                  <span className="text-slate-400">a</span>
+                  <input
+                    type="date"
+                    value={customFechaHasta}
+                    onChange={(e) => setCustomFechaHasta(e.target.value)}
+                    className="rounded-full border border-gray-300 bg-white px-3 py-1 text-xs text-slate-700"
+                  />
+                </>
+              )}
             </div>
           </div>
 
-          <div className="grid gap-4 md:grid-cols-5">
-            <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
-              <p className="text-xs text-slate-500">Prospectos</p>
-              <p className="mt-1 text-2xl md:text-3xl font-semibold text-slate-900">
-                {kpis.prospectos}
-              </p>
-              <p className="mt-1 text-[11px] text-slate-500">
-                Contactos nuevos en el período.
-              </p>
-            </div>
+          {tipoOperacionFiltro === "venta" ? (
+            <div className="grid gap-4 md:grid-cols-5">
+              <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
+                <p className="text-xs text-slate-500">Prospectos</p>
+                <p className="mt-1 text-2xl md:text-3xl font-semibold text-slate-900">
+                  {kpis.prospectos}
+                </p>
+                <p className="mt-1 text-[11px] text-slate-500">
+                  Contactos nuevos en el período.
+                </p>
+              </div>
 
-            <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
-              <p className="text-xs text-slate-500">Prelisting</p>
-              <p className="mt-1 text-2xl md:text-3xl font-semibold text-slate-900">
-                {kpis.prelisting}
-              </p>
-              <p className="mt-1 text-[11px] text-slate-500">
-                Contactos que llegaron a prelisting o más.
-              </p>
-            </div>
+              <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
+                <p className="text-xs text-slate-500">Prelisting</p>
+                <p className="mt-1 text-2xl md:text-3xl font-semibold text-slate-900">
+                  {kpis.prelisting}
+                </p>
+                <p className="mt-1 text-[11px] text-slate-500">
+                  Contactos que llegaron a prelisting o más.
+                </p>
+              </div>
 
-            <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
-              <p className="text-xs text-slate-500">Captaciones propias</p>
-              <p className="mt-1 text-2xl md:text-3xl font-semibold text-slate-900">
-                {kpis.captacionesPropias}
-              </p>
-              <p className="mt-1 text-[11px] text-slate-500">
-                Propiedades propias cargadas/captadas.
-              </p>
-            </div>
+              <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
+                <p className="text-xs text-slate-500">Captaciones propias</p>
+                <p className="mt-1 text-2xl md:text-3xl font-semibold text-slate-900">
+                  {kpis.captacionesPropias}
+                </p>
+                <p className="mt-1 text-[11px] text-slate-500">
+                  Propiedades propias cargadas/captadas.
+                </p>
+              </div>
 
-            <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
-              <p className="text-xs text-slate-500">Cierres propios</p>
-              <p className="mt-1 text-2xl md:text-3xl font-semibold text-slate-900">
-                {kpis.cierresPropios}
-              </p>
-              <p className="mt-1 text-[11px] text-slate-500">
-                Captaciones propias cerradas.
-              </p>
-            </div>
+              <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
+                <p className="text-xs text-slate-500">Cierres propios</p>
+                <p className="mt-1 text-2xl md:text-3xl font-semibold text-slate-900">
+                  {kpis.cierresPropios}
+                </p>
+                <p className="mt-1 text-[11px] text-slate-500">
+                  Captaciones propias cerradas.
+                </p>
+              </div>
 
-            <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
-              <p className="text-xs text-slate-500">Ventas totales</p>
-              <p className="mt-1 text-2xl md:text-3xl font-semibold text-slate-900">
-                {kpis.ventasTotales}
-              </p>
-              <p className="mt-1 text-[11px] text-slate-500">
-                Terceros: {kpis.ventasTerceros} · Hon.:{" "}
-                {fmtCurrency(kpis.honorariosTotal, tipoOperacionFiltro === "alquiler" ? "ARS" : "USD")}
-              </p>
+              <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
+                <p className="text-xs text-slate-500">Ventas totales</p>
+                <p className="mt-1 text-2xl md:text-3xl font-semibold text-slate-900">
+                  {kpis.ventasTotales}
+                </p>
+                <p className="mt-1 text-[11px] text-slate-500">
+                  Terceros: {kpis.ventasTerceros}
+                </p>
+                <p className="mt-1 text-[11px] font-medium text-slate-700">
+                  Honorarios TOTALES: {fmtCurrency(kpis.honorariosTotal, "USD")}
+                </p>
+              </div>
             </div>
-          </div>
+          ) : (
+            <div className="grid gap-4 md:grid-cols-5">
+              <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
+                <p className="text-xs text-slate-500">Prospectos</p>
+                <p className="mt-1 text-2xl md:text-3xl font-semibold text-slate-900">
+                  {kpis.prospectos}
+                </p>
+                <p className="mt-1 text-[11px] text-slate-500">
+                  Contactos de alquiler ingresados.
+                </p>
+              </div>
+
+              <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
+                <p className="text-xs text-slate-500">Propiedades en alquiler</p>
+                <p className="mt-1 text-2xl md:text-3xl font-semibold text-slate-900">
+                  {kpis.propiedadesEnAlquiler}
+                </p>
+                <p className="mt-1 text-[11px] text-slate-500">
+                  Inmuebles cargados para alquilar.
+                </p>
+              </div>
+
+              <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
+                <p className="text-xs text-slate-500">Propiedades alquiladas</p>
+                <p className="mt-1 text-2xl md:text-3xl font-semibold text-slate-900">
+                  {kpis.propiedadesAlquiladas}
+                </p>
+                <p className="mt-1 text-[11px] text-slate-500">
+                  Contratos concretados.
+                </p>
+              </div>
+
+              <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
+                <p className="text-xs text-slate-500">Administración de alquileres</p>
+                <p className="mt-1 text-2xl md:text-3xl font-semibold text-slate-900">
+                  {kpis.administracionesAlquiler}
+                </p>
+                <p className="mt-1 text-[11px] text-slate-500">
+                  Ingreso mensual adm.: {fmtCurrency(kpis.administracionMensual, "ARS")}
+                </p>
+              </div>
+
+              <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
+                <p className="text-xs text-slate-500">Honorarios por contratos</p>
+                <p className="mt-1 text-2xl md:text-3xl font-semibold text-slate-900">
+                  {fmtCurrency(kpis.honorariosTotal, "ARS")}
+                </p>
+                <p className="mt-1 text-[11px] text-slate-500">
+                  Comisiones por alquileres concretados.
+                </p>
+              </div>
+            </div>
+          )}
         </section>
 
         <nav className="flex flex-wrap gap-2 text-sm">
           {[
             { id: "contactos", label: "Contactos" },
-            { id: "propiedades", label: "Propiedades captadas" },
-            { id: "terceros", label: "Propiedades de terceros" },
+            {
+              id: "propiedades",
+              label:
+                tipoOperacionFiltro === "alquiler"
+                  ? "Propiedades en alquiler"
+                  : "Propiedades captadas",
+            },
+            ...(tipoOperacionFiltro === "venta"
+              ? [{ id: "terceros", label: "Propiedades de terceros" }]
+              : []),
           ].map((tab) => {
             const isActive = activeTab === (tab.id as TrackerTab);
             return (
@@ -1888,11 +2497,14 @@ export default function EmpresaTrackerPage() {
               <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <div>
                   <h2 className="text-sm font-semibold text-slate-900">
-                    Propiedades captadas
+                    {tipoOperacionFiltro === "alquiler"
+                      ? "Propiedades en alquiler"
+                      : "Propiedades captadas"}
                   </h2>
                   <p className="text-xs text-slate-500">
-                    Captaciones propias. Sus cierres alimentan el embudo
-                    captación → cierre.
+                    {tipoOperacionFiltro === "alquiler"
+                      ? "Contratos de alquiler, comisiones y administración mensual."
+                      : "Captaciones propias. Sus cierres alimentan el embudo captación → cierre."}
                   </p>
                 </div>
                 <button
@@ -1900,7 +2512,7 @@ export default function EmpresaTrackerPage() {
                   className="inline-flex items-center gap-1 rounded-full bg-black text-white px-3 py-1.5 text-xs font-medium hover:bg-slate-900"
                 >
                   <span className="text-sm">＋</span>
-                  Nueva propiedad captada
+                  {tipoOperacionFiltro === "alquiler" ? "Nuevo alquiler" : "Nueva propiedad captada"}
                 </button>
               </div>
 
@@ -1956,19 +2568,27 @@ export default function EmpresaTrackerPage() {
                           ? contactoPorId(p.contacto_id)
                           : p.contacto ?? null;
 
-                      const cerrada = isValidClose(p);
-                      const cierreIncompleto =
-                        (!!p.fecha_cierre && !cerrada) ||
-                        (!!p.precio_cierre && !p.fecha_cierre);
+                      const esAlquiler = p.tipo_operacion === "alquiler";
+                      const cerrada = esAlquiler ? isValidAlquilerContratado(p) : isValidClose(p);
+                      const cierreIncompleto = esAlquiler
+                        ? false
+                        : (!!p.fecha_cierre && !cerrada) ||
+                          (!!p.precio_cierre && !p.fecha_cierre);
                       const diasVenta = diasEntreFechas(
                         p.fecha_inicio_comercializacion,
-                        cerrada ? p.fecha_cierre : null
+                        esAlquiler
+                          ? p.alquiler_fecha_inicio_contrato
+                          : cerrada
+                          ? p.fecha_cierre
+                          : null
                       );
-                      const honorarios = calcularHonorarios(
-                        p.precio_cierre,
-                        p.honorarios_pct_vendedor,
-                        p.honorarios_pct_comprador
-                      );
+                      const honorarios = esAlquiler
+                        ? p.alquiler_comision_monto
+                        : calcularHonorarios(
+                            p.precio_cierre,
+                            p.honorarios_pct_vendedor,
+                            p.honorarios_pct_comprador
+                          );
 
                       return (
                         <tr
@@ -2006,12 +2626,28 @@ export default function EmpresaTrackerPage() {
                           </td>
                           <td className="px-3 py-2 align-top text-slate-700">
                             {fmtCurrency(
-                              p.precio_actual ?? p.precio_lista_inicial,
+                              esAlquiler
+                                ? p.alquiler_valor_mensual_actual ??
+                                    p.alquiler_valor_mensual_inicial ??
+                                    p.precio_actual ??
+                                    p.precio_lista_inicial
+                                : p.precio_actual ?? p.precio_lista_inicial,
                               p.moneda
                             )}
                           </td>
                           <td className="px-3 py-2 align-top text-slate-700">
-                            {cerrada ? (
+                            {esAlquiler ? (
+                              cerrada ? (
+                                <div>
+                                  <div>Contrato iniciado</div>
+                                  <div className="text-[11px] text-slate-500">
+                                    {dateKeyFromString(p.alquiler_fecha_inicio_contrato)}
+                                  </div>
+                                </div>
+                              ) : (
+                                <span className="text-slate-500">En alquiler</span>
+                              )
+                            ) : cerrada ? (
                               <div>
                                 <div>
                                   {fmtCurrency(p.precio_cierre, p.moneda)}
@@ -2031,8 +2667,16 @@ export default function EmpresaTrackerPage() {
                           <td className="px-3 py-2 align-top text-slate-700">
                             {fmtCurrency(honorarios, p.moneda)}
                             <div className="text-[11px] text-slate-500">
-                              V {p.honorarios_pct_vendedor ?? 0}% · C{" "}
-                              {p.honorarios_pct_comprador ?? 0}%
+                              {esAlquiler
+                                ? p.alquiler_administra
+                                  ? `Admin: ${fmtCurrency(
+                                      p.alquiler_admin_monto_mensual,
+                                      p.moneda
+                                    )}/mes`
+                                  : "Sin administración"
+                                : `V ${p.honorarios_pct_vendedor ?? 0}% · C ${
+                                    p.honorarios_pct_comprador ?? 0
+                                  }%`}
                             </div>
                           </td>
                           <td className="px-3 py-2 align-top text-right">
@@ -2322,7 +2966,6 @@ export default function EmpresaTrackerPage() {
                     className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
                   >
                     <option value="venta">Venta</option>
-                    <option value="alquiler">Alquiler</option>
                   </select>
                 </div>
 
@@ -2430,12 +3073,17 @@ export default function EmpresaTrackerPage() {
                 <div>
                   <h3 className="text-base font-semibold text-slate-900">
                     {editingPropiedad
-                      ? "Editar propiedad captada"
+                      ? formPropiedad.tipo_operacion === "alquiler"
+                        ? "Editar alquiler"
+                        : "Editar propiedad captada"
+                      : formPropiedad.tipo_operacion === "alquiler"
+                      ? "Nuevo alquiler"
                       : "Nueva propiedad captada"}
                   </h3>
                   <p className="text-xs text-slate-500">
-                    Estas propiedades sí impactan en captaciones propias y en la
-                    conversión captación → cierre.
+                    {formPropiedad.tipo_operacion === "alquiler"
+                      ? "Cargá contrato, comisión por alquiler y administración mensual si corresponde."
+                      : "Estas propiedades sí impactan en captaciones propias y en la conversión captación → cierre."}
                   </p>
                 </div>
                 <button
@@ -2623,165 +3271,458 @@ export default function EmpresaTrackerPage() {
                   />
                 </div>
 
-                <div>
-                  <label className="block text-xs font-medium text-slate-600">
-                    Precio inicial
-                  </label>
-                  <input
-                    value={formPropiedad.precio_lista_inicial}
-                    onChange={(e) =>
-                      setFormPropiedad((prev) => ({
-                        ...prev,
-                        precio_lista_inicial: e.target.value,
-                      }))
-                    }
-                    className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-medium text-slate-600">
-                    Precio actual
-                  </label>
-                  <input
-                    value={formPropiedad.precio_actual}
-                    onChange={(e) =>
-                      setFormPropiedad((prev) => ({
-                        ...prev,
-                        precio_actual: e.target.value,
-                      }))
-                    }
-                    className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-                    placeholder="Si queda vacío usa precio inicial"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-medium text-slate-600">
-                    Precio cierre
-                  </label>
-                  <input
-                    value={formPropiedad.precio_cierre}
-                    onChange={(e) =>
-                      setFormPropiedad((prev) => ({
-                        ...prev,
-                        precio_cierre: e.target.value,
-                      }))
-                    }
-                    className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-medium text-slate-600">
-                    Fecha cierre
-                  </label>
-                  <input
-                    type="date"
-                    value={formPropiedad.fecha_cierre}
-                    onChange={(e) =>
-                      setFormPropiedad((prev) => ({
-                        ...prev,
-                        fecha_cierre: e.target.value,
-                      }))
-                    }
-                    className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-                  />
-                </div>
-
-                <div className="rounded-xl border border-gray-200 bg-gray-50 p-3 md:col-span-3">
-                  <p className="text-xs font-semibold text-slate-800">
-                    Honorarios
-                  </p>
-                  <div className="mt-3 grid gap-3 md:grid-cols-2">
-                    <label className="flex items-center gap-2 text-xs text-slate-700">
+                {formPropiedad.tipo_operacion === "venta" ? (
+                  <>
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600">
+                        Precio inicial
+                      </label>
                       <input
-                        type="checkbox"
-                        checked={formPropiedad.cobra_honorarios_vendedor}
+                        value={formPropiedad.precio_lista_inicial}
                         onChange={(e) =>
                           setFormPropiedad((prev) => ({
                             ...prev,
-                            cobra_honorarios_vendedor: e.target.checked,
-                            honorarios_pct_vendedor: e.target.checked
-                              ? prev.honorarios_pct_vendedor || "3"
-                              : "0",
+                            precio_lista_inicial: e.target.value,
                           }))
                         }
+                        className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
                       />
-                      Cobra honorarios al vendedor
-                    </label>
+                    </div>
 
-                    <label className="flex items-center gap-2 text-xs text-slate-700">
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600">
+                        Precio actual
+                      </label>
                       <input
-                        type="checkbox"
-                        checked={formPropiedad.cobra_honorarios_comprador}
+                        value={formPropiedad.precio_actual}
                         onChange={(e) =>
                           setFormPropiedad((prev) => ({
                             ...prev,
-                            cobra_honorarios_comprador: e.target.checked,
-                            honorarios_pct_comprador: e.target.checked
-                              ? prev.honorarios_pct_comprador || "3"
-                              : "0",
+                            precio_actual: e.target.value,
                           }))
                         }
+                        className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                        placeholder="Si queda vacío usa precio inicial"
                       />
-                      Cobra honorarios al comprador
-                    </label>
+                    </div>
 
-                    {formPropiedad.cobra_honorarios_vendedor && (
-                      <div>
-                        <label className="block text-xs font-medium text-slate-600">
-                          % vendedor
-                        </label>
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600">
+                        Precio cierre
+                      </label>
+                      <input
+                        value={formPropiedad.precio_cierre}
+                        onChange={(e) =>
+                          setFormPropiedad((prev) => ({
+                            ...prev,
+                            precio_cierre: e.target.value,
+                          }))
+                        }
+                        className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600">
+                        Fecha cierre
+                      </label>
+                      <input
+                        type="date"
+                        value={formPropiedad.fecha_cierre}
+                        onChange={(e) =>
+                          setFormPropiedad((prev) => ({
+                            ...prev,
+                            fecha_cierre: e.target.value,
+                          }))
+                        }
+                        className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                      />
+                    </div>
+
+                    <div className="rounded-xl border border-gray-200 bg-gray-50 p-3 md:col-span-3">
+                      <p className="text-xs font-semibold text-slate-800">
+                        Honorarios
+                      </p>
+                      <div className="mt-3 grid gap-3 md:grid-cols-2">
+                        <div className="flex items-center gap-2 rounded-lg bg-white px-3 py-2">
+                          <label className="flex flex-1 items-center gap-2 text-xs text-slate-700">
+                            <input
+                              type="checkbox"
+                              checked={formPropiedad.cobra_honorarios_vendedor}
+                              onChange={(e) =>
+                                setFormPropiedad((prev) => ({
+                                  ...prev,
+                                  cobra_honorarios_vendedor: e.target.checked,
+                                  honorarios_pct_vendedor: e.target.checked
+                                    ? prev.honorarios_pct_vendedor || "3"
+                                    : "0",
+                                }))
+                              }
+                            />
+                            Cobra honorarios al vendedor
+                          </label>
+                          {formPropiedad.cobra_honorarios_vendedor && (
+                            <input
+                              value={formPropiedad.honorarios_pct_vendedor}
+                              onChange={(e) =>
+                                setFormPropiedad((prev) => ({
+                                  ...prev,
+                                  honorarios_pct_vendedor: e.target.value,
+                                }))
+                              }
+                              className="w-24 rounded-lg border border-gray-300 px-3 py-1.5 text-sm"
+                              placeholder="%"
+                            />
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-2 rounded-lg bg-white px-3 py-2">
+                          <label className="flex flex-1 items-center gap-2 text-xs text-slate-700">
+                            <input
+                              type="checkbox"
+                              checked={formPropiedad.cobra_honorarios_comprador}
+                              onChange={(e) =>
+                                setFormPropiedad((prev) => ({
+                                  ...prev,
+                                  cobra_honorarios_comprador: e.target.checked,
+                                  honorarios_pct_comprador: e.target.checked
+                                    ? prev.honorarios_pct_comprador || "3"
+                                    : "0",
+                                }))
+                              }
+                            />
+                            Cobra honorarios al comprador
+                          </label>
+                          {formPropiedad.cobra_honorarios_comprador && (
+                            <input
+                              value={formPropiedad.honorarios_pct_comprador}
+                              onChange={(e) =>
+                                setFormPropiedad((prev) => ({
+                                  ...prev,
+                                  honorarios_pct_comprador: e.target.value,
+                                }))
+                              }
+                              className="w-24 rounded-lg border border-gray-300 px-3 py-1.5 text-sm"
+                              placeholder="%"
+                            />
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="mt-3 rounded-lg bg-white px-3 py-2 text-xs text-slate-700">
+                        <div>
+                          Honorarios estimados: {" "}
+                          <span className="font-semibold">
+                            {fmtCurrency(honorariosEstimados.total, formPropiedad.moneda)}
+                          </span>
+                        </div>
+                        <div className="mt-1 text-slate-500">
+                          Vendedor: {fmtCurrency(honorariosEstimados.vendedor, formPropiedad.moneda)}
+                          {" · "}
+                          Comprador: {fmtCurrency(honorariosEstimados.comprador, formPropiedad.moneda)}
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600">
+                        Valor mensual inicial
+                      </label>
+                      <input
+                        value={formPropiedad.alquiler_valor_mensual_inicial}
+                        onChange={(e) =>
+                          setFormPropiedad((prev) => ({
+                            ...prev,
+                            alquiler_valor_mensual_inicial: e.target.value,
+                            precio_lista_inicial: e.target.value,
+                          }))
+                        }
+                        className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600">
+                        Valor mensual actual
+                      </label>
+                      <input
+                        value={formPropiedad.alquiler_valor_mensual_actual}
+                        onChange={(e) =>
+                          setFormPropiedad((prev) => ({
+                            ...prev,
+                            alquiler_valor_mensual_actual: e.target.value,
+                            precio_actual: e.target.value,
+                          }))
+                        }
+                        className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                        placeholder="Si queda vacío usa valor inicial"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600">
+                        Duración contrato (meses)
+                      </label>
+                      <input
+                        value={formPropiedad.alquiler_duracion_meses}
+                        onChange={(e) =>
+                          setFormPropiedad((prev) => ({
+                            ...prev,
+                            alquiler_duracion_meses: e.target.value,
+                          }))
+                        }
+                        className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600">
+                        Inicio contrato
+                      </label>
+                      <input
+                        type="date"
+                        value={formPropiedad.alquiler_fecha_inicio_contrato}
+                        onChange={(e) =>
+                          setFormPropiedad((prev) => ({
+                            ...prev,
+                            alquiler_fecha_inicio_contrato: e.target.value,
+                          }))
+                        }
+                        className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600">
+                        Fin contrato
+                      </label>
+                      <input
+                        type="date"
+                        value={formPropiedad.alquiler_fecha_fin_contrato}
+                        onChange={(e) =>
+                          setFormPropiedad((prev) => ({
+                            ...prev,
+                            alquiler_fecha_fin_contrato: e.target.value,
+                          }))
+                        }
+                        className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600">
+                        Próxima renovación
+                      </label>
+                      <input
+                        type="date"
+                        value={formPropiedad.alquiler_renovacion_fecha}
+                        onChange={(e) =>
+                          setFormPropiedad((prev) => ({
+                            ...prev,
+                            alquiler_renovacion_fecha: e.target.value,
+                          }))
+                        }
+                        className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                      />
+                    </div>
+
+                    <div className="rounded-xl border border-gray-200 bg-gray-50 p-3 md:col-span-3">
+                      <p className="text-xs font-semibold text-slate-800">
+                        Actualización del contrato
+                      </p>
+                      <div className="mt-3 grid gap-3 md:grid-cols-3">
+                        <div>
+                          <label className="block text-xs font-medium text-slate-600">
+                            Índice
+                          </label>
+                          <select
+                            value={formPropiedad.alquiler_indice_actualizacion}
+                            onChange={(e) =>
+                              setFormPropiedad((prev) => ({
+                                ...prev,
+                                alquiler_indice_actualizacion: e.target.value,
+                              }))
+                            }
+                            className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                          >
+                            {INDICES_ACTUALIZACION.map((i) => (
+                              <option key={i.value} value={i.value}>
+                                {i.label}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-slate-600">
+                            Frecuencia (meses)
+                          </label>
+                          <input
+                            value={formPropiedad.alquiler_frecuencia_actualizacion_meses}
+                            onChange={(e) =>
+                              setFormPropiedad((prev) => ({
+                                ...prev,
+                                alquiler_frecuencia_actualizacion_meses: e.target.value,
+                              }))
+                            }
+                            className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                            placeholder="3, 4, 6, 12"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-slate-600">
+                            % estimado actualización
+                          </label>
+                          <input
+                            value={formPropiedad.alquiler_pct_actualizacion_estimado}
+                            onChange={(e) =>
+                              setFormPropiedad((prev) => ({
+                                ...prev,
+                                alquiler_pct_actualizacion_estimado: e.target.value,
+                              }))
+                            }
+                            className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                            placeholder="Ej: 35"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="rounded-xl border border-gray-200 bg-gray-50 p-3 md:col-span-3">
+                      <p className="text-xs font-semibold text-slate-800">
+                        Comisión por alquiler
+                      </p>
+                      <div className="mt-3 grid gap-3 md:grid-cols-3">
+                        <div>
+                          <label className="block text-xs font-medium text-slate-600">
+                            Base de cálculo
+                          </label>
+                          <select
+                            value={formPropiedad.alquiler_comision_base}
+                            onChange={(e) =>
+                              setFormPropiedad((prev) => ({
+                                ...prev,
+                                alquiler_comision_base: e.target
+                                  .value as FormPropiedadState["alquiler_comision_base"],
+                              }))
+                            }
+                            className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                          >
+                            {ALQUILER_COMISION_BASE_OPTIONS.map((opt) => (
+                              <option key={opt.value} value={opt.value}>
+                                {opt.label}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        {formPropiedad.alquiler_comision_base === "manual" && (
+                          <div>
+                            <label className="block text-xs font-medium text-slate-600">
+                              Monto manual base
+                            </label>
+                            <input
+                              value={formPropiedad.alquiler_valor_base_manual}
+                              onChange={(e) =>
+                                setFormPropiedad((prev) => ({
+                                  ...prev,
+                                  alquiler_valor_base_manual: e.target.value,
+                                }))
+                              }
+                              className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                            />
+                          </div>
+                        )}
+                        <div>
+                          <label className="block text-xs font-medium text-slate-600">
+                            % comisión inmobiliaria
+                          </label>
+                          <input
+                            value={formPropiedad.alquiler_comision_pct}
+                            onChange={(e) =>
+                              setFormPropiedad((prev) => ({
+                                ...prev,
+                                alquiler_comision_pct: e.target.value,
+                              }))
+                            }
+                            className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="mt-3 rounded-lg bg-white px-3 py-2 text-xs text-slate-700">
+                        <div>
+                          Valor total base: {fmtCurrency(alquilerEstimado.totalBase, formPropiedad.moneda)}
+                        </div>
+                        <div className="mt-1">
+                          Valor total proyectado: {fmtCurrency(alquilerEstimado.totalProyectado, formPropiedad.moneda)}
+                        </div>
+                        <div className="mt-1 font-semibold">
+                          Honorarios estimados: {fmtCurrency(alquilerEstimado.comision, formPropiedad.moneda)}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="rounded-xl border border-gray-200 bg-gray-50 p-3 md:col-span-3">
+                      <div className="flex items-center gap-2">
                         <input
-                          value={formPropiedad.honorarios_pct_vendedor}
+                          type="checkbox"
+                          checked={formPropiedad.alquiler_administra}
                           onChange={(e) =>
                             setFormPropiedad((prev) => ({
                               ...prev,
-                              honorarios_pct_vendedor: e.target.value,
+                              alquiler_administra: e.target.checked,
                             }))
                           }
-                          className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
                         />
+                        <p className="text-xs font-semibold text-slate-800">
+                          Administra la propiedad mensualmente
+                        </p>
                       </div>
-                    )}
-
-                    {formPropiedad.cobra_honorarios_comprador && (
-                      <div>
-                        <label className="block text-xs font-medium text-slate-600">
-                          % comprador
-                        </label>
-                        <input
-                          value={formPropiedad.honorarios_pct_comprador}
-                          onChange={(e) =>
-                            setFormPropiedad((prev) => ({
-                              ...prev,
-                              honorarios_pct_comprador: e.target.value,
-                            }))
-                          }
-                          className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-                        />
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="mt-3 rounded-lg bg-white px-3 py-2 text-xs text-slate-700">
-                    Honorarios estimados:{" "}
-                    <span className="font-semibold">
-                      {fmtCurrency(honorariosEstimados.total, formPropiedad.moneda)}
-                    </span>
-                    <span className="ml-2 text-slate-500">
-                      Vendedor:{" "}
-                      {fmtCurrency(honorariosEstimados.vendedor, formPropiedad.moneda)}
-                      {" · "}
-                      Comprador:{" "}
-                      {fmtCurrency(
-                        honorariosEstimados.comprador,
-                        formPropiedad.moneda
+                      {formPropiedad.alquiler_administra && (
+                        <div className="mt-3 grid gap-3 md:grid-cols-2">
+                          <div>
+                            <label className="block text-xs font-medium text-slate-600">
+                              % administración mensual
+                            </label>
+                            <input
+                              value={formPropiedad.alquiler_admin_pct}
+                              onChange={(e) =>
+                                setFormPropiedad((prev) => ({
+                                  ...prev,
+                                  alquiler_admin_pct: e.target.value,
+                                }))
+                              }
+                              className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                            />
+                          </div>
+                          <div className="rounded-lg bg-white px-3 py-2 text-xs text-slate-700">
+                            Ingreso mensual estimado:
+                            <div className="mt-1 font-semibold">
+                              {fmtCurrency(alquilerEstimado.adminMensual, formPropiedad.moneda)}
+                            </div>
+                          </div>
+                        </div>
                       )}
-                    </span>
-                  </div>
-                </div>
+                    </div>
+
+                    <div className="md:col-span-3">
+                      <label className="block text-xs font-medium text-slate-600">
+                        Observaciones de alquiler
+                      </label>
+                      <textarea
+                        value={formPropiedad.alquiler_observaciones}
+                        onChange={(e) =>
+                          setFormPropiedad((prev) => ({
+                            ...prev,
+                            alquiler_observaciones: e.target.value,
+                          }))
+                        }
+                        className="mt-1 h-20 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                      />
+                    </div>
+                  </>
+                )}
               </div>
 
               <div className="mt-5 flex justify-end gap-2">
@@ -2960,40 +3901,6 @@ export default function EmpresaTrackerPage() {
                       }))
                     }
                     className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-medium text-slate-600">
-                    % empresa
-                  </label>
-                  <input
-                    value={formTercero.empresa_share_pct}
-                    onChange={(e) =>
-                      setFormTercero((prev) => ({
-                        ...prev,
-                        empresa_share_pct: e.target.value,
-                      }))
-                    }
-                    className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-                    placeholder="Opcional"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-medium text-slate-600">
-                    % asesor
-                  </label>
-                  <input
-                    value={formTercero.porcentaje_asesor}
-                    onChange={(e) =>
-                      setFormTercero((prev) => ({
-                        ...prev,
-                        porcentaje_asesor: e.target.value,
-                      }))
-                    }
-                    className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-                    placeholder="Opcional"
                   />
                 </div>
 

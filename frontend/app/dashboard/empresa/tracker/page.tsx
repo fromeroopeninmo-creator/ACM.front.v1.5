@@ -2,7 +2,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "#lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
 
@@ -26,21 +26,24 @@ type TrackerActividadTipo =
   | "reserva"
   | "cierre";
 
-type TrackerTab = "calendario" | "contactos" | "propiedades";
+type TrackerTab = "contactos" | "propiedades" | "terceros";
 type KpiRange = "30d" | "90d" | "180d" | "365d";
 type TrackerScope = "empresa" | "asesores" | "global";
+type TipoOperacionFiltro = "todas" | "venta" | "alquiler";
 
 interface TrackerContacto {
   id: string;
   empresa_id: string;
-  nombre: string;
-  apellido: string;
+  asesor_id: string | null;
+  nombre: string | null;
+  apellido: string | null;
   telefono: string | null;
   email: string | null;
   tipologia: string | null;
   tipo_operacion: string | null;
   origen: string | null;
   zona: string | null;
+  direccion: string | null;
   estado: TrackerContactoEstado;
   motivo_descarte: string | null;
   created_at: string;
@@ -50,15 +53,15 @@ interface TrackerContacto {
 interface TrackerActividad {
   id: string;
   empresa_id: string;
+  asesor_id: string | null;
   contacto_id: string | null;
-  titulo: string;
+  titulo: string | null;
   tipo: TrackerActividadTipo;
-  fecha_programada: string; // YYYY-MM-DD
-  hora: string | null; // HH:mm
+  fecha_programada: string;
+  hora: string | null;
   notas: string | null;
   created_at: string;
   updated_at: string;
-  asesor_id: string | null;
 }
 
 interface TrackerPropiedad {
@@ -89,13 +92,50 @@ interface TrackerPropiedad {
   } | null;
 }
 
+interface TrackerPropiedadTercero {
+  id: string;
+  empresa_id: string;
+  asesor_id: string | null;
+  comprador_nombre: string | null;
+  tipologia: string | null;
+  tipo_operacion: string | null;
+  direccion: string | null;
+  zona: string | null;
+  precio_cierre: number | null;
+  moneda: string | null;
+  fecha_cierre: string | null;
+  honorarios_pct_comprador: number | null;
+  honorarios_pct_vendedor: number | null;
+  empresa_share_pct: number | null;
+  porcentaje_asesor: number | null;
+  notas: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 interface Asesor {
   id: string;
   nombre: string | null;
   apellido: string | null;
 }
 
+interface FormContactoState {
+  asesor_id: string;
+  nombre: string;
+  apellido: string;
+  telefono: string;
+  email: string;
+  tipologia: string;
+  tipo_operacion: string;
+  origen: string;
+  zona: string;
+  estado: TrackerContactoEstado;
+  motivo_descarte: string;
+  direccion: string;
+}
+
 interface FormPropiedadState {
+  asesor_id: string;
   contacto_id: string;
   tipologia: string;
   dormitorios: string;
@@ -110,86 +150,61 @@ interface FormPropiedadState {
   moneda: string;
   fecha_inicio_comercializacion: string;
   fecha_cierre: string;
+  cobra_honorarios_vendedor: boolean;
   honorarios_pct_vendedor: string;
+  cobra_honorarios_comprador: boolean;
   honorarios_pct_comprador: string;
 }
 
-function startOfDay(date: Date) {
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+interface FormTerceroState {
+  asesor_id: string;
+  comprador_nombre: string;
+  tipologia: string;
+  tipo_operacion: string;
+  direccion: string;
+  zona: string;
+  precio_cierre: string;
+  moneda: string;
+  fecha_cierre: string;
+  cobra_honorarios_vendedor: boolean;
+  honorarios_pct_vendedor: string;
+  cobra_honorarios_comprador: boolean;
+  honorarios_pct_comprador: string;
+  empresa_share_pct: string;
+  porcentaje_asesor: string;
+  notas: string;
 }
 
-function addDays(date: Date, days: number) {
-  const d = new Date(date);
-  d.setDate(d.getDate() + days);
-  return d;
-}
+const TIPOLOGIAS = [
+  { value: "casa", label: "Casa" },
+  { value: "departamento", label: "Departamento" },
+  { value: "duplex", label: "Dúplex" },
+  { value: "ph", label: "PH" },
+  { value: "oficina", label: "Oficina" },
+  { value: "local", label: "Local" },
+  { value: "terreno", label: "Terreno" },
+  { value: "galpon", label: "Galpón / Depósito" },
+  { value: "cochera", label: "Cochera" },
+  { value: "campo", label: "Campo" },
+  { value: "otro", label: "Otro" },
+];
 
-function isSameDay(a: Date, b: Date) {
-  return (
-    a.getFullYear() === b.getFullYear() &&
-    a.getMonth() === b.getMonth() &&
-    a.getDate() === b.getDate()
-  );
-}
+const ESTADOS_CONTACTO: { value: TrackerContactoEstado; label: string }[] = [
+  { value: "sin_contactar", label: "Sin contactar" },
+  { value: "primer_llamado", label: "1° llamado" },
+  { value: "seguimiento", label: "Seguimiento" },
+  { value: "prelisting", label: "Prelisting" },
+  { value: "vai_factibilidad", label: "VAI / Factibilidad" },
+  { value: "captado", label: "Captación" },
+  { value: "cierre", label: "Cierre" },
+  { value: "descarte", label: "Descartado" },
+];
 
-function formatDate(date: Date) {
-  return date.toLocaleDateString("es-AR", {
-    weekday: "short",
-    day: "2-digit",
-    month: "short",
-  });
-}
-
-function formatDateShort(date: Date) {
-  return date.toLocaleDateString("es-AR", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "2-digit",
-  });
-}
-
-function formatTime(hora: string | null) {
-  if (!hora) return "";
-  return hora.substring(0, 5);
-}
-
-// Normalizamos fechas al formato YYYY-MM-DD (sin huso horario)
 function toDateKey(d: Date): string {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
-}
-
-function getMonthMatrix(currentMonth: Date) {
-  const year = currentMonth.getFullYear();
-  const month = currentMonth.getMonth();
-
-  const firstDayOfMonth = new Date(year, month, 1);
-  const lastDayOfMonth = new Date(year, month + 1, 0);
-
-  const startWeekDay = firstDayOfMonth.getDay();
-  const start = new Date(firstDayOfMonth);
-  start.setDate(
-    firstDayOfMonth.getDate() - (startWeekDay === 0 ? 6 : startWeekDay - 1)
-  );
-
-  const endWeekDay = lastDayOfMonth.getDay();
-  const end = new Date(lastDayOfMonth);
-  end.setDate(lastDayOfMonth.getDate() + (endWeekDay === 0 ? 0 : 7 - endWeekDay));
-
-  const days: Date[] = [];
-  const cursor = new Date(start);
-  while (cursor <= end) {
-    days.push(new Date(cursor));
-    cursor.setDate(cursor.getDate() + 1);
-  }
-
-  const weeks: Date[][] = [];
-  for (let i = 0; i < days.length; i += 7) {
-    weeks.push(days.slice(i, i + 7));
-  }
-  return weeks;
 }
 
 function kpiStartDate(range: KpiRange): Date {
@@ -215,27 +230,59 @@ function diasEntreFechas(
   return dias < 0 ? 0 : dias;
 }
 
-function labelTipoActividad(tipo: TrackerActividadTipo): string {
-  switch (tipo) {
-    case "seguimiento":
-      return "Seguimiento";
-    case "reunion":
-      return "Reunión";
-    case "muestra":
-      return "Muestra";
-    case "prelisting":
-      return "Prelisting";
-    case "vai":
-      return "VAI";
-    case "factibilidad":
-      return "Factibilidad";
-    case "reserva":
-      return "Reserva";
-    case "cierre":
-      return "Cierre";
-    default:
-      return tipo;
-  }
+function dateKeyFromString(value: string | null | undefined): string {
+  return value ? value.substring(0, 10) : "";
+}
+
+function isValidDateKey(value: string | null | undefined): boolean {
+  if (!value) return false;
+  const key = value.substring(0, 10);
+  if (key === "0001-01-01") return false;
+  return /^\d{4}-\d{2}-\d{2}$/.test(key);
+}
+
+function parseNumberOrNull(value: string) {
+  if (!value || !value.trim()) return null;
+  const normalized = value.trim().replace(/\./g, "").replace(",", ".");
+  const parsed = parseFloat(normalized);
+  return Number.isNaN(parsed) ? null : parsed;
+}
+
+function parseNumberOrZero(value: string) {
+  return parseNumberOrNull(value) ?? 0;
+}
+
+function normalizePercentInput(value: string, enabled: boolean) {
+  return enabled ? parseNumberOrZero(value) : 0;
+}
+
+function isValidClose(
+  record: Pick<TrackerPropiedad, "fecha_cierre" | "precio_cierre">
+) {
+  return (
+    isValidDateKey(record.fecha_cierre) &&
+    record.precio_cierre != null &&
+    record.precio_cierre > 0
+  );
+}
+
+function isValidTerceroClose(record: TrackerPropiedadTercero) {
+  return (
+    isValidDateKey(record.fecha_cierre) &&
+    record.precio_cierre != null &&
+    record.precio_cierre > 0
+  );
+}
+
+function labelTipoOperacion(tipo: string | null | undefined) {
+  if (tipo === "venta") return "Venta";
+  if (tipo === "alquiler") return "Alquiler";
+  return tipo || "—";
+}
+
+function labelTipologia(value: string | null | undefined) {
+  const found = TIPOLOGIAS.find((t) => t.value === value);
+  return found?.label ?? value ?? "—";
 }
 
 export default function EmpresaTrackerPage() {
@@ -247,67 +294,64 @@ export default function EmpresaTrackerPage() {
   const [contactos, setContactos] = useState<TrackerContacto[]>([]);
   const [actividades, setActividades] = useState<TrackerActividad[]>([]);
   const [propiedades, setPropiedades] = useState<TrackerPropiedad[]>([]);
+  const [propiedadesTerceros, setPropiedadesTerceros] = useState<
+    TrackerPropiedadTercero[]
+  >([]);
   const [asesores, setAsesores] = useState<Asesor[]>([]);
 
-  const [activeTab, setActiveTab] = useState<TrackerTab>("calendario");
+  const [activeTab, setActiveTab] = useState<TrackerTab>("contactos");
   const [kpiRange, setKpiRange] = useState<KpiRange>("30d");
-
   const [scope, setScope] = useState<TrackerScope>("empresa");
   const [selectedAsesorId, setSelectedAsesorId] = useState<string>("");
-
+  const [tipoOperacionFiltro, setTipoOperacionFiltro] =
+    useState<TipoOperacionFiltro>("todas");
   const [tipologiaFiltro, setTipologiaFiltro] = useState<string>("");
-
-  const [currentMonth, setCurrentMonth] = useState<Date>(new Date());
-  const [selectedDate, setSelectedDate] = useState<Date>(startOfDay(new Date()));
+  const [estadoFiltro, setEstadoFiltro] = useState<string>("");
 
   const [showContactoModal, setShowContactoModal] = useState(false);
   const [editingContacto, setEditingContacto] = useState<TrackerContacto | null>(
     null
   );
 
-  const [showActividadModal, setShowActividadModal] = useState(false);
-  const [editingActividad, setEditingActividad] =
-    useState<TrackerActividad | null>(null);
-
   const [showPropiedadModal, setShowPropiedadModal] = useState(false);
   const [editingPropiedad, setEditingPropiedad] =
     useState<TrackerPropiedad | null>(null);
 
+  const [showTerceroModal, setShowTerceroModal] = useState(false);
+  const [editingTercero, setEditingTercero] =
+    useState<TrackerPropiedadTercero | null>(null);
+
   const [mensaje, setMensaje] = useState<string | null>(null);
-
-  // Flags para evitar doble submit y duplicados
   const [savingContacto, setSavingContacto] = useState(false);
-  const [savingActividad, setSavingActividad] = useState(false);
   const [savingPropiedad, setSavingPropiedad] = useState(false);
+  const [savingTercero, setSavingTercero] = useState(false);
 
-  const [formContacto, setFormContacto] = useState({
+  const defaultAsesorIdForNewRecord = useMemo(() => {
+    if (scope === "asesores" && selectedAsesorId) return selectedAsesorId;
+    return "";
+  }, [scope, selectedAsesorId]);
+
+  const [formContacto, setFormContacto] = useState<FormContactoState>({
+    asesor_id: "",
     nombre: "",
     apellido: "",
     telefono: "",
     email: "",
     tipologia: "",
-    tipo_operacion: "",
+    tipo_operacion: "venta",
     origen: "",
     zona: "",
-    estado: "sin_contactar" as TrackerContactoEstado,
+    estado: "sin_contactar",
     motivo_descarte: "",
     direccion: "",
   });
 
-  const [formActividad, setFormActividad] = useState({
-    titulo: "",
-    tipo: "seguimiento" as TrackerActividadTipo,
-    fecha_programada: new Date().toISOString().substring(0, 10),
-    hora: "",
-    contacto_id: "" as string | "",
-    notas: "",
-  });
-
   const [formPropiedad, setFormPropiedad] = useState<FormPropiedadState>({
+    asesor_id: "",
     contacto_id: "",
     tipologia: "",
     dormitorios: "",
-    tipo_operacion: "",
+    tipo_operacion: "venta",
     direccion: "",
     zona: "",
     m2_lote: "",
@@ -315,201 +359,209 @@ export default function EmpresaTrackerPage() {
     precio_lista_inicial: "",
     precio_actual: "",
     precio_cierre: "",
-    moneda: "ARS",
-    fecha_inicio_comercializacion: "",
+    moneda: "USD",
+    fecha_inicio_comercializacion: toDateKey(new Date()),
     fecha_cierre: "",
-    honorarios_pct_vendedor: "",
-    honorarios_pct_comprador: "",
+    cobra_honorarios_vendedor: true,
+    honorarios_pct_vendedor: "3",
+    cobra_honorarios_comprador: false,
+    honorarios_pct_comprador: "0",
   });
 
-  // Referencias de hoy y mañana (hora local, sin mezclar TZ)
-  const hoy = startOfDay(new Date());
-  const manana = addDays(hoy, 1);
+  const [formTercero, setFormTercero] = useState<FormTerceroState>({
+    asesor_id: "",
+    comprador_nombre: "",
+    tipologia: "",
+    tipo_operacion: "venta",
+    direccion: "",
+    zona: "",
+    precio_cierre: "",
+    moneda: "USD",
+    fecha_cierre: toDateKey(new Date()),
+    cobra_honorarios_vendedor: false,
+    honorarios_pct_vendedor: "0",
+    cobra_honorarios_comprador: true,
+    honorarios_pct_comprador: "3",
+    empresa_share_pct: "",
+    porcentaje_asesor: "",
+    notas: "",
+  });
 
-  // Claves normalizadas YYYY-MM-DD
-  const hoyKey = toDateKey(hoy);
-  const mananaKey = toDateKey(manana);
-  const selectedKey = toDateKey(selectedDate);
+  const showMessage = (text: string) => {
+    setMensaje(text);
+    setTimeout(() => setMensaje(null), 3200);
+  };
 
-  // Helper: tomar siempre solo "YYYY-MM-DD" de la fecha programada
-  const actividadDateKey = (a: TrackerActividad) =>
-    a.fecha_programada ? a.fecha_programada.substring(0, 10) : "";
+  const contactoNombreCorto = (
+    c: { nombre?: string | null; apellido?: string | null } | null | undefined
+  ) => {
+    if (!c) return "Sin contacto";
+    const nom = [c.nombre, c.apellido].filter(Boolean).join(" ");
+    return nom || "Sin nombre";
+  };
 
-  // Filtrado por scope (empresa / asesores / global)
-  const actividadesFiltradas = useMemo(() => {
-    if (scope === "global") return actividades;
+  const asesorNombre = (asesorId: string | null | undefined) => {
+    if (!asesorId) return "Empresa";
+    const asesor = asesores.find((a) => a.id === asesorId);
+    return asesor ? contactoNombreCorto(asesor) : "Asesor";
+  };
 
-    if (scope === "empresa") {
-      return actividades.filter((a) => !a.asesor_id);
-    }
+  const contactoPorId = (id: string | null) => {
+    if (!id) return null;
+    return contactos.find((c) => c.id === id) ?? null;
+  };
 
-    // scope === "asesores"
-    if (!selectedAsesorId) {
-      // Todos los asesores (cualquier actividad con asesor_id)
-      return actividades.filter((a) => !!a.asesor_id);
-    }
-    return actividades.filter((a) => a.asesor_id === selectedAsesorId);
-  }, [actividades, scope, selectedAsesorId]);
-
-  const propiedadesFiltradas = useMemo(() => {
-    if (scope === "global") return propiedades;
-
-    if (scope === "empresa") {
-      return propiedades.filter((p) => !p.asesor_id);
-    }
-
-    // scope === "asesores"
-    if (!selectedAsesorId) {
-      return propiedades.filter((p) => !!p.asesor_id);
-    }
-    return propiedades.filter((p) => p.asesor_id === selectedAsesorId);
-  }, [propiedades, scope, selectedAsesorId]);
-
-  const contactosFiltrados = useMemo(
-    () =>
-      tipologiaFiltro
-        ? contactos.filter((c) => c.tipologia === tipologiaFiltro)
-        : contactos,
-    [contactos, tipologiaFiltro]
-  );
-
-  const propiedadesFiltradasPorTipologia = useMemo(
-    () =>
-      tipologiaFiltro
-        ? propiedadesFiltradas.filter((p) => p.tipologia === tipologiaFiltro)
-        : propiedadesFiltradas,
-    [propiedadesFiltradas, tipologiaFiltro]
-  );
-
-  const actividadesHoy = useMemo(
-    () =>
-      actividadesFiltradas.filter((a) => {
-        if (!a.fecha_programada) return false;
-        const key = actividadDateKey(a);
-        return key === hoyKey;
-      }),
-    [actividadesFiltradas, hoyKey]
-  );
-
-  const actividadesManana = useMemo(
-    () =>
-      actividadesFiltradas.filter((a) => {
-        if (!a.fecha_programada) return false;
-        const key = actividadDateKey(a);
-        return key === mananaKey;
-      }),
-    [actividadesFiltradas, mananaKey]
-  );
-
-  const actividadesSelectedDate = useMemo(
-    () =>
-      actividadesFiltradas.filter((a) => {
-        if (!a.fecha_programada) return false;
-        const key = actividadDateKey(a);
-        return key === selectedKey;
-      }),
-    [actividadesFiltradas, selectedKey]
-  );
-
-  const actividadesByDateMap = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const a of actividadesFiltradas) {
-      if (!a.fecha_programada) continue;
-      const key = actividadDateKey(a); // siempre "YYYY-MM-DD" sin TZ
-      map.set(key, (map.get(key) ?? 0) + 1);
-    }
-    return map;
-  }, [actividadesFiltradas]);
-
-  const startKpiDate = useMemo(() => kpiStartDate(kpiRange), [kpiRange]);
-
-  const kpis = useMemo(() => {
-    const start = startKpiDate;
-    const startKey = toDateKey(start);
-
-    // Contactos creados dentro del período (base)
-    const contactosInRangeBase = contactos.filter((c) => {
-      const created = new Date(c.created_at);
-      return created >= start;
-    });
-
-    // Propiedades cerradas dentro del período (ya filtradas por scope)
-    const propiedadesInRange = propiedadesFiltradas.filter((p) => {
-      if (!p.fecha_cierre) return false;
-      const key = p.fecha_cierre.substring(0, 10);
-      return key >= startKey;
-    });
-
-    // Actividades dentro del período (ya filtradas por scope)
-    const actividadesInRange = actividadesFiltradas.filter((a) => {
-      if (!a.fecha_programada) return false;
-      const key = actividadDateKey(a);
-      return key >= startKey;
-    });
-
-    // Para scope empresa/asesores: contactos con al menos una actividad en este scope
-    let contactosInRange = contactosInRangeBase;
-    if (scope !== "global") {
-      const contactoIdsConActividad = new Set(
-        actividadesInRange
-          .map((a) => a.contacto_id)
-          .filter((id): id is string => !!id)
+  const actividadesDeContacto = (contactoId: string) =>
+    actividades
+      .filter((a) => a.contacto_id === contactoId)
+      .sort(
+        (a, b) =>
+          new Date(b.fecha_programada).getTime() -
+          new Date(a.fecha_programada).getTime()
       );
-      contactosInRange = contactosInRangeBase.filter((c) =>
-        contactoIdsConActividad.has(c.id)
-      );
-    }
 
-    // ---- PRELISTING ----
-    // 1) contactos que (en algún momento del circuito) llegaron al tramo
-    //    prelisting / vai_factibilidad / captado / cierre
-    const idsPrelistingEstado = contactosInRange
-      .filter((c) =>
-        ["prelisting", "vai_factibilidad", "captado", "cierre"].includes(
-          c.estado
-        )
-      )
-      .map((c) => c.id);
+  const normalizePropiedades = (rows: any[] | null): TrackerPropiedad[] =>
+    (rows ?? []).map((row: any) => {
+      const contactoRaw = Array.isArray(row.contacto)
+        ? row.contacto[0]
+        : row.contacto;
 
-    // 2) contactos que tuvieron al menos una actividad tipo "prelisting"
-    const idsPrelistingActividad = new Set<string>();
-    for (const act of actividadesInRange) {
-      if (act.tipo === "prelisting" && act.contacto_id) {
-        idsPrelistingActividad.add(act.contacto_id);
+      return {
+        id: row.id,
+        empresa_id: row.empresa_id,
+        contacto_id: row.contacto_id,
+        tipologia: row.tipologia,
+        tipo_operacion: row.tipo_operacion,
+        direccion: row.direccion,
+        zona: row.zona,
+        m2_lote: row.m2_lote,
+        m2_cubiertos: row.m2_cubiertos,
+        dormitorios: row.dormitorios,
+        precio_lista_inicial: row.precio_lista_inicial,
+        precio_actual: row.precio_actual,
+        precio_cierre: row.precio_cierre,
+        moneda: row.moneda,
+        fecha_inicio_comercializacion: row.fecha_inicio_comercializacion,
+        fecha_cierre: row.fecha_cierre,
+        honorarios_pct_vendedor: row.honorarios_pct_vendedor,
+        honorarios_pct_comprador: row.honorarios_pct_comprador,
+        asesor_id: row.asesor_id,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+        contacto: contactoRaw
+          ? {
+              nombre: contactoRaw.nombre ?? null,
+              apellido: contactoRaw.apellido ?? null,
+            }
+          : null,
+      };
+    });
+
+  const refetchTrackerData = useCallback(async () => {
+    if (!empresaId) return;
+
+    try {
+      setLoading(true);
+
+      const [
+        contactosRes,
+        actividadesRes,
+        propiedadesRes,
+        tercerosRes,
+        asesoresRes,
+      ] = await Promise.all([
+        supabase
+          .from("tracker_contactos")
+          .select("*")
+          .eq("empresa_id", empresaId)
+          .order("created_at", { ascending: false }),
+        supabase
+          .from("tracker_actividades")
+          .select("*")
+          .eq("empresa_id", empresaId)
+          .order("fecha_programada", { ascending: true }),
+        supabase
+          .from("tracker_propiedades")
+          .select(
+            `
+              id,
+              empresa_id,
+              contacto_id,
+              tipologia,
+              tipo_operacion,
+              direccion,
+              zona,
+              m2_lote,
+              m2_cubiertos,
+              dormitorios,
+              precio_lista_inicial,
+              precio_actual,
+              precio_cierre,
+              moneda,
+              fecha_inicio_comercializacion,
+              fecha_cierre,
+              honorarios_pct_vendedor,
+              honorarios_pct_comprador,
+              asesor_id,
+              created_at,
+              updated_at,
+              contacto:tracker_contactos (nombre, apellido)
+            `
+          )
+          .eq("empresa_id", empresaId)
+          .order("created_at", { ascending: false }),
+        supabase
+          .from("tracker_propiedades_terceros")
+          .select("*")
+          .eq("empresa_id", empresaId)
+          .order("fecha_cierre", { ascending: false }),
+        supabase
+          .from("asesores")
+          .select("id, nombre, apellido")
+          .eq("empresa_id", empresaId)
+          .order("nombre", { ascending: true }),
+      ]);
+
+      if (contactosRes.error) {
+        console.error("Error cargando contactos tracker:", contactosRes.error);
       }
+      if (actividadesRes.error) {
+        console.error(
+          "Error cargando actividades tracker:",
+          actividadesRes.error
+        );
+      }
+      if (propiedadesRes.error) {
+        console.error(
+          "Error cargando propiedades tracker:",
+          propiedadesRes.error
+        );
+      }
+      if (tercerosRes.error) {
+        console.error(
+          "Error cargando propiedades de terceros:",
+          tercerosRes.error
+        );
+      }
+      if (asesoresRes.error) {
+        console.error("Error cargando asesores tracker:", asesoresRes.error);
+      }
+
+      setContactos((contactosRes.data as TrackerContacto[]) ?? []);
+      setActividades((actividadesRes.data as TrackerActividad[]) ?? []);
+      setPropiedades(normalizePropiedades(propiedadesRes.data ?? []));
+      setPropiedadesTerceros(
+        (tercerosRes.data as TrackerPropiedadTercero[]) ?? []
+      );
+      setAsesores((asesoresRes.data as Asesor[]) ?? []);
+    } catch (err) {
+      console.error("Error cargando tracker:", err);
+      showMessage("❌ No se pudieron actualizar los datos del tracker.");
+    } finally {
+      setLoading(false);
     }
+  }, [empresaId]);
 
-    // 3) Unión: si alguna vez estuvo en prelisting (por estado o actividad),
-    // cuenta como prelisting aunque hoy esté en "captado" o "cierre"
-    const prelistingSet = new Set<string>(idsPrelistingEstado);
-    for (const id of idsPrelistingActividad) {
-      prelistingSet.add(id);
-    }
-    const prelistingCount = prelistingSet.size;
-
-    // CAPTACIONES: estado actual captado (en contactosInRange ya filtrados)
-    const captacionesCount = contactosInRange.filter(
-      (c) => c.estado === "captado"
-    ).length;
-
-    // CIERRES: propiedades con fecha_cierre en el período (ya filtradas por scope)
-    const cierresCount = propiedadesInRange.length;
-
-    return {
-      prospectos: contactosInRange.length,
-      prelisting: prelistingCount,
-      captaciones: captacionesCount,
-      cierres: cierresCount,
-    };
-  }, [
-    contactos,
-    actividadesFiltradas,
-    propiedadesFiltradas,
-    startKpiDate,
-    scope,
-  ]);
-
-  // Buscar empresa_id desde profile
   useEffect(() => {
     const fetchEmpresa = async () => {
       if (!user?.id) {
@@ -536,175 +588,170 @@ export default function EmpresaTrackerPage() {
 
     fetchEmpresa();
   }, [user]);
-  // Carga inicial (contactos + actividades + propiedades)
+
   useEffect(() => {
     if (!empresaId) return;
+    refetchTrackerData();
+  }, [empresaId, refetchTrackerData]);
 
-    const fetchAll = async () => {
-      try {
-        setLoading(true);
+  const recordMatchesScope = (asesorId: string | null | undefined) => {
+    if (scope === "global") return true;
+    if (scope === "empresa") return !asesorId;
+    if (!selectedAsesorId) return !!asesorId;
+    return asesorId === selectedAsesorId;
+  };
 
-        const [{ data: cData }, { data: aData }, { data: pData }] =
-          await Promise.all([
-            supabase
-              .from("tracker_contactos")
-              .select("*")
-              .eq("empresa_id", empresaId)
-              .order("created_at", { ascending: false }),
-            supabase
-              .from("tracker_actividades")
-              .select("*")
-              .eq("empresa_id", empresaId)
-              .order("fecha_programada", { ascending: true }),
-            supabase
-              .from("tracker_propiedades")
-              .select(
-                `
-                  id,
-                  empresa_id,
-                  contacto_id,
-                  tipologia,
-                  tipo_operacion,
-                  direccion,
-                  zona,
-                  m2_lote,
-                  m2_cubiertos,
-                  dormitorios,
-                  precio_lista_inicial,
-                  precio_actual,
-                  precio_cierre,
-                  moneda,
-                  fecha_inicio_comercializacion,
-                  fecha_cierre,
-                  honorarios_pct_vendedor,
-                  honorarios_pct_comprador,
-                  asesor_id,
-                  created_at,
-                  updated_at,
-                  contacto:tracker_contactos (nombre, apellido)
-                `
-              )
-              .eq("empresa_id", empresaId)
-              .order("created_at", { ascending: false }),
-          ]);
+  const recordMatchesOperacion = (tipo: string | null | undefined) => {
+    if (tipoOperacionFiltro === "todas") return true;
+    return tipo === tipoOperacionFiltro;
+  };
 
-        setContactos((cData as TrackerContacto[]) ?? []);
-        setActividades((aData as TrackerActividad[]) ?? []);
+  const contactosFiltradosPorVista = useMemo(() => {
+    return contactos.filter((c) => {
+      if (!recordMatchesScope(c.asesor_id)) return false;
+      if (!recordMatchesOperacion(c.tipo_operacion)) return false;
+      if (tipologiaFiltro && c.tipologia !== tipologiaFiltro) return false;
+      if (estadoFiltro && c.estado !== estadoFiltro) return false;
+      return true;
+    });
+  }, [
+    contactos,
+    scope,
+    selectedAsesorId,
+    tipoOperacionFiltro,
+    tipologiaFiltro,
+    estadoFiltro,
+  ]);
 
-        const propsNormalizadas: TrackerPropiedad[] = (pData ?? []).map(
-          (row: any) => {
-            const contactoRaw = Array.isArray(row.contacto)
-              ? row.contacto[0]
-              : row.contacto;
+  const propiedadesFiltradas = useMemo(() => {
+    return propiedades.filter((p) => {
+      if (!recordMatchesScope(p.asesor_id)) return false;
+      if (!recordMatchesOperacion(p.tipo_operacion)) return false;
+      if (tipologiaFiltro && p.tipologia !== tipologiaFiltro) return false;
+      return true;
+    });
+  }, [
+    propiedades,
+    scope,
+    selectedAsesorId,
+    tipoOperacionFiltro,
+    tipologiaFiltro,
+  ]);
 
-            return {
-              id: row.id,
-              empresa_id: row.empresa_id,
-              contacto_id: row.contacto_id,
-              tipologia: row.tipologia,
-              tipo_operacion: row.tipo_operacion,
-              direccion: row.direccion,
-              zona: row.zona,
-              m2_lote: row.m2_lote,
-              m2_cubiertos: row.m2_cubiertos,
-              dormitorios: row.dormitorios,
-              precio_lista_inicial: row.precio_lista_inicial,
-              precio_actual: row.precio_actual,
-              precio_cierre: row.precio_cierre,
-              moneda: row.moneda,
-              fecha_inicio_comercializacion: row.fecha_inicio_comercializacion,
-              fecha_cierre: row.fecha_cierre,
-              honorarios_pct_vendedor: row.honorarios_pct_vendedor,
-              honorarios_pct_comprador: row.honorarios_pct_comprador,
-              asesor_id: row.asesor_id,
-              created_at: row.created_at,
-              updated_at: row.updated_at,
-              contacto: contactoRaw
-                ? {
-                    nombre: contactoRaw.nombre ?? null,
-                    apellido: contactoRaw.apellido ?? null,
-                  }
-                : null,
-            } as TrackerPropiedad;
-          }
-        );
+  const tercerosFiltrados = useMemo(() => {
+    return propiedadesTerceros.filter((p) => {
+      if (!recordMatchesScope(p.asesor_id)) return false;
+      if (!recordMatchesOperacion(p.tipo_operacion)) return false;
+      if (tipologiaFiltro && p.tipologia !== tipologiaFiltro) return false;
+      return true;
+    });
+  }, [
+    propiedadesTerceros,
+    scope,
+    selectedAsesorId,
+    tipoOperacionFiltro,
+    tipologiaFiltro,
+  ]);
 
-        setPropiedades(propsNormalizadas);
-      } catch (err) {
-        console.error("Error cargando tracker:", err);
-      } finally {
-        setLoading(false);
+  const startKpiDate = useMemo(() => kpiStartDate(kpiRange), [kpiRange]);
+
+  const kpis = useMemo(() => {
+    const startKey = toDateKey(startKpiDate);
+
+    const contactosInRange = contactos
+      .filter((c) => recordMatchesScope(c.asesor_id))
+      .filter((c) => recordMatchesOperacion(c.tipo_operacion))
+      .filter((c) => dateKeyFromString(c.created_at) >= startKey);
+
+    const actividadesInRange = actividades
+      .filter((a) => recordMatchesScope(a.asesor_id))
+      .filter((a) => dateKeyFromString(a.fecha_programada) >= startKey);
+
+    const propiedadesInRange = propiedades
+      .filter((p) => recordMatchesScope(p.asesor_id))
+      .filter((p) => recordMatchesOperacion(p.tipo_operacion))
+      .filter((p) => {
+        const fechaCaptacion =
+          dateKeyFromString(p.fecha_inicio_comercializacion) ||
+          dateKeyFromString(p.created_at);
+        return fechaCaptacion >= startKey;
+      });
+
+    const cierresPropiosInRange = propiedades
+      .filter((p) => recordMatchesScope(p.asesor_id))
+      .filter((p) => recordMatchesOperacion(p.tipo_operacion))
+      .filter((p) => isValidClose(p))
+      .filter((p) => dateKeyFromString(p.fecha_cierre) >= startKey);
+
+    const tercerosInRange = propiedadesTerceros
+      .filter((p) => recordMatchesScope(p.asesor_id))
+      .filter((p) => recordMatchesOperacion(p.tipo_operacion))
+      .filter((p) => isValidTerceroClose(p))
+      .filter((p) => dateKeyFromString(p.fecha_cierre) >= startKey);
+
+    const prelistingIds = new Set<string>();
+
+    contactosInRange.forEach((c) => {
+      if (
+        ["prelisting", "vai_factibilidad", "captado", "cierre"].includes(
+          c.estado
+        )
+      ) {
+        prelistingIds.add(c.id);
       }
-    };
+    });
 
-    fetchAll();
-  }, [empresaId]);
-
-  // Cargar asesores para el filtro
-  useEffect(() => {
-    if (!empresaId) return;
-
-    const fetchAsesores = async () => {
-      try {
-        const { data, error } = await supabase
-          .from("asesores")
-          .select("id, nombre, apellido")
-          .eq("empresa_id", empresaId)
-          .order("nombre", { ascending: true });
-
-        if (error) {
-          console.error("Error cargando asesores para filtro:", error);
-          return;
-        }
-
-        setAsesores((data as Asesor[]) ?? []);
-      } catch (err) {
-        console.error("Error inesperado cargando asesores:", err);
+    actividadesInRange.forEach((a) => {
+      if (a.tipo === "prelisting" && a.contacto_id) {
+        prelistingIds.add(a.contacto_id);
       }
+    });
+
+    const honorariosPropios = cierresPropiosInRange.reduce((acc, p) => {
+      const precio = p.precio_cierre ?? 0;
+      const vendedor = p.honorarios_pct_vendedor ?? 0;
+      const comprador = p.honorarios_pct_comprador ?? 0;
+      return acc + (precio * (vendedor + comprador)) / 100;
+    }, 0);
+
+    const honorariosTerceros = tercerosInRange.reduce((acc, p) => {
+      const precio = p.precio_cierre ?? 0;
+      const vendedor = p.honorarios_pct_vendedor ?? 0;
+      const comprador = p.honorarios_pct_comprador ?? 0;
+      return acc + (precio * (vendedor + comprador)) / 100;
+    }, 0);
+
+    return {
+      prospectos: contactosInRange.length,
+      prelisting: prelistingIds.size,
+      captacionesPropias: propiedadesInRange.length,
+      cierresPropios: cierresPropiosInRange.length,
+      ventasTerceros: tercerosInRange.length,
+      ventasTotales: cierresPropiosInRange.length + tercerosInRange.length,
+      honorariosTotal: honorariosPropios + honorariosTerceros,
     };
-
-    fetchAsesores();
-  }, [empresaId]);
-
-  const showMessage = (text: string) => {
-    setMensaje(text);
-    setTimeout(() => setMensaje(null), 3200);
-  };
-
-  // Helpers de contacto / actividades por contacto
-  const contactoNombreCorto = (
-    c: { nombre?: string | null; apellido?: string | null } | null | undefined
-  ) => {
-    if (!c) return "Sin contacto";
-    const nom = [c.nombre, c.apellido].filter(Boolean).join(" ");
-    return nom || "Sin nombre";
-  };
-
-  const contactoPorId = (id: string | null) => {
-    if (!id) return null;
-    return contactos.find((c) => c.id === id) ?? null;
-  };
-
-  const actividadesDeContacto = (contactoId: string) =>
-    actividades
-      .filter((a) => a.contacto_id === contactoId)
-      .sort(
-        (a, b) =>
-          new Date(b.fecha_programada).getTime() -
-          new Date(a.fecha_programada).getTime()
-      );
-
-  // ----- CRUD CONTACTOS -----
+  }, [
+    contactos,
+    actividades,
+    propiedades,
+    propiedadesTerceros,
+    startKpiDate,
+    scope,
+    selectedAsesorId,
+    tipoOperacionFiltro,
+  ]);
 
   const openNuevoContacto = () => {
     setEditingContacto(null);
     setFormContacto({
+      asesor_id: defaultAsesorIdForNewRecord,
       nombre: "",
       apellido: "",
       telefono: "",
       email: "",
       tipologia: "",
-      tipo_operacion: "",
+      tipo_operacion:
+        tipoOperacionFiltro === "todas" ? "venta" : tipoOperacionFiltro,
       origen: "",
       zona: "",
       estado: "sin_contactar",
@@ -717,43 +764,57 @@ export default function EmpresaTrackerPage() {
   const openEditarContacto = (c: TrackerContacto) => {
     setEditingContacto(c);
     setFormContacto({
+      asesor_id: c.asesor_id ?? "",
       nombre: c.nombre ?? "",
       apellido: c.apellido ?? "",
       telefono: c.telefono ?? "",
       email: c.email ?? "",
       tipologia: c.tipologia ?? "",
-      tipo_operacion: c.tipo_operacion ?? "",
+      tipo_operacion: c.tipo_operacion ?? "venta",
       origen: c.origen ?? "",
       zona: c.zona ?? "",
       estado: c.estado,
       motivo_descarte: c.motivo_descarte ?? "",
-      direccion: "",
+      direccion: c.direccion ?? "",
     });
     setShowContactoModal(true);
   };
 
   const guardarContacto = async () => {
     if (!empresaId || savingContacto) return;
+
+    if (!formContacto.nombre.trim() && !formContacto.apellido.trim()) {
+      showMessage("⚠️ Cargá al menos nombre o apellido.");
+      return;
+    }
+
     setSavingContacto(true);
+
+    const payload = {
+      empresa_id: empresaId,
+      asesor_id: formContacto.asesor_id || null,
+      nombre: formContacto.nombre.trim() || null,
+      apellido: formContacto.apellido.trim() || null,
+      telefono: formContacto.telefono.trim() || null,
+      email: formContacto.email.trim() || null,
+      tipologia: formContacto.tipologia || null,
+      tipo_operacion: formContacto.tipo_operacion || null,
+      origen: formContacto.origen.trim() || null,
+      zona: formContacto.zona.trim() || null,
+      direccion: formContacto.direccion.trim() || null,
+      estado: formContacto.estado,
+      motivo_descarte:
+        formContacto.estado === "descarte"
+          ? formContacto.motivo_descarte.trim() || null
+          : null,
+    };
 
     try {
       if (editingContacto) {
         const { error } = await supabase
           .from("tracker_contactos")
           .update({
-            nombre: formContacto.nombre,
-            apellido: formContacto.apellido,
-            telefono: formContacto.telefono || null,
-            email: formContacto.email || null,
-            tipologia: formContacto.tipologia || null,
-            tipo_operacion: formContacto.tipo_operacion || null,
-            origen: formContacto.origen || null,
-            zona: formContacto.zona || null,
-            estado: formContacto.estado,
-            motivo_descarte:
-              formContacto.estado === "descarte"
-                ? formContacto.motivo_descarte || null
-                : null,
+            ...payload,
             updated_at: new Date().toISOString(),
           })
           .eq("id", editingContacto.id)
@@ -765,22 +826,7 @@ export default function EmpresaTrackerPage() {
           return;
         }
       } else {
-        const { error } = await supabase.from("tracker_contactos").insert({
-          empresa_id: empresaId,
-          nombre: formContacto.nombre,
-          apellido: formContacto.apellido,
-          telefono: formContacto.telefono || null,
-          email: formContacto.email || null,
-          tipologia: formContacto.tipologia || null,
-          tipo_operacion: formContacto.tipo_operacion || null,
-          origen: formContacto.origen || null,
-          zona: formContacto.zona || null,
-          estado: formContacto.estado,
-          motivo_descarte:
-            formContacto.estado === "descarte"
-              ? formContacto.motivo_descarte || null
-              : null,
-        });
+        const { error } = await supabase.from("tracker_contactos").insert(payload);
 
         if (error) {
           console.error("Error creando contacto:", error);
@@ -791,14 +837,7 @@ export default function EmpresaTrackerPage() {
 
       showMessage("✅ Contacto guardado.");
       setShowContactoModal(false);
-
-      const { data: cData } = await supabase
-        .from("tracker_contactos")
-        .select("*")
-        .eq("empresa_id", empresaId)
-        .order("created_at", { ascending: false });
-
-      setContactos((cData as TrackerContacto[]) ?? []);
+      await refetchTrackerData();
     } catch (err) {
       console.error("Error guardando contacto:", err);
       showMessage("❌ Error inesperado al guardar contacto.");
@@ -809,7 +848,11 @@ export default function EmpresaTrackerPage() {
 
   const eliminarContacto = async (id: string) => {
     if (!empresaId) return;
-    if (!confirm("¿Eliminar este contacto? Esta acción no se puede deshacer.")) {
+    if (
+      !confirm(
+        "¿Eliminar este contacto? Si tiene propiedades o actividades vinculadas, Supabase puede bloquear la eliminación."
+      )
+    ) {
       return;
     }
 
@@ -827,160 +870,56 @@ export default function EmpresaTrackerPage() {
       }
 
       showMessage("✅ Contacto eliminado.");
-      setContactos((prev) => prev.filter((c) => c.id !== id));
+      await refetchTrackerData();
     } catch (err) {
       console.error("Error eliminando contacto:", err);
       showMessage("❌ Error inesperado al eliminar.");
     }
   };
 
-  // ----- CRUD ACTIVIDADES -----
-
-  const openNuevaActividad = (date?: Date) => {
-    const baseDate = date ?? selectedDate ?? new Date();
-    setEditingActividad(null);
-    setFormActividad({
-      titulo: "",
-      tipo: "seguimiento",
-      fecha_programada: toDateKey(baseDate),
-      hora: "",
-      contacto_id: "",
-      notas: "",
-    });
-    setShowActividadModal(true);
-  };
-
-  const openEditarActividad = (a: TrackerActividad) => {
-    setEditingActividad(a);
-    setFormActividad({
-      titulo: a.titulo,
-      tipo: a.tipo,
-      fecha_programada: a.fecha_programada.substring(0, 10),
-      hora: a.hora ?? "",
-      contacto_id: a.contacto_id ?? "",
-      notas: a.notas ?? "",
-    });
-    setShowActividadModal(true);
-  };
-
-  const guardarActividad = async () => {
-    if (!empresaId || savingActividad) return;
-    setSavingActividad(true);
-
-    try {
-      if (editingActividad) {
-        const { error } = await supabase
-          .from("tracker_actividades")
-          .update({
-            titulo: formActividad.titulo,
-            tipo: formActividad.tipo,
-            fecha_programada: formActividad.fecha_programada,
-            hora: formActividad.hora || null,
-            contacto_id: formActividad.contacto_id || null,
-            notas: formActividad.notas || null,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", editingActividad.id)
-          .eq("empresa_id", empresaId);
-
-        if (error) {
-          console.error("Error actualizando actividad:", error);
-          showMessage("❌ No se pudo actualizar la actividad.");
-          return;
-        }
-      } else {
-        const { error } = await supabase.from("tracker_actividades").insert({
-          empresa_id: empresaId,
-          titulo: formActividad.titulo,
-          tipo: formActividad.tipo,
-          fecha_programada: formActividad.fecha_programada,
-          hora: formActividad.hora || null,
-          contacto_id: formActividad.contacto_id || null,
-          notas: formActividad.notas || null,
-        });
-
-        if (error) {
-          console.error("Error creando actividad:", error);
-          showMessage("❌ No se pudo crear la actividad.");
-          return;
-        }
-      }
-
-      showMessage("✅ Actividad guardada.");
-      setShowActividadModal(false);
-
-      const { data: aData } = await supabase
-        .from("tracker_actividades")
-        .select("*")
-        .eq("empresa_id", empresaId)
-        .order("fecha_programada", { ascending: true });
-
-      setActividades((aData as TrackerActividad[]) ?? []);
-    } catch (err) {
-      console.error("Error guardando actividad:", err);
-      showMessage("❌ Error inesperado al guardar actividad.");
-    } finally {
-      setSavingActividad(false);
-    }
-  };
-
-  const eliminarActividad = async (id: string) => {
-    if (!empresaId) return;
-    if (!confirm("¿Eliminar esta actividad?")) return;
-
-    try {
-      const { error } = await supabase
-        .from("tracker_actividades")
-        .delete()
-        .eq("id", id)
-        .eq("empresa_id", empresaId);
-
-      if (error) {
-        console.error("Error eliminando actividad:", error);
-        showMessage("❌ No se pudo eliminar la actividad.");
-        return;
-      }
-
-      showMessage("✅ Actividad eliminada.");
-      setActividades((prev) => prev.filter((a) => a.id !== id));
-    } catch (err) {
-      console.error("Error eliminando actividad:", err);
-      showMessage("❌ Error inesperado al eliminar actividad.");
-    }
-  };
-
-  // ----- CRUD PROPIEDADES -----
-
   const openNuevaPropiedad = (contactoId?: string) => {
+    const contacto = contactoId ? contactoPorId(contactoId) : null;
+    const tipoOperacion =
+      contacto?.tipo_operacion ??
+      (tipoOperacionFiltro === "todas" ? "venta" : tipoOperacionFiltro);
+    const moneda = tipoOperacion === "alquiler" ? "ARS" : "USD";
+
     setEditingPropiedad(null);
     setFormPropiedad({
+      asesor_id: contacto?.asesor_id ?? defaultAsesorIdForNewRecord,
       contacto_id: contactoId ?? "",
-      tipologia: "",
+      tipologia: contacto?.tipologia ?? "",
       dormitorios: "",
-      tipo_operacion: "",
-      direccion: "",
-      zona: "",
+      tipo_operacion: tipoOperacion,
+      direccion: contacto?.direccion ?? "",
+      zona: contacto?.zona ?? "",
       m2_lote: "",
       m2_cubiertos: "",
       precio_lista_inicial: "",
       precio_actual: "",
       precio_cierre: "",
-      moneda: "ARS",
-      fecha_inicio_comercializacion: "",
+      moneda,
+      fecha_inicio_comercializacion: toDateKey(new Date()),
       fecha_cierre: "",
-      honorarios_pct_vendedor: "",
-      honorarios_pct_comprador: "",
+      cobra_honorarios_vendedor: true,
+      honorarios_pct_vendedor: tipoOperacion === "alquiler" ? "0" : "3",
+      cobra_honorarios_comprador: false,
+      honorarios_pct_comprador: "0",
     });
     setShowPropiedadModal(true);
   };
 
   const openEditarPropiedad = (p: TrackerPropiedad) => {
+    const pctVendedor = p.honorarios_pct_vendedor ?? 0;
+    const pctComprador = p.honorarios_pct_comprador ?? 0;
+
     setEditingPropiedad(p);
     setFormPropiedad({
+      asesor_id: p.asesor_id ?? "",
       contacto_id: p.contacto_id ?? "",
       tipologia: p.tipologia ?? "",
       dormitorios: p.dormitorios != null ? String(p.dormitorios) : "",
-      tipo_operacion: p.tipo_operacion ?? "",
+      tipo_operacion: p.tipo_operacion ?? "venta",
       direccion: p.direccion ?? "",
       zona: p.zona ?? "",
       m2_lote: p.m2_lote != null ? String(p.m2_lote) : "",
@@ -989,29 +928,19 @@ export default function EmpresaTrackerPage() {
         p.precio_lista_inicial != null ? String(p.precio_lista_inicial) : "",
       precio_actual: p.precio_actual != null ? String(p.precio_actual) : "",
       precio_cierre: p.precio_cierre != null ? String(p.precio_cierre) : "",
-      moneda: p.moneda ?? "ARS",
+      moneda: p.moneda ?? "USD",
       fecha_inicio_comercializacion:
-        p.fecha_inicio_comercializacion?.substring(0, 10) ?? "",
-      fecha_cierre: p.fecha_cierre?.substring(0, 10) ?? "",
-      honorarios_pct_vendedor:
-        p.honorarios_pct_vendedor != null
-          ? String(p.honorarios_pct_vendedor)
-          : "",
-      honorarios_pct_comprador:
-        p.honorarios_pct_comprador != null
-          ? String(p.honorarios_pct_comprador)
-          : "",
+        dateKeyFromString(p.fecha_inicio_comercializacion) || toDateKey(new Date()),
+      fecha_cierre:
+        isValidDateKey(p.fecha_cierre) ? dateKeyFromString(p.fecha_cierre) : "",
+      cobra_honorarios_vendedor: pctVendedor > 0,
+      honorarios_pct_vendedor: String(pctVendedor),
+      cobra_honorarios_comprador: pctComprador > 0,
+      honorarios_pct_comprador: String(pctComprador),
     });
     setShowPropiedadModal(true);
   };
 
-  const parseNumberOrNull = (value: string) => {
-    if (!value) return null;
-    const parsed = parseFloat(value.replace(/\./g, "").replace(",", "."));
-    return isNaN(parsed) ? null : parsed;
-  };
-
-  // Cálculo de honorarios estimados en base al precio de cierre y los % cargados
   const honorariosEstimados = useMemo(() => {
     const precioCierre = parseNumberOrNull(formPropiedad.precio_cierre);
     if (precioCierre == null) {
@@ -1022,64 +951,196 @@ export default function EmpresaTrackerPage() {
       };
     }
 
-    const pctVendedor = parseNumberOrNull(
-      formPropiedad.honorarios_pct_vendedor
+    const pctVendedor = normalizePercentInput(
+      formPropiedad.honorarios_pct_vendedor,
+      formPropiedad.cobra_honorarios_vendedor
     );
-    const pctComprador = parseNumberOrNull(
-      formPropiedad.honorarios_pct_comprador
+    const pctComprador = normalizePercentInput(
+      formPropiedad.honorarios_pct_comprador,
+      formPropiedad.cobra_honorarios_comprador
     );
 
-    const vendedor =
-      pctVendedor != null ? (precioCierre * pctVendedor) / 100 : null;
-    const comprador =
-      pctComprador != null ? (precioCierre * pctComprador) / 100 : null;
-
-    const totalRaw = (vendedor ?? 0) + (comprador ?? 0);
-    const total = totalRaw > 0 ? totalRaw : null;
+    const vendedor = (precioCierre * pctVendedor) / 100;
+    const comprador = (precioCierre * pctComprador) / 100;
+    const totalRaw = vendedor + comprador;
 
     return {
-      vendedor,
-      comprador,
-      total,
+      vendedor: vendedor > 0 ? vendedor : null,
+      comprador: comprador > 0 ? comprador : null,
+      total: totalRaw > 0 ? totalRaw : null,
     };
   }, [
     formPropiedad.precio_cierre,
     formPropiedad.honorarios_pct_vendedor,
     formPropiedad.honorarios_pct_comprador,
+    formPropiedad.cobra_honorarios_vendedor,
+    formPropiedad.cobra_honorarios_comprador,
   ]);
+
+  const honorariosTerceroEstimados = useMemo(() => {
+    const precioCierre = parseNumberOrNull(formTercero.precio_cierre);
+    if (precioCierre == null) {
+      return {
+        vendedor: null as number | null,
+        comprador: null as number | null,
+        total: null as number | null,
+      };
+    }
+
+    const pctVendedor = normalizePercentInput(
+      formTercero.honorarios_pct_vendedor,
+      formTercero.cobra_honorarios_vendedor
+    );
+    const pctComprador = normalizePercentInput(
+      formTercero.honorarios_pct_comprador,
+      formTercero.cobra_honorarios_comprador
+    );
+
+    const vendedor = (precioCierre * pctVendedor) / 100;
+    const comprador = (precioCierre * pctComprador) / 100;
+    const totalRaw = vendedor + comprador;
+
+    return {
+      vendedor: vendedor > 0 ? vendedor : null,
+      comprador: comprador > 0 ? comprador : null,
+      total: totalRaw > 0 ? totalRaw : null,
+    };
+  }, [
+    formTercero.precio_cierre,
+    formTercero.honorarios_pct_vendedor,
+    formTercero.honorarios_pct_comprador,
+    formTercero.cobra_honorarios_vendedor,
+    formTercero.cobra_honorarios_comprador,
+  ]);
+
+  const ensureContactoForPropiedad = async () => {
+    if (formPropiedad.contacto_id) return formPropiedad.contacto_id;
+
+    const nombreBase =
+      formPropiedad.direccion.trim() ||
+      formPropiedad.zona.trim() ||
+      "Registro operativo";
+
+    const { data, error } = await supabase
+      .from("tracker_contactos")
+      .insert({
+        empresa_id: empresaId,
+        asesor_id: formPropiedad.asesor_id || null,
+        nombre: nombreBase,
+        apellido: "",
+        tipologia: formPropiedad.tipologia || null,
+        tipo_operacion: formPropiedad.tipo_operacion || null,
+        zona: formPropiedad.zona.trim() || null,
+        direccion: formPropiedad.direccion.trim() || null,
+        estado: isValidDateKey(formPropiedad.fecha_cierre)
+          ? "cierre"
+          : "captado",
+        origen: "tracker",
+      })
+      .select("id")
+      .single();
+
+    if (error) throw error;
+    return data.id as string;
+  };
+
+  const validateHonorarios = (vendedor: number, comprador: number) => {
+    if (vendedor < 0 || comprador < 0) {
+      showMessage("⚠️ Los porcentajes de honorarios no pueden ser negativos.");
+      return false;
+    }
+
+    if (vendedor > 100 || comprador > 100) {
+      showMessage("⚠️ Revisá los honorarios: no pueden superar el 100%.");
+      return false;
+    }
+
+    if (
+      (vendedor > 20 || comprador > 20) &&
+      !confirm(
+        "El porcentaje de honorarios parece alto. ¿Querés guardarlo igual?"
+      )
+    ) {
+      return false;
+    }
+
+    return true;
+  };
 
   const guardarPropiedad = async () => {
     if (!empresaId || savingPropiedad) return;
+
+    const precioLista = parseNumberOrNull(formPropiedad.precio_lista_inicial);
+    const precioCierre = parseNumberOrNull(formPropiedad.precio_cierre);
+    const vendedorPct = normalizePercentInput(
+      formPropiedad.honorarios_pct_vendedor,
+      formPropiedad.cobra_honorarios_vendedor
+    );
+    const compradorPct = normalizePercentInput(
+      formPropiedad.honorarios_pct_comprador,
+      formPropiedad.cobra_honorarios_comprador
+    );
+
+    if (!formPropiedad.tipologia) {
+      showMessage("⚠️ Seleccioná una tipología.");
+      return;
+    }
+
+    if (!formPropiedad.tipo_operacion) {
+      showMessage("⚠️ Seleccioná el tipo de operación.");
+      return;
+    }
+
+    if (precioLista == null || precioLista <= 0) {
+      showMessage("⚠️ Cargá un precio inicial válido.");
+      return;
+    }
+
+    if (!formPropiedad.fecha_inicio_comercializacion) {
+      showMessage("⚠️ Cargá la fecha de inicio de comercialización.");
+      return;
+    }
+
+    if (precioCierre != null && precioCierre > 0 && !formPropiedad.fecha_cierre) {
+      showMessage("⚠️ Si cargás precio de cierre, también debés cargar fecha de cierre.");
+      return;
+    }
+
+    if (formPropiedad.fecha_cierre && (precioCierre == null || precioCierre <= 0)) {
+      showMessage("⚠️ Si cargás fecha de cierre, también debés cargar precio de cierre.");
+      return;
+    }
+
+    if (!validateHonorarios(vendedorPct, compradorPct)) return;
+
     setSavingPropiedad(true);
 
-    const payload = {
-      empresa_id: empresaId,
-      contacto_id: formPropiedad.contacto_id || null,
-      tipologia: formPropiedad.tipologia || null,
-      dormitorios: parseNumberOrNull(formPropiedad.dormitorios),
-      tipo_operacion: formPropiedad.tipo_operacion || null,
-      direccion: formPropiedad.direccion || null,
-      zona: formPropiedad.zona || null,
-      m2_lote: parseNumberOrNull(formPropiedad.m2_lote),
-      m2_cubiertos: parseNumberOrNull(formPropiedad.m2_cubiertos),
-      precio_lista_inicial: parseNumberOrNull(
-        formPropiedad.precio_lista_inicial
-      ),
-      precio_actual: parseNumberOrNull(formPropiedad.precio_actual),
-      precio_cierre: parseNumberOrNull(formPropiedad.precio_cierre),
-      moneda: formPropiedad.moneda || null,
-      fecha_inicio_comercializacion:
-        formPropiedad.fecha_inicio_comercializacion || null,
-      fecha_cierre: formPropiedad.fecha_cierre || null,
-      honorarios_pct_vendedor: parseNumberOrNull(
-        formPropiedad.honorarios_pct_vendedor
-      ),
-      honorarios_pct_comprador: parseNumberOrNull(
-        formPropiedad.honorarios_pct_comprador
-      ),
-    };
-
     try {
+      const contactoId = await ensureContactoForPropiedad();
+
+      const payload = {
+        empresa_id: empresaId,
+        asesor_id: formPropiedad.asesor_id || null,
+        contacto_id: contactoId,
+        tipologia: formPropiedad.tipologia,
+        dormitorios: parseNumberOrNull(formPropiedad.dormitorios),
+        tipo_operacion: formPropiedad.tipo_operacion,
+        direccion: formPropiedad.direccion.trim() || null,
+        zona: formPropiedad.zona.trim() || null,
+        m2_lote: parseNumberOrNull(formPropiedad.m2_lote),
+        m2_cubiertos: parseNumberOrNull(formPropiedad.m2_cubiertos),
+        precio_lista_inicial: precioLista,
+        precio_actual:
+          parseNumberOrNull(formPropiedad.precio_actual) ?? precioLista,
+        precio_cierre: precioCierre,
+        moneda: formPropiedad.moneda || "USD",
+        fecha_inicio_comercializacion:
+          formPropiedad.fecha_inicio_comercializacion,
+        fecha_cierre: formPropiedad.fecha_cierre || null,
+        honorarios_pct_vendedor: vendedorPct,
+        honorarios_pct_comprador: compradorPct,
+      };
+
       if (editingPropiedad) {
         const { error } = await supabase
           .from("tracker_propiedades")
@@ -1109,77 +1170,7 @@ export default function EmpresaTrackerPage() {
 
       showMessage("✅ Propiedad guardada.");
       setShowPropiedadModal(false);
-
-      const { data: pData } = await supabase
-        .from("tracker_propiedades")
-        .select(
-          `
-            id,
-            empresa_id,
-            contacto_id,
-            tipologia,
-            tipo_operacion,
-            direccion,
-            zona,
-            m2_lote,
-            m2_cubiertos,
-            dormitorios,
-            precio_lista_inicial,
-            precio_actual,
-            precio_cierre,
-            moneda,
-            fecha_inicio_comercializacion,
-            fecha_cierre,
-            honorarios_pct_vendedor,
-            honorarios_pct_comprador,
-            asesor_id,
-            created_at,
-            updated_at,
-            contacto:tracker_contactos (nombre, apellido)
-          `
-        )
-        .eq("empresa_id", empresaId)
-        .order("created_at", { ascending: false });
-
-      const propsNormalizadas: TrackerPropiedad[] = (pData ?? []).map(
-        (row: any) => {
-          const contactoRaw = Array.isArray(row.contacto)
-            ? row.contacto[0]
-            : row.contacto;
-
-          return {
-            id: row.id,
-            empresa_id: row.empresa_id,
-            contacto_id: row.contacto_id,
-            tipologia: row.tipologia,
-            tipo_operacion: row.tipo_operacion,
-            direccion: row.direccion,
-            zona: row.zona,
-            m2_lote: row.m2_lote,
-            m2_cubiertos: row.m2_cubiertos,
-            dormitorios: row.dormitorios,
-            precio_lista_inicial: row.precio_lista_inicial,
-            precio_actual: row.precio_actual,
-            precio_cierre: row.precio_cierre,
-            moneda: row.moneda,
-            fecha_inicio_comercializacion: row.fecha_inicio_comercializacion,
-            fecha_cierre: row.fecha_cierre,
-            honorarios_pct_vendedor: row.honorarios_pct_vendedor,
-            honorarios_pct_comprador: row.honorarios_pct_comprador,
-            asesor_id: row.asesor_id,
-            created_at: row.created_at,
-            updated_at: row.updated_at,
-            contacto: contactoRaw
-              ? {
-                  nombre: contactoRaw.nombre ?? null,
-                  apellido: contactoRaw.apellido ?? null,
-                }
-              : null,
-          } as TrackerPropiedad;
-        }
-      );
-
-      setPropiedades(propsNormalizadas);
+      await refetchTrackerData();
     } catch (err) {
       console.error("Error guardando propiedad:", err);
       showMessage("❌ Error inesperado al guardar propiedad.");
@@ -1206,10 +1197,183 @@ export default function EmpresaTrackerPage() {
       }
 
       showMessage("✅ Propiedad eliminada.");
-      setPropiedades((prev) => prev.filter((p) => p.id !== id));
+      await refetchTrackerData();
     } catch (err) {
       console.error("Error eliminando propiedad:", err);
       showMessage("❌ Error inesperado al eliminar propiedad.");
+    }
+  };
+
+  const openNuevoTercero = () => {
+    const tipoOperacion =
+      tipoOperacionFiltro === "todas" ? "venta" : tipoOperacionFiltro;
+    setEditingTercero(null);
+    setFormTercero({
+      asesor_id: defaultAsesorIdForNewRecord,
+      comprador_nombre: "",
+      tipologia: "",
+      tipo_operacion: tipoOperacion,
+      direccion: "",
+      zona: "",
+      precio_cierre: "",
+      moneda: tipoOperacion === "alquiler" ? "ARS" : "USD",
+      fecha_cierre: toDateKey(new Date()),
+      cobra_honorarios_vendedor: false,
+      honorarios_pct_vendedor: "0",
+      cobra_honorarios_comprador: true,
+      honorarios_pct_comprador: tipoOperacion === "alquiler" ? "5" : "3",
+      empresa_share_pct: "",
+      porcentaje_asesor: "",
+      notas: "",
+    });
+    setShowTerceroModal(true);
+  };
+
+  const openEditarTercero = (p: TrackerPropiedadTercero) => {
+    const pctVendedor = p.honorarios_pct_vendedor ?? 0;
+    const pctComprador = p.honorarios_pct_comprador ?? 0;
+
+    setEditingTercero(p);
+    setFormTercero({
+      asesor_id: p.asesor_id ?? "",
+      comprador_nombre: p.comprador_nombre ?? "",
+      tipologia: p.tipologia ?? "",
+      tipo_operacion: p.tipo_operacion ?? "venta",
+      direccion: p.direccion ?? "",
+      zona: p.zona ?? "",
+      precio_cierre: p.precio_cierre != null ? String(p.precio_cierre) : "",
+      moneda: p.moneda ?? "USD",
+      fecha_cierre:
+        isValidDateKey(p.fecha_cierre) ? dateKeyFromString(p.fecha_cierre) : "",
+      cobra_honorarios_vendedor: pctVendedor > 0,
+      honorarios_pct_vendedor: String(pctVendedor),
+      cobra_honorarios_comprador: pctComprador > 0,
+      honorarios_pct_comprador: String(pctComprador),
+      empresa_share_pct:
+        p.empresa_share_pct != null ? String(p.empresa_share_pct) : "",
+      porcentaje_asesor:
+        p.porcentaje_asesor != null ? String(p.porcentaje_asesor) : "",
+      notas: p.notas ?? "",
+    });
+    setShowTerceroModal(true);
+  };
+
+  const guardarTercero = async () => {
+    if (!empresaId || savingTercero) return;
+
+    const precioCierre = parseNumberOrNull(formTercero.precio_cierre);
+    const vendedorPct = normalizePercentInput(
+      formTercero.honorarios_pct_vendedor,
+      formTercero.cobra_honorarios_vendedor
+    );
+    const compradorPct = normalizePercentInput(
+      formTercero.honorarios_pct_comprador,
+      formTercero.cobra_honorarios_comprador
+    );
+
+    if (!formTercero.tipologia) {
+      showMessage("⚠️ Seleccioná una tipología.");
+      return;
+    }
+
+    if (!formTercero.tipo_operacion) {
+      showMessage("⚠️ Seleccioná el tipo de operación.");
+      return;
+    }
+
+    if (precioCierre == null || precioCierre <= 0) {
+      showMessage("⚠️ Cargá un precio de cierre válido.");
+      return;
+    }
+
+    if (!formTercero.fecha_cierre) {
+      showMessage("⚠️ Cargá la fecha de cierre.");
+      return;
+    }
+
+    if (!validateHonorarios(vendedorPct, compradorPct)) return;
+
+    setSavingTercero(true);
+
+    const payload = {
+      empresa_id: empresaId,
+      asesor_id: formTercero.asesor_id || null,
+      comprador_nombre: formTercero.comprador_nombre.trim() || null,
+      tipologia: formTercero.tipologia,
+      tipo_operacion: formTercero.tipo_operacion,
+      direccion: formTercero.direccion.trim() || null,
+      zona: formTercero.zona.trim() || null,
+      precio_cierre: precioCierre,
+      moneda: formTercero.moneda || "USD",
+      fecha_cierre: formTercero.fecha_cierre,
+      honorarios_pct_vendedor: vendedorPct,
+      honorarios_pct_comprador: compradorPct,
+      empresa_share_pct: parseNumberOrNull(formTercero.empresa_share_pct),
+      porcentaje_asesor: parseNumberOrNull(formTercero.porcentaje_asesor),
+      notas: formTercero.notas.trim() || null,
+    };
+
+    try {
+      if (editingTercero) {
+        const { error } = await supabase
+          .from("tracker_propiedades_terceros")
+          .update({
+            ...payload,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", editingTercero.id)
+          .eq("empresa_id", empresaId);
+
+        if (error) {
+          console.error("Error actualizando propiedad de tercero:", error);
+          showMessage("❌ No se pudo actualizar la venta de tercero.");
+          return;
+        }
+      } else {
+        const { error } = await supabase
+          .from("tracker_propiedades_terceros")
+          .insert(payload);
+
+        if (error) {
+          console.error("Error creando propiedad de tercero:", error);
+          showMessage("❌ No se pudo crear la venta de tercero.");
+          return;
+        }
+      }
+
+      showMessage("✅ Venta de tercero guardada.");
+      setShowTerceroModal(false);
+      await refetchTrackerData();
+    } catch (err) {
+      console.error("Error guardando venta de tercero:", err);
+      showMessage("❌ Error inesperado al guardar venta de tercero.");
+    } finally {
+      setSavingTercero(false);
+    }
+  };
+
+  const eliminarTercero = async (id: string) => {
+    if (!empresaId) return;
+    if (!confirm("¿Eliminar esta venta de tercero?")) return;
+
+    try {
+      const { error } = await supabase
+        .from("tracker_propiedades_terceros")
+        .delete()
+        .eq("id", id)
+        .eq("empresa_id", empresaId);
+
+      if (error) {
+        console.error("Error eliminando venta de tercero:", error);
+        showMessage("❌ No se pudo eliminar la venta de tercero.");
+        return;
+      }
+
+      showMessage("✅ Venta de tercero eliminada.");
+      await refetchTrackerData();
+    } catch (err) {
+      console.error("Error eliminando venta de tercero:", err);
+      showMessage("❌ Error inesperado al eliminar venta de tercero.");
     }
   };
 
@@ -1259,14 +1423,72 @@ export default function EmpresaTrackerPage() {
     }
   };
 
-  const fmtCurrency = (n: number | null | undefined) => {
-    if (n == null || isNaN(n)) return "—";
+  const fmtCurrency = (
+    n: number | null | undefined,
+    currency?: string | null
+  ) => {
+    if (n == null || Number.isNaN(n)) return "—";
+
+    const safeCurrency = currency === "USD" ? "USD" : "ARS";
+
     return new Intl.NumberFormat("es-AR", {
       style: "currency",
-      currency: "ARS",
+      currency: safeCurrency,
       maximumFractionDigits: 0,
     }).format(n);
   };
+
+  const calcularHonorarios = (
+    precio: number | null | undefined,
+    vendedorPct: number | null | undefined,
+    compradorPct: number | null | undefined
+  ) => {
+    if (precio == null || precio <= 0) return null;
+    const totalPct = (vendedorPct ?? 0) + (compradorPct ?? 0);
+    if (totalPct <= 0) return null;
+    return (precio * totalPct) / 100;
+  };
+
+  const renderResponsableSelect = (
+    value: string,
+    onChange: (value: string) => void
+  ) => (
+    <div>
+      <label className="block text-xs font-medium text-slate-600">
+        Responsable
+      </label>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+      >
+        <option value="">Empresa</option>
+        {asesores.map((a) => (
+          <option key={a.id} value={a.id}>
+            {contactoNombreCorto(a)}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+
+  const renderTipologiaSelect = (
+    value: string,
+    onChange: (value: string) => void
+  ) => (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+    >
+      <option value="">Seleccionar</option>
+      {TIPOLOGIAS.map((t) => (
+        <option key={t.value} value={t.value}>
+          {t.label}
+        </option>
+      ))}
+    </select>
+  );
 
   if (loading && !empresaId) {
     return (
@@ -1276,7 +1498,6 @@ export default function EmpresaTrackerPage() {
     );
   }
 
-  // Bloqueo de acceso si no hay empresa o el usuario no es "empresa"
   if (!loading && (!user || user.role !== "empresa" || !empresaId)) {
     return (
       <div className="flex items-center justify-center h-[60vh] text-gray-500">
@@ -1285,23 +1506,19 @@ export default function EmpresaTrackerPage() {
     );
   }
 
-  const monthMatrix = getMonthMatrix(currentMonth);
-
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-6xl xl:max-w-7xl mx-auto px-4 py-6 space-y-6">
-        {/* Encabezado principal */}
-        <header className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <header className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
           <div>
             <h1 className="text-2xl md:text-3xl font-semibold text-slate-900">
-              Agenda de Actividades
+              Business Tracker
             </h1>
-            <p className="mt-1 text-sm md:text-base text-slate-600 max-w-xl">
-              Tu tablero de mando diario para medir prospección, prelisting,
-              captaciones y cierres.
+            <p className="mt-1 text-sm md:text-base text-slate-600 max-w-2xl">
+              Medí prospección, prelisting, captaciones, cierres propios,
+              ventas de terceros, alquileres y honorarios de la inmobiliaria.
             </p>
 
-            {/* Filtro de vista: Empresa / Asesores / Global */}
             <div className="mt-3 flex flex-wrap items-center gap-3 text-xs">
               <div className="flex items-center gap-2">
                 <span className="text-slate-500">Vista:</span>
@@ -1347,168 +1564,133 @@ export default function EmpresaTrackerPage() {
                   </select>
                 </div>
               )}
+
+              <div className="flex items-center gap-2">
+                <span className="text-slate-500">Operación:</span>
+                <select
+                  value={tipoOperacionFiltro}
+                  onChange={(e) =>
+                    setTipoOperacionFiltro(e.target.value as TipoOperacionFiltro)
+                  }
+                  className="rounded-full border border-gray-300 bg-white px-3 py-1 text-xs text-slate-700"
+                >
+                  <option value="todas">Todas</option>
+                  <option value="venta">Venta</option>
+                  <option value="alquiler">Alquiler</option>
+                </select>
+              </div>
             </div>
           </div>
 
-          {/* Hoy / Mañana resumen */}
-          <div className="flex flex-col gap-3 md:flex-row">
-            <div className="rounded-xl bg-white border border-gray-200 shadow-sm px-4 py-3 w-full md:w-56">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                  Hoy
-                </span>
-                <span className="text-[10px] text-slate-400">
-                  {formatDateShort(hoy)}
-                </span>
-              </div>
-              <div className="mt-1 text-2xl md:text-3xl font-semibold text-slate-900">
-                {actividadesHoy.length}
-              </div>
-              <div className="mt-1 text-[11px] text-slate-500">
-                tareas programadas
-              </div>
-              <ul className="mt-2 space-y-1 max-h-20 overflow-y-auto">
-                {actividadesHoy.slice(0, 3).map((a) => (
-                  <li
-                    key={a.id}
-                    className="text-[11px] text-slate-700 flex items-center justify-between"
-                  >
-                    <span className="truncate">{a.titulo}</span>
-                    {a.hora && (
-                      <span className="ml-2 text-[10px] text-slate-400">
-                        {formatTime(a.hora)}
-                      </span>
-                    )}
-                  </li>
-                ))}
-                {actividadesHoy.length === 0 && (
-                  <li className="text-[11px] text-slate-400">
-                    Sin actividades para hoy.
-                  </li>
-                )}
-              </ul>
-            </div>
-
-            <div className="rounded-xl bg-white border border-gray-200 shadow-sm px-4 py-3 w-full md:w-56">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                  Mañana
-                </span>
-                <span className="text-[10px] text-slate-400">
-                  {formatDateShort(manana)}
-                </span>
-              </div>
-              <div className="mt-1 text-2xl md:text-3xl font-semibold text-slate-900">
-                {actividadesManana.length}
-              </div>
-              <div className="mt-1 text-[11px] text-slate-500">
-                tareas programadas
-              </div>
-              <ul className="mt-2 space-y-1 max-h-20 overflow-y-auto">
-                {actividadesManana.slice(0, 3).map((a) => (
-                  <li
-                    key={a.id}
-                    className="text-[11px] text-slate-700 flex items-center justify-between"
-                  >
-                    <span className="truncate">{a.titulo}</span>
-                    {a.hora && (
-                      <span className="ml-2 text-[10px] text-slate-400">
-                        {formatTime(a.hora)}
-                      </span>
-                    )}
-                  </li>
-                ))}
-                {actividadesManana.length === 0 && (
-                  <li className="text-[11px] text-slate-400">
-                    Sin actividades para mañana.
-                  </li>
-                )}
-              </ul>
-            </div>
+          <div className="flex flex-col items-start gap-2 md:items-end">
+            <Link
+              href="/dashboard/empresa/tracker-analytics"
+              className="inline-flex items-center gap-1 rounded-full bg-black text-white px-4 py-2 text-xs font-medium hover:bg-slate-900"
+            >
+              Business Analytics
+            </Link>
+            <button
+              type="button"
+              onClick={refetchTrackerData}
+              className="rounded-full border border-gray-300 bg-white px-4 py-2 text-xs font-medium text-slate-700 hover:bg-gray-100"
+            >
+              Actualizar datos
+            </button>
           </div>
         </header>
 
-        {/* KPIs principales */}
+        {mensaje && (
+          <div className="rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm">
+            {mensaje}
+          </div>
+        )}
+
         <section className="rounded-2xl bg-white border border-gray-200 shadow-sm p-4">
-          <div className="flex items-center justify-between gap-3 mb-4">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between mb-4">
             <div>
               <h2 className="text-sm md:text-base font-semibold text-slate-900">
-                Resumen de actividad
+                Resumen comercial
               </h2>
               <p className="text-xs text-slate-500">
-                Visualizá cuántos contactos avanzan en cada etapa del circuito
-                según la vista seleccionada.
+                Los cierres propios se cuentan solo con fecha válida y precio de
+                cierre mayor a cero. Las ventas de terceros no suman a
+                captaciones.
               </p>
             </div>
-            <div className="flex items-center gap-3">
-              <div className="flex items-center gap-2 text-xs">
-                <span className="text-slate-500">Período:</span>
-                <select
-                  value={kpiRange}
-                  onChange={(e) => setKpiRange(e.target.value as KpiRange)}
-                  className="rounded-full border border-gray-300 bg-white px-3 py-1 text-xs text-slate-700"
-                >
-                  <option value="30d">Últimos 30 días</option>
-                  <option value="90d">Últimos 3 meses</option>
-                  <option value="180d">Últimos 6 meses</option>
-                  <option value="365d">Último año</option>
-                </select>
-              </div>
-              <Link
-                href="/dashboard/empresa/tracker-analytics"
-                className="inline-flex items-center gap-1 rounded-full bg-black text-white px-3 py-1.5 text-xs font-medium hover:bg-slate-900"
+            <div className="flex items-center gap-2 text-xs">
+              <span className="text-slate-500">Período:</span>
+              <select
+                value={kpiRange}
+                onChange={(e) => setKpiRange(e.target.value as KpiRange)}
+                className="rounded-full border border-gray-300 bg-white px-3 py-1 text-xs text-slate-700"
               >
-                Business Analytics
-              </Link>
+                <option value="30d">Últimos 30 días</option>
+                <option value="90d">Últimos 3 meses</option>
+                <option value="180d">Últimos 6 meses</option>
+                <option value="365d">Último año</option>
+              </select>
             </div>
           </div>
 
-          <div className="grid gap-4 md:grid-cols-4">
+          <div className="grid gap-4 md:grid-cols-5">
             <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
-              <p className="text-xs text-slate-500">Prospectos / Clientes</p>
+              <p className="text-xs text-slate-500">Prospectos</p>
               <p className="mt-1 text-2xl md:text-3xl font-semibold text-slate-900">
                 {kpis.prospectos}
               </p>
               <p className="mt-1 text-[11px] text-slate-500">
-                Nuevos contactos que entraron al circuito.
+                Contactos nuevos en el período.
               </p>
             </div>
+
             <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
               <p className="text-xs text-slate-500">Prelisting</p>
               <p className="mt-1 text-2xl md:text-3xl font-semibold text-slate-900">
                 {kpis.prelisting}
               </p>
               <p className="mt-1 text-[11px] text-slate-500">
-                Propiedades con visita y análisis previo.
+                Contactos que llegaron a prelisting o más.
               </p>
             </div>
+
             <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
-              <p className="text-xs text-slate-500">Captaciones</p>
+              <p className="text-xs text-slate-500">Captaciones propias</p>
               <p className="mt-1 text-2xl md:text-3xl font-semibold text-slate-900">
-                {kpis.captaciones}
+                {kpis.captacionesPropias}
               </p>
               <p className="mt-1 text-[11px] text-slate-500">
-                Propietarios que te dieron la propiedad.
+                Propiedades propias cargadas/captadas.
               </p>
             </div>
+
             <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
-              <p className="text-xs text-slate-500">Cierres</p>
+              <p className="text-xs text-slate-500">Cierres propios</p>
               <p className="mt-1 text-2xl md:text-3xl font-semibold text-slate-900">
-                {kpis.cierres}
+                {kpis.cierresPropios}
               </p>
               <p className="mt-1 text-[11px] text-slate-500">
-                Operaciones finalizadas con precio de cierre.
+                Captaciones propias cerradas.
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
+              <p className="text-xs text-slate-500">Ventas totales</p>
+              <p className="mt-1 text-2xl md:text-3xl font-semibold text-slate-900">
+                {kpis.ventasTotales}
+              </p>
+              <p className="mt-1 text-[11px] text-slate-500">
+                Terceros: {kpis.ventasTerceros} · Hon.:{" "}
+                {fmtCurrency(kpis.honorariosTotal, tipoOperacionFiltro === "alquiler" ? "ARS" : "USD")}
               </p>
             </div>
           </div>
         </section>
 
-        {/* Tabs */}
         <nav className="flex flex-wrap gap-2 text-sm">
           {[
-            { id: "calendario", label: "Calendario" },
-            { id: "contactos", label: "Contactos / Captaciones" },
+            { id: "contactos", label: "Contactos" },
             { id: "propiedades", label: "Propiedades captadas" },
+            { id: "terceros", label: "Propiedades de terceros" },
           ].map((tab) => {
             const isActive = activeTab === (tab.id as TrackerTab);
             return (
@@ -1527,819 +1709,703 @@ export default function EmpresaTrackerPage() {
           })}
         </nav>
 
-        {/* CONTENIDO DE TABS */}
-        {activeTab === "calendario" && (
-          <section className="space-y-4">
-            <div className="grid gap-6 md:grid-cols-[2fr_1.1fr] items-start">
-              {/* Calendario mensual */}
-              <div className="rounded-2xl bg-white border border-gray-200 shadow-sm p-4">
-                <div className="flex items-center justify-between mb-3">
-                  <div>
-                    <p className="text-xs uppercase tracking-wide text-slate-500">
-                      Calendario
-                    </p>
-                    <p className="text-sm font-semibold text-slate-900">
-                      {currentMonth.toLocaleDateString("es-AR", {
-                        month: "long",
-                        year: "numeric",
-                      })}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() =>
-                        setCurrentMonth(
-                          new Date(
-                            currentMonth.getFullYear(),
-                            currentMonth.getMonth() - 1,
-                            1
-                          )
-                        )
-                      }
-                      className="rounded-full border border-gray-300 bg-white px-2 py-1 text-xs text-slate-700 hover:bg-gray-100"
-                    >
-                      ←
-                    </button>
-                    <button
-                      onClick={() => {
-                        const now = new Date();
-                        setCurrentMonth(
-                          new Date(now.getFullYear(), now.getMonth(), 1)
-                        );
-                        setSelectedDate(startOfDay(now));
-                      }}
-                      className="rounded-full border border-gray-300 bg-white px-3 py-1 text-xs text-slate-700 hover:bg-gray-100"
-                    >
-                      Hoy
-                    </button>
-                    <button
-                      onClick={() =>
-                        setCurrentMonth(
-                          new Date(
-                            currentMonth.getFullYear(),
-                            currentMonth.getMonth() + 1,
-                            1
-                          )
-                        )
-                      }
-                      className="rounded-full border border-gray-300 bg-white px-2 py-1 text-xs text-slate-700 hover:bg-gray-100"
-                    >
-                      →
-                    </button>
-                  </div>
-                </div>
+        <section className="rounded-2xl bg-white border border-gray-200 shadow-sm p-4 space-y-4">
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <span className="text-slate-500">Tipología:</span>
+            <select
+              className="rounded-full border border-gray-300 bg-white px-3 py-1 text-xs text-slate-700"
+              value={tipologiaFiltro}
+              onChange={(e) => setTipologiaFiltro(e.target.value)}
+            >
+              <option value="">Todas</option>
+              {TIPOLOGIAS.map((t) => (
+                <option key={t.value} value={t.value}>
+                  {t.label}
+                </option>
+              ))}
+            </select>
 
-                {/* Cabecera días semana */}
-                <div className="grid grid-cols-7 text-[11px] text-slate-500 mb-1">
-                  {["L", "M", "M", "J", "V", "S", "D"].map((d) => (
-                    <div
-                      key={d}
-                      className="py-1 text-center uppercase tracking-wide"
-                    >
-                      {d}
-                    </div>
+            {activeTab === "contactos" && (
+              <>
+                <span className="text-slate-500">Estado:</span>
+                <select
+                  className="rounded-full border border-gray-300 bg-white px-3 py-1 text-xs text-slate-700"
+                  value={estadoFiltro}
+                  onChange={(e) => setEstadoFiltro(e.target.value)}
+                >
+                  <option value="">Todos</option>
+                  {ESTADOS_CONTACTO.map((estado) => (
+                    <option key={estado.value} value={estado.value}>
+                      {estado.label}
+                    </option>
                   ))}
-                </div>
+                </select>
+              </>
+            )}
+          </div>
 
-                <div className="grid grid-rows-6 gap-y-1">
-                  {monthMatrix.map((week, wi) => (
-                    <div key={wi} className="grid grid-cols-7 gap-x-1">
-                      {week.map((day, di) => {
-                        const isCurrentMonth =
-                          day.getMonth() === currentMonth.getMonth();
-                        const isSelected = isSameDay(day, selectedDate);
-                        const key = toDateKey(day);
-                        const count = actividadesByDateMap.get(key) ?? 0;
-
-                        return (
-                          <button
-                            key={di}
-                            type="button"
-                            onClick={() => setSelectedDate(startOfDay(day))}
-                            className={`flex flex-col items-center justify-center rounded-lg border px-1.5 py-1.5 text-[11px] transition ${
-                              isSelected
-                                ? "border-black bg-black text-white"
-                                : isCurrentMonth
-                                ? "bg-white border-gray-200 text-slate-900 hover:bg-gray-50"
-                                : "bg-gray-50 border-gray-200 text-slate-400 hover:bg-gray-100"
-                            }`}
-                          >
-                            <span className="leading-none">
-                              {day.getDate()}
-                            </span>
-                            {count > 0 && (
-                              <span className="mt-1 inline-flex items-center rounded-full bg-[rgba(230,169,48,0.08)] px-1.5 py-0.5 text-[9px] font-medium text-[rgba(230,169,48,0.95)]">
-                                {count} act.
-                              </span>
-                            )}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  ))}
+          {activeTab === "contactos" && (
+            <div className="space-y-4">
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <h2 className="text-sm font-semibold text-slate-900">
+                    Contactos
+                  </h2>
+                  <p className="text-xs text-slate-500">
+                    Dato auxiliar para medir prospección y avance del circuito.
+                  </p>
                 </div>
+                <button
+                  onClick={openNuevoContacto}
+                  className="inline-flex items-center gap-1 rounded-full bg-black text-white px-3 py-1.5 text-xs font-medium hover:bg-slate-900"
+                >
+                  <span className="text-sm">＋</span>
+                  Nuevo contacto
+                </button>
               </div>
 
-              {/* Actividades del día */}
-              <div className="rounded-2xl bg-white border border-gray-200 shadow-sm p-4">
-                <div className="flex items-center justify-between gap-2 mb-3">
-                  <div>
-                    <p className="text-xs uppercase tracking-wide text-slate-500">
-                      Actividades del día
-                    </p>
-                    <p className="text-sm font-semibold text-slate-900">
-                      {formatDate(selectedDate)}
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => openNuevaActividad(selectedDate)}
-                    className="inline-flex items-center gap-1 rounded-full bg-black text-white px-3 py-1.5 text-xs font-medium hover:bg-slate-900"
-                  >
-                    <span className="text-sm">＋</span>
-                    Agregar tarea
-                  </button>
-                </div>
-
-                {actividadesSelectedDate.length === 0 ? (
-                  <p className="text-xs text-slate-500">
-                    No hay actividades registradas en esta fecha.
-                  </p>
-                ) : (
-                  <ul className="space-y-2 max-h-[360px] overflow-y-auto">
-                    {actividadesSelectedDate.map((a) => {
-                      const contacto = contactoPorId(a.contacto_id);
-                      return (
-                        <li
-                          key={a.id}
-                          className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs flex flex-col gap-1"
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-gray-200 bg-gray-50 text-[11px] text-slate-500">
+                      <th className="px-3 py-2 text-left font-medium">
+                        Contacto
+                      </th>
+                      <th className="px-3 py-2 text-left font-medium">
+                        Responsable
+                      </th>
+                      <th className="px-3 py-2 text-left font-medium">
+                        Teléfono
+                      </th>
+                      <th className="px-3 py-2 text-left font-medium">
+                        Tipología
+                      </th>
+                      <th className="px-3 py-2 text-left font-medium">
+                        Operación
+                      </th>
+                      <th className="px-3 py-2 text-left font-medium">
+                        Estado
+                      </th>
+                      <th className="px-3 py-2 text-left font-medium">
+                        Última act.
+                      </th>
+                      <th className="px-3 py-2 text-right font-medium">
+                        Acciones
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {contactosFiltradosPorVista.length === 0 && (
+                      <tr>
+                        <td
+                          colSpan={8}
+                          className="px-3 py-6 text-center text-xs text-slate-500"
                         >
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="font-medium text-slate-900">
-                              {a.titulo}
+                          No hay contactos con los filtros seleccionados.
+                        </td>
+                      </tr>
+                    )}
+
+                    {contactosFiltradosPorVista.map((c) => {
+                      const ultAct = actividadesDeContacto(c.id)[0];
+
+                      return (
+                        <tr
+                          key={c.id}
+                          className="border-b border-gray-100 hover:bg-gray-50"
+                        >
+                          <td className="px-3 py-2 align-top">
+                            <div className="font-medium text-slate-900">
+                              {contactoNombreCorto(c)}
+                            </div>
+                            <div className="text-[11px] text-slate-500">
+                              {c.email || c.origen || "Sin email/origen"}
+                            </div>
+                          </td>
+                          <td className="px-3 py-2 align-top text-slate-700">
+                            {asesorNombre(c.asesor_id)}
+                          </td>
+                          <td className="px-3 py-2 align-top text-slate-700">
+                            {c.telefono || "—"}
+                          </td>
+                          <td className="px-3 py-2 align-top text-slate-700">
+                            {labelTipologia(c.tipologia)}
+                          </td>
+                          <td className="px-3 py-2 align-top text-slate-700">
+                            {labelTipoOperacion(c.tipo_operacion)}
+                          </td>
+                          <td className="px-3 py-2 align-top">
+                            <span
+                              className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${classEstadoContacto(
+                                c.estado
+                              )}`}
+                            >
+                              {labelEstadoContacto(c.estado)}
                             </span>
-                            <span className="text-[11px] text-slate-500">
-                              {a.hora ? formatTime(a.hora) : "Sin hora"}
-                            </span>
-                          </div>
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="text-[11px] text-slate-500">
-                              {contactoNombreCorto(contacto)}
-                            </span>
-                            <div className="flex items-center gap-2">
+                          </td>
+                          <td className="px-3 py-2 align-top text-[11px] text-slate-600">
+                            {ultAct
+                              ? `${dateKeyFromString(
+                                  ultAct.fecha_programada
+                                ).substring(8, 10)}/${dateKeyFromString(
+                                  ultAct.fecha_programada
+                                ).substring(5, 7)}`
+                              : "—"}
+                          </td>
+                          <td className="px-3 py-2 align-top text-right">
+                            <div className="flex justify-end gap-2">
                               <button
-                                onClick={() => openEditarActividad(a)}
+                                onClick={() => openEditarContacto(c)}
                                 className="text-[11px] text-slate-600 hover:text-black"
                               >
-                                Ver / Editar
+                                Editar
                               </button>
                               <button
-                                onClick={() => eliminarActividad(a.id)}
+                                onClick={() => openNuevaPropiedad(c.id)}
+                                className="text-[11px] text-[rgba(230,169,48,0.95)] hover:text-[rgba(230,169,48,1)]"
+                              >
+                                Captar
+                              </button>
+                              <button
+                                onClick={() => eliminarContacto(c.id)}
                                 className="text-[11px] text-red-600 hover:text-red-700"
                               >
                                 Eliminar
                               </button>
                             </div>
-                          </div>
-                        </li>
+                          </td>
+                        </tr>
                       );
                     })}
-                  </ul>
-                )}
+                  </tbody>
+                </table>
               </div>
             </div>
+          )}
 
-            {/* Tip visual con ejemplos */}
-            <div className="rounded-xl border-l-4 border-[#E6A930] bg-amber-50/60 px-4 py-3 text-[11px] text-amber-900">
-              <p className="font-medium text-xs mb-1">Tip para usar el tracker</p>
-              <p>
-                Si hoy no tenés actividades agendadas, programá al menos{" "}
-                <span className="font-semibold">3 llamadas de seguimiento</span>{" "}
-                o{" "}
-                <span className="font-semibold">1 prelisting</span>. Ejemplos:
-                &nbsp;“Seguimiento Casa 3D en Centro” a las 10:00, “Prelisting
-                Dúplex zona norte” a las 17:00. Así tu flujo de captaciones se
-                mantiene siempre activo.
-              </p>
-            </div>
-          </section>
-        )}
-
-        {activeTab === "contactos" && (
-          <section className="rounded-2xl bg-white border border-gray-200 shadow-sm p-4 space-y-4">
-            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-              <div>
-                <h2 className="text-sm font-semibold text-slate-900">
-                  Contactos / Captaciones
-                </h2>
-                <p className="text-xs text-slate-500">
-                  Guardá propietarios y clientes potenciales, y movelos por el
-                  circuito: sin contactar → seguimiento → prelisting →
-                  VAI/Factibilidad → captación → cierre.
-                </p>
-              </div>
-              <button
-                onClick={openNuevoContacto}
-                className="inline-flex items-center gap-1 rounded-full bg-black text-white px-3 py-1.5 text-xs font-medium hover:bg-slate-900"
-              >
-                <span className="text-sm">＋</span>
-                Nuevo prospecto / cliente
-              </button>
-            </div>
-
-            {/* Filtro por tipología */}
-            <div className="flex flex-wrap items-center gap-2 text-xs">
-              <span className="text-slate-500">Filtrar por tipología:</span>
-              <select
-                className="rounded-full border border-gray-300 bg-white px-3 py-1 text-xs text-slate-700"
-                value={tipologiaFiltro}
-                onChange={(e) => setTipologiaFiltro(e.target.value)}
-              >
-                <option value="">Todas</option>
-                <option value="casa">Casa</option>
-                <option value="departamento">Departamento</option>
-                <option value="duplex">Dúplex</option>
-                <option value="ph">PH</option>
-                <option value="oficina">Oficina</option>
-                <option value="local">Local</option>
-                <option value="terreno">Terreno</option>
-                <option value="galpon">Galpón / Depósito</option>
-                <option value="cochera">Cochera</option>
-                <option value="campo">Campo</option>
-                <option value="otro">Otro</option>
-              </select>
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-xs">
-                <thead>
-                  <tr className="border-b border-gray-200 bg-gray-50 text-[11px] text-slate-500">
-                    <th className="px-3 py-2 text-left font-medium">Contacto</th>
-                    <th className="px-3 py-2 text-left font-medium">Teléfono</th>
-                    <th className="px-3 py-2 text-left font-medium">
-                      Tipología
-                    </th>
-                    <th className="px-3 py-2 text-left font-medium">
-                      Operación
-                    </th>
-                    <th className="px-3 py-2 text-left font-medium">Estado</th>
-                    <th className="px-3 py-2 text-left font-medium">
-                      Origen
-                    </th>
-                    <th className="px-3 py-2 text-left font-medium">
-                      Última act.
-                    </th>
-                    <th className="px-3 py-2 text-right font-medium">
-                      Acciones
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {contactosFiltrados.length === 0 && (
-                    <tr>
-                      <td
-                        colSpan={8}
-                        className="px-3 py-6 text-center text-xs text-slate-500"
-                      >
-                        {contactos.length === 0
-                          ? "Todavía no cargaste prospectos. Empezá agregando el próximo propietario o cliente potencial."
-                          : "No hay prospectos con la tipología seleccionada."}
-                      </td>
-                    </tr>
-                  )}
-                  {contactosFiltrados.map((c) => {
-                    const ultAct = actividadesDeContacto(c.id)[0];
-
-                    return (
-                      <tr
-                        key={c.id}
-                        className="border-b border-gray-100 hover:bg-gray-50"
-                      >
-                        <td className="px-3 py-2 align-top">
-                          <div className="font-medium text-slate-900">
-                            {contactoNombreCorto(c)}
-                          </div>
-                          <div className="text-[11px] text-slate-500">
-                            {c.email || "Sin email"}
-                          </div>
-                        </td>
-                        <td className="px-3 py-2 align-top text-slate-700">
-                          {c.telefono || "—"}
-                        </td>
-                        <td className="px-3 py-2 align-top text-slate-700">
-                          {c.tipologia || "—"}
-                        </td>
-                        <td className="px-3 py-2 align-top text-slate-700">
-                          {c.tipo_operacion || "—"}
-                        </td>
-                        <td className="px-3 py-2 align-top">
-                          <span
-                            className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${classEstadoContacto(
-                              c.estado
-                            )}`}
-                          >
-                            {labelEstadoContacto(c.estado)}
-                          </span>
-                        </td>
-                        <td className="px-3 py-2 align-top text-[11px] text-slate-600">
-                          {c.origen || "—"}
-                        </td>
-                        <td className="px-3 py-2 align-top text-[11px] text-slate-600">
-                          {ultAct
-                            ? `${ultAct.fecha_programada.substring(
-                                8,
-                                10
-                              )}/${ultAct.fecha_programada.substring(5, 7)}`
-                            : "—"}
-                        </td>
-                        <td className="px-3 py-2 align-top text-right">
-                          <div className="flex justify-end gap-2">
-                            <button
-                              onClick={() => openEditarContacto(c)}
-                              className="text-[11px] text-slate-600 hover:text-black"
-                            >
-                              Ver / Editar
-                            </button>
-                            <button
-                              onClick={() => openNuevaPropiedad(c.id)}
-                              className="text-[11px] text-[rgba(230,169,48,0.95)] hover:text-[rgba(230,169,48,1)]"
-                            >
-                              Propiedad
-                            </button>
-                            <button
-                              onClick={() => eliminarContacto(c.id)}
-                              className="text-[11px] text-red-600 hover:text-red-700"
-                            >
-                              Eliminar
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </section>
-        )}
-
-        {activeTab === "propiedades" && (
-          <section className="rounded-2xl bg-white border border-gray-200 shadow-sm p-4 space-y-4">
-            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-              <div>
-                <h2 className="text-sm font-semibold text-slate-900">
-                  Propiedades captadas
-                </h2>
-                <p className="text-xs text-slate-500">
-                  Seguimiento de propiedades en cartera, ajustes de precio y
-                  fechas de cierre para calcular tu tasa de absorción real.
-                </p>
-              </div>
-              <button
-                onClick={() => openNuevaPropiedad()}
-                className="inline-flex items-center gap-1 rounded-full bg-black text-white px-3 py-1.5 text-xs font-medium hover:bg-slate-900"
-              >
-                <span className="text-sm">＋</span>
-                Nueva propiedad captada
-              </button>
-            </div>
-
-            {/* Filtro por tipología (mismo estado global) */}
-            <div className="flex flex-wrap items-center gap-2 text-xs">
-              <span className="text-slate-500">Filtrar por tipología:</span>
-              <select
-                className="rounded-full border border-gray-300 bg-white px-3 py-1 text-xs text-slate-700"
-                value={tipologiaFiltro}
-                onChange={(e) => setTipologiaFiltro(e.target.value)}
-              >
-                <option value="">Todas</option>
-                <option value="casa">Casa</option>
-                <option value="departamento">Departamento</option>
-                <option value="duplex">Dúplex</option>
-                <option value="ph">PH</option>
-                <option value="oficina">Oficina</option>
-                <option value="local">Local</option>
-                <option value="terreno">Terreno</option>
-                <option value="galpon">Galpón / Depósito</option>
-                <option value="cochera">Cochera</option>
-                <option value="campo">Campo</option>
-                <option value="otro">Otro</option>
-              </select>
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-xs">
-                <thead>
-                  <tr className="border-b border-gray-200 bg-gray-50 text-[11px] text-slate-500">
-                    <th className="px-3 py-2 text-left font-medium">Cliente</th>
-                    <th className="px-3 py-2 text-left font-medium">
-                      Tipología
-                    </th>
-                    <th className="px-3 py-2 text-left font-medium">
-                      Operación
-                    </th>
-                    <th className="px-3 py-2 text-left font-medium">
-                      Dirección / Zona
-                    </th>
-                    <th className="px-3 py-2 text-left font-medium">
-                      Precio actual
-                    </th>
-                    <th className="px-3 py-2 text-left font-medium">
-                      Inicio / Días en venta
-                    </th>
-                    <th className="px-3 py-2 text-left font-medium">GAP</th>
-                    <th className="px-3 py-2 text-right font-medium">
-                      Acciones
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {propiedadesFiltradasPorTipologia.length === 0 && (
-                    <tr>
-                      <td
-                        colSpan={8}
-                        className="px-3 py-6 text-center text-xs text-slate-500"
-                      >
-                        {propiedadesFiltradas.length === 0
-                          ? "Todavía no cargaste propiedades captadas."
-                          : "No hay propiedades con la tipología seleccionada."}
-                      </td>
-                    </tr>
-                  )}
-                  {propiedadesFiltradasPorTipologia.map((p) => {
-                    const contacto =
-                      p.contacto_id && contactoPorId(p.contacto_id)
-                        ? contactoPorId(p.contacto_id)
-                        : p.contacto ?? null;
-
-                    const isCerrada = !!p.fecha_cierre;
-                    const diasVenta = diasEntreFechas(
-                      p.fecha_inicio_comercializacion,
-                      p.fecha_cierre
-                    );
-
-                    const rowBase =
-                      "border-b border-gray-100 hover:bg-gray-50";
-                    const rowClosed = isCerrada ? "bg-emerald-200" : "";
-
-                    let gapTexto = "—";
-                    if (
-                      p.precio_lista_inicial != null &&
-                      p.precio_lista_inicial > 0 &&
-                      p.precio_cierre != null
-                    ) {
-                      const diff =
-                        ((p.precio_lista_inicial - p.precio_cierre) /
-                          p.precio_lista_inicial) *
-                        100;
-                      const gap = Math.abs(Math.round(diff));
-                      if (!isNaN(gap)) gapTexto = `${gap}%`;
-                    }
-
-                    return (
-                      <tr key={p.id} className={`${rowBase} ${rowClosed}`}>
-                        <td className="px-3 py-2 align-top">
-                          <div className="font-medium text-slate-900">
-                            {contacto
-                              ? contactoNombreCorto(contacto)
-                              : "Sin asignar"}
-                          </div>
-                        </td>
-                        <td className="px-3 py-2 align-top text-slate-700">
-                          {p.tipologia || "—"}
-                        </td>
-                        <td className="px-3 py-2 align-top text-slate-700">
-                          {p.tipo_operacion || "—"}
-                        </td>
-                        <td className="px-3 py-2 align-top text-[11px] text-slate-700">
-                          {p.direccion || "—"}
-                          {p.zona ? ` · ${p.zona}` : ""}
-                        </td>
-                        <td className="px-3 py-2 align-top text-slate-700">
-                          {fmtCurrency(p.precio_actual ?? p.precio_lista_inicial)}
-                        </td>
-                        <td className="px-3 py-2 align-top text-[11px] text-slate-700">
-                          {p.fecha_inicio_comercializacion
-                            ? p.fecha_inicio_comercializacion.substring(0, 10)
-                            : "—"}{" "}
-                          /{" "}
-                          {diasVenta != null ? `${diasVenta} días` : "—"}
-                        </td>
-                        <td className="px-3 py-2 align-top text-slate-700">
-                          {gapTexto}
-                        </td>
-                        <td className="px-3 py-2 align-top text-right">
-                          <div className="flex justify-end gap-2">
-                            <button
-                              onClick={() => openEditarPropiedad(p)}
-                              className="text-[11px] text-slate-600 hover:text-black"
-                            >
-                              Ver / Editar
-                            </button>
-                            <button
-                              onClick={() => eliminarPropiedad(p.id)}
-                              className="text-[11px] text-red-600 hover:text-red-700"
-                            >
-                              Eliminar
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </section>
-        )}
-
-        {/* Mensaje flotante */}
-        {mensaje && (
-          <div className="fixed bottom-4 right-4 rounded-full bg-black text-white px-4 py-2 text-xs shadow-lg">
-            {mensaje}
-          </div>
-        )}
-
-        {/* MODAL CONTACTO */}
-        {showContactoModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-            <div className="w-full max-w-lg rounded-2xl bg-white shadow-xl border border-gray-200">
-              <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
-                <h3 className="text-sm font-semibold text-slate-900">
-                  {editingContacto ? "Editar contacto" : "Nuevo prospecto / cliente"}
-                </h3>
+          {activeTab === "propiedades" && (
+            <div className="space-y-4">
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <h2 className="text-sm font-semibold text-slate-900">
+                    Propiedades captadas
+                  </h2>
+                  <p className="text-xs text-slate-500">
+                    Captaciones propias. Sus cierres alimentan el embudo
+                    captación → cierre.
+                  </p>
+                </div>
                 <button
-                  onClick={() => setShowContactoModal(false)}
-                  className="text-slate-400 hover:text-slate-600 text-sm"
+                  onClick={() => openNuevaPropiedad()}
+                  className="inline-flex items-center gap-1 rounded-full bg-black text-white px-3 py-1.5 text-xs font-medium hover:bg-slate-900"
                 >
-                  ✕
+                  <span className="text-sm">＋</span>
+                  Nueva propiedad captada
                 </button>
               </div>
-              <div className="max-h-[70vh] overflow-y-auto px-4 py-3 space-y-3 text-xs">
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-[11px] text-slate-500 mb-1">
-                      Nombre
-                    </label>
-                    <input
-                      className="w-full rounded-lg border border-gray-300 px-2 py-1 text-xs"
-                      placeholder="Ej: Juan"
-                      value={formContacto.nombre}
-                      onChange={(e) =>
-                        setFormContacto((f) => ({
-                          ...f,
-                          nombre: e.target.value,
-                        }))
-                      }
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] text-slate-500 mb-1">
-                      Apellido
-                    </label>
-                    <input
-                      className="w-full rounded-lg border border-gray-300 px-2 py-1 text-xs"
-                      placeholder="Ej: Pérez"
-                      value={formContacto.apellido}
-                      onChange={(e) =>
-                        setFormContacto((f) => ({
-                          ...f,
-                          apellido: e.target.value,
-                        }))
-                      }
-                    />
-                  </div>
-                </div>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-[11px] text-slate-500 mb-1">
-                      Teléfono
-                    </label>
-                    <input
-                      className="w-full rounded-lg border border-gray-300 px-2 py-1 text-xs"
-                      placeholder="Ej: 351 000 0000"
-                      value={formContacto.telefono}
-                      onChange={(e) =>
-                        setFormContacto((f) => ({
-                          ...f,
-                          telefono: e.target.value,
-                        }))
-                      }
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] text-slate-500 mb-1">
-                      Email
-                    </label>
-                    <input
-                      className="w-full rounded-lg border border-gray-300 px-2 py-1 text-xs"
-                      placeholder="Ej: juan@cliente.com"
-                      value={formContacto.email}
-                      onChange={(e) =>
-                        setFormContacto((f) => ({
-                          ...f,
-                          email: e.target.value,
-                        }))
-                      }
-                    />
-                  </div>
-                </div>
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-gray-200 bg-gray-50 text-[11px] text-slate-500">
+                      <th className="px-3 py-2 text-left font-medium">
+                        Cliente
+                      </th>
+                      <th className="px-3 py-2 text-left font-medium">
+                        Responsable
+                      </th>
+                      <th className="px-3 py-2 text-left font-medium">
+                        Tipología
+                      </th>
+                      <th className="px-3 py-2 text-left font-medium">
+                        Operación
+                      </th>
+                      <th className="px-3 py-2 text-left font-medium">
+                        Dirección / Zona
+                      </th>
+                      <th className="px-3 py-2 text-left font-medium">
+                        Precio actual
+                      </th>
+                      <th className="px-3 py-2 text-left font-medium">
+                        Cierre
+                      </th>
+                      <th className="px-3 py-2 text-left font-medium">
+                        Honorarios
+                      </th>
+                      <th className="px-3 py-2 text-right font-medium">
+                        Acciones
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {propiedadesFiltradas.length === 0 && (
+                      <tr>
+                        <td
+                          colSpan={9}
+                          className="px-3 py-6 text-center text-xs text-slate-500"
+                        >
+                          No hay propiedades captadas con los filtros
+                          seleccionados.
+                        </td>
+                      </tr>
+                    )}
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-[11px] text-slate-500 mb-1">
-                      Tipología
-                    </label>
-                    <select
-                      className="w-full rounded-lg border border-gray-300 px-2 py-1 text-xs"
-                      value={formContacto.tipologia}
-                      onChange={(e) =>
-                        setFormContacto((f) => ({
-                          ...f,
-                          tipologia: e.target.value,
-                        }))
-                      }
-                    >
-                      <option value="">Seleccionar…</option>
-                      <option value="casa">Casa</option>
-                      <option value="departamento">Departamento</option>
-                      <option value="duplex">Dúplex</option>
-                      <option value="ph">PH</option>
-                      <option value="oficina">Oficina</option>
-                      <option value="local">Local</option>
-                      <option value="terreno">Terreno</option>
-                      <option value="galpon">Galpón / Depósito</option>
-                      <option value="cochera">Cochera</option>
-                      <option value="campo">Campo</option>
-                      <option value="otro">Otro</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-[11px] text-slate-500 mb-1">
-                      Operación
-                    </label>
-                    <select
-                      className="w-full rounded-lg border border-gray-300 px-2 py-1 text-xs"
-                      value={formContacto.tipo_operacion}
-                      onChange={(e) =>
-                        setFormContacto((f) => ({
-                          ...f,
-                          tipo_operacion: e.target.value,
-                        }))
-                      }
-                    >
-                      <option value="">Seleccionar…</option>
-                      <option value="venta">Venta</option>
-                      <option value="alquiler">Alquiler</option>
-                      <option value="alquiler_temporario">
-                        Alquiler temporario
-                      </option>
-                    </select>
-                  </div>
-                </div>
+                    {propiedadesFiltradas.map((p) => {
+                      const contacto =
+                        p.contacto_id && contactoPorId(p.contacto_id)
+                          ? contactoPorId(p.contacto_id)
+                          : p.contacto ?? null;
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-[11px] text-slate-500 mb-1">
-                      Origen del contacto
-                    </label>
-                    <select
-                      className="w-full rounded-lg border border-gray-300 px-2 py-1 text-xs"
-                      value={formContacto.origen}
-                      onChange={(e) =>
-                        setFormContacto((f) => ({
-                          ...f,
-                          origen: e.target.value,
-                        }))
-                      }
-                    >
-                      <option value="">Seleccionar…</option>
-                      <option value="recomendacion">Recomendación</option>
-                      <option value="redes">Redes sociales</option>
-                      <option value="portal">Portal inmobiliario</option>
-                      <option value="cartel">Cartel</option>
-                      <option value="otro">Otro</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-[11px] text-slate-500 mb-1">
-                      Zona / barrio
-                    </label>
-                    <input
-                      className="w-full rounded-lg border border-gray-300 px-2 py-1 text-xs"
-                      placeholder="Ej: Nueva Córdoba"
-                      value={formContacto.zona}
-                      onChange={(e) =>
-                        setFormContacto((f) => ({
-                          ...f,
-                          zona: e.target.value,
-                        }))
-                      }
-                    />
-                  </div>
+                      const cerrada = isValidClose(p);
+                      const cierreIncompleto =
+                        (!!p.fecha_cierre && !cerrada) ||
+                        (!!p.precio_cierre && !p.fecha_cierre);
+                      const diasVenta = diasEntreFechas(
+                        p.fecha_inicio_comercializacion,
+                        cerrada ? p.fecha_cierre : null
+                      );
+                      const honorarios = calcularHonorarios(
+                        p.precio_cierre,
+                        p.honorarios_pct_vendedor,
+                        p.honorarios_pct_comprador
+                      );
+
+                      return (
+                        <tr
+                          key={p.id}
+                          className={`border-b border-gray-100 hover:bg-gray-50 ${
+                            cerrada
+                              ? "bg-emerald-50"
+                              : cierreIncompleto
+                              ? "bg-amber-50"
+                              : ""
+                          }`}
+                        >
+                          <td className="px-3 py-2 align-top">
+                            <div className="font-medium text-slate-900">
+                              {contacto
+                                ? contactoNombreCorto(contacto)
+                                : "Sin asignar"}
+                            </div>
+                            <div className="text-[11px] text-slate-500">
+                              {diasVenta != null ? `${diasVenta} días` : "—"}
+                            </div>
+                          </td>
+                          <td className="px-3 py-2 align-top text-slate-700">
+                            {asesorNombre(p.asesor_id)}
+                          </td>
+                          <td className="px-3 py-2 align-top text-slate-700">
+                            {labelTipologia(p.tipologia)}
+                          </td>
+                          <td className="px-3 py-2 align-top text-slate-700">
+                            {labelTipoOperacion(p.tipo_operacion)}
+                          </td>
+                          <td className="px-3 py-2 align-top text-[11px] text-slate-700">
+                            {p.direccion || "—"}
+                            {p.zona ? ` · ${p.zona}` : ""}
+                          </td>
+                          <td className="px-3 py-2 align-top text-slate-700">
+                            {fmtCurrency(
+                              p.precio_actual ?? p.precio_lista_inicial,
+                              p.moneda
+                            )}
+                          </td>
+                          <td className="px-3 py-2 align-top text-slate-700">
+                            {cerrada ? (
+                              <div>
+                                <div>
+                                  {fmtCurrency(p.precio_cierre, p.moneda)}
+                                </div>
+                                <div className="text-[11px] text-slate-500">
+                                  {dateKeyFromString(p.fecha_cierre)}
+                                </div>
+                              </div>
+                            ) : cierreIncompleto ? (
+                              <span className="text-amber-700">
+                                Cierre incompleto
+                              </span>
+                            ) : (
+                              "—"
+                            )}
+                          </td>
+                          <td className="px-3 py-2 align-top text-slate-700">
+                            {fmtCurrency(honorarios, p.moneda)}
+                            <div className="text-[11px] text-slate-500">
+                              V {p.honorarios_pct_vendedor ?? 0}% · C{" "}
+                              {p.honorarios_pct_comprador ?? 0}%
+                            </div>
+                          </td>
+                          <td className="px-3 py-2 align-top text-right">
+                            <div className="flex justify-end gap-2">
+                              <button
+                                onClick={() => openEditarPropiedad(p)}
+                                className="text-[11px] text-slate-600 hover:text-black"
+                              >
+                                Editar
+                              </button>
+                              <button
+                                onClick={() => eliminarPropiedad(p.id)}
+                                className="text-[11px] text-red-600 hover:text-red-700"
+                              >
+                                Eliminar
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {activeTab === "terceros" && (
+            <div className="space-y-4">
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <h2 className="text-sm font-semibold text-slate-900">
+                    Propiedades de terceros
+                  </h2>
+                  <p className="text-xs text-slate-500">
+                    Ventas o alquileres donde participaste comercialmente sin
+                    que la propiedad sea una captación propia.
+                  </p>
                 </div>
+                <button
+                  onClick={openNuevoTercero}
+                  className="inline-flex items-center gap-1 rounded-full bg-black text-white px-3 py-1.5 text-xs font-medium hover:bg-slate-900"
+                >
+                  <span className="text-sm">＋</span>
+                  Nueva venta de tercero
+                </button>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-gray-200 bg-gray-50 text-[11px] text-slate-500">
+                      <th className="px-3 py-2 text-left font-medium">
+                        Comprador / Cliente
+                      </th>
+                      <th className="px-3 py-2 text-left font-medium">
+                        Responsable
+                      </th>
+                      <th className="px-3 py-2 text-left font-medium">
+                        Tipología
+                      </th>
+                      <th className="px-3 py-2 text-left font-medium">
+                        Operación
+                      </th>
+                      <th className="px-3 py-2 text-left font-medium">
+                        Dirección / Zona
+                      </th>
+                      <th className="px-3 py-2 text-left font-medium">
+                        Cierre
+                      </th>
+                      <th className="px-3 py-2 text-left font-medium">
+                        Honorarios
+                      </th>
+                      <th className="px-3 py-2 text-right font-medium">
+                        Acciones
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {tercerosFiltrados.length === 0 && (
+                      <tr>
+                        <td
+                          colSpan={8}
+                          className="px-3 py-6 text-center text-xs text-slate-500"
+                        >
+                          Todavía no hay propiedades de terceros con los filtros
+                          seleccionados.
+                        </td>
+                      </tr>
+                    )}
+
+                    {tercerosFiltrados.map((p) => {
+                      const honorarios = calcularHonorarios(
+                        p.precio_cierre,
+                        p.honorarios_pct_vendedor,
+                        p.honorarios_pct_comprador
+                      );
+
+                      return (
+                        <tr
+                          key={p.id}
+                          className="border-b border-gray-100 hover:bg-gray-50"
+                        >
+                          <td className="px-3 py-2 align-top">
+                            <div className="font-medium text-slate-900">
+                              {p.comprador_nombre || "Sin comprador"}
+                            </div>
+                            <div className="text-[11px] text-slate-500">
+                              Venta de tercero
+                            </div>
+                          </td>
+                          <td className="px-3 py-2 align-top text-slate-700">
+                            {asesorNombre(p.asesor_id)}
+                          </td>
+                          <td className="px-3 py-2 align-top text-slate-700">
+                            {labelTipologia(p.tipologia)}
+                          </td>
+                          <td className="px-3 py-2 align-top text-slate-700">
+                            {labelTipoOperacion(p.tipo_operacion)}
+                          </td>
+                          <td className="px-3 py-2 align-top text-[11px] text-slate-700">
+                            {p.direccion || "—"}
+                            {p.zona ? ` · ${p.zona}` : ""}
+                          </td>
+                          <td className="px-3 py-2 align-top text-slate-700">
+                            <div>{fmtCurrency(p.precio_cierre, p.moneda)}</div>
+                            <div className="text-[11px] text-slate-500">
+                              {dateKeyFromString(p.fecha_cierre)}
+                            </div>
+                          </td>
+                          <td className="px-3 py-2 align-top text-slate-700">
+                            {fmtCurrency(honorarios, p.moneda)}
+                            <div className="text-[11px] text-slate-500">
+                              V {p.honorarios_pct_vendedor ?? 0}% · C{" "}
+                              {p.honorarios_pct_comprador ?? 0}%
+                            </div>
+                          </td>
+                          <td className="px-3 py-2 align-top text-right">
+                            <div className="flex justify-end gap-2">
+                              <button
+                                onClick={() => openEditarTercero(p)}
+                                className="text-[11px] text-slate-600 hover:text-black"
+                              >
+                                Editar
+                              </button>
+                              <button
+                                onClick={() => eliminarTercero(p.id)}
+                                className="text-[11px] text-red-600 hover:text-red-700"
+                              >
+                                Eliminar
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </section>
+
+        {showContactoModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+            <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-5 shadow-xl">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-base font-semibold text-slate-900">
+                    {editingContacto ? "Editar contacto" : "Nuevo contacto"}
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Dato auxiliar para prospección y embudo comercial.
+                  </p>
+                </div>
+                <button
+                  onClick={() => setShowContactoModal(false)}
+                  className="rounded-full border border-gray-300 px-2 py-1 text-xs text-slate-600 hover:bg-gray-100"
+                >
+                  Cerrar
+                </button>
+              </div>
+
+              <div className="mt-4 grid gap-3 md:grid-cols-2">
+                {renderResponsableSelect(formContacto.asesor_id, (value) =>
+                  setFormContacto((prev) => ({ ...prev, asesor_id: value }))
+                )}
 
                 <div>
-                  <label className="block text-[11px] text-slate-500 mb-1">
-                    Estado del contacto
+                  <label className="block text-xs font-medium text-slate-600">
+                    Estado
                   </label>
                   <select
-                    className="w-full rounded-lg border border-gray-300 px-2 py-1 text-xs"
                     value={formContacto.estado}
                     onChange={(e) =>
-                      setFormContacto((f) => ({
-                        ...f,
+                      setFormContacto((prev) => ({
+                        ...prev,
                         estado: e.target.value as TrackerContactoEstado,
                       }))
                     }
+                    className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
                   >
-                    <option value="sin_contactar">Sin contactar</option>
-                    <option value="primer_llamado">1° llamado</option>
-                    <option value="seguimiento">Seguimiento</option>
-                    <option value="prelisting">Prelisting</option>
-                    <option value="vai_factibilidad">VAI / Factibilidad</option>
-                    <option value="captado">Captación</option>
-                    <option value="cierre">Cierre</option>
-                    <option value="descarte">Descartado</option>
+                    {ESTADOS_CONTACTO.map((estado) => (
+                      <option key={estado.value} value={estado.value}>
+                        {estado.label}
+                      </option>
+                    ))}
                   </select>
                 </div>
 
+                <div>
+                  <label className="block text-xs font-medium text-slate-600">
+                    Nombre
+                  </label>
+                  <input
+                    value={formContacto.nombre}
+                    onChange={(e) =>
+                      setFormContacto((prev) => ({
+                        ...prev,
+                        nombre: e.target.value,
+                      }))
+                    }
+                    className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-slate-600">
+                    Apellido
+                  </label>
+                  <input
+                    value={formContacto.apellido}
+                    onChange={(e) =>
+                      setFormContacto((prev) => ({
+                        ...prev,
+                        apellido: e.target.value,
+                      }))
+                    }
+                    className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-slate-600">
+                    Teléfono
+                  </label>
+                  <input
+                    value={formContacto.telefono}
+                    onChange={(e) =>
+                      setFormContacto((prev) => ({
+                        ...prev,
+                        telefono: e.target.value,
+                      }))
+                    }
+                    className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-slate-600">
+                    Email
+                  </label>
+                  <input
+                    value={formContacto.email}
+                    onChange={(e) =>
+                      setFormContacto((prev) => ({
+                        ...prev,
+                        email: e.target.value,
+                      }))
+                    }
+                    className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-slate-600">
+                    Tipo de operación
+                  </label>
+                  <select
+                    value={formContacto.tipo_operacion}
+                    onChange={(e) =>
+                      setFormContacto((prev) => ({
+                        ...prev,
+                        tipo_operacion: e.target.value,
+                      }))
+                    }
+                    className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  >
+                    <option value="venta">Venta</option>
+                    <option value="alquiler">Alquiler</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-slate-600">
+                    Tipología
+                  </label>
+                  {renderTipologiaSelect(formContacto.tipologia, (value) =>
+                    setFormContacto((prev) => ({ ...prev, tipologia: value }))
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-slate-600">
+                    Zona
+                  </label>
+                  <input
+                    value={formContacto.zona}
+                    onChange={(e) =>
+                      setFormContacto((prev) => ({
+                        ...prev,
+                        zona: e.target.value,
+                      }))
+                    }
+                    className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-slate-600">
+                    Origen
+                  </label>
+                  <input
+                    value={formContacto.origen}
+                    onChange={(e) =>
+                      setFormContacto((prev) => ({
+                        ...prev,
+                        origen: e.target.value,
+                      }))
+                    }
+                    className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  />
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="block text-xs font-medium text-slate-600">
+                    Dirección / referencia
+                  </label>
+                  <input
+                    value={formContacto.direccion}
+                    onChange={(e) =>
+                      setFormContacto((prev) => ({
+                        ...prev,
+                        direccion: e.target.value,
+                      }))
+                    }
+                    className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  />
+                </div>
+
                 {formContacto.estado === "descarte" && (
-                  <div>
-                    <label className="block text-[11px] text-slate-500 mb-1">
+                  <div className="md:col-span-2">
+                    <label className="block text-xs font-medium text-slate-600">
                       Motivo de descarte
                     </label>
                     <textarea
-                      className="w-full rounded-lg border border-gray-300 px-2 py-1 text-xs"
-                      rows={2}
-                      placeholder="Ej: Prefiere trabajar con otra inmobiliaria, no quiere firmar exclusividad, etc."
                       value={formContacto.motivo_descarte}
                       onChange={(e) =>
-                        setFormContacto((f) => ({
-                          ...f,
+                        setFormContacto((prev) => ({
+                          ...prev,
                           motivo_descarte: e.target.value,
                         }))
                       }
+                      className="mt-1 min-h-[80px] w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
                     />
                   </div>
                 )}
-
-                {/* Historial de actividades del contacto */}
-                {editingContacto && (
-                  <div className="border-t border-gray-200 pt-3 mt-2">
-                    <h4 className="text-[11px] font-semibold text-slate-700 mb-1">
-                      Historial de actividades
-                    </h4>
-                    {(() => {
-                      const historial = actividadesDeContacto(
-                        editingContacto.id
-                      );
-                      if (historial.length === 0) {
-                        return (
-                          <p className="text-[11px] text-slate-500">
-                            Este contacto todavía no tiene actividades
-                            registradas en el tracker.
-                          </p>
-                        );
-                      }
-                      const ultima = historial[0];
-                      return (
-                        <div className="space-y-2">
-                          <p className="text-[11px] text-slate-600">
-                            <span className="font-semibold">
-                              Última actividad:
-                            </span>{" "}
-                            {labelTipoActividad(ultima.tipo)} ·{" "}
-                            {ultima.fecha_programada}{" "}
-                            {ultima.hora ? `· ${formatTime(ultima.hora)}` : ""}
-                          </p>
-                          <ul className="space-y-1 max-h-32 overflow-y-auto">
-                            {historial.map((a) => (
-                              <li
-                                key={a.id}
-                                className="text-[11px] text-slate-600 flex justify-between gap-2"
-                              >
-                                <span className="truncate">
-                                  {labelTipoActividad(a.tipo)} · {a.titulo}
-                                </span>
-                                <span className="shrink-0 text-slate-400">
-                                  {a.fecha_programada.substring(8, 10)}/
-                                  {a.fecha_programada.substring(5, 7)}{" "}
-                                  {a.hora ? `· ${formatTime(a.hora)}` : ""}
-                                </span>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      );
-                    })()}
-                  </div>
-                )}
               </div>
-              <div className="flex items-center justify-end gap-2 border-t border-gray-200 px-4 py-3">
+
+              <div className="mt-5 flex justify-end gap-2">
                 <button
                   onClick={() => setShowContactoModal(false)}
-                  className="rounded-full border border-gray-300 bg-white px-3 py-1.5 text-xs text-slate-700 hover:bg-gray-50"
+                  className="rounded-full border border-gray-300 px-4 py-1.5 text-xs font-medium text-slate-700 hover:bg-gray-100"
                 >
                   Cancelar
                 </button>
@@ -2357,511 +2423,371 @@ export default function EmpresaTrackerPage() {
           </div>
         )}
 
-        {/* MODAL ACTIVIDAD */}
-        {showActividadModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-            <div className="w-full max-w-lg rounded-2xl bg-white shadow-xl border border-gray-200">
-              <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
-                <h3 className="text-sm font-semibold text-slate-900">
-                  {editingActividad ? "Editar actividad" : "Nueva actividad"}
-                </h3>
+        {showPropiedadModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+            <div className="max-h-[92vh] w-full max-w-4xl overflow-y-auto rounded-2xl bg-white p-5 shadow-xl">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-base font-semibold text-slate-900">
+                    {editingPropiedad
+                      ? "Editar propiedad captada"
+                      : "Nueva propiedad captada"}
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Estas propiedades sí impactan en captaciones propias y en la
+                    conversión captación → cierre.
+                  </p>
+                </div>
                 <button
-                  onClick={() => setShowActividadModal(false)}
-                  className="text-slate-400 hover:text-slate-600 text-sm"
+                  onClick={() => setShowPropiedadModal(false)}
+                  className="rounded-full border border-gray-300 px-2 py-1 text-xs text-slate-600 hover:bg-gray-100"
                 >
-                  ✕
+                  Cerrar
                 </button>
               </div>
-              <div className="max-h-[70vh] overflow-y-auto px-4 py-3 space-y-3 text-xs">
+
+              <div className="mt-4 grid gap-3 md:grid-cols-3">
+                {renderResponsableSelect(formPropiedad.asesor_id, (value) =>
+                  setFormPropiedad((prev) => ({ ...prev, asesor_id: value }))
+                )}
+
                 <div>
-                  <label className="block text-[11px] text-slate-500 mb-1">
-                    Título de la actividad
+                  <label className="block text-xs font-medium text-slate-600">
+                    Contacto vinculado
                   </label>
-                  <input
-                    className="w-full rounded-lg border border-gray-300 px-2 py-1 text-xs"
-                    placeholder="Ej: Seguimiento Casa 3D en Centro"
-                    value={formActividad.titulo}
+                  <select
+                    value={formPropiedad.contacto_id}
                     onChange={(e) =>
-                      setFormActividad((f) => ({
-                        ...f,
-                        titulo: e.target.value,
+                      setFormPropiedad((prev) => ({
+                        ...prev,
+                        contacto_id: e.target.value,
                       }))
                     }
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-[11px] text-slate-500 mb-1">
-                      Tipo
-                    </label>
-                    <select
-                      className="w-full rounded-lg border border-gray-300 px-2 py-1 text-xs"
-                      value={formActividad.tipo}
-                      onChange={(e) =>
-                        setFormActividad((f) => ({
-                          ...f,
-                          tipo: e.target.value as TrackerActividadTipo,
-                        }))
-                      }
-                    >
-                      <option value="seguimiento">Seguimiento</option>
-                      <option value="reunion">Reunión</option>
-                      <option value="muestra">Muestra</option>
-                      <option value="prelisting">Prelisting</option>
-                      <option value="vai">VAI</option>
-                      <option value="factibilidad">Factibilidad</option>
-                      <option value="reserva">Reserva</option>
-                      <option value="cierre">Cierre</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-[11px] text-slate-500 mb-1">
-                      Contacto
-                    </label>
-                    <select
-                      className="w-full rounded-lg border border-gray-300 px-2 py-1 text-xs"
-                      value={formActividad.contacto_id}
-                      onChange={(e) =>
-                        setFormActividad((f) => ({
-                          ...f,
-                          contacto_id: e.target.value,
-                        }))
-                      }
-                    >
-                      <option value="">Sin asignar</option>
-                      {contactos.map((c) => (
+                    className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  >
+                    <option value="">Sin contacto / crear automático</option>
+                    {contactos
+                      .filter((c) => recordMatchesScope(c.asesor_id))
+                      .map((c) => (
                         <option key={c.id} value={c.id}>
                           {contactoNombreCorto(c)}
                         </option>
                       ))}
-                    </select>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-[11px] text-slate-500 mb-1">
-                      Fecha
-                    </label>
-                    <input
-                      type="date"
-                      className="w-full rounded-lg border border-gray-300 px-2 py-1 text-xs"
-                      value={formActividad.fecha_programada}
-                      onChange={(e) =>
-                        setFormActividad((f) => ({
-                          ...f,
-                          fecha_programada: e.target.value,
-                        }))
-                      }
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] text-slate-500 mb-1">
-                      Hora
-                    </label>
-                    <input
-                      type="time"
-                      className="w-full rounded-lg border border-gray-300 px-2 py-1 text-xs"
-                      value={formActividad.hora}
-                      onChange={(e) =>
-                        setFormActividad((f) => ({
-                          ...f,
-                          hora: e.target.value,
-                        }))
-                      }
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-[11px] text-slate-500 mb-1">
-                    Notas
-                  </label>
-                  <textarea
-                    className="w-full rounded-lg border border-gray-300 px-2 py-1 text-xs"
-                    rows={3}
-                    placeholder="Ej: Segunda llamada, quedó en revisar condiciones y me devuelve esta semana."
-                    value={formActividad.notas}
-                    onChange={(e) =>
-                      setFormActividad((f) => ({
-                        ...f,
-                        notas: e.target.value,
-                      }))
-                    }
-                  />
-                </div>
-              </div>
-              <div className="flex items-center justify-end gap-2 border-t border-gray-200 px-4 py-3">
-                <button
-                  onClick={() => setShowActividadModal(false)}
-                  className="rounded-full border border-gray-300 bg-white px-3 py-1.5 text-xs text-slate-700 hover:bg-gray-50"
-                >
-                  Cancelar
-                </button>
-                <button
-                  onClick={guardarActividad}
-                  disabled={savingActividad}
-                  className={`rounded-full bg-black px-4 py-1.5 text-xs font-medium text-white hover:bg-slate-900 ${
-                    savingActividad ? "opacity-60 cursor-not-allowed" : ""
-                  }`}
-                >
-                  {savingActividad ? "Guardando..." : "Guardar"}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* MODAL PROPIEDAD */}
-        {showPropiedadModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-            <div className="w-full max-w-lg rounded-2xl bg-white shadow-xl border border-gray-200">
-              <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
-                <h3 className="text-sm font-semibold text-slate-900">
-                  {editingPropiedad
-                    ? "Editar propiedad captada"
-                    : "Nueva propiedad captada"}
-                </h3>
-                <button
-                  onClick={() => setShowPropiedadModal(false)}
-                  className="text-slate-400 hover:text-slate-600 text-sm"
-                >
-                  ✕
-                </button>
-              </div>
-              <div className="max-h-[70vh] overflow-y-auto px-4 py-3 space-y-3 text-xs">
-                <div>
-                  <label className="block text-[11px] text-slate-500 mb-1">
-                    Cliente
-                  </label>
-                  <select
-                    className="w-full rounded-lg border border-gray-300 px-2 py-1 text-xs"
-                    value={formPropiedad.contacto_id}
-                    onChange={(e) =>
-                      setFormPropiedad((f) => ({
-                        ...f,
-                        contacto_id: e.target.value,
-                      }))
-                    }
-                  >
-                    <option value="">Seleccionar…</option>
-                    {contactos.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {contactoNombreCorto(c)}
-                      </option>
-                    ))}
                   </select>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-[11px] text-slate-500 mb-1">
-                      Tipología
-                    </label>
-                    <select
-                      className="w-full rounded-lg border border-gray-300 px-2 py-1 text-xs"
-                      value={formPropiedad.tipologia}
-                      onChange={(e) =>
-                        setFormPropiedad((f) => ({
-                          ...f,
-                          tipologia: e.target.value,
-                        }))
-                      }
-                    >
-                      <option value="">Seleccionar…</option>
-                      <option value="casa">Casa</option>
-                      <option value="departamento">Departamento</option>
-                      <option value="duplex">Dúplex</option>
-                      <option value="ph">PH</option>
-                      <option value="oficina">Oficina</option>
-                      <option value="local">Local</option>
-                      <option value="terreno">Terreno</option>
-                      <option value="galpon">Galpón / Depósito</option>
-                      <option value="cochera">Cochera</option>
-                      <option value="campo">Campo</option>
-                      <option value="otro">Otro</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-[11px] text-slate-500 mb-1">
-                      Dormitorios
-                    </label>
-                    <input
-                      className="w-full rounded-lg border border-gray-300 px-2 py-1 text-xs"
-                      placeholder="Ej: 3"
-                      value={formPropiedad.dormitorios}
-                      onChange={(e) =>
-                        setFormPropiedad((f) => ({
-                          ...f,
-                          dormitorios: e.target.value,
-                        }))
-                      }
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-[11px] text-slate-500 mb-1">
-                      Operación
-                    </label>
-                    <select
-                      className="w-full rounded-lg border border-gray-300 px-2 py-1 text-xs"
-                      value={formPropiedad.tipo_operacion}
-                      onChange={(e) =>
-                        setFormPropiedad((f) => ({
-                          ...f,
-                          tipo_operacion: e.target.value,
-                        }))
-                      }
-                    >
-                      <option value="">Seleccionar…</option>
-                      <option value="venta">Venta</option>
-                      <option value="alquiler">Alquiler</option>
-                      <option value="alquiler_temporario">
-                        Alquiler temporario
-                      </option>
-                    </select>
-                  </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600">
+                    Tipo de operación
+                  </label>
+                  <select
+                    value={formPropiedad.tipo_operacion}
+                    onChange={(e) => {
+                      const next = e.target.value;
+                      setFormPropiedad((prev) => ({
+                        ...prev,
+                        tipo_operacion: next,
+                        moneda: next === "alquiler" ? "ARS" : "USD",
+                      }));
+                    }}
+                    className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  >
+                    <option value="venta">Venta</option>
+                    <option value="alquiler">Alquiler</option>
+                  </select>
                 </div>
 
                 <div>
-                  <label className="block text-[11px] text-slate-500 mb-1">
-                    Dirección
+                  <label className="block text-xs font-medium text-slate-600">
+                    Tipología
+                  </label>
+                  {renderTipologiaSelect(formPropiedad.tipologia, (value) =>
+                    setFormPropiedad((prev) => ({ ...prev, tipologia: value }))
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-slate-600">
+                    Dormitorios
                   </label>
                   <input
-                    className="w-full rounded-lg border border-gray-300 px-2 py-1 text-xs"
-                    placeholder="Ej: Av. Siempreviva 123"
-                    value={formPropiedad.direccion}
+                    type="number"
+                    value={formPropiedad.dormitorios}
                     onChange={(e) =>
-                      setFormPropiedad((f) => ({
-                        ...f,
-                        direccion: e.target.value,
+                      setFormPropiedad((prev) => ({
+                        ...prev,
+                        dormitorios: e.target.value,
                       }))
                     }
+                    className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
                   />
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-[11px] text-slate-500 mb-1">
-                      Zona / barrio
-                    </label>
-                    <input
-                      className="w-full rounded-lg border border-gray-300 px-2 py-1 text-xs"
-                      placeholder="Ej: Barrio Centro"
-                      value={formPropiedad.zona}
-                      onChange={(e) =>
-                        setFormPropiedad((f) => ({
-                          ...f,
-                          zona: e.target.value,
-                        }))
-                      }
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] text-slate-500 mb-1">
-                      Moneda
-                    </label>
-                    <select
-                      className="w-full rounded-lg border border-gray-300 px-2 py-1 text-xs"
-                      value={formPropiedad.moneda}
-                      onChange={(e) =>
-                        setFormPropiedad((f) => ({
-                          ...f,
-                          moneda: e.target.value,
-                        }))
-                      }
-                    >
-                      <option value="ARS">ARS</option>
-                      <option value="USD">USD</option>
-                    </select>
-                  </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600">
+                    Moneda
+                  </label>
+                  <select
+                    value={formPropiedad.moneda}
+                    onChange={(e) =>
+                      setFormPropiedad((prev) => ({
+                        ...prev,
+                        moneda: e.target.value,
+                      }))
+                    }
+                    className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  >
+                    <option value="USD">USD</option>
+                    <option value="ARS">ARS</option>
+                  </select>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-[11px] text-slate-500 mb-1">
-                      m² lote
-                    </label>
-                    <input
-                      className="w-full rounded-lg border border-gray-300 px-2 py-1 text-xs"
-                      value={formPropiedad.m2_lote}
-                      onChange={(e) =>
-                        setFormPropiedad((f) => ({
-                          ...f,
-                          m2_lote: e.target.value,
-                        }))
-                      }
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] text-slate-500 mb-1">
-                      m² cubiertos
-                    </label>
-                    <input
-                      className="w-full rounded-lg border border-gray-300 px-2 py-1 text-xs"
-                      value={formPropiedad.m2_cubiertos}
-                      onChange={(e) =>
-                        setFormPropiedad((f) => ({
-                          ...f,
-                          m2_cubiertos: e.target.value,
-                        }))
-                      }
-                    />
-                  </div>
+                <div className="md:col-span-2">
+                  <label className="block text-xs font-medium text-slate-600">
+                    Dirección
+                  </label>
+                  <input
+                    value={formPropiedad.direccion}
+                    onChange={(e) =>
+                      setFormPropiedad((prev) => ({
+                        ...prev,
+                        direccion: e.target.value,
+                      }))
+                    }
+                    className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  />
                 </div>
 
-                <div className="grid grid-cols-3 gap-3">
-                  <div>
-                    <label className="block text-[11px] text-slate-500 mb-1">
-                      Precio lista inicial
-                    </label>
-                    <input
-                      className="w-full rounded-lg border border-gray-300 px-2 py-1 text-xs"
-                      placeholder="Ej: 120000"
-                      value={formPropiedad.precio_lista_inicial}
-                      onChange={(e) =>
-                        setFormPropiedad((f) => ({
-                          ...f,
-                          precio_lista_inicial: e.target.value,
-                        }))
-                      }
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] text-slate-500 mb-1">
-                      Precio actual
-                    </label>
-                    <input
-                      className="w-full rounded-lg border border-gray-300 px-2 py-1 text-xs"
-                      placeholder="Ej: 115000"
-                      value={formPropiedad.precio_actual}
-                      onChange={(e) =>
-                        setFormPropiedad((f) => ({
-                          ...f,
-                          precio_actual: e.target.value,
-                        }))
-                      }
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] text-slate-500 mb-1">
-                      Precio de cierre
-                    </label>
-                    <input
-                      className="w-full rounded-lg border border-gray-300 px-2 py-1 text-xs"
-                      placeholder="Ej: 110000"
-                      value={formPropiedad.precio_cierre}
-                      onChange={(e) =>
-                        setFormPropiedad((f) => ({
-                          ...f,
-                          precio_cierre: e.target.value,
-                        }))
-                      }
-                    />
-                  </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600">
+                    Zona
+                  </label>
+                  <input
+                    value={formPropiedad.zona}
+                    onChange={(e) =>
+                      setFormPropiedad((prev) => ({
+                        ...prev,
+                        zona: e.target.value,
+                      }))
+                    }
+                    className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  />
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-[11px] text-slate-500 mb-1">
-                      Inicio comercialización
-                    </label>
-                    <input
-                      type="date"
-                      className="w-full rounded-lg border border-gray-300 px-2 py-1 text-xs"
-                      value={formPropiedad.fecha_inicio_comercializacion}
-                      onChange={(e) =>
-                        setFormPropiedad((f) => ({
-                          ...f,
-                          fecha_inicio_comercializacion: e.target.value,
-                        }))
-                      }
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] text-slate-500 mb-1">
-                      Fecha de cierre
-                    </label>
-                    <input
-                      type="date"
-                      className="w-full rounded-lg border border-gray-300 px-2 py-1 text-xs"
-                      value={formPropiedad.fecha_cierre}
-                      onChange={(e) =>
-                        setFormPropiedad((f) => ({
-                          ...f,
-                          fecha_cierre: e.target.value,
-                        }))
-                      }
-                    />
-                  </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600">
+                    m² lote
+                  </label>
+                  <input
+                    value={formPropiedad.m2_lote}
+                    onChange={(e) =>
+                      setFormPropiedad((prev) => ({
+                        ...prev,
+                        m2_lote: e.target.value,
+                      }))
+                    }
+                    className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  />
                 </div>
 
-                {/* Honorarios */}
-                <div className="border-t border-gray-200 pt-3 mt-2 space-y-2">
-                  <p className="text-[11px] font-semibold text-slate-700">
+                <div>
+                  <label className="block text-xs font-medium text-slate-600">
+                    m² cubiertos
+                  </label>
+                  <input
+                    value={formPropiedad.m2_cubiertos}
+                    onChange={(e) =>
+                      setFormPropiedad((prev) => ({
+                        ...prev,
+                        m2_cubiertos: e.target.value,
+                      }))
+                    }
+                    className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-slate-600">
+                    Fecha inicio comercialización
+                  </label>
+                  <input
+                    type="date"
+                    value={formPropiedad.fecha_inicio_comercializacion}
+                    onChange={(e) =>
+                      setFormPropiedad((prev) => ({
+                        ...prev,
+                        fecha_inicio_comercializacion: e.target.value,
+                      }))
+                    }
+                    className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-slate-600">
+                    Precio inicial
+                  </label>
+                  <input
+                    value={formPropiedad.precio_lista_inicial}
+                    onChange={(e) =>
+                      setFormPropiedad((prev) => ({
+                        ...prev,
+                        precio_lista_inicial: e.target.value,
+                      }))
+                    }
+                    className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-slate-600">
+                    Precio actual
+                  </label>
+                  <input
+                    value={formPropiedad.precio_actual}
+                    onChange={(e) =>
+                      setFormPropiedad((prev) => ({
+                        ...prev,
+                        precio_actual: e.target.value,
+                      }))
+                    }
+                    className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                    placeholder="Si queda vacío usa precio inicial"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-slate-600">
+                    Precio cierre
+                  </label>
+                  <input
+                    value={formPropiedad.precio_cierre}
+                    onChange={(e) =>
+                      setFormPropiedad((prev) => ({
+                        ...prev,
+                        precio_cierre: e.target.value,
+                      }))
+                    }
+                    className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-slate-600">
+                    Fecha cierre
+                  </label>
+                  <input
+                    type="date"
+                    value={formPropiedad.fecha_cierre}
+                    onChange={(e) =>
+                      setFormPropiedad((prev) => ({
+                        ...prev,
+                        fecha_cierre: e.target.value,
+                      }))
+                    }
+                    className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  />
+                </div>
+
+                <div className="rounded-xl border border-gray-200 bg-gray-50 p-3 md:col-span-3">
+                  <p className="text-xs font-semibold text-slate-800">
                     Honorarios
                   </p>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-[11px] text-slate-500 mb-1">
-                        Vendedor (%)
-                      </label>
+                  <div className="mt-3 grid gap-3 md:grid-cols-2">
+                    <label className="flex items-center gap-2 text-xs text-slate-700">
                       <input
-                        className="w-full rounded-lg border border-gray-300 px-2 py-1 text-xs"
-                        placeholder="Ej: 3"
-                        value={formPropiedad.honorarios_pct_vendedor}
+                        type="checkbox"
+                        checked={formPropiedad.cobra_honorarios_vendedor}
                         onChange={(e) =>
-                          setFormPropiedad((f) => ({
-                            ...f,
-                            honorarios_pct_vendedor: e.target.value,
+                          setFormPropiedad((prev) => ({
+                            ...prev,
+                            cobra_honorarios_vendedor: e.target.checked,
+                            honorarios_pct_vendedor: e.target.checked
+                              ? prev.honorarios_pct_vendedor || "3"
+                              : "0",
                           }))
                         }
                       />
-                      <p className="mt-1 text-[11px] text-slate-500">
-                        Neto estimado:{" "}
-                        {honorariosEstimados.vendedor != null
-                          ? fmtCurrency(honorariosEstimados.vendedor)
-                          : "—"}
-                      </p>
-                    </div>
-                    <div>
-                      <label className="block text-[11px] text-slate-500 mb-1">
-                        Comprador (%)
-                      </label>
+                      Cobra honorarios al vendedor
+                    </label>
+
+                    <label className="flex items-center gap-2 text-xs text-slate-700">
                       <input
-                        className="w-full rounded-lg border border-gray-300 px-2 py-1 text-xs"
-                        placeholder="Ej: 3"
-                        value={formPropiedad.honorarios_pct_comprador}
+                        type="checkbox"
+                        checked={formPropiedad.cobra_honorarios_comprador}
                         onChange={(e) =>
-                          setFormPropiedad((f) => ({
-                            ...f,
-                            honorarios_pct_comprador: e.target.value,
+                          setFormPropiedad((prev) => ({
+                            ...prev,
+                            cobra_honorarios_comprador: e.target.checked,
+                            honorarios_pct_comprador: e.target.checked
+                              ? prev.honorarios_pct_comprador || "3"
+                              : "0",
                           }))
                         }
                       />
-                      <p className="mt-1 text-[11px] text-slate-500">
-                        Neto estimado:{" "}
-                        {honorariosEstimados.comprador != null
-                          ? fmtCurrency(honorariosEstimados.comprador)
-                          : "—"}
-                      </p>
-                    </div>
+                      Cobra honorarios al comprador
+                    </label>
+
+                    {formPropiedad.cobra_honorarios_vendedor && (
+                      <div>
+                        <label className="block text-xs font-medium text-slate-600">
+                          % vendedor
+                        </label>
+                        <input
+                          value={formPropiedad.honorarios_pct_vendedor}
+                          onChange={(e) =>
+                            setFormPropiedad((prev) => ({
+                              ...prev,
+                              honorarios_pct_vendedor: e.target.value,
+                            }))
+                          }
+                          className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                        />
+                      </div>
+                    )}
+
+                    {formPropiedad.cobra_honorarios_comprador && (
+                      <div>
+                        <label className="block text-xs font-medium text-slate-600">
+                          % comprador
+                        </label>
+                        <input
+                          value={formPropiedad.honorarios_pct_comprador}
+                          onChange={(e) =>
+                            setFormPropiedad((prev) => ({
+                              ...prev,
+                              honorarios_pct_comprador: e.target.value,
+                            }))
+                          }
+                          className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                        />
+                      </div>
+                    )}
                   </div>
-                  <p className="text-[11px] text-slate-500">
-                    Total estimado:{" "}
-                    {honorariosEstimados.total != null
-                      ? fmtCurrency(honorariosEstimados.total)
-                      : "—"}
-                  </p>
+
+                  <div className="mt-3 rounded-lg bg-white px-3 py-2 text-xs text-slate-700">
+                    Honorarios estimados:{" "}
+                    <span className="font-semibold">
+                      {fmtCurrency(honorariosEstimados.total, formPropiedad.moneda)}
+                    </span>
+                    <span className="ml-2 text-slate-500">
+                      Vendedor:{" "}
+                      {fmtCurrency(honorariosEstimados.vendedor, formPropiedad.moneda)}
+                      {" · "}
+                      Comprador:{" "}
+                      {fmtCurrency(
+                        honorariosEstimados.comprador,
+                        formPropiedad.moneda
+                      )}
+                    </span>
+                  </div>
                 </div>
               </div>
-              <div className="flex items-center justify-end gap-2 border-t border-gray-200 px-4 py-3">
+
+              <div className="mt-5 flex justify-end gap-2">
                 <button
                   onClick={() => setShowPropiedadModal(false)}
-                  className="rounded-full border border-gray-300 bg-white px-3 py-1.5 text-xs text-slate-700 hover:bg-gray-50"
+                  className="rounded-full border border-gray-300 px-4 py-1.5 text-xs font-medium text-slate-700 hover:bg-gray-100"
                 >
                   Cancelar
                 </button>
@@ -2873,6 +2799,333 @@ export default function EmpresaTrackerPage() {
                   }`}
                 >
                   {savingPropiedad ? "Guardando..." : "Guardar"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {showTerceroModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+            <div className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white p-5 shadow-xl">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-base font-semibold text-slate-900">
+                    {editingTercero
+                      ? "Editar propiedad de tercero"
+                      : "Nueva propiedad de tercero"}
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Este registro impacta en ventas y honorarios, pero no en
+                    captaciones propias.
+                  </p>
+                </div>
+                <button
+                  onClick={() => setShowTerceroModal(false)}
+                  className="rounded-full border border-gray-300 px-2 py-1 text-xs text-slate-600 hover:bg-gray-100"
+                >
+                  Cerrar
+                </button>
+              </div>
+
+              <div className="mt-4 grid gap-3 md:grid-cols-3">
+                {renderResponsableSelect(formTercero.asesor_id, (value) =>
+                  setFormTercero((prev) => ({ ...prev, asesor_id: value }))
+                )}
+
+                <div>
+                  <label className="block text-xs font-medium text-slate-600">
+                    Tipo de operación
+                  </label>
+                  <select
+                    value={formTercero.tipo_operacion}
+                    onChange={(e) => {
+                      const next = e.target.value;
+                      setFormTercero((prev) => ({
+                        ...prev,
+                        tipo_operacion: next,
+                        moneda: next === "alquiler" ? "ARS" : "USD",
+                      }));
+                    }}
+                    className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  >
+                    <option value="venta">Venta</option>
+                    <option value="alquiler">Alquiler</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-slate-600">
+                    Moneda
+                  </label>
+                  <select
+                    value={formTercero.moneda}
+                    onChange={(e) =>
+                      setFormTercero((prev) => ({
+                        ...prev,
+                        moneda: e.target.value,
+                      }))
+                    }
+                    className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  >
+                    <option value="USD">USD</option>
+                    <option value="ARS">ARS</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-slate-600">
+                    Comprador / cliente
+                  </label>
+                  <input
+                    value={formTercero.comprador_nombre}
+                    onChange={(e) =>
+                      setFormTercero((prev) => ({
+                        ...prev,
+                        comprador_nombre: e.target.value,
+                      }))
+                    }
+                    className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-slate-600">
+                    Tipología
+                  </label>
+                  {renderTipologiaSelect(formTercero.tipologia, (value) =>
+                    setFormTercero((prev) => ({ ...prev, tipologia: value }))
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-slate-600">
+                    Fecha cierre
+                  </label>
+                  <input
+                    type="date"
+                    value={formTercero.fecha_cierre}
+                    onChange={(e) =>
+                      setFormTercero((prev) => ({
+                        ...prev,
+                        fecha_cierre: e.target.value,
+                      }))
+                    }
+                    className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  />
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="block text-xs font-medium text-slate-600">
+                    Dirección / propiedad
+                  </label>
+                  <input
+                    value={formTercero.direccion}
+                    onChange={(e) =>
+                      setFormTercero((prev) => ({
+                        ...prev,
+                        direccion: e.target.value,
+                      }))
+                    }
+                    className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-slate-600">
+                    Zona
+                  </label>
+                  <input
+                    value={formTercero.zona}
+                    onChange={(e) =>
+                      setFormTercero((prev) => ({
+                        ...prev,
+                        zona: e.target.value,
+                      }))
+                    }
+                    className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-slate-600">
+                    Precio cierre
+                  </label>
+                  <input
+                    value={formTercero.precio_cierre}
+                    onChange={(e) =>
+                      setFormTercero((prev) => ({
+                        ...prev,
+                        precio_cierre: e.target.value,
+                      }))
+                    }
+                    className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-slate-600">
+                    % empresa
+                  </label>
+                  <input
+                    value={formTercero.empresa_share_pct}
+                    onChange={(e) =>
+                      setFormTercero((prev) => ({
+                        ...prev,
+                        empresa_share_pct: e.target.value,
+                      }))
+                    }
+                    className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                    placeholder="Opcional"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-slate-600">
+                    % asesor
+                  </label>
+                  <input
+                    value={formTercero.porcentaje_asesor}
+                    onChange={(e) =>
+                      setFormTercero((prev) => ({
+                        ...prev,
+                        porcentaje_asesor: e.target.value,
+                      }))
+                    }
+                    className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                    placeholder="Opcional"
+                  />
+                </div>
+
+                <div className="rounded-xl border border-gray-200 bg-gray-50 p-3 md:col-span-3">
+                  <p className="text-xs font-semibold text-slate-800">
+                    Honorarios
+                  </p>
+                  <div className="mt-3 grid gap-3 md:grid-cols-2">
+                    <label className="flex items-center gap-2 text-xs text-slate-700">
+                      <input
+                        type="checkbox"
+                        checked={formTercero.cobra_honorarios_vendedor}
+                        onChange={(e) =>
+                          setFormTercero((prev) => ({
+                            ...prev,
+                            cobra_honorarios_vendedor: e.target.checked,
+                            honorarios_pct_vendedor: e.target.checked
+                              ? prev.honorarios_pct_vendedor || "3"
+                              : "0",
+                          }))
+                        }
+                      />
+                      Cobra honorarios al vendedor
+                    </label>
+
+                    <label className="flex items-center gap-2 text-xs text-slate-700">
+                      <input
+                        type="checkbox"
+                        checked={formTercero.cobra_honorarios_comprador}
+                        onChange={(e) =>
+                          setFormTercero((prev) => ({
+                            ...prev,
+                            cobra_honorarios_comprador: e.target.checked,
+                            honorarios_pct_comprador: e.target.checked
+                              ? prev.honorarios_pct_comprador || "3"
+                              : "0",
+                          }))
+                        }
+                      />
+                      Cobra honorarios al comprador
+                    </label>
+
+                    {formTercero.cobra_honorarios_vendedor && (
+                      <div>
+                        <label className="block text-xs font-medium text-slate-600">
+                          % vendedor
+                        </label>
+                        <input
+                          value={formTercero.honorarios_pct_vendedor}
+                          onChange={(e) =>
+                            setFormTercero((prev) => ({
+                              ...prev,
+                              honorarios_pct_vendedor: e.target.value,
+                            }))
+                          }
+                          className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                        />
+                      </div>
+                    )}
+
+                    {formTercero.cobra_honorarios_comprador && (
+                      <div>
+                        <label className="block text-xs font-medium text-slate-600">
+                          % comprador
+                        </label>
+                        <input
+                          value={formTercero.honorarios_pct_comprador}
+                          onChange={(e) =>
+                            setFormTercero((prev) => ({
+                              ...prev,
+                              honorarios_pct_comprador: e.target.value,
+                            }))
+                          }
+                          className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="mt-3 rounded-lg bg-white px-3 py-2 text-xs text-slate-700">
+                    Honorarios estimados:{" "}
+                    <span className="font-semibold">
+                      {fmtCurrency(honorariosTerceroEstimados.total, formTercero.moneda)}
+                    </span>
+                    <span className="ml-2 text-slate-500">
+                      Vendedor:{" "}
+                      {fmtCurrency(
+                        honorariosTerceroEstimados.vendedor,
+                        formTercero.moneda
+                      )}
+                      {" · "}
+                      Comprador:{" "}
+                      {fmtCurrency(
+                        honorariosTerceroEstimados.comprador,
+                        formTercero.moneda
+                      )}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="md:col-span-3">
+                  <label className="block text-xs font-medium text-slate-600">
+                    Notas
+                  </label>
+                  <textarea
+                    value={formTercero.notas}
+                    onChange={(e) =>
+                      setFormTercero((prev) => ({
+                        ...prev,
+                        notas: e.target.value,
+                      }))
+                    }
+                    className="mt-1 min-h-[90px] w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  />
+                </div>
+              </div>
+
+              <div className="mt-5 flex justify-end gap-2">
+                <button
+                  onClick={() => setShowTerceroModal(false)}
+                  className="rounded-full border border-gray-300 px-4 py-1.5 text-xs font-medium text-slate-700 hover:bg-gray-100"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={guardarTercero}
+                  disabled={savingTercero}
+                  className={`rounded-full bg-black px-4 py-1.5 text-xs font-medium text-white hover:bg-slate-900 ${
+                    savingTercero ? "opacity-60 cursor-not-allowed" : ""
+                  }`}
+                >
+                  {savingTercero ? "Guardando..." : "Guardar"}
                 </button>
               </div>
             </div>

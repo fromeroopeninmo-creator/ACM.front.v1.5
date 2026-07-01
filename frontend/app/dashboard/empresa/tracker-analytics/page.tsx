@@ -16,6 +16,7 @@ interface TrackerContacto {
   asesor_id: string | null;
   tipo_operacion: string | null;
   tipologia: string | null;
+  zona: string | null;
   estado: string | null;
   created_at: string;
 }
@@ -26,6 +27,8 @@ interface TrackerPropiedad {
   asesor_id: string | null;
   tipologia: string | null;
   tipo_operacion: string | null;
+  zona: string | null;
+  dormitorios: number | null;
   precio_cierre: number | null;
   precio_actual: number | null;
   moneda: string | null;
@@ -62,6 +65,8 @@ interface TrackerPropiedadTercero {
   asesor_id: string | null;
   tipologia: string | null;
   tipo_operacion: string | null;
+  zona: string | null;
+  dormitorios: number | null;
   precio_cierre: number | null;
   moneda: string | null;
   fecha_cierre: string | null;
@@ -141,6 +146,18 @@ function subDays(date: Date, days: number) {
   return d;
 }
 
+function addDays(date: Date, days: number) {
+  const d = new Date(date);
+  d.setDate(d.getDate() + days);
+  return d;
+}
+
+function addMonths(date: Date, months: number) {
+  const d = new Date(date);
+  d.setMonth(d.getMonth() + months);
+  return d;
+}
+
 function toDateKey(date: Date): string {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, "0");
@@ -150,6 +167,14 @@ function toDateKey(date: Date): string {
 
 function dateKeyFromString(value: string | null | undefined): string {
   return value ? value.substring(0, 10) : "";
+}
+
+function formatDateDisplay(value: string | null | undefined): string {
+  const key = dateKeyFromString(value);
+  if (!key) return "—";
+  const [year, month, day] = key.split("-");
+  if (!year || !month || !day) return "—";
+  return `${day}/${month}/${year.substring(2)}`;
 }
 
 function isValidDateKey(value: string | null | undefined): boolean {
@@ -241,6 +266,18 @@ function labelTipologia(t: string | null): string {
     default:
       return t;
   }
+}
+
+function labelDormitorios(value: number | null | undefined): string {
+  if (value == null) return "Sin dato";
+  if (value === 0) return "Monoambiente";
+  if (value === 1) return "1 dormitorio";
+  return `${value} dormitorios`;
+}
+
+function labelZona(value: string | null | undefined): string {
+  const clean = (value || "").trim();
+  return clean || "Sin zona";
 }
 
 function labelTipoActividad(t: string): string {
@@ -337,6 +374,30 @@ function alquilerAdminMontoMensual(p: TrackerPropiedad): number {
   return valorMensual > 0 && pct > 0 ? (valorMensual * pct) / 100 : 0;
 }
 
+function proximaActualizacionAlquilerKey(p: TrackerPropiedad, fromDate: Date = new Date()): string | null {
+  if (!isValidAlquilerContrato(p)) return null;
+  const frecuencia = Number(p.alquiler_frecuencia_actualizacion_meses ?? 0);
+  if (frecuencia <= 0) return null;
+
+  const inicioKey = dateKeyFromString(p.alquiler_fecha_inicio_contrato);
+  const inicio = startOfDay(new Date(inicioKey));
+  if (Number.isNaN(inicio.getTime())) return null;
+
+  const today = startOfDay(fromDate);
+  const finKey = dateKeyFromString(p.alquiler_fecha_fin_contrato);
+  const fin = finKey ? startOfDay(new Date(finKey)) : null;
+
+  let candidate = addMonths(inicio, frecuencia);
+  let guard = 0;
+  while (candidate < today && guard < 120) {
+    candidate = addMonths(candidate, frecuencia);
+    guard += 1;
+  }
+
+  if (fin && candidate > fin) return null;
+  return toDateKey(candidate);
+}
+
 function honorariosVentaPropia(p: TrackerPropiedad): number {
   if (!isValidClose(p)) return 0;
   const precio = Number(p.precio_cierre ?? 0);
@@ -369,6 +430,9 @@ export default function EmpresaTrackerAnaliticoPage() {
   const [customFrom, setCustomFrom] = useState<string>(toDateKey(subDays(new Date(), 90)));
   const [customTo, setCustomTo] = useState<string>(toDateKey(new Date()));
   const [tipoOperacion, setTipoOperacion] = useState<TipoOperacion>("venta");
+  const [alquilerZonaFiltro, setAlquilerZonaFiltro] = useState<string>("");
+  const [alquilerTipologiaFiltro, setAlquilerTipologiaFiltro] = useState<string>("");
+  const [alquilerDormitoriosFiltro, setAlquilerDormitoriosFiltro] = useState<string>("");
 
   const [empresaPctInput, setEmpresaPctInput] = useState<string>("60");
   const [asesorPctInput, setAsesorPctInput] = useState<string>("40");
@@ -430,7 +494,7 @@ export default function EmpresaTrackerAnaliticoPage() {
         const [contactosRes, propiedadesRes, tercerosRes, actividadesRes, asesoresRes] = await Promise.all([
           supabase
             .from("tracker_contactos")
-            .select("id, empresa_id, asesor_id, tipo_operacion, tipologia, estado, created_at")
+            .select("id, empresa_id, asesor_id, tipo_operacion, tipologia, zona, estado, created_at")
             .eq("empresa_id", empresaId),
           supabase
             .from("tracker_propiedades")
@@ -441,6 +505,8 @@ export default function EmpresaTrackerAnaliticoPage() {
               asesor_id,
               tipologia,
               tipo_operacion,
+              zona,
+              dormitorios,
               precio_cierre,
               precio_actual,
               moneda,
@@ -480,6 +546,8 @@ export default function EmpresaTrackerAnaliticoPage() {
               asesor_id,
               tipologia,
               tipo_operacion,
+              zona,
+              dormitorios,
               precio_cierre,
               moneda,
               fecha_cierre,
@@ -592,6 +660,74 @@ export default function EmpresaTrackerAnaliticoPage() {
     return alquileresConContratoEnRango.filter((p) => p.alquiler_administra === true);
   }, [alquileresConContratoEnRango]);
 
+  const zonasAlquilerOptions = useMemo(() => {
+    const zonas = new Set<string>();
+    propiedadesOperacion.forEach((p) => {
+      if (p.tipo_operacion !== "alquiler") return;
+      const zona = labelZona(p.zona);
+      if (zona !== "Sin zona") zonas.add(zona);
+    });
+    return Array.from(zonas).sort((a, b) => a.localeCompare(b, "es"));
+  }, [propiedadesOperacion]);
+
+  const matchesAlquilerExtraFilters = (p: TrackerPropiedad) => {
+    if (alquilerZonaFiltro && labelZona(p.zona) !== alquilerZonaFiltro) return false;
+    if (alquilerTipologiaFiltro && (p.tipologia || "sin_tipologia") !== alquilerTipologiaFiltro) return false;
+
+    if (alquilerDormitoriosFiltro) {
+      const dormitorios = p.dormitorios;
+      if (alquilerDormitoriosFiltro === "sin_dato" && dormitorios != null) return false;
+      if (alquilerDormitoriosFiltro === "4plus" && (dormitorios == null || dormitorios < 4)) return false;
+      if (!["sin_dato", "4plus"].includes(alquilerDormitoriosFiltro) && String(dormitorios ?? "") !== alquilerDormitoriosFiltro) return false;
+    }
+
+    return true;
+  };
+
+  const contactosAlquilerFiltrados = useMemo(() => {
+    if (tipoOperacion !== "alquiler") return contactosFiltrados;
+    return contactosFiltrados.filter((c) => {
+      if (alquilerZonaFiltro && labelZona(c.zona) !== alquilerZonaFiltro) return false;
+      if (alquilerTipologiaFiltro && (c.tipologia || "sin_tipologia") !== alquilerTipologiaFiltro) return false;
+      return true;
+    });
+  }, [contactosFiltrados, tipoOperacion, alquilerZonaFiltro, alquilerTipologiaFiltro]);
+
+  const alquilerPropiedadesEnRango = useMemo(() => {
+    return propiedadesCaptadasEnRango.filter((p) => p.tipo_operacion === "alquiler" && matchesAlquilerExtraFilters(p));
+  }, [propiedadesCaptadasEnRango, alquilerZonaFiltro, alquilerTipologiaFiltro, alquilerDormitoriosFiltro]);
+
+  const alquileresConContratoFiltrados = useMemo(() => {
+    return alquileresConContratoEnRango.filter((p) => matchesAlquilerExtraFilters(p));
+  }, [alquileresConContratoEnRango, alquilerZonaFiltro, alquilerTipologiaFiltro, alquilerDormitoriosFiltro]);
+
+  const alquileresAdministradosFiltrados = useMemo(() => {
+    return alquileresConContratoFiltrados.filter((p) => p.alquiler_administra === true);
+  }, [alquileresConContratoFiltrados]);
+
+  const contratosProximosAFinalizar = useMemo(() => {
+    const todayKey = toDateKey(new Date());
+    const limitKey = toDateKey(addDays(new Date(), 30));
+    return propiedadesOperacion
+      .filter((p) => p.tipo_operacion === "alquiler" && matchesAlquilerExtraFilters(p))
+      .filter((p) => {
+        const finKey = dateKeyFromString(p.alquiler_fecha_fin_contrato);
+        return finKey >= todayKey && finKey <= limitKey;
+      })
+      .sort((a, b) => dateKeyFromString(a.alquiler_fecha_fin_contrato).localeCompare(dateKeyFromString(b.alquiler_fecha_fin_contrato)));
+  }, [propiedadesOperacion, alquilerZonaFiltro, alquilerTipologiaFiltro, alquilerDormitoriosFiltro]);
+
+  const alquileresProximosAActualizar = useMemo(() => {
+    const todayKey = toDateKey(new Date());
+    const limitKey = toDateKey(addDays(new Date(), 30));
+    return propiedadesOperacion
+      .filter((p) => p.tipo_operacion === "alquiler" && matchesAlquilerExtraFilters(p))
+      .map((p) => ({ propiedad: p, fecha: proximaActualizacionAlquilerKey(p) }))
+      .filter((row): row is { propiedad: TrackerPropiedad; fecha: string } => !!row.fecha && row.fecha >= todayKey && row.fecha <= limitKey)
+      .sort((a, b) => a.fecha.localeCompare(b.fecha));
+  }, [propiedadesOperacion, alquilerZonaFiltro, alquilerTipologiaFiltro, alquilerDormitoriosFiltro]);
+
+
   const nombreAsesor = (id: string | null) => {
     if (!id || id === "__empresa__") return "Empresa / sin asignar";
     const found = asesores.find((a) => a.id === id);
@@ -600,10 +736,12 @@ export default function EmpresaTrackerAnaliticoPage() {
     return nombre || "Sin nombre";
   };
 
+  const captadasStatsInput = tipoOperacion === "alquiler" ? alquilerPropiedadesEnRango : propiedadesCaptadasEnRango;
+
   const tipologiaCaptadasStats = useMemo<TipologiaStats[]>(() => {
     const counts = new Map<string, number>();
 
-    for (const p of propiedadesCaptadasEnRango) {
+    for (const p of captadasStatsInput) {
       const key = p.tipologia || "sin_tipologia";
       counts.set(key, (counts.get(key) ?? 0) + 1);
     }
@@ -618,7 +756,7 @@ export default function EmpresaTrackerAnaliticoPage() {
         porcentaje: (count / totalCount) * 100,
       }))
       .sort((a, b) => b.count - a.count);
-  }, [propiedadesCaptadasEnRango]);
+  }, [captadasStatsInput]);
 
   const cierreStatsInput = useMemo(() => {
     if (tipoOperacion === "venta") {
@@ -646,7 +784,7 @@ export default function EmpresaTrackerAnaliticoPage() {
       ];
     }
 
-    return alquileresConContratoEnRango.map((p) => ({
+    return alquileresConContratoFiltrados.map((p) => ({
       id: p.id,
       tipologia: p.tipologia,
       precio: alquilerValorMensual(p),
@@ -656,7 +794,7 @@ export default function EmpresaTrackerAnaliticoPage() {
       fechaCierre: p.alquiler_fecha_inicio_contrato,
       source: "alquiler" as const,
     }));
-  }, [tipoOperacion, ventasPropiasEnRango, ventasTercerosEnRango, alquileresConContratoEnRango]);
+  }, [tipoOperacion, ventasPropiasEnRango, ventasTercerosEnRango, alquileresConContratoFiltrados]);
 
   const { tipologiaCierreStats, avgGapGlobal, avgDiasGlobal } = useMemo(() => {
     const map = new Map<
@@ -856,27 +994,84 @@ export default function EmpresaTrackerAnaliticoPage() {
 
   const alquilerHonorariosContratos = useMemo(() => {
     const total = emptyCurrencyTotals();
-    alquileresConContratoEnRango.forEach((p) => addCurrency(total, p.moneda, alquilerComisionMonto(p)));
+    alquileresConContratoFiltrados.forEach((p) => addCurrency(total, p.moneda, alquilerComisionMonto(p)));
     return total;
-  }, [alquileresConContratoEnRango]);
+  }, [alquileresConContratoFiltrados]);
 
   const alquilerAdministracionMensual = useMemo(() => {
     const total = emptyCurrencyTotals();
-    alquileresAdministradosEnRango.forEach((p) => addCurrency(total, p.moneda, alquilerAdminMontoMensual(p)));
+    alquileresAdministradosFiltrados.forEach((p) => addCurrency(total, p.moneda, alquilerAdminMontoMensual(p)));
     return total;
-  }, [alquileresAdministradosEnRango]);
+  }, [alquileresAdministradosFiltrados]);
 
   const alquilerValorMensualAdministrado = useMemo(() => {
     const total = emptyCurrencyTotals();
-    alquileresAdministradosEnRango.forEach((p) => addCurrency(total, p.moneda, alquilerValorMensual(p)));
+    alquileresAdministradosFiltrados.forEach((p) => addCurrency(total, p.moneda, alquilerValorMensual(p)));
     return total;
-  }, [alquileresAdministradosEnRango]);
+  }, [alquileresAdministradosFiltrados]);
 
   const alquilerValorTotalContratos = useMemo(() => {
     const total = emptyCurrencyTotals();
-    alquileresConContratoEnRango.forEach((p) => addCurrency(total, p.moneda, alquilerBaseComision(p)));
+    alquileresConContratoFiltrados.forEach((p) => addCurrency(total, p.moneda, alquilerBaseComision(p)));
     return total;
-  }, [alquileresConContratoEnRango]);
+  }, [alquileresConContratoFiltrados]);
+
+  const alquilerValorMensualStats = useMemo(() => {
+    const values = alquileresConContratoFiltrados
+      .map((p) => alquilerValorMensual(p))
+      .filter((value) => value > 0);
+
+    if (!values.length) {
+      return { promedio: null as number | null, minimo: null as number | null, maximo: null as number | null, casos: 0 };
+    }
+
+    return {
+      promedio: values.reduce((acc, value) => acc + value, 0) / values.length,
+      minimo: Math.min(...values),
+      maximo: Math.max(...values),
+      casos: values.length,
+    };
+  }, [alquileresConContratoFiltrados]);
+
+  const alquilerRankingZonaStats = useMemo(() => {
+    const map = new Map<
+      string,
+      {
+        zona: string;
+        count: number;
+        sumValorMensual: number;
+        administrados: number;
+        sumAdmin: number;
+      }
+    >();
+
+    for (const p of alquileresConContratoFiltrados) {
+      const zona = labelZona(p.zona);
+      const bucket = map.get(zona) || {
+        zona,
+        count: 0,
+        sumValorMensual: 0,
+        administrados: 0,
+        sumAdmin: 0,
+      };
+
+      bucket.count += 1;
+      bucket.sumValorMensual += alquilerValorMensual(p);
+      if (p.alquiler_administra) {
+        bucket.administrados += 1;
+        bucket.sumAdmin += alquilerAdminMontoMensual(p);
+      }
+      map.set(zona, bucket);
+    }
+
+    return Array.from(map.values())
+      .map((row) => ({
+        ...row,
+        promedio: row.count > 0 ? row.sumValorMensual / row.count : 0,
+      }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 8);
+  }, [alquileresConContratoFiltrados]);
 
   const empresaPct = Math.min(100, Math.max(0, Number(empresaPctInput) || 0));
   const asesorPct = Math.min(100, Math.max(0, Number(asesorPctInput) || 0));
@@ -957,9 +1152,9 @@ export default function EmpresaTrackerAnaliticoPage() {
   }, [contactosFiltrados, actividadesFiltradas, propiedadesCaptadasEnRango, ventasPropiasEnRango]);
 
   const totalCaptaciones = propiedadesCaptadasEnRango.length;
-  const totalCierres = tipoOperacion === "venta" ? ventasPropiasEnRango.length : alquileresConContratoEnRango.length;
+  const totalCierres = tipoOperacion === "venta" ? ventasPropiasEnRango.length : alquileresConContratoFiltrados.length;
   const totalTerceros = ventasTercerosEnRango.length;
-  const totalOperaciones = tipoOperacion === "venta" ? ventasPropiasEnRango.length + ventasTercerosEnRango.length : alquileresConContratoEnRango.length;
+  const totalOperaciones = tipoOperacion === "venta" ? ventasPropiasEnRango.length + ventasTercerosEnRango.length : alquileresConContratoFiltrados.length;
   const tasaAbsorcion = totalCaptaciones > 0 ? (totalCierres / totalCaptaciones) * 100 : null;
 
   if (loading && !empresaId) {
@@ -991,22 +1186,22 @@ export default function EmpresaTrackerAnaliticoPage() {
         <section className="grid gap-4 md:grid-cols-5">
           <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
             <p className="text-xs text-slate-500">Prospectos</p>
-            <p className="mt-1 text-2xl font-semibold text-slate-900">{contactosFiltrados.length}</p>
+            <p className="mt-1 text-2xl font-semibold text-slate-900">{contactosAlquilerFiltrados.length}</p>
             <p className="mt-1 text-[11px] text-slate-500">Contactos de alquiler ingresados en el período.</p>
           </div>
           <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
             <p className="text-xs text-slate-500">Propiedades en alquiler</p>
-            <p className="mt-1 text-2xl font-semibold text-slate-900">{totalCaptaciones}</p>
+            <p className="mt-1 text-2xl font-semibold text-slate-900">{alquilerPropiedadesEnRango.length}</p>
             <p className="mt-1 text-[11px] text-slate-500">Inmuebles cargados para alquiler.</p>
           </div>
           <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
             <p className="text-xs text-slate-500">Propiedades alquiladas</p>
-            <p className="mt-1 text-2xl font-semibold text-slate-900">{alquileresConContratoEnRango.length}</p>
+            <p className="mt-1 text-2xl font-semibold text-slate-900">{alquileresConContratoFiltrados.length}</p>
             <p className="mt-1 text-[11px] text-slate-500">Contratos iniciados dentro del período.</p>
           </div>
           <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
             <p className="text-xs text-slate-500">Administración de alquileres</p>
-            <p className="mt-1 text-2xl font-semibold text-slate-900">{alquileresAdministradosEnRango.length}</p>
+            <p className="mt-1 text-2xl font-semibold text-slate-900">{alquileresAdministradosFiltrados.length}</p>
             <p className="mt-1 text-[11px] text-slate-500">Ingreso mensual adm.: {formatCurrencyTotals(alquilerAdministracionMensual)}</p>
           </div>
           <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
@@ -1111,6 +1306,54 @@ export default function EmpresaTrackerAnaliticoPage() {
               </div>
             )}
 
+            {tipoOperacion === "alquiler" && (
+              <div className="flex flex-wrap items-center gap-1">
+                <span className="text-slate-500">Zona:</span>
+                <select
+                  value={alquilerZonaFiltro}
+                  onChange={(e) => setAlquilerZonaFiltro(e.target.value)}
+                  className="rounded-full border border-gray-300 bg-white px-3 py-1 text-xs text-slate-700 max-w-[190px]"
+                >
+                  <option value="">Todas</option>
+                  {zonasAlquilerOptions.map((zona) => (
+                    <option key={zona} value={zona}>
+                      {zona}
+                    </option>
+                  ))}
+                </select>
+
+                <span className="text-slate-500">Tipología:</span>
+                <select
+                  value={alquilerTipologiaFiltro}
+                  onChange={(e) => setAlquilerTipologiaFiltro(e.target.value)}
+                  className="rounded-full border border-gray-300 bg-white px-3 py-1 text-xs text-slate-700"
+                >
+                  <option value="">Todas</option>
+                  <option value="sin_tipologia">Sin tipología</option>
+                  {TIPOLOGIAS.map((tipologia) => (
+                    <option key={tipologia} value={tipologia}>
+                      {labelTipologia(tipologia)}
+                    </option>
+                  ))}
+                </select>
+
+                <span className="text-slate-500">Dorm./amb.:</span>
+                <select
+                  value={alquilerDormitoriosFiltro}
+                  onChange={(e) => setAlquilerDormitoriosFiltro(e.target.value)}
+                  className="rounded-full border border-gray-300 bg-white px-3 py-1 text-xs text-slate-700"
+                >
+                  <option value="">Todos</option>
+                  <option value="0">Monoambiente</option>
+                  <option value="1">1 dormitorio</option>
+                  <option value="2">2 dormitorios</option>
+                  <option value="3">3 dormitorios</option>
+                  <option value="4plus">4+ dormitorios</option>
+                  <option value="sin_dato">Sin dato</option>
+                </select>
+              </div>
+            )}
+
             <Link href="/dashboard/empresa/tracker" className="inline-flex items-center gap-1 rounded-full bg-black text-white px-3 py-1.5 text-xs font-medium hover:bg-slate-900">
               ← Business Tracker
             </Link>
@@ -1152,78 +1395,140 @@ export default function EmpresaTrackerAnaliticoPage() {
 
         {renderMainKpis()}
 
-        <section className="grid gap-6 md:grid-cols-2 items-start">
-          <div className="rounded-2xl bg-white border border-gray-200 shadow-sm p-4">
-            <div className="flex items-center justify-between mb-3">
-              <div>
-                <h2 className="text-sm font-semibold text-slate-900">{kpiTitleCaptadas}</h2>
-                <p className="text-[11px] text-slate-500">
-                  {tipoOperacion === "venta" ? "Distribución de propiedades captadas por tipología." : "Distribución de propiedades ofrecidas en alquiler por tipología."}
-                </p>
+        {tipoOperacion === "venta" ? (
+          <section className="grid gap-6 md:grid-cols-2 items-start">
+            <div className="rounded-2xl bg-white border border-gray-200 shadow-sm p-4">
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <h2 className="text-sm font-semibold text-slate-900">{kpiTitleCaptadas}</h2>
+                  <p className="text-[11px] text-slate-500">Distribución de propiedades captadas por tipología.</p>
+                </div>
               </div>
+
+              {tipologiaCaptadasStats.length === 0 ? (
+                <p className="text-xs text-slate-500">Todavía no hay propiedades en este período.</p>
+              ) : (
+                <div className="flex flex-col sm:flex-row items-center gap-4">
+                  <div className="relative w-40 h-40 flex-shrink-0">
+                    <div className="absolute inset-0 rounded-full border border-gray-200 shadow-inner" style={{ backgroundImage: pieCaptadasBackground }} />
+                    {renderPieLabels(pieCaptadasSegments)}
+                  </div>
+                  <div className="flex-1 space-y-1">
+                    {pieCaptadasSegments.map((seg) => (
+                      <div key={seg.tipologia} className="flex items-center justify-between text-[11px]">
+                        <div className="flex items-center gap-2">
+                          <span className="inline-block w-3 h-3 rounded-full" style={{ backgroundColor: seg.color }} />
+                          <span className="text-slate-700">{labelTipologia(seg.tipologia)}</span>
+                        </div>
+                        <div className="text-slate-500">{seg.count} reg. · {seg.porcentaje.toFixed(1)}%</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
-            {tipologiaCaptadasStats.length === 0 ? (
-              <p className="text-xs text-slate-500">Todavía no hay propiedades en este período.</p>
-            ) : (
-              <div className="flex flex-col sm:flex-row items-center gap-4">
-                <div className="relative w-40 h-40 flex-shrink-0">
-                  <div className="absolute inset-0 rounded-full border border-gray-200 shadow-inner" style={{ backgroundImage: pieCaptadasBackground }} />
-                  {renderPieLabels(pieCaptadasSegments)}
-                </div>
-                <div className="flex-1 space-y-1">
-                  {pieCaptadasSegments.map((seg) => (
-                    <div key={seg.tipologia} className="flex items-center justify-between text-[11px]">
-                      <div className="flex items-center gap-2">
-                        <span className="inline-block w-3 h-3 rounded-full" style={{ backgroundColor: seg.color }} />
-                        <span className="text-slate-700">{labelTipologia(seg.tipologia)}</span>
-                      </div>
-                      <div className="text-slate-500">
-                        {seg.count} reg. · {seg.porcentaje.toFixed(1)}%
-                      </div>
-                    </div>
-                  ))}
+            <div className="rounded-2xl bg-white border border-gray-200 shadow-sm p-4">
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <h2 className="text-sm font-semibold text-slate-900">{kpiTitleCierres}</h2>
+                  <p className="text-[11px] text-slate-500">Distribución de operaciones cerradas por tipología.</p>
                 </div>
               </div>
-            )}
-          </div>
 
-          <div className="rounded-2xl bg-white border border-gray-200 shadow-sm p-4">
-            <div className="flex items-center justify-between mb-3">
-              <div>
-                <h2 className="text-sm font-semibold text-slate-900">{kpiTitleCierres}</h2>
-                <p className="text-[11px] text-slate-500">
-                  {tipoOperacion === "venta" ? "Distribución de operaciones cerradas por tipología." : "Distribución de contratos iniciados por tipología."}
-                </p>
+              {pieCierresSegments.length === 0 ? (
+                <p className="text-xs text-slate-500">Todavía no hay operaciones en este período.</p>
+              ) : (
+                <div className="flex flex-col sm:flex-row items-center gap-4">
+                  <div className="relative w-40 h-40 flex-shrink-0">
+                    <div className="absolute inset-0 rounded-full border border-gray-200 shadow-inner" style={{ backgroundImage: pieCierresBackground }} />
+                    {renderPieLabels(pieCierresSegments)}
+                  </div>
+                  <div className="flex-1 space-y-1">
+                    {pieCierresSegments.map((seg) => (
+                      <div key={seg.tipologia} className="flex items-center justify-between text-[11px]">
+                        <div className="flex items-center gap-2">
+                          <span className="inline-block w-3 h-3 rounded-full" style={{ backgroundColor: seg.color }} />
+                          <span className="text-slate-700">{labelTipologia(seg.tipologia)}</span>
+                        </div>
+                        <div className="text-slate-500">{seg.count} {cierreLegendWord} · {seg.porcentaje.toFixed(1)}%</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </section>
+        ) : (
+          <section className="grid gap-6 md:grid-cols-2 items-start">
+            <div className="rounded-2xl bg-white border border-gray-200 shadow-sm p-4">
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <h2 className="text-sm font-semibold text-slate-900">Valores promedio de alquiler</h2>
+                  <p className="text-[11px] text-slate-500">Promedio, mínimo y máximo según zona, tipología y dormitorios/ambientes.</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-[10px] text-slate-500">Casos comparables</p>
+                  <p className="text-xs font-semibold text-slate-900">{alquilerValorMensualStats.casos}</p>
+                </div>
               </div>
+
+              {alquilerValorMensualStats.casos === 0 ? (
+                <p className="text-xs text-slate-500">No hay contratos de alquiler con valor mensual para estos filtros.</p>
+              ) : (
+                <div className="grid gap-3 sm:grid-cols-3 text-xs">
+                  <div className="rounded-xl bg-gray-50 border border-gray-200 px-3 py-3">
+                    <p className="text-[11px] text-slate-500">Promedio mensual</p>
+                    <p className="mt-1 text-xl font-semibold text-slate-900">{formatCurrency(alquilerValorMensualStats.promedio, "ARS")}</p>
+                  </div>
+                  <div className="rounded-xl bg-gray-50 border border-gray-200 px-3 py-3">
+                    <p className="text-[11px] text-slate-500">Mínimo</p>
+                    <p className="mt-1 text-xl font-semibold text-slate-900">{formatCurrency(alquilerValorMensualStats.minimo, "ARS")}</p>
+                  </div>
+                  <div className="rounded-xl bg-gray-50 border border-gray-200 px-3 py-3">
+                    <p className="text-[11px] text-slate-500">Máximo</p>
+                    <p className="mt-1 text-xl font-semibold text-slate-900">{formatCurrency(alquilerValorMensualStats.maximo, "ARS")}</p>
+                  </div>
+                </div>
+              )}
             </div>
 
-            {pieCierresSegments.length === 0 ? (
-              <p className="text-xs text-slate-500">Todavía no hay operaciones en este período.</p>
-            ) : (
-              <div className="flex flex-col sm:flex-row items-center gap-4">
-                <div className="relative w-40 h-40 flex-shrink-0">
-                  <div className="absolute inset-0 rounded-full border border-gray-200 shadow-inner" style={{ backgroundImage: pieCierresBackground }} />
-                  {renderPieLabels(pieCierresSegments)}
-                </div>
-                <div className="flex-1 space-y-1">
-                  {pieCierresSegments.map((seg) => (
-                    <div key={seg.tipologia} className="flex items-center justify-between text-[11px]">
-                      <div className="flex items-center gap-2">
-                        <span className="inline-block w-3 h-3 rounded-full" style={{ backgroundColor: seg.color }} />
-                        <span className="text-slate-700">{labelTipologia(seg.tipologia)}</span>
-                      </div>
-                      <div className="text-slate-500">
-                        {seg.count} {cierreLegendWord} · {seg.porcentaje.toFixed(1)}%
-                      </div>
-                    </div>
-                  ))}
+            <div className="rounded-2xl bg-white border border-gray-200 shadow-sm p-4">
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <h2 className="text-sm font-semibold text-slate-900">Ranking por zona</h2>
+                  <p className="text-[11px] text-slate-500">Contratos, valor mensual promedio e ingreso por administración.</p>
                 </div>
               </div>
-            )}
-          </div>
-        </section>
 
+              {alquilerRankingZonaStats.length === 0 ? (
+                <p className="text-xs text-slate-500">No hay datos de alquiler suficientes para armar el ranking.</p>
+              ) : (
+                <div className="space-y-2">
+                  {alquilerRankingZonaStats.map((row) => {
+                    const maxCount = Math.max(1, ...alquilerRankingZonaStats.map((x) => x.count));
+                    return (
+                      <div key={row.zona} className="text-[11px]">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-medium text-slate-800 truncate">{row.zona}</span>
+                          <span className="text-slate-500">{row.count} contratos · Prom. {formatCurrency(row.promedio, "ARS")}</span>
+                        </div>
+                        <div className="mt-1 h-1.5 rounded-full bg-gray-100 overflow-hidden">
+                          <div className="h-full rounded-full bg-[rgba(230,169,48,0.9)]" style={{ width: `${(row.count / maxCount) * 100}%` }} />
+                        </div>
+                        {row.administrados > 0 && (
+                          <p className="mt-1 text-[10px] text-slate-500">Adm.: {row.administrados} · Ingreso mensual: {formatCurrency(row.sumAdmin, "ARS")}</p>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </section>
+        )}
+
+        {tipoOperacion === "venta" && (
         <section className="grid gap-6 md:grid-cols-2">
           <div className="rounded-2xl bg-white border border-gray-200 shadow-sm p-4">
             <div className="flex items-center justify-between mb-2">
@@ -1318,6 +1623,8 @@ export default function EmpresaTrackerAnaliticoPage() {
             )}
           </div>
         </section>
+
+        )}
 
         <section className="grid gap-6 md:grid-cols-2 items-start">
           <div className="rounded-2xl bg-white border border-gray-200 shadow-sm p-4">
@@ -1483,41 +1790,65 @@ export default function EmpresaTrackerAnaliticoPage() {
             </div>
           </section>
         ) : (
-          <section className="rounded-2xl bg-white border border-gray-200 shadow-sm p-4">
-            <div className="flex items-center justify-between mb-3">
-              <div>
-                <h2 className="text-sm font-semibold text-slate-900">Embudo de Alquileres</h2>
-                <p className="text-[11px] text-slate-500">Sin prelisting: se mide prospecto → propiedad en alquiler → contrato → administración.</p>
+          <section className="grid gap-6 md:grid-cols-2 items-start">
+            <div className="rounded-2xl bg-white border border-gray-200 shadow-sm p-4">
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <h2 className="text-sm font-semibold text-slate-900">Contratos próximos a finalizar</h2>
+                  <p className="text-[11px] text-slate-500">Vencimientos dentro de los próximos 30 días.</p>
+                </div>
+                <span className="rounded-full bg-amber-50 px-2 py-1 text-[11px] font-medium text-amber-800">{contratosProximosAFinalizar.length}</span>
               </div>
+              {contratosProximosAFinalizar.length === 0 ? (
+                <p className="text-xs text-slate-500">No hay contratos próximos a finalizar con los filtros seleccionados.</p>
+              ) : (
+                <div className="space-y-2 max-h-80 overflow-y-auto">
+                  {contratosProximosAFinalizar.slice(0, 8).map((p) => (
+                    <div key={p.id} className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-[11px]">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-semibold text-slate-800 truncate">{labelTipologia(p.tipologia)} · {labelDormitorios(p.dormitorios)}</span>
+                        <span className="text-slate-500">{formatDateDisplay(p.alquiler_fecha_fin_contrato)}</span>
+                      </div>
+                      <p className="mt-1 text-slate-500 truncate">{labelZona(p.zona)} · {nombreAsesor(p.asesor_id)}</p>
+                      <p className="mt-1 text-slate-600">Valor mensual: {formatCurrency(alquilerValorMensual(p), normalizeCurrency(p.moneda))}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
-            <div className="grid gap-4 md:grid-cols-4 text-xs">
-              <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2">
-                <p className="text-[11px] text-slate-500">Prospectos</p>
-                <p className="mt-1 text-xl font-semibold text-slate-900">{contactosFiltrados.length}</p>
-                <p className="mt-1 text-[11px] text-slate-500">Contactos de alquiler.</p>
+
+            <div className="rounded-2xl bg-white border border-gray-200 shadow-sm p-4">
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <h2 className="text-sm font-semibold text-slate-900">Alquileres próximos a actualizar</h2>
+                  <p className="text-[11px] text-slate-500">Actualizaciones calculadas por inicio de contrato y frecuencia.</p>
+                </div>
+                <span className="rounded-full bg-sky-50 px-2 py-1 text-[11px] font-medium text-sky-800">{alquileresProximosAActualizar.length}</span>
               </div>
-              <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2">
-                <p className="text-[11px] text-slate-500">Propiedades en alquiler</p>
-                <p className="mt-1 text-xl font-semibold text-slate-900">{propiedadesCaptadasEnRango.length}</p>
-                <p className="mt-1 text-[11px] text-slate-500">Captaciones para alquiler.</p>
-              </div>
-              <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2">
-                <p className="text-[11px] text-slate-500">Propiedades alquiladas</p>
-                <p className="mt-1 text-xl font-semibold text-slate-900">{alquileresConContratoEnRango.length}</p>
-                <p className="mt-1 text-[11px] text-slate-500">Contratos iniciados.</p>
-              </div>
-              <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2">
-                <p className="text-[11px] text-slate-500">Administración</p>
-                <p className="mt-1 text-xl font-semibold text-slate-900">{alquileresAdministradosEnRango.length}</p>
-                <p className="mt-1 text-[11px] text-slate-500">Ingreso mensual: {formatCurrencyTotals(alquilerAdministracionMensual)}</p>
-              </div>
+              {alquileresProximosAActualizar.length === 0 ? (
+                <p className="text-xs text-slate-500">No hay actualizaciones próximas dentro de los próximos 30 días.</p>
+              ) : (
+                <div className="space-y-2 max-h-80 overflow-y-auto">
+                  {alquileresProximosAActualizar.slice(0, 8).map(({ propiedad, fecha }) => (
+                    <div key={propiedad.id} className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-[11px]">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-semibold text-slate-800 truncate">{labelTipologia(propiedad.tipologia)} · {labelZona(propiedad.zona)}</span>
+                        <span className="text-slate-500">{formatDateDisplay(fecha)}</span>
+                      </div>
+                      <p className="mt-1 text-slate-500">Índice: {propiedad.alquiler_indice_actualizacion || "—"} · Frecuencia: {propiedad.alquiler_frecuencia_actualizacion_meses || "—"} meses</p>
+                      <p className="mt-1 text-slate-600">Valor actual: {formatCurrency(alquilerValorMensual(propiedad), normalizeCurrency(propiedad.moneda))}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </section>
         )}
 
-        <section className="space-y-4">
-          <div className="grid gap-6 md:grid-cols-2">
-            <div className="rounded-2xl bg-white border border-gray-200 shadow-sm p-4">
+        {tipoOperacion === "venta" && (
+          <section className="space-y-4">
+            <div className="grid gap-6 md:grid-cols-2">
+              <div className="rounded-2xl bg-white border border-gray-200 shadow-sm p-4">
               <div className="flex items-center justify-between mb-2">
                 <h2 className="text-sm font-semibold text-slate-900">Actividad por asesor</h2>
                 <p className="text-[11px] text-slate-500">Total actividades: <span className="font-semibold">{totalActividadesAsesores}</span></p>
@@ -1572,8 +1903,9 @@ export default function EmpresaTrackerAnaliticoPage() {
                 </div>
               )}
             </div>
-          </div>
-        </section>
+            </div>
+          </section>
+        )}
       </div>
     </div>
   );

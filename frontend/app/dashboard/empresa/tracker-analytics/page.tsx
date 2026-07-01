@@ -1533,12 +1533,12 @@ export default function EmpresaTrackerAnaliticoPage() {
           <div className="rounded-2xl bg-white border border-gray-200 shadow-sm p-4">
             <div className="flex items-center justify-between mb-2">
               <div>
-                <h2 className="text-sm font-semibold text-slate-900">{tipoOperacion === "venta" ? "GAP promedio por tipología" : "Valor mensual por tipología"}</h2>
+                <h2 className="text-sm font-semibold text-slate-900">GAP promedio por tipología</h2>
                 <p className="text-[11px] text-slate-500">
-                  {tipoOperacion === "venta" ? "Diferencia promedio entre precio de lista y cierre (%)." : "Valor mensual de alquiler por tipo de propiedad, separado por moneda."}
+                  Diferencia promedio entre precio de lista y cierre (%).
                 </p>
               </div>
-              {tipoOperacion === "venta" && avgGapGlobal != null && (
+              {avgGapGlobal != null && (
                 <div className="text-right">
                   <p className="text-[10px] text-slate-500">GAP promedio general</p>
                   <p className="text-xs font-semibold text-slate-900">{avgGapGlobal.toFixed(1)}%</p>
@@ -1560,13 +1560,7 @@ export default function EmpresaTrackerAnaliticoPage() {
                       />
                     </div>
                     <span className="w-32 text-right text-slate-500">
-                      {tipoOperacion === "venta"
-                        ? row.avgGap != null
-                          ? `${row.avgGap.toFixed(1)}%`
-                          : "—"
-                        : [row.sumCierreUSD > 0 ? formatCurrency(row.sumCierreUSD / row.count, "USD") : null, row.sumCierreARS > 0 ? formatCurrency(row.sumCierreARS / row.count, "ARS") : null]
-                            .filter(Boolean)
-                            .join(" · ") || "—"}
+                      {row.avgGap != null ? `${row.avgGap.toFixed(1)}%` : "—"}
                     </span>
                   </div>
                 ))}
@@ -1577,12 +1571,12 @@ export default function EmpresaTrackerAnaliticoPage() {
           <div className="rounded-2xl bg-white border border-gray-200 shadow-sm p-4">
             <div className="flex items-center justify-between mb-2">
               <div>
-                <h2 className="text-sm font-semibold text-slate-900">{tipoOperacion === "venta" ? "Días de venta promedio" : "Duración / administración"}</h2>
+                <h2 className="text-sm font-semibold text-slate-900">Días de venta promedio</h2>
                 <p className="text-[11px] text-slate-500">
-                  {tipoOperacion === "venta" ? "Tiempo promedio desde inicio de comercialización hasta cierre." : "Contratos administrados e ingreso mensual recurrente."}
+                  Tiempo promedio desde inicio de comercialización hasta cierre.
                 </p>
               </div>
-              {tipoOperacion === "venta" && avgDiasGlobal != null && (
+              {avgDiasGlobal != null && (
                 <div className="text-right">
                   <p className="text-[10px] text-slate-500">Días promedio generales</p>
                   <p className="text-xs font-semibold text-slate-900">{avgDiasGlobal.toFixed(0)} días</p>
@@ -1590,20 +1584,7 @@ export default function EmpresaTrackerAnaliticoPage() {
               )}
             </div>
 
-            {tipoOperacion === "alquiler" ? (
-              <div className="space-y-3 text-xs">
-                <div className="rounded-xl bg-gray-50 border border-gray-200 px-3 py-2">
-                  <p className="text-[11px] text-slate-500">Contratos administrados</p>
-                  <p className="mt-1 text-xl font-semibold text-slate-900">{alquileresAdministradosEnRango.length}</p>
-                  <p className="mt-1 text-[11px] text-slate-500">Valor mensual administrado: {formatCurrencyTotals(alquilerValorMensualAdministrado)}</p>
-                </div>
-                <div className="rounded-xl bg-gray-50 border border-gray-200 px-3 py-2">
-                  <p className="text-[11px] text-slate-500">Ingreso mensual por administración</p>
-                  <p className="mt-1 text-xl font-semibold text-slate-900">{formatCurrencyTotals(alquilerAdministracionMensual)}</p>
-                  <p className="mt-1 text-[11px] text-slate-500">No incluye comisión puntual por contrato.</p>
-                </div>
-              </div>
-            ) : tipologiaCierreStats.length === 0 ? (
+            {tipologiaCierreStats.length === 0 ? (
               <p className="text-xs text-slate-500">No hay datos suficientes para calcular días de venta.</p>
             ) : (
               <div className="space-y-2">

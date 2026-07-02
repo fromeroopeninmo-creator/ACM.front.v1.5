@@ -367,28 +367,7 @@ export default function EmpresaDashboardPage() {
             <span>Factibilidad Constructiva</span>
           </Link>
 
-          {/* 📅 Agenda */}
-          <Link
-            href="/dashboard/empresa/agenda"
-            className="w-full px-5 py-3 text-sm sm:text-base text-white font-semibold rounded-xl shadow-md border border-black/10 text-center inline-flex items-center justify-center gap-2 hover:shadow-lg transform hover:-translate-y-0.5 active:translate-y-0 transition"
-            style={{
-              backgroundColor: primaryColor,
-              boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
-            }}
-            onClick={handleTrackerClick}
-            onMouseEnter={(e) => {
-              (e.currentTarget as HTMLAnchorElement).style.filter =
-                "brightness(1.05)";
-            }}
-            onMouseLeave={(e) => {
-              (e.currentTarget as HTMLAnchorElement).style.filter =
-                "brightness(1)";
-            }}
-          >
-            <span>📅</span>
-            <span>Agenda</span>
-          </Link>
-
+         
           {/* 📈 Business Analytics */}
           <Link
             href="/dashboard/empresa/tracker-analytics"
@@ -409,6 +388,28 @@ export default function EmpresaDashboardPage() {
           >
             <span>📈</span>
             <span>Business Analytics</span>
+          </Link>
+          
+           {/* 📅 Agenda */}
+          <Link
+            href="/dashboard/empresa/agenda"
+            className="w-full px-5 py-3 text-sm sm:text-base text-white font-semibold rounded-xl shadow-md border border-black/10 text-center inline-flex items-center justify-center gap-2 hover:shadow-lg transform hover:-translate-y-0.5 active:translate-y-0 transition"
+            style={{
+              backgroundColor: primaryColor,
+              boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
+            }}
+            onClick={handleTrackerClick}
+            onMouseEnter={(e) => {
+              (e.currentTarget as HTMLAnchorElement).style.filter =
+                "brightness(1.05)";
+            }}
+            onMouseLeave={(e) => {
+              (e.currentTarget as HTMLAnchorElement).style.filter =
+                "brightness(1)";
+            }}
+          >
+            <span>📅</span>
+            <span>Agenda</span>
           </Link>
         </div>
       </section>

@@ -16,7 +16,9 @@ export default function EmpresaDashboardPage() {
   const { setPrimaryColor, setLogoUrl, primaryColor } = useTheme();
   const router = useRouter();
 
-  const [puedeUsarTracker, setPuedeUsarTracker] = useState<boolean | null>(null);
+  const [puedeUsarTracker, setPuedeUsarTracker] = useState<boolean | null>(
+    null,
+  );
   const [billingLoading, setBillingLoading] = useState<boolean>(true);
   const [showUvaCalc, setShowUvaCalc] = useState(false);
 
@@ -25,7 +27,7 @@ export default function EmpresaDashboardPage() {
     const { data, error } = await supabase
       .from("empresas")
       .select(
-        "nombre_comercial, razon_social, condicion_fiscal, matriculado, cpi, telefono, logo_url, color, updated_at"
+        "nombre_comercial, razon_social, condicion_fiscal, matriculado, cpi, telefono, logo_url, color, updated_at",
       )
       .eq("user_id", userId)
       .maybeSingle();
@@ -102,7 +104,7 @@ export default function EmpresaDashboardPage() {
                 (empresa as any)?.logo_url ||
                 "",
             } as any,
-            false
+            false,
           );
 
           // 🎨 Tema
@@ -119,9 +121,9 @@ export default function EmpresaDashboardPage() {
           window.dispatchEvent(
             new CustomEvent("themeUpdated", {
               detail: { color: newData.color, logoUrl: bustedLogo },
-            })
+            }),
           );
-        }
+        },
       )
       .subscribe();
 
@@ -209,8 +211,7 @@ export default function EmpresaDashboardPage() {
   const matriculado =
     empresa?.matriculado || meta.matriculado || "No especificado";
   const cpi = empresa?.cpi || meta.cpi || "No especificado";
-  const telefono =
-    empresa?.telefono || meta.telefono || "No especificado";
+  const telefono = empresa?.telefono || meta.telefono || "No especificado";
   const email = (user as any)?.email || "No especificado";
 
   // 🖼️ Logo con bust (si ThemeContext todavía no inyectó, usamos bust local)
@@ -229,7 +230,7 @@ export default function EmpresaDashboardPage() {
     if (puedeUsarTracker === false) {
       e.preventDefault();
       alert(
-        "Para usar Business Tracker necesitás un plan Full o un plan Business Tracker. Te llevamos al portal de planes para actualizar tu suscripción."
+        "Para usar Business Tracker necesitás un plan Full o un plan Business Tracker. Te llevamos al portal de planes para actualizar tu suscripción.",
       );
       router.push("/dashboard/empresa/planes");
     }
@@ -244,9 +245,7 @@ export default function EmpresaDashboardPage() {
       <section className="bg-white shadow-sm rounded-xl p-6">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold mb-2">
-              Bienvenid@, {nombre}
-            </h1>
+            <h1 className="text-2xl font-bold mb-2">Bienvenid@, {nombre}</h1>
             <p className="text-gray-600 mb-1">
               Desde este Dashboard podés gestionar toda tu empresa.
             </p>
@@ -273,16 +272,14 @@ export default function EmpresaDashboardPage() {
 
       {/* 🔧 VAI TOOLS */}
       <section className="bg-white shadow-sm rounded-xl p-6">
-        <h2 className="text-2xl font-bold tracking-tight mb-1">
-          VAI TOOLS
-        </h2>
+        <h2 className="text-2xl font-bold tracking-tight mb-1">VAI TOOLS</h2>
         <p className="text-gray-600 mb-4 text-sm md:text-base">
           Accedé a las herramientas digitales de VAI para valuar propiedades,
-          analizar proyectos y gestionar el desempeño comercial de tu equipo
-          en un solo lugar.
+          analizar proyectos y gestionar el desempeño comercial de tu equipo en
+          un solo lugar.
         </p>
 
-        {/* Bloque de herramientas: 5 botones en 2 filas (3 arriba, 2 abajo en desktop) */}
+        {/* Bloque de herramientas: 6 botones en 2 filas (3 arriba, 3 abajo en desktop) */}
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 max-w-3xl">
           {/* 🏠 Valuador de Activos Inmobiliarios */}
           <Link
@@ -370,6 +367,28 @@ export default function EmpresaDashboardPage() {
             <span>Factibilidad Constructiva</span>
           </Link>
 
+          {/* 📅 Agenda */}
+          <Link
+            href="/dashboard/empresa/agenda"
+            className="w-full px-5 py-3 text-sm sm:text-base text-white font-semibold rounded-xl shadow-md border border-black/10 text-center inline-flex items-center justify-center gap-2 hover:shadow-lg transform hover:-translate-y-0.5 active:translate-y-0 transition"
+            style={{
+              backgroundColor: primaryColor,
+              boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
+            }}
+            onClick={handleTrackerClick}
+            onMouseEnter={(e) => {
+              (e.currentTarget as HTMLAnchorElement).style.filter =
+                "brightness(1.05)";
+            }}
+            onMouseLeave={(e) => {
+              (e.currentTarget as HTMLAnchorElement).style.filter =
+                "brightness(1)";
+            }}
+          >
+            <span>📅</span>
+            <span>Agenda</span>
+          </Link>
+
           {/* 📈 Business Analytics */}
           <Link
             href="/dashboard/empresa/tracker-analytics"
@@ -398,9 +417,7 @@ export default function EmpresaDashboardPage() {
       <section className="bg-white shadow-sm rounded-xl p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
         {/* 📋 Datos */}
         <div className="flex-1">
-          <h2 className="text-xl font-semibold mb-4">
-            Datos de la Empresa
-          </h2>
+          <h2 className="text-xl font-semibold mb-4">Datos de la Empresa</h2>
           <ul className="space-y-2 text-gray-700">
             <li>
               <strong>Nombre:</strong> {nombreEmpresa}

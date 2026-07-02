@@ -465,6 +465,58 @@ export default function LegalesPage() {
                 <li>Cookies y tecnologías similares (ver apartado 8).</li>
               </ul>
 
+
+              <h4 className="mt-2 text-sm font-semibold text-neutral-100">
+                2.6. Integración con Google Calendar
+              </h4>
+              <p>
+                Cuando el Usuario decide conectar voluntariamente su cuenta de Google Calendar con
+                VAI Prop, la Plataforma solicita autorización mediante Google OAuth 2.0 para crear,
+                actualizar y eliminar eventos vinculados a actividades generadas por el propio
+                Usuario desde el módulo Agenda.
+              </p>
+              <p>VAI Prop puede acceder y tratar los siguientes datos de Google:</p>
+              <ul className="ml-5 list-disc space-y-1 text-neutral-300">
+                <li>Dirección de correo electrónico asociada a la cuenta de Google conectada.</li>
+                <li>Identificador y enlace de los eventos creados en Google Calendar.</li>
+                <li>
+                  Fecha, hora, duración, título, descripción y demás información que el Usuario
+                  decida incluir en la actividad.
+                </li>
+                <li>
+                  Tokens de acceso y actualización necesarios para mantener autorizada la
+                  integración.
+                </li>
+              </ul>
+              <p>VAI Prop utiliza estos datos exclusivamente para:</p>
+              <ul className="ml-5 list-disc space-y-1 text-neutral-300">
+                <li>Crear eventos en el Google Calendar del Usuario.</li>
+                <li>Actualizar eventos cuando el Usuario modifica una actividad vinculada.</li>
+                <li>Eliminar eventos cuando el Usuario solicita su eliminación.</li>
+                <li>Mantener operativa la conexión autorizada con Google Calendar.</li>
+              </ul>
+              <p>
+                VAI Prop no utiliza los datos obtenidos mediante Google Calendar con fines
+                publicitarios, no los vende ni los comparte con terceros, salvo con los proveedores
+                técnicos estrictamente necesarios para prestar y proteger el servicio.
+              </p>
+              <p>
+                Los tokens de autorización se almacenan de forma protegida y son utilizados
+                exclusivamente desde los servicios del servidor de VAI Prop. No se exponen
+                públicamente ni se entregan al navegador del Usuario.
+              </p>
+              <p>
+                El Usuario puede revocar la conexión con Google Calendar en cualquier momento desde
+                su cuenta de Google o desde las opciones de integración disponibles en VAI Prop. La
+                revocación impedirá que VAI Prop continúe creando, actualizando o eliminando eventos
+                en su nombre.
+              </p>
+              <p>
+                El uso de información recibida de las APIs de Google se realiza de conformidad con
+                la Política de Datos de Usuario de los Servicios API de Google, incluidos sus
+                requisitos de uso limitado.
+              </p>
+
               <h3 className="mt-3 text-base font-semibold text-neutral-100">
                 3. Finalidades del tratamiento
               </h3>
@@ -486,6 +538,10 @@ export default function LegalesPage() {
                 <li>
                   Analizar de forma agregada y anonimizada el uso de la Plataforma con fines
                   estadísticos y de mejora.
+                </li>
+                <li>
+                  Crear, actualizar y eliminar eventos en Google Calendar cuando el Usuario haya
+                  conectado voluntariamente su cuenta y solicitado dichas acciones desde la Agenda.
                 </li>
               </ul>
 
@@ -523,6 +579,11 @@ export default function LegalesPage() {
                   Servicios de correo electrónico para el envío de notificaciones y comunicaciones.
                 </li>
                 <li>
+                  Google LLC, exclusivamente cuando el Usuario conecta Google Calendar, para
+                  autenticar la cuenta y crear, actualizar o eliminar eventos solicitados desde VAI
+                  Prop.
+                </li>
+                <li>
                   Profesionales y asesores externos que presten servicios a VAI Prop (por ejemplo,
                   contables o legales), sujetos a deberes de confidencialidad.
                 </li>
@@ -549,6 +610,13 @@ export default function LegalesPage() {
                 </li>
               </ul>
               <p>
+                Los tokens y datos vinculados a Google Calendar se conservarán mientras la
+                integración permanezca activa o durante el tiempo necesario para prestar la
+                funcionalidad. Cuando el Usuario desconecte Google Calendar, VAI Prop podrá eliminar
+                o invalidar las credenciales asociadas, salvo que exista una obligación legal de
+                conservación.
+              </p>
+              <p>
                 Una vez transcurridos los plazos, los datos podrán ser anonimizados o eliminados de
                 forma segura.
               </p>
@@ -563,6 +631,9 @@ export default function LegalesPage() {
                 <li>Actualización.</li>
                 <li>Supresión (cuando sea legalmente posible).</li>
                 <li>Oposición y/o limitación del tratamiento (en determinados supuestos).</li>
+                <li>
+                  Revocar en cualquier momento la autorización otorgada para Google Calendar.
+                </li>
               </ul>
               <p>
                 Para ejercer estos derechos, el Usuario puede contactarnos a{" "}

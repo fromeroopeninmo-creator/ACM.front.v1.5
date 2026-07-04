@@ -10,6 +10,7 @@ import { supabase } from "#lib/supabaseClient";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import UvaCalculatorModal from "@/components/UvaCalculatorModal";
+import CotizacionDolar from "@/components/dashboard/CotizacionDolar";
 
 export default function EmpresaDashboardPage() {
   const { user } = useAuth();
@@ -269,6 +270,9 @@ export default function EmpresaDashboardPage() {
           </div>
         </div>
       </section>
+
+      {/* 💵 Cotización diaria del dólar */}
+      <CotizacionDolar />
 
       {/* 🔧 VAI TOOLS */}
       <section className="bg-white shadow-sm rounded-xl p-6">

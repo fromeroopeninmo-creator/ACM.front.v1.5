@@ -271,9 +271,6 @@ export default function EmpresaDashboardPage() {
         </div>
       </section>
 
-      {/* 💵 Cotización diaria del dólar */}
-      <CotizacionDolar />
-
       {/* 🔧 VAI TOOLS */}
       <section className="bg-white shadow-sm rounded-xl p-6">
         <h2 className="text-2xl font-bold tracking-tight mb-1">VAI TOOLS</h2>
@@ -417,6 +414,19 @@ export default function EmpresaDashboardPage() {
           </Link>
         </div>
       </section>
+
+      {/* 💵 Cotización diaria del dólar */}
+      <div className="cotizacion-dolar-vertical max-w-2xl">
+        <CotizacionDolar />
+      </div>
+
+      <style jsx global>{`
+        @media (min-width: 1024px) {
+          .cotizacion-dolar-vertical section > div.grid {
+            grid-template-columns: minmax(0, 1fr) !important;
+          }
+        }
+      `}</style>
 
       {/* 🧾 Info básica con logo */}
       <section className="bg-white shadow-sm rounded-xl p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">

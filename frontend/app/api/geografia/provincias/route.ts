@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   getProvincias,
   normalizeSearchText,
-} from "@/lib/geografia/georef";
+} from "#/lib/geografia/georef";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

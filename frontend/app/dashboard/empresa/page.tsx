@@ -10,7 +10,7 @@ import { supabase } from "#lib/supabaseClient";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import UvaCalculatorModal from "@/components/UvaCalculatorModal";
-import CotizacionDolar from "@/components/dashboard/CotizacionDolar";
+import CotizacionDolar from "@/components/CotizacionDolar";
 
 export default function EmpresaDashboardPage() {
   const { user } = useAuth();

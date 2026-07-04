@@ -205,9 +205,9 @@ export default function AsesorDashboardPage() {
       <section className="bg-white shadow-sm rounded-xl p-6">
         <h2 className="text-lg md:text-xl font-semibold mb-4">VAI TOOLS</h2>
 
-        {/* 5 botones, ordenados como en empresa:
+        {/* 6 botones:
             Fila 1: Valuador / Business Tracker / Calculadora UVA
-            Fila 2: Factibilidad / Business Analytics */}
+            Fila 2: Factibilidad / Business Analytics / Agenda */}
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 max-w-3xl">
           {/* 🧾 Valuador de Activos Inmobiliarios */}
           <Link
@@ -266,6 +266,16 @@ export default function AsesorDashboardPage() {
           >
             <span>📊</span>
             <span>Business Analytics</span>
+          </Link>
+
+          {/* 📅 Agenda */}
+          <Link
+            href="/dashboard/asesor/agenda"
+            className={buttonBaseClasses}
+            style={buttonStyle}
+          >
+            <span>📅</span>
+            <span>Agenda</span>
           </Link>
         </div>
       </section>

@@ -6,6 +6,7 @@ import { supabase } from "#lib/supabaseClient";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import UvaCalculatorModal from "@/components/UvaCalculatorModal";
+import CotizacionDolar from "@/components/CotizacionDolar";
 
 export default function AsesorDashboardPage() {
   const { user } = useAuth();
@@ -279,6 +280,19 @@ export default function AsesorDashboardPage() {
           </Link>
         </div>
       </section>
+
+      {/* 💵 Cotización diaria del dólar */}
+      <div className="cotizacion-dolar-vertical max-w-2xl">
+        <CotizacionDolar />
+      </div>
+
+      <style jsx global>{`
+        @media (min-width: 1024px) {
+          .cotizacion-dolar-vertical section > div.grid {
+            grid-template-columns: minmax(0, 1fr) !important;
+          }
+        }
+      `}</style>
 
       {/* 3) Datos del Asesor (con logo y datos de la empresa) */}
       <section className="bg-white shadow-sm rounded-xl p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">

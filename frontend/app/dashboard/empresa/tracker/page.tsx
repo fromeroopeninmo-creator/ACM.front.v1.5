@@ -72,6 +72,13 @@ interface TrackerPropiedad {
   tipo_operacion: string | null;
   direccion: string | null;
   zona: string | null;
+  provincia_georef_id: string | null;
+  provincia_nombre: string | null;
+  localidad_georef_id: string | null;
+  localidad_nombre: string | null;
+  zona_id: string | null;
+  latitud: number | null;
+  longitud: number | null;
   m2_lote: number | null;
   m2_cubiertos: number | null;
   dormitorios: number | null;
@@ -120,6 +127,16 @@ interface TrackerPropiedadTercero {
   tipo_operacion: string | null;
   direccion: string | null;
   zona: string | null;
+  provincia_georef_id: string | null;
+  provincia_nombre: string | null;
+  localidad_georef_id: string | null;
+  localidad_nombre: string | null;
+  zona_id: string | null;
+  latitud: number | null;
+  longitud: number | null;
+  dormitorios: number | null;
+  m2_cubiertos: number | null;
+  m2_lote: number | null;
   precio_cierre: number | null;
   moneda: string | null;
   fecha_cierre: string | null;
@@ -157,6 +174,33 @@ interface Asesor {
   apellido: string | null;
 }
 
+interface GeoProvincia {
+  id: string;
+  nombre: string;
+  centroide?: { lat?: number | null; lon?: number | null } | null;
+}
+
+interface GeoLocalidad {
+  id: string;
+  nombre: string;
+  provincia?: { id?: string | null; nombre?: string | null } | null;
+  departamento?: { id?: string | null; nombre?: string | null } | null;
+  municipio?: { id?: string | null; nombre?: string | null } | null;
+  centroide?: { lat?: number | null; lon?: number | null } | null;
+}
+
+interface GeoZona {
+  id: string;
+  provincia_georef_id: string | null;
+  provincia_nombre: string | null;
+  localidad_georef_id: string | null;
+  localidad_nombre: string | null;
+  nombre: string;
+  tipo_zona: string;
+  latitud: number | null;
+  longitud: number | null;
+}
+
 interface FormContactoState {
   asesor_id: string;
   nombre: string;
@@ -180,6 +224,13 @@ interface FormPropiedadState {
   tipo_operacion: string;
   direccion: string;
   zona: string;
+  provincia_georef_id: string;
+  provincia_nombre: string;
+  localidad_georef_id: string;
+  localidad_nombre: string;
+  zona_id: string;
+  latitud: string;
+  longitud: string;
   m2_lote: string;
   m2_cubiertos: string;
   precio_lista_inicial: string;
@@ -220,6 +271,16 @@ interface FormTerceroState {
   tipo_operacion: string;
   direccion: string;
   zona: string;
+  provincia_georef_id: string;
+  provincia_nombre: string;
+  localidad_georef_id: string;
+  localidad_nombre: string;
+  zona_id: string;
+  latitud: string;
+  longitud: string;
+  dormitorios: string;
+  m2_cubiertos: string;
+  m2_lote: string;
   precio_cierre: string;
   moneda: string;
   fecha_cierre: string;
@@ -429,6 +490,30 @@ function isValidAlquilerContratado(record: Pick<TrackerPropiedad, "alquiler_fech
   );
 }
 
+function tipologiaExigeDormitorios(tipologia: string) {
+  return ["casa", "departamento", "duplex", "ph"].includes(tipologia);
+}
+
+function tipologiaExigeM2Cubiertos(tipologia: string) {
+  return [
+    "casa",
+    "departamento",
+    "duplex",
+    "ph",
+    "oficina",
+    "local",
+    "galpon",
+  ].includes(tipologia);
+}
+
+function tipologiaExigeM2Lote(tipologia: string) {
+  return ["terreno", "campo"].includes(tipologia);
+}
+
+function fechaEsPosteriorAHoy(fecha: string) {
+  return Boolean(fecha) && fecha > toDateKey(new Date());
+}
+
 export default function EmpresaTrackerPage() {
   const { user } = useAuth();
 
@@ -472,6 +557,17 @@ export default function EmpresaTrackerPage() {
   const [savingPropiedad, setSavingPropiedad] = useState(false);
   const [savingTercero, setSavingTercero] = useState(false);
 
+  const [geoProvincias, setGeoProvincias] = useState<GeoProvincia[]>([]);
+  const [geoLocalidades, setGeoLocalidades] = useState<GeoLocalidad[]>([]);
+  const [geoZonas, setGeoZonas] = useState<GeoZona[]>([]);
+  const [loadingProvincias, setLoadingProvincias] = useState(false);
+  const [loadingLocalidades, setLoadingLocalidades] = useState(false);
+  const [loadingZonas, setLoadingZonas] = useState(false);
+  const [creandoZona, setCreandoZona] = useState(false);
+  const [mostrarNuevaZona, setMostrarNuevaZona] = useState(false);
+  const [nuevaZonaNombre, setNuevaZonaNombre] = useState("");
+  const [nuevaZonaTipo, setNuevaZonaTipo] = useState("barrio");
+
   const defaultAsesorIdForNewRecord = useMemo(() => {
     if (scope === "asesores" && selectedAsesorId) return selectedAsesorId;
     return "";
@@ -500,6 +596,13 @@ export default function EmpresaTrackerPage() {
     tipo_operacion: "venta",
     direccion: "",
     zona: "",
+    provincia_georef_id: "",
+    provincia_nombre: "",
+    localidad_georef_id: "",
+    localidad_nombre: "",
+    zona_id: "",
+    latitud: "",
+    longitud: "",
     m2_lote: "",
     m2_cubiertos: "",
     precio_lista_inicial: "",
@@ -540,6 +643,16 @@ export default function EmpresaTrackerPage() {
     tipo_operacion: "venta",
     direccion: "",
     zona: "",
+    provincia_georef_id: "",
+    provincia_nombre: "",
+    localidad_georef_id: "",
+    localidad_nombre: "",
+    zona_id: "",
+    latitud: "",
+    longitud: "",
+    dormitorios: "",
+    m2_cubiertos: "",
+    m2_lote: "",
     precio_cierre: "",
     moneda: "USD",
     fecha_cierre: toDateKey(new Date()),
@@ -599,6 +712,13 @@ export default function EmpresaTrackerPage() {
         tipo_operacion: row.tipo_operacion,
         direccion: row.direccion,
         zona: row.zona,
+        provincia_georef_id: row.provincia_georef_id,
+        provincia_nombre: row.provincia_nombre,
+        localidad_georef_id: row.localidad_georef_id,
+        localidad_nombre: row.localidad_nombre,
+        zona_id: row.zona_id,
+        latitud: row.latitud,
+        longitud: row.longitud,
         m2_lote: row.m2_lote,
         m2_cubiertos: row.m2_cubiertos,
         dormitorios: row.dormitorios,
@@ -675,6 +795,13 @@ export default function EmpresaTrackerPage() {
               tipo_operacion,
               direccion,
               zona,
+              provincia_georef_id,
+              provincia_nombre,
+              localidad_georef_id,
+              localidad_nombre,
+              zona_id,
+              latitud,
+              longitud,
               m2_lote,
               m2_cubiertos,
               dormitorios,
@@ -1130,6 +1257,222 @@ export default function EmpresaTrackerPage() {
     }
   };
 
+  const extraerListaGeo = <T,>(payload: unknown, keys: string[]): T[] => {
+    if (Array.isArray(payload)) return payload as T[];
+    if (!payload || typeof payload !== "object") return [];
+
+    const record = payload as Record<string, unknown>;
+    for (const key of keys) {
+      if (Array.isArray(record[key])) return record[key] as T[];
+    }
+
+    return [];
+  };
+
+  const cargarProvincias = useCallback(async () => {
+    if (geoProvincias.length > 0 || loadingProvincias) return;
+
+    setLoadingProvincias(true);
+    try {
+      const response = await fetch("/api/geografia/provincias");
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const payload = await response.json();
+      setGeoProvincias(
+        extraerListaGeo<GeoProvincia>(payload, ["provincias", "data"])
+      );
+    } catch (error) {
+      console.error("Error cargando provincias:", error);
+      showMessage("❌ No se pudieron cargar las provincias.");
+    } finally {
+      setLoadingProvincias(false);
+    }
+  }, [geoProvincias.length, loadingProvincias]);
+
+  const cargarLocalidades = useCallback(async (provinciaId: string) => {
+    if (!provinciaId) {
+      setGeoLocalidades([]);
+      return;
+    }
+
+    setLoadingLocalidades(true);
+    try {
+      const response = await fetch(
+        `/api/geografia/localidades?provincia=${encodeURIComponent(provinciaId)}`
+      );
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const payload = await response.json();
+      setGeoLocalidades(
+        extraerListaGeo<GeoLocalidad>(payload, ["localidades", "data"])
+      );
+    } catch (error) {
+      console.error("Error cargando localidades:", error);
+      setGeoLocalidades([]);
+      showMessage("❌ No se pudieron cargar las localidades.");
+    } finally {
+      setLoadingLocalidades(false);
+    }
+  }, []);
+
+  const cargarZonas = useCallback(
+    async (provinciaId: string, localidadId: string) => {
+      if (!provinciaId || !localidadId) {
+        setGeoZonas([]);
+        return;
+      }
+
+      setLoadingZonas(true);
+      try {
+        const params = new URLSearchParams({
+          provinciaGeorefId: provinciaId,
+          localidadGeorefId: localidadId,
+        });
+        const response = await fetch(`/api/geografia/zonas?${params.toString()}`);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const payload = await response.json();
+        setGeoZonas(extraerListaGeo<GeoZona>(payload, ["zonas", "data"]));
+      } catch (error) {
+        console.error("Error cargando zonas:", error);
+        setGeoZonas([]);
+        showMessage("❌ No se pudieron cargar las zonas.");
+      } finally {
+        setLoadingZonas(false);
+      }
+    },
+    []
+  );
+
+  useEffect(() => {
+    if (!showPropiedadModal && !showTerceroModal) return;
+    cargarProvincias();
+  }, [showPropiedadModal, showTerceroModal, cargarProvincias]);
+
+  useEffect(() => {
+    const provinciaId = showTerceroModal
+      ? formTercero.provincia_georef_id
+      : formPropiedad.provincia_georef_id;
+    if ((!showPropiedadModal && !showTerceroModal) || !provinciaId) return;
+    cargarLocalidades(provinciaId);
+  }, [
+    showPropiedadModal,
+    showTerceroModal,
+    formPropiedad.provincia_georef_id,
+    formTercero.provincia_georef_id,
+    cargarLocalidades,
+  ]);
+
+  useEffect(() => {
+    const provinciaId = showTerceroModal
+      ? formTercero.provincia_georef_id
+      : formPropiedad.provincia_georef_id;
+    const localidadId = showTerceroModal
+      ? formTercero.localidad_georef_id
+      : formPropiedad.localidad_georef_id;
+
+    if ((!showPropiedadModal && !showTerceroModal) || !provinciaId || !localidadId) {
+      return;
+    }
+
+    cargarZonas(provinciaId, localidadId);
+  }, [
+    showPropiedadModal,
+    showTerceroModal,
+    formPropiedad.provincia_georef_id,
+    formPropiedad.localidad_georef_id,
+    formTercero.provincia_georef_id,
+    formTercero.localidad_georef_id,
+    cargarZonas,
+  ]);
+
+  const crearZonaGeografica = async () => {
+    if (creandoZona) return;
+
+    const formularioGeo = showTerceroModal ? formTercero : formPropiedad;
+    const nombre = nuevaZonaNombre.trim();
+    if (!formularioGeo.provincia_georef_id || !formularioGeo.localidad_georef_id) {
+      showMessage("⚠️ Seleccioná provincia y localidad antes de crear una zona.");
+      return;
+    }
+    if (!nombre) {
+      showMessage("⚠️ Ingresá el nombre de la zona.");
+      return;
+    }
+
+    setCreandoZona(true);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData.session?.access_token;
+      if (!accessToken) {
+        showMessage("❌ La sesión venció. Volvé a iniciar sesión.");
+        return;
+      }
+
+      const response = await fetch("/api/geografia/zonas", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          provinciaGeorefId: formularioGeo.provincia_georef_id,
+          provinciaNombre: formularioGeo.provincia_nombre,
+          localidadGeorefId: formularioGeo.localidad_georef_id,
+          localidadNombre: formularioGeo.localidad_nombre,
+          nombre,
+          tipoZona: nuevaZonaTipo,
+          latitud: null,
+          longitud: null,
+        }),
+      });
+
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(
+          payload?.error || payload?.message || `HTTP ${response.status}`
+        );
+      }
+
+      const zonaCreada = (payload?.zona ?? payload?.data ?? payload) as GeoZona;
+      if (!zonaCreada?.id || !zonaCreada?.nombre) {
+        throw new Error("La respuesta no contiene una zona válida.");
+      }
+
+      setGeoZonas((prev) => {
+        const sinDuplicado = prev.filter((zona) => zona.id !== zonaCreada.id);
+        return [...sinDuplicado, zonaCreada].sort((a, b) =>
+          a.nombre.localeCompare(b.nombre, "es")
+        );
+      });
+      const aplicarZona = <T extends {
+        zona_id: string;
+        zona: string;
+        latitud: string;
+        longitud: string;
+      }>(prev: T): T => ({
+        ...prev,
+        zona_id: zonaCreada.id,
+        zona: zonaCreada.nombre,
+        latitud:
+          zonaCreada.latitud != null ? String(zonaCreada.latitud) : "",
+        longitud:
+          zonaCreada.longitud != null ? String(zonaCreada.longitud) : "",
+      });
+
+      if (showTerceroModal) {
+        setFormTercero(aplicarZona);
+      } else {
+        setFormPropiedad(aplicarZona);
+      }
+      setNuevaZonaNombre("");
+      setMostrarNuevaZona(false);
+      showMessage("✅ Zona creada y seleccionada.");
+    } catch (error) {
+      console.error("Error creando zona geográfica:", error);
+      showMessage("❌ No se pudo crear la zona.");
+    } finally {
+      setCreandoZona(false);
+    }
+  };
+
   const openNuevaPropiedad = (contactoId?: string) => {
     const contacto = contactoId ? contactoPorId(contactoId) : null;
     const tipoOperacion =
@@ -1145,6 +1488,13 @@ export default function EmpresaTrackerPage() {
       tipo_operacion: tipoOperacion,
       direccion: contacto?.direccion ?? "",
       zona: contacto?.zona ?? "",
+      provincia_georef_id: "",
+      provincia_nombre: "",
+      localidad_georef_id: "",
+      localidad_nombre: "",
+      zona_id: "",
+      latitud: "",
+      longitud: "",
       m2_lote: "",
       m2_cubiertos: "",
       precio_lista_inicial: "",
@@ -1177,6 +1527,10 @@ export default function EmpresaTrackerPage() {
       alquiler_renovacion_fecha: "",
       alquiler_observaciones: "",
     });
+    setGeoLocalidades([]);
+    setGeoZonas([]);
+    setMostrarNuevaZona(false);
+    setNuevaZonaNombre("");
     setShowPropiedadModal(true);
   };
 
@@ -1193,6 +1547,13 @@ export default function EmpresaTrackerPage() {
       tipo_operacion: p.tipo_operacion ?? "venta",
       direccion: p.direccion ?? "",
       zona: p.zona ?? "",
+      provincia_georef_id: p.provincia_georef_id ?? "",
+      provincia_nombre: p.provincia_nombre ?? "",
+      localidad_georef_id: p.localidad_georef_id ?? "",
+      localidad_nombre: p.localidad_nombre ?? "",
+      zona_id: p.zona_id ?? "",
+      latitud: p.latitud != null ? String(p.latitud) : "",
+      longitud: p.longitud != null ? String(p.longitud) : "",
       m2_lote: p.m2_lote != null ? String(p.m2_lote) : "",
       m2_cubiertos: p.m2_cubiertos != null ? String(p.m2_cubiertos) : "",
       precio_lista_inicial:
@@ -1258,6 +1619,10 @@ export default function EmpresaTrackerPage() {
       alquiler_renovacion_fecha: dateKeyFromString(p.alquiler_renovacion_fecha) || "",
       alquiler_observaciones: p.alquiler_observaciones ?? "",
     });
+    setGeoLocalidades([]);
+    setGeoZonas([]);
+    setMostrarNuevaZona(false);
+    setNuevaZonaNombre("");
     setShowPropiedadModal(true);
   };
 
@@ -1452,14 +1817,55 @@ export default function EmpresaTrackerPage() {
     }
 
     if (
-      (vendedor > 20 || comprador > 20) &&
+      (vendedor > 15 || comprador > 15) &&
       !confirm(
-        "El porcentaje de honorarios parece alto. ¿Querés guardarlo igual?"
+        "El porcentaje de honorarios supera el 15%. Verificá que no hayas colocado un monto en lugar de un porcentaje. ¿Querés guardarlo igualmente?"
       )
     ) {
       return false;
     }
 
+    return true;
+  };
+
+  const validarDatosFisicos = (
+    tipologia: string,
+    dormitorios: number | null,
+    m2Cubiertos: number | null,
+    m2Lote: number | null
+  ) => {
+    if (tipologiaExigeDormitorios(tipologia) && dormitorios == null) {
+      showMessage(
+        "⚠️ Cargá dormitorios / ambientes. Para monoambientes ingresá 0."
+      );
+      return false;
+    }
+    if (tipologiaExigeM2Cubiertos(tipologia) && (m2Cubiertos == null || m2Cubiertos <= 0)) {
+      showMessage("⚠️ Cargá los m² cubiertos para esta tipología.");
+      return false;
+    }
+    if (tipologiaExigeM2Lote(tipologia) && (m2Lote == null || m2Lote <= 0)) {
+      showMessage("⚠️ Cargá los m² de lote para esta tipología.");
+      return false;
+    }
+    if (tipologia === "otro" &&
+        (m2Cubiertos == null || m2Cubiertos <= 0) &&
+        (m2Lote == null || m2Lote <= 0)) {
+      showMessage("⚠️ Para la tipología Otro, cargá m² cubiertos o m² de lote.");
+      return false;
+    }
+    if ((dormitorios ?? 0) > 20 &&
+        !confirm("Ingresaste más de 20 dormitorios / ambientes. ¿El dato es correcto?")) {
+      return false;
+    }
+    if ((m2Cubiertos ?? 0) > 50000 &&
+        !confirm("Ingresaste más de 50.000 m² cubiertos. ¿El dato es correcto?")) {
+      return false;
+    }
+    if ((m2Lote ?? 0) > 10000000 &&
+        !confirm("Ingresaste más de 10.000.000 m² de lote. ¿El dato es correcto?")) {
+      return false;
+    }
     return true;
   };
 
@@ -1469,6 +1875,9 @@ export default function EmpresaTrackerPage() {
     const esAlquiler = formPropiedad.tipo_operacion === "alquiler";
     const precioLista = parseNumberOrNull(formPropiedad.precio_lista_inicial);
     const precioCierre = parseNumberOrNull(formPropiedad.precio_cierre);
+    const dormitorios = parseNumberOrNull(formPropiedad.dormitorios);
+    const m2Cubiertos = parseNumberOrNull(formPropiedad.m2_cubiertos);
+    const m2Lote = parseNumberOrNull(formPropiedad.m2_lote);
     const vendedorPct = normalizePercentInput(
       formPropiedad.honorarios_pct_vendedor,
       formPropiedad.cobra_honorarios_vendedor
@@ -1518,6 +1927,39 @@ export default function EmpresaTrackerPage() {
       return;
     }
 
+    const ventaCerrada =
+      !esAlquiler &&
+      precioCierre != null &&
+      precioCierre > 0 &&
+      Boolean(formPropiedad.fecha_cierre);
+    const alquilerCerrado =
+      esAlquiler &&
+      alquilerValorMensualInicial != null &&
+      alquilerValorMensualInicial > 0 &&
+      Boolean(formPropiedad.alquiler_fecha_inicio_contrato);
+
+    if (ventaCerrada || alquilerCerrado) {
+      if (!formPropiedad.provincia_georef_id) {
+        showMessage("⚠️ Seleccioná la provincia antes de registrar el cierre.");
+        return;
+      }
+      if (!formPropiedad.localidad_georef_id) {
+        showMessage("⚠️ Seleccioná la localidad antes de registrar el cierre.");
+        return;
+      }
+      if (!formPropiedad.zona_id) {
+        showMessage("⚠️ Seleccioná o creá una zona antes de registrar el cierre.");
+        return;
+      }
+      if (!formPropiedad.moneda) {
+        showMessage("⚠️ Seleccioná la moneda antes de registrar el cierre.");
+        return;
+      }
+      if (!validarDatosFisicos(formPropiedad.tipologia, dormitorios, m2Cubiertos, m2Lote)) {
+        return;
+      }
+    }
+
     if (esAlquiler) {
       if (alquilerValorMensualInicial == null || alquilerValorMensualInicial <= 0) {
         showMessage("⚠️ Cargá un valor mensual inicial válido para el alquiler.");
@@ -1548,6 +1990,25 @@ export default function EmpresaTrackerPage() {
         showMessage("⚠️ Cargá un porcentaje de administración válido.");
         return;
       }
+
+      if (alquilerCerrado) {
+        if (fechaEsPosteriorAHoy(formPropiedad.alquiler_fecha_inicio_contrato)) {
+          showMessage(
+            "⚠️ La fecha de inicio del contrato no puede ser posterior al día de hoy para registrarlo como cierre."
+          );
+          return;
+        }
+        if (
+          formPropiedad.fecha_inicio_comercializacion &&
+          formPropiedad.alquiler_fecha_inicio_contrato <
+            formPropiedad.fecha_inicio_comercializacion
+        ) {
+          showMessage(
+            "⚠️ El inicio del contrato no puede ser anterior al inicio de comercialización."
+          );
+          return;
+        }
+      }
     } else {
       if (precioLista == null || precioLista <= 0) {
         showMessage("⚠️ Cargá un precio inicial válido.");
@@ -1562,6 +2023,34 @@ export default function EmpresaTrackerPage() {
       if (formPropiedad.fecha_cierre && (precioCierre == null || precioCierre <= 0)) {
         showMessage("⚠️ Si cargás fecha de cierre, también debés cargar precio de cierre.");
         return;
+      }
+
+      if (ventaCerrada) {
+        if (fechaEsPosteriorAHoy(formPropiedad.fecha_cierre)) {
+          showMessage("⚠️ La fecha de cierre no puede ser posterior al día de hoy.");
+          return;
+        }
+        if (
+          formPropiedad.fecha_inicio_comercializacion &&
+          formPropiedad.fecha_cierre < formPropiedad.fecha_inicio_comercializacion
+        ) {
+          showMessage(
+            "⚠️ La fecha de cierre no puede ser anterior al inicio de comercialización."
+          );
+          return;
+        }
+        if (precioLista != null && precioCierre != null && precioCierre > precioLista &&
+            !confirm(
+              "El precio de cierre es mayor que el precio inicial de publicación. ¿Revisaste correctamente ambos importes?"
+            )) {
+          return;
+        }
+        if (precioLista != null && precioCierre != null && precioCierre < precioLista * 0.5 &&
+            !confirm(
+              "El precio de cierre es más de un 50% inferior al precio de publicación. Verificá los importes y la moneda. ¿Querés guardarlo igualmente?"
+            )) {
+          return;
+        }
       }
 
       if (!validateHonorarios(vendedorPct, compradorPct)) return;
@@ -1608,12 +2097,19 @@ export default function EmpresaTrackerPage() {
         asesor_id: formPropiedad.asesor_id || null,
         contacto_id: contactoId,
         tipologia: formPropiedad.tipologia,
-        dormitorios: parseNumberOrNull(formPropiedad.dormitorios),
+        dormitorios,
         tipo_operacion: formPropiedad.tipo_operacion,
         direccion: formPropiedad.direccion.trim() || null,
         zona: formPropiedad.zona.trim() || null,
-        m2_lote: parseNumberOrNull(formPropiedad.m2_lote),
-        m2_cubiertos: parseNumberOrNull(formPropiedad.m2_cubiertos),
+        provincia_georef_id: formPropiedad.provincia_georef_id || null,
+        provincia_nombre: formPropiedad.provincia_nombre.trim() || null,
+        localidad_georef_id: formPropiedad.localidad_georef_id || null,
+        localidad_nombre: formPropiedad.localidad_nombre.trim() || null,
+        zona_id: formPropiedad.zona_id || null,
+        latitud: parseNumberOrNull(formPropiedad.latitud),
+        longitud: parseNumberOrNull(formPropiedad.longitud),
+        m2_lote: m2Lote,
+        m2_cubiertos: m2Cubiertos,
         precio_lista_inicial: esAlquiler
           ? alquilerValorMensualInicial
           : precioLista,
@@ -1745,6 +2241,16 @@ export default function EmpresaTrackerPage() {
       tipo_operacion: tipoOperacion,
       direccion: "",
       zona: "",
+      provincia_georef_id: "",
+      provincia_nombre: "",
+      localidad_georef_id: "",
+      localidad_nombre: "",
+      zona_id: "",
+      latitud: "",
+      longitud: "",
+      dormitorios: "",
+      m2_cubiertos: "",
+      m2_lote: "",
       precio_cierre: "",
       moneda: "USD",
       fecha_cierre: toDateKey(new Date()),
@@ -1756,6 +2262,10 @@ export default function EmpresaTrackerPage() {
       porcentaje_asesor: "",
       notas: "",
     });
+    setGeoLocalidades([]);
+    setGeoZonas([]);
+    setMostrarNuevaZona(false);
+    setNuevaZonaNombre("");
     setShowTerceroModal(true);
   };
 
@@ -1771,6 +2281,16 @@ export default function EmpresaTrackerPage() {
       tipo_operacion: p.tipo_operacion ?? "venta",
       direccion: p.direccion ?? "",
       zona: p.zona ?? "",
+      provincia_georef_id: p.provincia_georef_id ?? "",
+      provincia_nombre: p.provincia_nombre ?? "",
+      localidad_georef_id: p.localidad_georef_id ?? "",
+      localidad_nombre: p.localidad_nombre ?? "",
+      zona_id: p.zona_id ?? "",
+      latitud: p.latitud != null ? String(p.latitud) : "",
+      longitud: p.longitud != null ? String(p.longitud) : "",
+      dormitorios: p.dormitorios != null ? String(p.dormitorios) : "",
+      m2_cubiertos: p.m2_cubiertos != null ? String(p.m2_cubiertos) : "",
+      m2_lote: p.m2_lote != null ? String(p.m2_lote) : "",
       precio_cierre: p.precio_cierre != null ? String(p.precio_cierre) : "",
       moneda: p.moneda ?? "USD",
       fecha_cierre:
@@ -1785,6 +2305,10 @@ export default function EmpresaTrackerPage() {
         p.porcentaje_asesor != null ? String(p.porcentaje_asesor) : "",
       notas: p.notas ?? "",
     });
+    setGeoLocalidades([]);
+    setGeoZonas([]);
+    setMostrarNuevaZona(false);
+    setNuevaZonaNombre("");
     setShowTerceroModal(true);
   };
 
@@ -1792,6 +2316,9 @@ export default function EmpresaTrackerPage() {
     if (!empresaId || savingTercero) return;
 
     const precioCierre = parseNumberOrNull(formTercero.precio_cierre);
+    const dormitorios = parseNumberOrNull(formTercero.dormitorios);
+    const m2Cubiertos = parseNumberOrNull(formTercero.m2_cubiertos);
+    const m2Lote = parseNumberOrNull(formTercero.m2_lote);
     const vendedorPct = normalizePercentInput(
       formTercero.honorarios_pct_vendedor,
       formTercero.cobra_honorarios_vendedor
@@ -1811,6 +2338,26 @@ export default function EmpresaTrackerPage() {
       return;
     }
 
+    if (!formTercero.provincia_georef_id) {
+      showMessage("⚠️ Seleccioná la provincia.");
+      return;
+    }
+    if (!formTercero.localidad_georef_id) {
+      showMessage("⚠️ Seleccioná la localidad.");
+      return;
+    }
+    if (!formTercero.zona_id) {
+      showMessage("⚠️ Seleccioná o creá una zona.");
+      return;
+    }
+    if (!formTercero.moneda) {
+      showMessage("⚠️ Seleccioná la moneda.");
+      return;
+    }
+    if (!validarDatosFisicos(formTercero.tipologia, dormitorios, m2Cubiertos, m2Lote)) {
+      return;
+    }
+
     if (precioCierre == null || precioCierre <= 0) {
       showMessage("⚠️ Cargá un precio de cierre válido.");
       return;
@@ -1818,6 +2365,10 @@ export default function EmpresaTrackerPage() {
 
     if (!formTercero.fecha_cierre) {
       showMessage("⚠️ Cargá la fecha de cierre.");
+      return;
+    }
+    if (fechaEsPosteriorAHoy(formTercero.fecha_cierre)) {
+      showMessage("⚠️ La fecha de cierre no puede ser posterior al día de hoy.");
       return;
     }
 
@@ -1833,6 +2384,16 @@ export default function EmpresaTrackerPage() {
       tipo_operacion: formTercero.tipo_operacion,
       direccion: formTercero.direccion.trim() || null,
       zona: formTercero.zona.trim() || null,
+      provincia_georef_id: formTercero.provincia_georef_id || null,
+      provincia_nombre: formTercero.provincia_nombre.trim() || null,
+      localidad_georef_id: formTercero.localidad_georef_id || null,
+      localidad_nombre: formTercero.localidad_nombre.trim() || null,
+      zona_id: formTercero.zona_id || null,
+      latitud: parseNumberOrNull(formTercero.latitud),
+      longitud: parseNumberOrNull(formTercero.longitud),
+      dormitorios,
+      m2_cubiertos: m2Cubiertos,
+      m2_lote: m2Lote,
       precio_cierre: precioCierre,
       moneda: formTercero.moneda || "USD",
       fecha_cierre: formTercero.fecha_cierre,
@@ -3156,7 +3717,7 @@ export default function EmpresaTrackerPage() {
 
                 <div>
                   <label className="block text-xs font-medium text-slate-600">
-                    Dormitorios
+                    Dormitorios / ambientes
                   </label>
                   <input
                     type="number"
@@ -3190,7 +3751,219 @@ export default function EmpresaTrackerPage() {
                   </select>
                 </div>
 
-                <div className="md:col-span-2">
+                <div>
+                  <label className="block text-xs font-medium text-slate-600">
+                    Provincia
+                  </label>
+                  <select
+                    value={formPropiedad.provincia_georef_id}
+                    onChange={(e) => {
+                      const provinciaId = e.target.value;
+                      const provincia = geoProvincias.find(
+                        (item) => item.id === provinciaId
+                      );
+
+                      setFormPropiedad((prev) => ({
+                        ...prev,
+                        provincia_georef_id: provinciaId,
+                        provincia_nombre: provincia?.nombre ?? "",
+                        localidad_georef_id: "",
+                        localidad_nombre: "",
+                        zona_id: "",
+                        zona: "",
+                        latitud: "",
+                        longitud: "",
+                      }));
+                      setGeoLocalidades([]);
+                      setGeoZonas([]);
+                      setMostrarNuevaZona(false);
+                      setNuevaZonaNombre("");
+                    }}
+                    className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  >
+                    <option value="">
+                      {loadingProvincias
+                        ? "Cargando provincias..."
+                        : "Seleccionar provincia"}
+                    </option>
+                    {geoProvincias.map((provincia) => (
+                      <option key={provincia.id} value={provincia.id}>
+                        {provincia.nombre}
+                      </option>
+                    ))}
+                  </select>
+                  {!formPropiedad.provincia_georef_id &&
+                    formPropiedad.provincia_nombre && (
+                      <p className="mt-1 text-[11px] text-amber-700">
+                        Valor histórico: {formPropiedad.provincia_nombre}
+                      </p>
+                    )}
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-slate-600">
+                    Localidad
+                  </label>
+                  <select
+                    value={formPropiedad.localidad_georef_id}
+                    disabled={!formPropiedad.provincia_georef_id || loadingLocalidades}
+                    onChange={(e) => {
+                      const localidadId = e.target.value;
+                      const localidad = geoLocalidades.find(
+                        (item) => item.id === localidadId
+                      );
+
+                      setFormPropiedad((prev) => ({
+                        ...prev,
+                        localidad_georef_id: localidadId,
+                        localidad_nombre: localidad?.nombre ?? "",
+                        zona_id: "",
+                        zona: "",
+                        latitud:
+                          localidad?.centroide?.lat != null
+                            ? String(localidad.centroide.lat)
+                            : "",
+                        longitud:
+                          localidad?.centroide?.lon != null
+                            ? String(localidad.centroide.lon)
+                            : "",
+                      }));
+                      setGeoZonas([]);
+                      setMostrarNuevaZona(false);
+                      setNuevaZonaNombre("");
+                    }}
+                    className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm disabled:bg-gray-100"
+                  >
+                    <option value="">
+                      {loadingLocalidades
+                        ? "Cargando localidades..."
+                        : "Seleccionar localidad"}
+                    </option>
+                    {geoLocalidades.map((localidad) => (
+                      <option key={localidad.id} value={localidad.id}>
+                        {localidad.nombre}
+                      </option>
+                    ))}
+                  </select>
+                  {!formPropiedad.localidad_georef_id &&
+                    formPropiedad.localidad_nombre && (
+                      <p className="mt-1 text-[11px] text-amber-700">
+                        Valor histórico: {formPropiedad.localidad_nombre}
+                      </p>
+                    )}
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-slate-600">
+                    Zona / barrio / urbanización *
+                  </label>
+                  <select
+                    value={mostrarNuevaZona ? "__nueva__" : formPropiedad.zona_id}
+                    disabled={!formPropiedad.localidad_georef_id || loadingZonas}
+                    onChange={(e) => {
+                      const zonaId = e.target.value;
+                      if (zonaId === "__nueva__") {
+                        setMostrarNuevaZona(true);
+                        setFormPropiedad((prev) => ({
+                          ...prev,
+                          zona_id: "",
+                          zona: "",
+                        }));
+                        return;
+                      }
+
+                      const zona = geoZonas.find((item) => item.id === zonaId);
+                      setMostrarNuevaZona(false);
+                      setNuevaZonaNombre("");
+                      setFormPropiedad((prev) => ({
+                        ...prev,
+                        zona_id: zonaId,
+                        zona: zona?.nombre ?? "",
+                        latitud:
+                          zona?.latitud != null
+                            ? String(zona.latitud)
+                            : prev.latitud,
+                        longitud:
+                          zona?.longitud != null
+                            ? String(zona.longitud)
+                            : prev.longitud,
+                      }));
+                    }}
+                    className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm disabled:bg-gray-100"
+                  >
+                    <option value="">
+                      {loadingZonas ? "Cargando zonas..." : "Seleccionar zona"}
+                    </option>
+                    {geoZonas.map((zona) => (
+                      <option key={zona.id} value={zona.id}>
+                        {zona.nombre}
+                      </option>
+                    ))}
+                    <option value="__nueva__">+ Crear nueva zona</option>
+                  </select>
+                  <p className="mt-1 text-[11px] text-slate-500">
+                    Usá el nombre completo. No coloques abreviaturas.
+                  </p>
+                  {!formPropiedad.zona_id &&
+                    formPropiedad.zona &&
+                    !mostrarNuevaZona && (
+                      <p className="mt-1 text-[11px] text-amber-700">
+                        Zona histórica: {formPropiedad.zona}. Seleccioná o creá una
+                        zona para vincularla al catálogo nacional.
+                      </p>
+                    )}
+                </div>
+
+                {mostrarNuevaZona && (
+                  <div className="md:col-span-3 rounded-xl border border-amber-200 bg-amber-50 p-3">
+                    <p className="mb-3 text-xs text-amber-800">
+                      Esta zona quedará disponible para futuras propiedades de la localidad. Verificá la escritura y evitá abreviaturas.
+                    </p>
+                    <div className="grid gap-3 md:grid-cols-[1fr_220px_auto] md:items-end">
+                      <div>
+                        <label className="block text-xs font-medium text-slate-700">
+                          Nombre de la nueva zona
+                        </label>
+                        <input
+                          value={nuevaZonaNombre}
+                          onChange={(e) => setNuevaZonaNombre(e.target.value)}
+                          placeholder="Ej.: Nueva Córdoba, Docta, Valle Escondido"
+                          className="mt-1 w-full rounded-lg border border-amber-300 bg-white px-3 py-2 text-sm"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-slate-700">
+                          Tipo de zona
+                        </label>
+                        <select
+                          value={nuevaZonaTipo}
+                          onChange={(e) => setNuevaZonaTipo(e.target.value)}
+                          className="mt-1 w-full rounded-lg border border-amber-300 bg-white px-3 py-2 text-sm"
+                        >
+                          <option value="barrio">Barrio</option>
+                          <option value="urbanizacion">Urbanización</option>
+                          <option value="country">Country</option>
+                          <option value="barrio_cerrado">Barrio cerrado</option>
+                          <option value="complejo">Complejo</option>
+                          <option value="zona_comercial">Zona comercial</option>
+                          <option value="paraje">Paraje</option>
+                          <option value="localidad">Localidad</option>
+                          <option value="otro">Otro</option>
+                        </select>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={crearZonaGeografica}
+                        disabled={creandoZona}
+                        className="rounded-lg bg-[#E6A930] px-4 py-2 text-sm font-semibold text-black hover:brightness-95 disabled:opacity-60"
+                      >
+                        {creandoZona ? "Creando..." : "Crear zona"}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                <div className="md:col-span-3">
                   <label className="block text-xs font-medium text-slate-600">
                     Dirección
                   </label>
@@ -3200,22 +3973,6 @@ export default function EmpresaTrackerPage() {
                       setFormPropiedad((prev) => ({
                         ...prev,
                         direccion: e.target.value,
-                      }))
-                    }
-                    className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-medium text-slate-600">
-                    Zona
-                  </label>
-                  <input
-                    value={formPropiedad.zona}
-                    onChange={(e) =>
-                      setFormPropiedad((prev) => ({
-                        ...prev,
-                        zona: e.target.value,
                       }))
                     }
                     className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
@@ -3832,7 +4589,7 @@ export default function EmpresaTrackerPage() {
 
                 <div>
                   <label className="block text-xs font-medium text-slate-600">
-                    Tipología
+                    Tipología *
                   </label>
                   {renderTipologiaSelect(formTercero.tipologia, (value) =>
                     setFormTercero((prev) => ({ ...prev, tipologia: value }))
@@ -3841,10 +4598,28 @@ export default function EmpresaTrackerPage() {
 
                 <div>
                   <label className="block text-xs font-medium text-slate-600">
-                    Fecha cierre
+                    Dormitorios / ambientes
+                  </label>
+                  <input
+                    value={formTercero.dormitorios}
+                    onChange={(e) =>
+                      setFormTercero((prev) => ({
+                        ...prev,
+                        dormitorios: e.target.value,
+                      }))
+                    }
+                    placeholder="Para monoambientes ingresá 0"
+                    className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-slate-600">
+                    Fecha cierre *
                   </label>
                   <input
                     type="date"
+                    max={toDateKey(new Date())}
                     value={formTercero.fecha_cierre}
                     onChange={(e) =>
                       setFormTercero((prev) => ({
@@ -3856,17 +4631,204 @@ export default function EmpresaTrackerPage() {
                   />
                 </div>
 
-                <div className="md:col-span-2">
+                <div>
                   <label className="block text-xs font-medium text-slate-600">
-                    Dirección / propiedad
+                    Provincia *
+                  </label>
+                  <select
+                    value={formTercero.provincia_georef_id}
+                    onChange={(e) => {
+                      const provinciaId = e.target.value;
+                      const provincia = geoProvincias.find(
+                        (item) => item.id === provinciaId
+                      );
+                      setFormTercero((prev) => ({
+                        ...prev,
+                        provincia_georef_id: provinciaId,
+                        provincia_nombre: provincia?.nombre ?? "",
+                        localidad_georef_id: "",
+                        localidad_nombre: "",
+                        zona_id: "",
+                        zona: "",
+                        latitud: "",
+                        longitud: "",
+                      }));
+                      setGeoLocalidades([]);
+                      setGeoZonas([]);
+                      setMostrarNuevaZona(false);
+                      setNuevaZonaNombre("");
+                    }}
+                    className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  >
+                    <option value="">
+                      {loadingProvincias ? "Cargando provincias..." : "Seleccionar provincia"}
+                    </option>
+                    {geoProvincias.map((provincia) => (
+                      <option key={provincia.id} value={provincia.id}>
+                        {provincia.nombre}
+                      </option>
+                    ))}
+                  </select>
+                  {!formTercero.provincia_georef_id && formTercero.provincia_nombre && (
+                    <p className="mt-1 text-[11px] text-amber-700">
+                      Valor histórico: {formTercero.provincia_nombre}
+                    </p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-slate-600">
+                    Localidad *
+                  </label>
+                  <select
+                    value={formTercero.localidad_georef_id}
+                    disabled={!formTercero.provincia_georef_id || loadingLocalidades}
+                    onChange={(e) => {
+                      const localidadId = e.target.value;
+                      const localidad = geoLocalidades.find(
+                        (item) => item.id === localidadId
+                      );
+                      setFormTercero((prev) => ({
+                        ...prev,
+                        localidad_georef_id: localidadId,
+                        localidad_nombre: localidad?.nombre ?? "",
+                        zona_id: "",
+                        zona: "",
+                        latitud:
+                          localidad?.centroide?.lat != null
+                            ? String(localidad.centroide.lat)
+                            : "",
+                        longitud:
+                          localidad?.centroide?.lon != null
+                            ? String(localidad.centroide.lon)
+                            : "",
+                      }));
+                      setGeoZonas([]);
+                      setMostrarNuevaZona(false);
+                      setNuevaZonaNombre("");
+                    }}
+                    className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm disabled:bg-gray-100"
+                  >
+                    <option value="">
+                      {loadingLocalidades ? "Cargando localidades..." : "Seleccionar localidad"}
+                    </option>
+                    {geoLocalidades.map((localidad) => (
+                      <option key={localidad.id} value={localidad.id}>
+                        {localidad.nombre}
+                      </option>
+                    ))}
+                  </select>
+                  {!formTercero.localidad_georef_id && formTercero.localidad_nombre && (
+                    <p className="mt-1 text-[11px] text-amber-700">
+                      Valor histórico: {formTercero.localidad_nombre}
+                    </p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-slate-600">
+                    Zona / barrio / urbanización *
+                  </label>
+                  <select
+                    value={mostrarNuevaZona ? "__nueva__" : formTercero.zona_id}
+                    disabled={!formTercero.localidad_georef_id || loadingZonas}
+                    onChange={(e) => {
+                      const zonaId = e.target.value;
+                      if (zonaId === "__nueva__") {
+                        setMostrarNuevaZona(true);
+                        setFormTercero((prev) => ({ ...prev, zona_id: "", zona: "" }));
+                        return;
+                      }
+                      const zona = geoZonas.find((item) => item.id === zonaId);
+                      setMostrarNuevaZona(false);
+                      setNuevaZonaNombre("");
+                      setFormTercero((prev) => ({
+                        ...prev,
+                        zona_id: zonaId,
+                        zona: zona?.nombre ?? "",
+                        latitud: zona?.latitud != null ? String(zona.latitud) : prev.latitud,
+                        longitud: zona?.longitud != null ? String(zona.longitud) : prev.longitud,
+                      }));
+                    }}
+                    className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm disabled:bg-gray-100"
+                  >
+                    <option value="">
+                      {loadingZonas ? "Cargando zonas..." : "Seleccionar zona"}
+                    </option>
+                    {geoZonas.map((zona) => (
+                      <option key={zona.id} value={zona.id}>
+                        {zona.nombre}
+                      </option>
+                    ))}
+                    <option value="__nueva__">+ Crear nueva zona</option>
+                  </select>
+                  <p className="mt-1 text-[11px] text-slate-500">
+                    Usá el nombre completo. No coloques abreviaturas.
+                  </p>
+                  {!formTercero.zona_id && formTercero.zona && !mostrarNuevaZona && (
+                    <p className="mt-1 text-[11px] text-amber-700">
+                      Zona histórica: {formTercero.zona}. Seleccioná o creá una zona para vincularla al catálogo nacional.
+                    </p>
+                  )}
+                </div>
+
+                {mostrarNuevaZona && (
+                  <div className="md:col-span-3 rounded-xl border border-amber-200 bg-amber-50 p-3">
+                    <p className="mb-3 text-xs text-amber-800">
+                      Esta zona quedará disponible para futuras propiedades de la localidad. Verificá la escritura y evitá abreviaturas.
+                    </p>
+                    <div className="grid gap-3 md:grid-cols-[1fr_220px_auto] md:items-end">
+                      <div>
+                        <label className="block text-xs font-medium text-slate-700">
+                          Nombre de la nueva zona
+                        </label>
+                        <input
+                          value={nuevaZonaNombre}
+                          onChange={(e) => setNuevaZonaNombre(e.target.value)}
+                          placeholder="Ej.: Nueva Córdoba, Docta, Valle Escondido"
+                          className="mt-1 w-full rounded-lg border border-amber-300 bg-white px-3 py-2 text-sm"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-slate-700">
+                          Tipo de zona
+                        </label>
+                        <select
+                          value={nuevaZonaTipo}
+                          onChange={(e) => setNuevaZonaTipo(e.target.value)}
+                          className="mt-1 w-full rounded-lg border border-amber-300 bg-white px-3 py-2 text-sm"
+                        >
+                          <option value="barrio">Barrio</option>
+                          <option value="urbanizacion">Urbanización</option>
+                          <option value="country">Country</option>
+                          <option value="barrio_cerrado">Barrio cerrado</option>
+                          <option value="complejo">Complejo</option>
+                          <option value="zona_comercial">Zona comercial</option>
+                          <option value="paraje">Paraje</option>
+                          <option value="localidad">Localidad</option>
+                          <option value="otro">Otro</option>
+                        </select>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={crearZonaGeografica}
+                        disabled={creandoZona}
+                        className="rounded-lg bg-[#E6A930] px-4 py-2 text-sm font-semibold text-black hover:brightness-95 disabled:opacity-60"
+                      >
+                        {creandoZona ? "Creando..." : "Crear zona"}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                <div className="md:col-span-3">
+                  <label className="block text-xs font-medium text-slate-600">
+                    Dirección / propiedad (opcional)
                   </label>
                   <input
                     value={formTercero.direccion}
                     onChange={(e) =>
-                      setFormTercero((prev) => ({
-                        ...prev,
-                        direccion: e.target.value,
-                      }))
+                      setFormTercero((prev) => ({ ...prev, direccion: e.target.value }))
                     }
                     className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
                   />
@@ -3874,15 +4836,12 @@ export default function EmpresaTrackerPage() {
 
                 <div>
                   <label className="block text-xs font-medium text-slate-600">
-                    Zona
+                    m² cubiertos
                   </label>
                   <input
-                    value={formTercero.zona}
+                    value={formTercero.m2_cubiertos}
                     onChange={(e) =>
-                      setFormTercero((prev) => ({
-                        ...prev,
-                        zona: e.target.value,
-                      }))
+                      setFormTercero((prev) => ({ ...prev, m2_cubiertos: e.target.value }))
                     }
                     className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
                   />
@@ -3890,15 +4849,25 @@ export default function EmpresaTrackerPage() {
 
                 <div>
                   <label className="block text-xs font-medium text-slate-600">
-                    Precio cierre
+                    m² lote
+                  </label>
+                  <input
+                    value={formTercero.m2_lote}
+                    onChange={(e) =>
+                      setFormTercero((prev) => ({ ...prev, m2_lote: e.target.value }))
+                    }
+                    className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-slate-600">
+                    Precio cierre *
                   </label>
                   <input
                     value={formTercero.precio_cierre}
                     onChange={(e) =>
-                      setFormTercero((prev) => ({
-                        ...prev,
-                        precio_cierre: e.target.value,
-                      }))
+                      setFormTercero((prev) => ({ ...prev, precio_cierre: e.target.value }))
                     }
                     className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
                   />

@@ -389,6 +389,13 @@ function parseNumberOrNull(value: string) {
   return Number.isNaN(parsed) ? null : parsed;
 }
 
+function parseCoordinateOrNull(value: string) {
+  if (!value || !value.trim()) return null;
+  const normalized = value.trim().replace(",", ".");
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 function parseNumberOrZero(value: string) {
   return parseNumberOrNull(value) ?? 0;
 }
@@ -2126,8 +2133,8 @@ export default function EmpresaTrackerPage() {
         localidad_georef_id: formPropiedad.localidad_georef_id || null,
         localidad_nombre: formPropiedad.localidad_nombre.trim() || null,
         zona_id: formPropiedad.zona_id || null,
-        latitud: parseNumberOrNull(formPropiedad.latitud),
-        longitud: parseNumberOrNull(formPropiedad.longitud),
+        latitud: parseCoordinateOrNull(formPropiedad.latitud),
+        longitud: parseCoordinateOrNull(formPropiedad.longitud),
         m2_lote: m2Lote,
         m2_cubiertos: m2Cubiertos,
         precio_lista_inicial: esAlquiler
@@ -2411,8 +2418,8 @@ export default function EmpresaTrackerPage() {
       localidad_georef_id: formTercero.localidad_georef_id || null,
       localidad_nombre: formTercero.localidad_nombre.trim() || null,
       zona_id: formTercero.zona_id || null,
-      latitud: parseNumberOrNull(formTercero.latitud),
-      longitud: parseNumberOrNull(formTercero.longitud),
+      latitud: parseCoordinateOrNull(formTercero.latitud),
+      longitud: parseCoordinateOrNull(formTercero.longitud),
       dormitorios,
       m2_cubiertos: m2Cubiertos,
       m2_lote: m2Lote,
@@ -3904,11 +3911,11 @@ export default function EmpresaTrackerPage() {
                         latitud:
                           zona?.latitud != null
                             ? String(zona.latitud)
-                            : prev.latitud,
+                            : "",
                         longitud:
                           zona?.longitud != null
                             ? String(zona.longitud)
-                            : prev.longitud,
+                            : "",
                       }));
                     }}
                     className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm disabled:bg-gray-100"
@@ -4787,8 +4794,8 @@ export default function EmpresaTrackerPage() {
                         ...prev,
                         zona_id: zonaId,
                         zona: zona?.nombre ?? "",
-                        latitud: zona?.latitud != null ? String(zona.latitud) : prev.latitud,
-                        longitud: zona?.longitud != null ? String(zona.longitud) : prev.longitud,
+                        latitud: zona?.latitud != null ? String(zona.latitud) : "",
+                        longitud: zona?.longitud != null ? String(zona.longitud) : "",
                       }));
                     }}
                     className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm disabled:bg-gray-100"

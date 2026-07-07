@@ -553,6 +553,7 @@ export default function EmpresaTrackerPage() {
     useState<TrackerPropiedadTercero | null>(null);
 
   const [mensaje, setMensaje] = useState<string | null>(null);
+  const [mensajeModal, setMensajeModal] = useState<string | null>(null);
   const [savingContacto, setSavingContacto] = useState(false);
   const [savingPropiedad, setSavingPropiedad] = useState(false);
   const [savingTercero, setSavingTercero] = useState(false);
@@ -666,6 +667,14 @@ export default function EmpresaTrackerPage() {
   });
 
   const showMessage = (text: string) => {
+    const hayModalPropiedadAbierto = showPropiedadModal || showTerceroModal;
+
+    if (hayModalPropiedadAbierto) {
+      setMensajeModal(text);
+      setTimeout(() => setMensajeModal(null), 5200);
+      return;
+    }
+
     setMensaje(text);
     setTimeout(() => setMensaje(null), 3200);
   };
@@ -1326,7 +1335,10 @@ export default function EmpresaTrackerPage() {
           provinciaGeorefId: provinciaId,
           localidadGeorefId: localidadId,
         });
-        const response = await fetch(`/api/geografia/zonas?${params.toString()}`);
+        params.set("_", String(Date.now()));
+        const response = await fetch(`/api/geografia/zonas?${params.toString()}`, {
+          cache: "no-store",
+        });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const payload = await response.json();
         setGeoZonas(extraerListaGeo<GeoZona>(payload, ["zonas", "data"]));
@@ -1462,6 +1474,12 @@ export default function EmpresaTrackerPage() {
       } else {
         setFormPropiedad(aplicarZona);
       }
+
+      await cargarZonas(
+        formularioGeo.provincia_georef_id,
+        formularioGeo.localidad_georef_id
+      );
+
       setNuevaZonaNombre("");
       setMostrarNuevaZona(false);
       showMessage("✅ Zona creada y seleccionada.");
@@ -1474,6 +1492,7 @@ export default function EmpresaTrackerPage() {
   };
 
   const openNuevaPropiedad = (contactoId?: string) => {
+    setMensajeModal(null);
     const contacto = contactoId ? contactoPorId(contactoId) : null;
     const tipoOperacion =
       contacto?.tipo_operacion ?? tipoOperacionFiltro;
@@ -1535,6 +1554,7 @@ export default function EmpresaTrackerPage() {
   };
 
   const openEditarPropiedad = (p: TrackerPropiedad) => {
+    setMensajeModal(null);
     const pctVendedor = p.honorarios_pct_vendedor ?? 0;
     const pctComprador = p.honorarios_pct_comprador ?? 0;
 
@@ -2232,6 +2252,7 @@ export default function EmpresaTrackerPage() {
   };
 
   const openNuevoTercero = () => {
+    setMensajeModal(null);
     const tipoOperacion = "venta";
     setEditingTercero(null);
     setFormTercero({
@@ -2270,6 +2291,7 @@ export default function EmpresaTrackerPage() {
   };
 
   const openEditarTercero = (p: TrackerPropiedadTercero) => {
+    setMensajeModal(null);
     const pctVendedor = p.honorarios_pct_vendedor ?? 0;
     const pctComprador = p.honorarios_pct_comprador ?? 0;
 
@@ -4482,9 +4504,28 @@ export default function EmpresaTrackerPage() {
                 )}
               </div>
 
+              {mensajeModal && (
+                <div
+                  role="alert"
+                  aria-live="assertive"
+                  className={`mt-5 rounded-xl border px-4 py-3 text-sm font-medium shadow-sm ${
+                    mensajeModal.startsWith("❌")
+                      ? "border-red-200 bg-red-50 text-red-800"
+                      : mensajeModal.startsWith("⚠️")
+                        ? "border-amber-200 bg-amber-50 text-amber-900"
+                        : "border-emerald-200 bg-emerald-50 text-emerald-800"
+                  }`}
+                >
+                  {mensajeModal}
+                </div>
+              )}
+
               <div className="mt-5 flex justify-end gap-2">
                 <button
-                  onClick={() => setShowPropiedadModal(false)}
+                  onClick={() => {
+                    setMensajeModal(null);
+                    setShowPropiedadModal(false);
+                  }}
                   className="rounded-full border border-gray-300 px-4 py-1.5 text-xs font-medium text-slate-700 hover:bg-gray-100"
                 >
                   Cancelar
@@ -4987,9 +5028,28 @@ export default function EmpresaTrackerPage() {
                 </div>
               </div>
 
+              {mensajeModal && (
+                <div
+                  role="alert"
+                  aria-live="assertive"
+                  className={`mt-5 rounded-xl border px-4 py-3 text-sm font-medium shadow-sm ${
+                    mensajeModal.startsWith("❌")
+                      ? "border-red-200 bg-red-50 text-red-800"
+                      : mensajeModal.startsWith("⚠️")
+                        ? "border-amber-200 bg-amber-50 text-amber-900"
+                        : "border-emerald-200 bg-emerald-50 text-emerald-800"
+                  }`}
+                >
+                  {mensajeModal}
+                </div>
+              )}
+
               <div className="mt-5 flex justify-end gap-2">
                 <button
-                  onClick={() => setShowTerceroModal(false)}
+                  onClick={() => {
+                    setMensajeModal(null);
+                    setShowTerceroModal(false);
+                  }}
                   className="rounded-full border border-gray-300 px-4 py-1.5 text-xs font-medium text-slate-700 hover:bg-gray-100"
                 >
                   Cancelar

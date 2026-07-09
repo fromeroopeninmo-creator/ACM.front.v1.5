@@ -9,6 +9,8 @@ type PeriodoAplicado = {
   mes: string;
   fechaDato: string;
   valor: number;
+  fuente?: string;
+  proyectado?: boolean;
 };
 
 type ResultadoAjuste = {
@@ -229,7 +231,7 @@ export default function CalculadoraActualizacionAlquiler() {
         </div>
 
         <span className="inline-flex w-fit rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
-          Fuentes: BCRA / ArgentinaDatos
+          Fuentes: BCRA / datos.gob.ar
         </span>
       </div>
 
@@ -413,7 +415,7 @@ export default function CalculadoraActualizacionAlquiler() {
                     {resultado.periodosAplicados
                       .map(
                         (item) =>
-                          `${item.mes}: ${formatNumber(item.valor, 2)} ${getIndiceUnidad(resultado.indice)}`
+                          `${item.mes}: ${formatNumber(item.valor, 2)} ${getIndiceUnidad(resultado.indice)}${item.proyectado ? " *" : ""}`
                       )
                       .join(" · ")}
                     <br />
@@ -429,6 +431,14 @@ export default function CalculadoraActualizacionAlquiler() {
                   </>
                 )}
                 {resultado.nota}
+                {resultado.periodosAplicados?.some((item) => item.proyectado) ? (
+                  <>
+                    <br />
+                    <span className="text-xs">
+                      * Valor proyectado porque el dato oficial del último período todavía no estaba publicado.
+                    </span>
+                  </>
+                ) : null}
               </div>
             </div>
           ) : (

@@ -347,8 +347,8 @@ export default function EmpresaDashboardPage() {
           un solo lugar.
         </p>
 
-        {/* Bloque de herramientas: 6 botones en 2 filas (3 arriba, 3 abajo en desktop) */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 max-w-3xl">
+        {/* Bloque de herramientas: 8 botones en 2 filas (4 arriba, 4 abajo en desktop) */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 max-w-5xl">
           {/* 🏠 Valuador de Activos Inmobiliarios */}
           <Link
             href="/vai/acmforms"
@@ -414,6 +414,28 @@ export default function EmpresaDashboardPage() {
             <span>Calculadora Créditos UVA</span>
           </button>
 
+          {/* 📅 Agenda */}
+          <Link
+            href="/dashboard/empresa/agenda"
+            className="w-full min-h-[72px] px-5 py-3 text-sm sm:text-base text-white font-semibold rounded-xl shadow-md border border-black/10 text-center inline-flex items-center justify-center gap-2 hover:shadow-lg transform hover:-translate-y-0.5 active:translate-y-0 transition"
+            style={{
+              backgroundColor: primaryColor,
+              boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
+            }}
+            onClick={handleTrackerClick}
+            onMouseEnter={(e) => {
+              (e.currentTarget as HTMLAnchorElement).style.filter =
+                "brightness(1.05)";
+            }}
+            onMouseLeave={(e) => {
+              (e.currentTarget as HTMLAnchorElement).style.filter =
+                "brightness(1)";
+            }}
+          >
+            <span>📅</span>
+            <span>Agenda</span>
+          </Link>
+
           {/* 📐 Factibilidad Constructiva */}
           <Link
             href="/dashboard/empresa/factibilidad"
@@ -435,7 +457,6 @@ export default function EmpresaDashboardPage() {
             <span>Factibilidad Constructiva</span>
           </Link>
 
-         
           {/* 📈 Business Analytics */}
           <Link
             href="/dashboard/empresa/tracker-analytics"
@@ -457,16 +478,15 @@ export default function EmpresaDashboardPage() {
             <span>📈</span>
             <span>Business Analytics</span>
           </Link>
-          
-           {/* 📅 Agenda */}
+
+          {/* 🏠 Calculadora de Alquileres */}
           <Link
-            href="/dashboard/empresa/agenda"
+            href="/dashboard/empresa/calculadora-alquileres"
             className="w-full min-h-[72px] px-5 py-3 text-sm sm:text-base text-white font-semibold rounded-xl shadow-md border border-black/10 text-center inline-flex items-center justify-center gap-2 hover:shadow-lg transform hover:-translate-y-0.5 active:translate-y-0 transition"
             style={{
               backgroundColor: primaryColor,
               boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
             }}
-            onClick={handleTrackerClick}
             onMouseEnter={(e) => {
               (e.currentTarget as HTMLAnchorElement).style.filter =
                 "brightness(1.05)";
@@ -476,8 +496,8 @@ export default function EmpresaDashboardPage() {
                 "brightness(1)";
             }}
           >
-            <span>📅</span>
-            <span>Agenda</span>
+            <span>🏠</span>
+            <span>Calculadora de Alquileres</span>
           </Link>
 
           {/* 🌐 VAI Market Data */}

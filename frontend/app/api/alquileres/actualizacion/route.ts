@@ -18,6 +18,13 @@ type RawBcraVariable = {
   ultValorInformado?: number | string;
 };
 
+type BcraSeriePayload = {
+  results?: Array<{
+    idVariable?: number;
+    detalle?: RawSerieItem[];
+  }>;
+};
+
 type AjusteRequest = {
   indice?: IndiceAjuste;
   montoInicial?: number | string;
@@ -29,24 +36,38 @@ type AjusteRequest = {
 type SeriePoint = {
   fecha: string;
   valor: number;
+  fuente?: "BCRA" | "ArgentinaDatos";
 };
 
 type IpcPeriodoAplicado = {
   mes: string;
   fechaDato: string;
   valor: number;
+  fuente: "BCRA" | "ArgentinaDatos";
 };
 
 const BCRA_BASE_URL = "https://api.bcra.gob.ar/estadisticas/v4.0/Monetarias";
+const BCRA_V3_BASE_URL = "https://api.bcra.gob.ar/estadisticas/v3.0/Monetarias";
 const ARG_DATOS_BASE_URL = "https://api.argentinadatos.com/v1/finanzas/indices";
+
+const BCRA_VARIABLE_IDS = {
+  IPC_MENSUAL: 27,
+  ICL: 40,
+} as const;
+
 const FRECUENCIAS_VALIDAS = [1, 2, 3, 4, 6, 12] as const;
-const ICL_FALLBACK_VARIABLE_IDS = [40, 41, 42, 43, 44, 45, 46, 47];
 
 function parseNumber(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
 
   if (typeof value === "string") {
-    const normalized = value.trim().replace(/\./g, "").replace(",", ".");
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+
+    const normalized = trimmed.includes(",")
+      ? trimmed.replace(/\./g, "").replace(",", ".")
+      : trimmed;
+
     const parsed = Number(normalized);
     return Number.isFinite(parsed) ? parsed : null;
   }
@@ -84,7 +105,6 @@ function addMonthsIso(dateIso: string, months: number): string {
   const originalDay = date.getDate();
   date.setMonth(date.getMonth() + months);
 
-  // Evita saltos raros cuando el día original no existe en el mes destino.
   if (date.getDate() !== originalDay) {
     date.setDate(0);
   }
@@ -137,7 +157,7 @@ function normalizeText(value?: string | null): string {
 
 async function fetchJson<T>(url: string): Promise<T | null> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 12000);
+  const timeout = setTimeout(() => controller.abort(), 14000);
 
   try {
     const response = await fetch(url, {
@@ -151,7 +171,11 @@ async function fetchJson<T>(url: string): Promise<T | null> {
     });
 
     if (!response.ok) return null;
-    return (await response.json()) as T;
+
+    const text = await response.text();
+    if (!text.trim()) return null;
+
+    return JSON.parse(text) as T;
   } catch {
     return null;
   } finally {
@@ -168,34 +192,25 @@ async function fetchBcraVariables(): Promise<RawBcraVariable[]> {
   return Array.isArray(results) ? results : [];
 }
 
-function findIclVariableId(variables: RawBcraVariable[]): number | null {
+function findIclVariableId(variables: RawBcraVariable[]): number {
   const exact = variables.find((item) => {
     const description = normalizeText(item.descripcion);
     return (
       typeof item.idVariable === "number" &&
       (description.includes("contratos de locacion") ||
-        description.includes("contratos de locación") ||
-        description.includes("lease contracts") ||
-        description.includes("icl"))
+        description.includes("indice para contratos") ||
+        description.includes("rental agreement index") ||
+        description === "icl" ||
+        description.includes(" icl"))
     );
   });
 
-  return typeof exact?.idVariable === "number" ? exact.idVariable : null;
+  return typeof exact?.idVariable === "number"
+    ? exact.idVariable
+    : BCRA_VARIABLE_IDS.ICL;
 }
 
-async function fetchBcraSerieById(
-  idVariable: number,
-  desde: string,
-  hasta: string
-): Promise<SeriePoint[]> {
-  const url = `${BCRA_BASE_URL}/${idVariable}?Desde=${encodeURIComponent(
-    desde
-  )}&Hasta=${encodeURIComponent(hasta)}&Limit=5000`;
-
-  const payload = await fetchJson<{
-    results?: Array<{ idVariable?: number; detalle?: RawSerieItem[] }>;
-  }>(url);
-
+function mapBcraSerie(payload: BcraSeriePayload | null): SeriePoint[] {
   const detalle = payload?.results?.[0]?.detalle;
   if (!Array.isArray(detalle)) return [];
 
@@ -204,33 +219,64 @@ async function fetchBcraSerieById(
       const fecha = normalizeDate(item.fecha);
       const valor = parseNumber(item.valor);
       if (!fecha || valor == null) return null;
-      return { fecha, valor };
+      return { fecha, valor, fuente: "BCRA" as const };
     })
     .filter((item): item is SeriePoint => item !== null)
     .sort((a, b) => compareIsoDates(a.fecha, b.fecha));
 }
 
-async function fetchIclSerie(fechaInicio: string, fechaActualizacion: string) {
-  const desde = subtractDaysIso(fechaInicio, 12);
-  const hasta = fechaActualizacion;
-  const variables = await fetchBcraVariables();
-  const discoveredId = findIclVariableId(variables);
-  const candidateIds = [discoveredId, ...ICL_FALLBACK_VARIABLE_IDS].filter(
-    (value, index, arr): value is number =>
-      typeof value === "number" && arr.indexOf(value) === index
-  );
+async function fetchBcraSerieById(
+  idVariable: number,
+  desde: string,
+  hasta: string
+): Promise<SeriePoint[]> {
+  const desdeDateTime = `${desde}T00:00:00.000Z`;
+  const hastaDateTime = `${hasta}T23:59:59.999Z`;
 
-  for (const idVariable of candidateIds) {
-    const serie = await fetchBcraSerieById(idVariable, desde, hasta);
-    if (serie.length >= 2) {
-      return { idVariable, serie };
-    }
+  const urls = [
+    `${BCRA_BASE_URL}/${idVariable}?Desde=${encodeURIComponent(
+      desdeDateTime
+    )}&Hasta=${encodeURIComponent(hastaDateTime)}&Limit=5000`,
+    `${BCRA_BASE_URL}/${idVariable}?Desde=${encodeURIComponent(
+      desde
+    )}&Hasta=${encodeURIComponent(hasta)}&Limit=5000`,
+    `${BCRA_V3_BASE_URL}/${idVariable}?Desde=${encodeURIComponent(
+      desdeDateTime
+    )}&Hasta=${encodeURIComponent(hastaDateTime)}&Limit=5000`,
+    `${BCRA_V3_BASE_URL}/${idVariable}?Desde=${encodeURIComponent(
+      desde
+    )}&Hasta=${encodeURIComponent(hasta)}&Limit=5000`,
+  ];
+
+  for (const url of urls) {
+    const payload = await fetchJson<BcraSeriePayload>(url);
+    const serie = mapBcraSerie(payload);
+    if (serie.length > 0) return serie;
   }
 
-  return { idVariable: discoveredId, serie: [] as SeriePoint[] };
+  return [];
 }
 
-async function fetchIpcMensual(): Promise<SeriePoint[]> {
+async function fetchIclSerie(fechaInicio: string, fechaActualizacion: string) {
+  const desde = subtractDaysIso(fechaInicio, 45);
+  const hasta = fechaActualizacion;
+  const variables = await fetchBcraVariables();
+  const idVariable = findIclVariableId(variables);
+  const serie = await fetchBcraSerieById(idVariable, desde, hasta);
+
+  return { idVariable, serie };
+}
+
+async function fetchIpcBcraMensual(
+  fechaInicio: string,
+  frecuenciaMeses: FrecuenciaMeses
+): Promise<SeriePoint[]> {
+  const desde = subtractDaysIso(fechaInicio, 45);
+  const hasta = addMonthsIso(fechaInicio, frecuenciaMeses + 1);
+  return fetchBcraSerieById(BCRA_VARIABLE_IDS.IPC_MENSUAL, desde, hasta);
+}
+
+async function fetchIpcArgentinaDatos(): Promise<SeriePoint[]> {
   const payload = await fetchJson<RawSerieItem[]>(`${ARG_DATOS_BASE_URL}/inflacion`);
 
   if (!Array.isArray(payload)) return [];
@@ -240,10 +286,24 @@ async function fetchIpcMensual(): Promise<SeriePoint[]> {
       const fecha = normalizeDate(item.fecha);
       const valor = parseNumber(item.valor);
       if (!fecha || valor == null) return null;
-      return { fecha, valor };
+      return { fecha, valor, fuente: "ArgentinaDatos" as const };
     })
     .filter((item): item is SeriePoint => item !== null)
     .sort((a, b) => compareIsoDates(a.fecha, b.fecha));
+}
+
+function mergeIpcSeries(primaryBcra: SeriePoint[], fallbackArgentinaDatos: SeriePoint[]): SeriePoint[] {
+  const byMonth = new Map<string, SeriePoint>();
+
+  for (const item of fallbackArgentinaDatos) {
+    byMonth.set(monthKey(item.fecha), item);
+  }
+
+  for (const item of primaryBcra) {
+    byMonth.set(monthKey(item.fecha), item);
+  }
+
+  return Array.from(byMonth.values()).sort((a, b) => compareIsoDates(a.fecha, b.fecha));
 }
 
 function pickPointForDate(series: SeriePoint[], targetDate: string): SeriePoint | null {
@@ -284,11 +344,12 @@ function calculateIpcFactor(
       mes: requiredMonth,
       fechaDato: point.fecha,
       valor: point.valor,
+      fuente: point.fuente || "BCRA",
     });
   }
 
   if (missing.length) {
-    return { factor: null, included, missing };
+    return { factor: null, included, missing, requiredMonths };
   }
 
   const factor = included.reduce((acc, item) => acc * (1 + item.valor / 100), 1);
@@ -297,6 +358,7 @@ function calculateIpcFactor(
     factor,
     included,
     missing,
+    requiredMonths,
   };
 }
 
@@ -337,8 +399,13 @@ export async function POST(request: Request) {
     }
 
     if (indice === "IPC") {
-      const series = await fetchIpcMensual();
-      const ipcCalc = calculateIpcFactor(series, fechaInicio, frecuenciaMeses);
+      const [bcraSeries, argentinaDatosSeries] = await Promise.all([
+        fetchIpcBcraMensual(fechaInicio, frecuenciaMeses),
+        fetchIpcArgentinaDatos(),
+      ]);
+
+      const mergedSeries = mergeIpcSeries(bcraSeries, argentinaDatosSeries);
+      const ipcCalc = calculateIpcFactor(mergedSeries, fechaInicio, frecuenciaMeses);
 
       if (!ipcCalc.factor) {
         return buildError(
@@ -348,10 +415,14 @@ export async function POST(request: Request) {
           404,
           {
             indice,
-            fuente: "ArgentinaDatos",
-            mesesRequeridos: buildMonthKeys(fechaInicio, frecuenciaMeses),
+            fuente: "BCRA / ArgentinaDatos",
+            mesesRequeridos: ipcCalc.requiredMonths,
             mesesDisponibles: ipcCalc.included.map((item) => item.mes),
             mesesFaltantes: ipcCalc.missing,
+            puntosBcra: bcraSeries.length,
+            puntosArgentinaDatos: argentinaDatosSeries.length,
+            detalle:
+              "El cálculo IPC exige que estén publicados todos los meses de la frecuencia seleccionada.",
           }
         );
       }
@@ -362,12 +433,13 @@ export async function POST(request: Request) {
       const aumentoPorcentaje = (factor - 1) * 100;
       const first = ipcCalc.included[0];
       const last = ipcCalc.included[ipcCalc.included.length - 1];
+      const fuentes = Array.from(new Set(ipcCalc.included.map((item) => item.fuente)));
 
       return NextResponse.json(
         {
           ok: true,
           indice,
-          fuente: "ArgentinaDatos",
+          fuente: fuentes.join(" / "),
           metodo: "IPC mensual compuesto por frecuencia",
           frecuenciaMeses,
           montoInicial: roundMoney(montoInicial),
@@ -412,6 +484,8 @@ export async function POST(request: Request) {
           fechaInicio,
           fechaActualizacion,
           puntosEncontrados: serie.length,
+          detalle:
+            "Se intentó consultar la serie diaria oficial del ICL en BCRA. Si la API devuelve cero puntos, puede ser un problema temporal del endpoint o del rango solicitado.",
         }
       );
     }

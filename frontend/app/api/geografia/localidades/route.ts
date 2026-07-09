@@ -8,7 +8,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-const MAX_RESULTADOS = 250;
+const MAX_RESULTADOS = 5000;
 
 export async function GET(request: NextRequest) {
   try {

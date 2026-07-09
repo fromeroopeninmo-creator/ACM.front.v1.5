@@ -482,7 +482,7 @@ export default function EmpresaDashboardPage() {
           {/* 🌐 VAI Market Data */}
           <Link
             href="/dashboard/empresa/mercado"
-            className="w-full px-5 py-3 text-sm sm:text-base text-white font-semibold rounded-xl shadow-md border border-black/10 text-center inline-flex items-center justify-center gap-2 hover:shadow-lg transform hover:-translate-y-0.5 active:translate-y-0 transition"
+            className="w-full min-h-[52px] px-5 py-3 text-sm sm:text-base text-white font-semibold rounded-xl shadow-md border border-black/10 text-center inline-flex items-center justify-center gap-2 hover:shadow-lg transform hover:-translate-y-0.5 active:translate-y-0 transition"
             style={{
               backgroundColor: primaryColor,
               boxShadow: "0 2px 8px rgba(0,0,0,0.15)",

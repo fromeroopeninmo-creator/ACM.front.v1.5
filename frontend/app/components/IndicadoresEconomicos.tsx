@@ -108,8 +108,10 @@ export default function IndicadoresEconomicos() {
   }, []);
 
   const indicadores = useMemo(() => {
-    const rows = Array.isArray(data?.indicadores) ? data.indicadores : [];
-    return [...rows].sort(
+    const rows = data?.indicadores;
+    const safeRows: Indicador[] = Array.isArray(rows) ? rows : [];
+
+    return [...safeRows].sort(
       (a, b) => ORDER.indexOf(a.codigo) - ORDER.indexOf(b.codigo)
     );
   }, [data]);

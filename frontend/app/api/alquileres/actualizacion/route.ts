@@ -3,11 +3,19 @@ import { NextResponse } from "next/server";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-type IndiceAjuste = "ICL" | "UVA" | "CER" | "IPC";
+type IndiceAjuste = "ICL" | "IPC";
+type FrecuenciaMeses = 1 | 2 | 3 | 4 | 6 | 12;
 
 type RawSerieItem = {
   fecha?: string;
-  valor?: number;
+  valor?: number | string;
+};
+
+type RawBcraVariable = {
+  idVariable?: number;
+  descripcion?: string;
+  ultFechaInformada?: string;
+  ultValorInformado?: number | string;
 };
 
 type AjusteRequest = {
@@ -15,6 +23,7 @@ type AjusteRequest = {
   montoInicial?: number | string;
   fechaInicio?: string;
   fechaActualizacion?: string;
+  frecuenciaMeses?: FrecuenciaMeses | number | string;
 };
 
 type SeriePoint = {
@@ -22,14 +31,16 @@ type SeriePoint = {
   valor: number;
 };
 
+type IpcPeriodoAplicado = {
+  mes: string;
+  fechaDato: string;
+  valor: number;
+};
+
 const BCRA_BASE_URL = "https://api.bcra.gob.ar/estadisticas/v4.0/Monetarias";
 const ARG_DATOS_BASE_URL = "https://api.argentinadatos.com/v1/finanzas/indices";
-
-const BCRA_VARIABLE_IDS: Record<Exclude<IndiceAjuste, "IPC">, number> = {
-  ICL: 40,
-  UVA: 31,
-  CER: 30,
-};
+const FRECUENCIAS_VALIDAS = [1, 2, 3, 4, 6, 12] as const;
+const ICL_FALLBACK_VARIABLE_IDS = [40, 41, 42, 43, 44, 45, 46, 47];
 
 function parseNumber(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -43,6 +54,13 @@ function parseNumber(value: unknown): number | null {
   return null;
 }
 
+function parseFrecuencia(value: unknown): FrecuenciaMeses | null {
+  const parsed = typeof value === "number" ? value : Number(value);
+  return FRECUENCIAS_VALIDAS.includes(parsed as FrecuenciaMeses)
+    ? (parsed as FrecuenciaMeses)
+    : null;
+}
+
 function normalizeDate(value?: string | null): string | null {
   if (!value) return null;
   const datePart = value.includes("T") ? value.split("T")[0] : value;
@@ -52,6 +70,32 @@ function normalizeDate(value?: string | null): string | null {
 function toDate(value: string): Date {
   const [year, month, day] = value.split("-").map(Number);
   return new Date(year, month - 1, day, 12, 0, 0, 0);
+}
+
+function toIsoDate(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function addMonthsIso(dateIso: string, months: number): string {
+  const date = toDate(dateIso);
+  const originalDay = date.getDate();
+  date.setMonth(date.getMonth() + months);
+
+  // Evita saltos raros cuando el día original no existe en el mes destino.
+  if (date.getDate() !== originalDay) {
+    date.setDate(0);
+  }
+
+  return toIsoDate(date);
+}
+
+function subtractDaysIso(dateIso: string, days: number): string {
+  const date = toDate(dateIso);
+  date.setDate(date.getDate() - days);
+  return toIsoDate(date);
 }
 
 function compareIsoDates(a: string, b: string): number {
@@ -66,6 +110,31 @@ function roundRatio(value: number): number {
   return Math.round(value * 1000000) / 1000000;
 }
 
+function monthKey(dateIso: string): string {
+  return dateIso.slice(0, 7);
+}
+
+function addMonthsToMonthKey(startMonth: string, offset: number): string {
+  const [year, month] = startMonth.split("-").map(Number);
+  const date = new Date(year, month - 1 + offset, 1, 12, 0, 0, 0);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function buildMonthKeys(fechaInicio: string, frecuenciaMeses: FrecuenciaMeses): string[] {
+  const startMonth = monthKey(fechaInicio);
+  return Array.from({ length: frecuenciaMeses }, (_, index) =>
+    addMonthsToMonthKey(startMonth, index)
+  );
+}
+
+function normalizeText(value?: string | null): string {
+  return (value || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim();
+}
+
 async function fetchJson<T>(url: string): Promise<T | null> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 12000);
@@ -76,6 +145,7 @@ async function fetchJson<T>(url: string): Promise<T | null> {
       signal: controller.signal,
       headers: {
         Accept: "application/json, text/plain;q=0.9, */*;q=0.8",
+        "Accept-Language": "es-AR,es;q=0.9",
         "User-Agent": "VAI-Prop/1.0",
       },
     });
@@ -89,10 +159,42 @@ async function fetchJson<T>(url: string): Promise<T | null> {
   }
 }
 
-async function fetchBcraSerie(idVariable: number): Promise<SeriePoint[]> {
+async function fetchBcraVariables(): Promise<RawBcraVariable[]> {
+  const payload = await fetchJson<{ results?: RawBcraVariable[] }>(
+    `${BCRA_BASE_URL}?Limit=300`
+  );
+
+  const results = payload?.results;
+  return Array.isArray(results) ? results : [];
+}
+
+function findIclVariableId(variables: RawBcraVariable[]): number | null {
+  const exact = variables.find((item) => {
+    const description = normalizeText(item.descripcion);
+    return (
+      typeof item.idVariable === "number" &&
+      (description.includes("contratos de locacion") ||
+        description.includes("contratos de locación") ||
+        description.includes("lease contracts") ||
+        description.includes("icl"))
+    );
+  });
+
+  return typeof exact?.idVariable === "number" ? exact.idVariable : null;
+}
+
+async function fetchBcraSerieById(
+  idVariable: number,
+  desde: string,
+  hasta: string
+): Promise<SeriePoint[]> {
+  const url = `${BCRA_BASE_URL}/${idVariable}?Desde=${encodeURIComponent(
+    desde
+  )}&Hasta=${encodeURIComponent(hasta)}&Limit=5000`;
+
   const payload = await fetchJson<{
     results?: Array<{ idVariable?: number; detalle?: RawSerieItem[] }>;
-  }>(`${BCRA_BASE_URL}/${idVariable}?Limit=5000`);
+  }>(url);
 
   const detalle = payload?.results?.[0]?.detalle;
   if (!Array.isArray(detalle)) return [];
@@ -106,6 +208,26 @@ async function fetchBcraSerie(idVariable: number): Promise<SeriePoint[]> {
     })
     .filter((item): item is SeriePoint => item !== null)
     .sort((a, b) => compareIsoDates(a.fecha, b.fecha));
+}
+
+async function fetchIclSerie(fechaInicio: string, fechaActualizacion: string) {
+  const desde = subtractDaysIso(fechaInicio, 12);
+  const hasta = fechaActualizacion;
+  const variables = await fetchBcraVariables();
+  const discoveredId = findIclVariableId(variables);
+  const candidateIds = [discoveredId, ...ICL_FALLBACK_VARIABLE_IDS].filter(
+    (value, index, arr): value is number =>
+      typeof value === "number" && arr.indexOf(value) === index
+  );
+
+  for (const idVariable of candidateIds) {
+    const serie = await fetchBcraSerieById(idVariable, desde, hasta);
+    if (serie.length >= 2) {
+      return { idVariable, serie };
+    }
+  }
+
+  return { idVariable: discoveredId, serie: [] as SeriePoint[] };
 }
 
 async function fetchIpcMensual(): Promise<SeriePoint[]> {
@@ -136,35 +258,50 @@ function pickPointForDate(series: SeriePoint[], targetDate: string): SeriePoint 
   return [...series].sort((a, b) => compareIsoDates(a.fecha, b.fecha))[0] ?? null;
 }
 
-function firstDayOfMonth(dateIso: string): string {
-  const [year, month] = dateIso.split("-");
-  return `${year}-${month}-01`;
-}
+function calculateIpcFactor(
+  series: SeriePoint[],
+  fechaInicio: string,
+  frecuenciaMeses: FrecuenciaMeses
+) {
+  const requiredMonths = buildMonthKeys(fechaInicio, frecuenciaMeses);
+  const byMonth = new Map<string, SeriePoint>();
 
-function calculateIpcFactor(series: SeriePoint[], fechaInicio: string, fechaActualizacion: string) {
-  const startMonth = firstDayOfMonth(fechaInicio);
-  const endMonth = firstDayOfMonth(fechaActualizacion);
+  for (const item of series) {
+    byMonth.set(monthKey(item.fecha), item);
+  }
 
-  const included = series.filter(
-    (item) => compareIsoDates(item.fecha, startMonth) > 0 && compareIsoDates(item.fecha, endMonth) <= 0
-  );
+  const included: IpcPeriodoAplicado[] = [];
+  const missing: string[] = [];
 
-  if (!included.length) return null;
+  for (const requiredMonth of requiredMonths) {
+    const point = byMonth.get(requiredMonth);
+    if (!point) {
+      missing.push(requiredMonth);
+      continue;
+    }
+
+    included.push({
+      mes: requiredMonth,
+      fechaDato: point.fecha,
+      valor: point.valor,
+    });
+  }
+
+  if (missing.length) {
+    return { factor: null, included, missing };
+  }
 
   const factor = included.reduce((acc, item) => acc * (1 + item.valor / 100), 1);
-  const first = included[0];
-  const last = included[included.length - 1];
 
   return {
     factor,
-    first,
-    last,
-    cantidadPeriodos: included.length,
+    included,
+    missing,
   };
 }
 
-function buildError(message: string, status = 400) {
-  return NextResponse.json({ ok: false, error: message }, { status });
+function buildError(message: string, status = 400, extra?: Record<string, unknown>) {
+  return NextResponse.json({ ok: false, error: message, ...(extra || {}) }, { status });
 }
 
 export async function POST(request: Request) {
@@ -174,19 +311,26 @@ export async function POST(request: Request) {
     const indice = body?.indice;
     const montoInicial = parseNumber(body?.montoInicial);
     const fechaInicio = normalizeDate(body?.fechaInicio);
-    const fechaActualizacion = normalizeDate(body?.fechaActualizacion);
+    const frecuenciaMeses = parseFrecuencia(body?.frecuenciaMeses);
 
-    if (!indice || !["ICL", "UVA", "CER", "IPC"].includes(indice)) {
-      return buildError("Seleccioná un índice válido.");
+    if (!indice || !["ICL", "IPC"].includes(indice)) {
+      return buildError("Seleccioná un índice válido para alquileres: ICL o IPC.");
+    }
+
+    if (!frecuenciaMeses) {
+      return buildError("Seleccioná una frecuencia válida: 1, 2, 3, 4, 6 o 12 meses.");
     }
 
     if (montoInicial == null || montoInicial <= 0) {
       return buildError("Ingresá un monto inicial válido.");
     }
 
-    if (!fechaInicio || !fechaActualizacion) {
-      return buildError("Ingresá una fecha de inicio y una fecha de actualización válidas.");
+    if (!fechaInicio) {
+      return buildError("Ingresá una fecha de inicio válida.");
     }
+
+    const fechaActualizacion =
+      normalizeDate(body?.fechaActualizacion) || addMonthsIso(fechaInicio, frecuenciaMeses);
 
     if (toDate(fechaActualizacion).getTime() <= toDate(fechaInicio).getTime()) {
       return buildError("La fecha de actualización debe ser posterior a la fecha de inicio.");
@@ -194,12 +338,21 @@ export async function POST(request: Request) {
 
     if (indice === "IPC") {
       const series = await fetchIpcMensual();
-      const ipcCalc = calculateIpcFactor(series, fechaInicio, fechaActualizacion);
+      const ipcCalc = calculateIpcFactor(series, fechaInicio, frecuenciaMeses);
 
-      if (!ipcCalc) {
+      if (!ipcCalc.factor) {
         return buildError(
-          "No hay datos suficientes de IPC para el período seleccionado.",
-          404
+          `No hay datos oficiales suficientes de IPC para completar ${frecuenciaMeses} mes${
+            frecuenciaMeses === 1 ? "" : "es"
+          } desde ${fechaInicio}.`,
+          404,
+          {
+            indice,
+            fuente: "ArgentinaDatos",
+            mesesRequeridos: buildMonthKeys(fechaInicio, frecuenciaMeses),
+            mesesDisponibles: ipcCalc.included.map((item) => item.mes),
+            mesesFaltantes: ipcCalc.missing,
+          }
         );
       }
 
@@ -207,28 +360,34 @@ export async function POST(request: Request) {
       const montoActualizado = montoInicial * factor;
       const aumentoMonto = montoActualizado - montoInicial;
       const aumentoPorcentaje = (factor - 1) * 100;
+      const first = ipcCalc.included[0];
+      const last = ipcCalc.included[ipcCalc.included.length - 1];
 
       return NextResponse.json(
         {
           ok: true,
           indice,
           fuente: "ArgentinaDatos",
-          metodo: "IPC mensual acumulado",
+          metodo: "IPC mensual compuesto por frecuencia",
+          frecuenciaMeses,
           montoInicial: roundMoney(montoInicial),
           montoActualizado: roundMoney(montoActualizado),
+          montoActual: roundMoney(montoActualizado),
           aumentoMonto: roundMoney(aumentoMonto),
           aumentoPorcentaje: roundRatio(aumentoPorcentaje),
+          variacionAcumulada: roundRatio(aumentoPorcentaje),
           factor: roundRatio(factor),
           fechaInicio,
           fechaActualizacion,
-          fechaDatoInicial: ipcCalc.first.fecha,
-          fechaDatoActualizacion: ipcCalc.last.fecha,
+          fechaDatoInicial: first?.fechaDato ?? fechaInicio,
+          fechaDatoActualizacion: last?.fechaDato ?? fechaActualizacion,
           valorIndiceInicial: 1,
           valorIndiceActualizacion: roundRatio(factor),
-          cantidadPeriodos: ipcCalc.cantidadPeriodos,
+          cantidadPeriodos: ipcCalc.included.length,
+          periodosAplicados: ipcCalc.included,
           unidadMonto: "ARS",
           nota:
-            "Cálculo orientativo por acumulación compuesta de IPC mensual publicado para los meses disponibles del período.",
+            "Cálculo orientativo por acumulación compuesta de IPC mensual para la frecuencia seleccionada.",
         },
         {
           headers: {
@@ -238,16 +397,22 @@ export async function POST(request: Request) {
       );
     }
 
-    const idVariable = BCRA_VARIABLE_IDS[indice];
-    const series = await fetchBcraSerie(idVariable);
-
-    const startPoint = pickPointForDate(series, fechaInicio);
-    const endPoint = pickPointForDate(series, fechaActualizacion);
+    const { idVariable, serie } = await fetchIclSerie(fechaInicio, fechaActualizacion);
+    const startPoint = pickPointForDate(serie, fechaInicio);
+    const endPoint = pickPointForDate(serie, fechaActualizacion);
 
     if (!startPoint || !endPoint || startPoint.valor <= 0 || endPoint.valor <= 0) {
       return buildError(
-        `No hay datos suficientes de ${indice} para el período seleccionado.`,
-        404
+        "No hay datos suficientes de ICL para el período seleccionado.",
+        404,
+        {
+          indice,
+          fuente: "BCRA",
+          idVariable,
+          fechaInicio,
+          fechaActualizacion,
+          puntosEncontrados: serie.length,
+        }
       );
     }
 
@@ -261,11 +426,14 @@ export async function POST(request: Request) {
         ok: true,
         indice,
         fuente: "BCRA",
-        metodo: `${indice} actual / ${indice} inicial`,
+        metodo: "ICL actual / ICL inicial",
+        frecuenciaMeses,
         montoInicial: roundMoney(montoInicial),
         montoActualizado: roundMoney(montoActualizado),
+        montoActual: roundMoney(montoActualizado),
         aumentoMonto: roundMoney(aumentoMonto),
         aumentoPorcentaje: roundRatio(aumentoPorcentaje),
+        variacionAcumulada: roundRatio(aumentoPorcentaje),
         factor: roundRatio(factor),
         fechaInicio,
         fechaActualizacion,
@@ -274,9 +442,11 @@ export async function POST(request: Request) {
         valorIndiceInicial: roundRatio(startPoint.valor),
         valorIndiceActualizacion: roundRatio(endPoint.valor),
         cantidadPeriodos: null,
+        periodosAplicados: null,
         unidadMonto: "ARS",
+        idVariable,
         nota:
-          "Cálculo orientativo según la variación del índice publicado entre la fecha inicial y la fecha de actualización.",
+          "Cálculo orientativo según la variación del ICL publicado por BCRA entre la fecha inicial y la fecha de actualización. Si la fecha cae en día no hábil, se usa el último dato disponible anterior.",
       },
       {
         headers: {

@@ -207,10 +207,8 @@ export default function AsesorDashboardPage() {
       <section className="bg-white shadow-sm rounded-xl p-6">
         <h2 className="text-lg md:text-xl font-semibold mb-4">VAI TOOLS</h2>
 
-        {/* 6 botones:
-            Fila 1: Valuador / Business Tracker / Calculadora UVA
-            Fila 2: Factibilidad / Business Analytics / Agenda */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 max-w-3xl">
+        {/* Botones: 8 herramientas en 2 filas (4 arriba, 4 abajo en desktop) */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 max-w-5xl">
           {/* 🧾 Valuador de Activos Inmobiliarios */}
           <Link
             href="/vai/acmforms"
@@ -250,6 +248,16 @@ export default function AsesorDashboardPage() {
             <span>Calculadora Créditos UVA</span>
           </button>
 
+          {/* 📅 Agenda */}
+          <Link
+            href="/dashboard/asesor/agenda"
+            className={buttonBaseClasses}
+            style={buttonStyle}
+          >
+            <span>📅</span>
+            <span>Agenda</span>
+          </Link>
+
           {/* 🧮 Factibilidad Constructiva */}
           <Link
             href="/dashboard/empresa/factibilidad"
@@ -270,14 +278,14 @@ export default function AsesorDashboardPage() {
             <span>Business Analytics</span>
           </Link>
 
-          {/* 📅 Agenda */}
+          {/* 🏠 Calculadora de Alquileres */}
           <Link
-            href="/dashboard/asesor/agenda"
+            href="/dashboard/asesor/calculadora-alquileres"
             className={buttonBaseClasses}
             style={buttonStyle}
           >
-            <span>📅</span>
-            <span>Agenda</span>
+            <span>🏠</span>
+            <span>Calculadora de Alquileres</span>
           </Link>
 
           {/* 🌐 VAI Market Data */}

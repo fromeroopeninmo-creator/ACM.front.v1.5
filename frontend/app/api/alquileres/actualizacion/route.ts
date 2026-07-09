@@ -6,25 +6,6 @@ export const revalidate = 0;
 type IndiceAjuste = "ICL" | "IPC";
 type FrecuenciaMeses = 1 | 2 | 3 | 4 | 6 | 12;
 
-type RawSerieItem = {
-  fecha?: string;
-  valor?: number | string;
-};
-
-type RawBcraVariable = {
-  idVariable?: number;
-  descripcion?: string;
-  ultFechaInformada?: string;
-  ultValorInformado?: number | string;
-};
-
-type BcraSeriePayload = {
-  results?: Array<{
-    idVariable?: number;
-    detalle?: RawSerieItem[];
-  }>;
-};
-
 type AjusteRequest = {
   indice?: IndiceAjuste;
   montoInicial?: number | string;
@@ -37,28 +18,36 @@ type AjusteRequest = {
 type SeriePoint = {
   fecha: string;
   valor: number;
-  fuente?: "BCRA" | "DatosGobAr" | "ArgentinaDatos";
+  fuente?: "BCRA" | "DatosGobAr" | "ArgentinaDatos" | "CUCICBA";
+  proyectado?: boolean;
 };
 
-type IpcPeriodoAplicado = {
-  mes: string;
-  fechaDato: string;
-  valor: number;
-  fuente: "BCRA" | "DatosGobAr" | "ArgentinaDatos";
+type BcraSeriePayload = {
+  results?: Array<{
+    idVariable?: number;
+    detalle?: Array<{
+      fecha?: string;
+      valor?: number | string;
+    }>;
+  }>;
+};
+
+type ColegioResult = {
+  montoInicial: number;
+  montoActualizado: number;
+  aumentoPorcentaje: number;
+  valorIndiceInicial: number | null;
+  valorIndiceActualizacion: number | null;
+  proyectado: boolean;
 };
 
 const BCRA_BASE_URL = "https://api.bcra.gob.ar/estadisticas/v4.0/Monetarias";
 const BCRA_V3_BASE_URL = "https://api.bcra.gob.ar/estadisticas/v3.0/Monetarias";
+const DATOS_GOB_SERIES_URL = "https://apis.datos.gob.ar/series/api/series";
 const ARG_DATOS_BASE_URL = "https://api.argentinadatos.com/v1/finanzas/indices";
 
-const BCRA_VARIABLE_IDS = {
-  // IDs reales de la página pública de Principales Variables del BCRA
-  // Inflación mensual: /principales-variables-datos/?serie=7931
-  // ICL: /principales-variables-datos/?serie=7988
-  IPC_MENSUAL: 7931,
-  ICL: 7988,
-} as const;
-
+const BCRA_SERIE_ICL = 7988;
+const DATOS_GOB_IPC_NIVEL_GENERAL = "145.3_INGNACNAL_DICI_M_15";
 const FRECUENCIAS_VALIDAS = [1, 2, 3, 4, 6, 12] as const;
 
 function parseNumber(value: unknown): number | null {
@@ -126,16 +115,12 @@ function compareIsoDates(a: string, b: string): number {
   return a.localeCompare(b);
 }
 
-function roundMoney(value: number): number {
-  return Math.round(value * 100) / 100;
-}
-
-function roundRatio(value: number): number {
-  return Math.round(value * 1000000) / 1000000;
-}
-
 function monthKey(dateIso: string): string {
   return dateIso.slice(0, 7);
+}
+
+function monthKeyToIso(month: string): string {
+  return `${month}-01`;
 }
 
 function addMonthsToMonthKey(startMonth: string, offset: number): string {
@@ -152,10 +137,7 @@ function monthsBetweenIso(startIso: string, endIso: string): number {
     (end.getFullYear() - start.getFullYear()) * 12 +
     (end.getMonth() - start.getMonth());
 
-  if (end.getDate() < start.getDate()) {
-    months -= 1;
-  }
-
+  if (end.getDate() < start.getDate()) months -= 1;
   return Math.max(0, months);
 }
 
@@ -175,18 +157,32 @@ function resolveFechaActualizacion(
   };
 }
 
-function buildMonthKeys(fechaInicio: string, monthsToApply: number): string[] {
-  const startMonth = monthKey(fechaInicio);
-  return Array.from({ length: monthsToApply }, (_, index) =>
-    addMonthsToMonthKey(startMonth, index)
-  );
+function roundMoney(value: number): number {
+  return Math.round(value * 100) / 100;
 }
 
-function normalizeText(value?: string | null): string {
-  return (value || "")
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
+function roundRatio(value: number): number {
+  return Math.round(value * 1000000) / 1000000;
+}
+
+function frecuenciaToColegio(value: FrecuenciaMeses): string {
+  if (value === 1) return "mensual";
+  if (value === 2) return "bimestral";
+  if (value === 3) return "trimestral";
+  if (value === 4) return "cuatrimestral";
+  if (value === 6) return "semestral";
+  return "anual";
+}
+
+function stripHtml(value: string): string {
+  return value
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&#36;/g, "$ ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
     .trim();
 }
 
@@ -206,10 +202,8 @@ async function fetchJson<T>(url: string): Promise<T | null> {
     });
 
     if (!response.ok) return null;
-
     const text = await response.text();
     if (!text.trim()) return null;
-
     return JSON.parse(text) as T;
   } catch {
     return null;
@@ -243,33 +237,6 @@ async function fetchText(url: string): Promise<string | null> {
   }
 }
 
-async function fetchBcraVariables(): Promise<RawBcraVariable[]> {
-  const payload = await fetchJson<{ results?: RawBcraVariable[] }>(
-    `${BCRA_BASE_URL}?Limit=300`
-  );
-
-  const results = payload?.results;
-  return Array.isArray(results) ? results : [];
-}
-
-function findIclVariableId(variables: RawBcraVariable[]): number {
-  const exact = variables.find((item) => {
-    const description = normalizeText(item.descripcion);
-    return (
-      typeof item.idVariable === "number" &&
-      (description.includes("contratos de locacion") ||
-        description.includes("indice para contratos") ||
-        description.includes("rental agreement index") ||
-        description === "icl" ||
-        description.includes(" icl"))
-    );
-  });
-
-  return typeof exact?.idVariable === "number"
-    ? exact.idVariable
-    : BCRA_VARIABLE_IDS.ICL;
-}
-
 function mapBcraSerie(payload: BcraSeriePayload | null): SeriePoint[] {
   const detalle = payload?.results?.[0]?.detalle;
   if (!Array.isArray(detalle)) return [];
@@ -279,14 +246,8 @@ function mapBcraSerie(payload: BcraSeriePayload | null): SeriePoint[] {
   for (const item of detalle) {
     const fecha = normalizeDate(item.fecha);
     const valor = parseNumber(item.valor);
-
     if (!fecha || valor == null) continue;
-
-    points.push({
-      fecha,
-      valor,
-      fuente: "BCRA",
-    });
+    points.push({ fecha, valor, fuente: "BCRA" });
   }
 
   return points.sort((a, b) => compareIsoDates(a.fecha, b.fecha));
@@ -301,18 +262,10 @@ async function fetchBcraSerieById(
   const hastaDateTime = `${hasta}T23:59:59.999Z`;
 
   const urls = [
-    `${BCRA_BASE_URL}/${idVariable}?Desde=${encodeURIComponent(
-      desdeDateTime
-    )}&Hasta=${encodeURIComponent(hastaDateTime)}&Limit=5000`,
-    `${BCRA_BASE_URL}/${idVariable}?Desde=${encodeURIComponent(
-      desde
-    )}&Hasta=${encodeURIComponent(hasta)}&Limit=5000`,
-    `${BCRA_V3_BASE_URL}/${idVariable}?Desde=${encodeURIComponent(
-      desdeDateTime
-    )}&Hasta=${encodeURIComponent(hastaDateTime)}&Limit=5000`,
-    `${BCRA_V3_BASE_URL}/${idVariable}?Desde=${encodeURIComponent(
-      desde
-    )}&Hasta=${encodeURIComponent(hasta)}&Limit=5000`,
+    `${BCRA_BASE_URL}/${idVariable}?Desde=${encodeURIComponent(desdeDateTime)}&Hasta=${encodeURIComponent(hastaDateTime)}&Limit=5000`,
+    `${BCRA_BASE_URL}/${idVariable}?Desde=${encodeURIComponent(desde)}&Hasta=${encodeURIComponent(hasta)}&Limit=5000`,
+    `${BCRA_V3_BASE_URL}/${idVariable}?Desde=${encodeURIComponent(desdeDateTime)}&Hasta=${encodeURIComponent(hastaDateTime)}&Limit=5000`,
+    `${BCRA_V3_BASE_URL}/${idVariable}?Desde=${encodeURIComponent(desde)}&Hasta=${encodeURIComponent(hasta)}&Limit=5000`,
   ];
 
   for (const url of urls) {
@@ -324,92 +277,17 @@ async function fetchBcraSerieById(
   return [];
 }
 
-function parseBcraPublicDate(value: string): string | null {
-  const match = value.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-  if (!match) return null;
-  const [, day, month, year] = match;
-  return `${year}-${month}-${day}`;
-}
-
-function parseHtmlEntities(value: string): string {
-  return value
-    .replace(/&nbsp;/gi, " ")
-    .replace(/&amp;/gi, "&")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-async function fetchBcraPublicIclSerie(): Promise<SeriePoint[]> {
-  const urls = [
-    "https://www.bcra.gob.ar/PublicacionesEstadisticas/Principales_variables_datos.asp?serie=7988",
-    "https://www.bcra.gov.ar/PublicacionesEstadisticas/Principales_variables_datos.asp?serie=7988",
-  ];
-
-  for (const url of urls) {
-    const html = await fetchText(url);
-    if (!html) continue;
-
-    const clean = parseHtmlEntities(html);
-    const points: SeriePoint[] = [];
-    const pattern = /(\d{2}\/\d{2}\/\d{4})\s+([0-9]{1,6}(?:[.,][0-9]{1,6})?)/g;
-    let match: RegExpExecArray | null;
-
-    while ((match = pattern.exec(clean)) !== null) {
-      const fecha = parseBcraPublicDate(match[1]);
-      const valor = parseNumber(match[2]);
-
-      if (!fecha || valor == null) continue;
-      points.push({ fecha, valor, fuente: "BCRA" });
-    }
-
-    const unique = new Map<string, SeriePoint>();
-    for (const point of points) unique.set(point.fecha, point);
-
-    const serie = Array.from(unique.values()).sort((a, b) =>
-      compareIsoDates(a.fecha, b.fecha)
-    );
-
-    if (serie.length > 0) return serie;
-  }
-
-  return [];
-}
-
-async function fetchIclSerie(fechaInicio: string, fechaActualizacion: string) {
-  const desde = subtractDaysIso(fechaInicio, 45);
-  const hasta = fechaActualizacion;
-  const idVariable = BCRA_VARIABLE_IDS.ICL;
-
-  const serieApi = await fetchBcraSerieById(idVariable, desde, hasta);
-  if (serieApi.length > 0) return { idVariable, serie: serieApi };
-
-  const seriePublica = await fetchBcraPublicIclSerie();
-  const serieFiltrada = seriePublica.filter(
-    (item) =>
-      compareIsoDates(item.fecha, desde) >= 0 &&
-      compareIsoDates(item.fecha, hasta) <= 0
-  );
-
-  return { idVariable, serie: serieFiltrada.length ? serieFiltrada : seriePublica };
-}
-
-async function fetchIpcBcraMensual(
+async function fetchIpcNivelDatosGob(
   fechaInicio: string,
-  mesesAplicados: number
+  fechaActualizacion: string
 ): Promise<SeriePoint[]> {
   const desde = subtractDaysIso(fechaInicio, 45);
-  const hasta = addMonthsIso(fechaInicio, mesesAplicados + 1);
-  return fetchBcraSerieById(BCRA_VARIABLE_IDS.IPC_MENSUAL, desde, hasta);
-}
-
-async function fetchIpcDatosGob(fechaInicio: string, mesesAplicados: number): Promise<SeriePoint[]> {
-  const desde = fechaInicio;
-  const hasta = addMonthsIso(fechaInicio, mesesAplicados + 1);
+  const hasta = addMonthsIso(fechaActualizacion, 2);
   const url =
-    "https://apis.datos.gob.ar/series/api/series" +
-    `?ids=145.3_INGNACUAL_DICI_M_38&start_date=${encodeURIComponent(desde)}` +
-    `&end_date=${encodeURIComponent(hasta)}&format=json`;
+    `${DATOS_GOB_SERIES_URL}?ids=${encodeURIComponent(DATOS_GOB_IPC_NIVEL_GENERAL)}` +
+    `&start_date=${encodeURIComponent(desde)}` +
+    `&end_date=${encodeURIComponent(hasta)}` +
+    `&format=json`;
 
   const payload = await fetchJson<{ data?: unknown[][] }>(url);
   const rows = payload?.data;
@@ -421,7 +299,6 @@ async function fetchIpcDatosGob(fechaInicio: string, mesesAplicados: number): Pr
     const fechaRaw = typeof row?.[0] === "string" ? row[0] : null;
     const fecha = normalizeDate(fechaRaw);
     const valor = parseNumber(row?.[1]);
-
     if (!fecha || valor == null) continue;
     points.push({ fecha, valor, fuente: "DatosGobAr" });
   }
@@ -429,99 +306,188 @@ async function fetchIpcDatosGob(fechaInicio: string, mesesAplicados: number): Pr
   return points.sort((a, b) => compareIsoDates(a.fecha, b.fecha));
 }
 
-async function fetchIpcArgentinaDatos(): Promise<SeriePoint[]> {
-  const payload = await fetchJson<RawSerieItem[]>(`${ARG_DATOS_BASE_URL}/inflacion`);
-
-  if (!Array.isArray(payload)) return [];
-
-  const points: SeriePoint[] = [];
-
-  for (const item of payload) {
-    const fecha = normalizeDate(item.fecha);
-    const valor = parseNumber(item.valor);
-
-    if (!fecha || valor == null) continue;
-
-    points.push({
-      fecha,
-      valor,
-      fuente: "ArgentinaDatos",
-    });
-  }
-
-  return points.sort((a, b) => compareIsoDates(a.fecha, b.fecha));
+function indexSeriesByMonth(series: SeriePoint[]): Map<string, SeriePoint> {
+  const map = new Map<string, SeriePoint>();
+  for (const point of series) map.set(monthKey(point.fecha), point);
+  return map;
 }
 
-function mergeIpcSeries(...seriesGroups: SeriePoint[][]): SeriePoint[] {
-  const byMonth = new Map<string, SeriePoint>();
+function monthlyRatesFromIndex(series: SeriePoint[]): number[] {
+  const sorted = [...series].sort((a, b) => compareIsoDates(a.fecha, b.fecha));
+  const rates: number[] = [];
 
-  for (const group of seriesGroups) {
-    for (const item of group) {
-      byMonth.set(monthKey(item.fecha), item);
+  for (let i = 1; i < sorted.length; i += 1) {
+    const prev = sorted[i - 1];
+    const curr = sorted[i];
+    if (prev.valor > 0 && curr.valor > 0) {
+      rates.push(curr.valor / prev.valor - 1);
     }
   }
 
-  return Array.from(byMonth.values()).sort((a, b) => compareIsoDates(a.fecha, b.fecha));
+  return rates.filter((rate) => Number.isFinite(rate));
+}
+
+function projectIndexSeriesToMonth(
+  series: SeriePoint[],
+  targetMonth: string
+): SeriePoint[] {
+  const sorted = [...series].sort((a, b) => compareIsoDates(a.fecha, b.fecha));
+  if (!sorted.length) return [];
+
+  const projected = [...sorted];
+  const rates = monthlyRatesFromIndex(sorted);
+  const trendRates = rates.slice(-3);
+  const avgRate = trendRates.length
+    ? trendRates.reduce((sum, rate) => sum + rate, 0) / trendRates.length
+    : 0;
+
+  let latest = projected[projected.length - 1];
+  let latestMonth = monthKey(latest.fecha);
+
+  while (latestMonth < targetMonth) {
+    const nextMonth = addMonthsToMonthKey(latestMonth, 1);
+    const nextValue = latest.valor * (1 + avgRate);
+    latest = {
+      fecha: monthKeyToIso(nextMonth),
+      valor: nextValue,
+      fuente: latest.fuente || "DatosGobAr",
+      proyectado: true,
+    };
+    projected.push(latest);
+    latestMonth = nextMonth;
+  }
+
+  return projected;
+}
+
+function pickPointByMonth(series: SeriePoint[], targetMonth: string): SeriePoint | null {
+  const map = indexSeriesByMonth(series);
+  return map.get(targetMonth) ?? null;
 }
 
 function pickPointForDate(series: SeriePoint[], targetDate: string): SeriePoint | null {
   if (!series.length) return null;
-
   const priorOrSame = [...series]
     .filter((item) => compareIsoDates(item.fecha, targetDate) <= 0)
     .sort((a, b) => compareIsoDates(b.fecha, a.fecha))[0];
-
-  if (priorOrSame) return priorOrSame;
-
-  return [...series].sort((a, b) => compareIsoDates(a.fecha, b.fecha))[0] ?? null;
+  return priorOrSame ?? null;
 }
 
-function calculateIpcFactor(
-  series: SeriePoint[],
+async function fetchColegioCalculator(
+  indice: IndiceAjuste,
+  montoInicial: number,
   fechaInicio: string,
-  monthsToApply: number
-) {
-  const requiredMonths = buildMonthKeys(fechaInicio, monthsToApply);
-  const byMonth = new Map<string, SeriePoint>();
+  frecuenciaMeses: FrecuenciaMeses
+): Promise<ColegioResult | null> {
+  const url =
+    "https://www.colegioinmobiliario.org.ar/servicios/calculadora-alquileres" +
+    `?monto=${encodeURIComponent(String(montoInicial))}` +
+    `&fecha_inicio=${encodeURIComponent(fechaInicio)}` +
+    `&frecuencia=${encodeURIComponent(frecuenciaToColegio(frecuenciaMeses))}` +
+    `&indice=${encodeURIComponent(indice)}`;
 
-  for (const item of series) {
-    byMonth.set(monthKey(item.fecha), item);
+  const html = await fetchText(url);
+  if (!html) return null;
+
+  const text = stripHtml(html);
+  const projected = /\*/.test(text) || /proyectad/i.test(text);
+
+  const montoInicialMatch = text.match(/Monto inicial\s*\$\s*([0-9.]+,[0-9]{2})/i);
+  const montoActualMatch = text.match(/Monto actual\s*\$\s*([0-9.]+,[0-9]{2})/i);
+  const variacionMatch = text.match(/Variaci[oó]n acumulada\s*\+?\s*([0-9.,]+)\s*%/i);
+
+  const parsedMontoInicial = parseNumber(montoInicialMatch?.[1]);
+  const parsedMontoActual = parseNumber(montoActualMatch?.[1]);
+  const parsedVariacion = parseNumber(variacionMatch?.[1]);
+
+  if (parsedMontoActual == null || parsedVariacion == null) return null;
+
+  const periodPattern = /(\d{2}\/\d{4})\s+(?:Inicio\s+)?([0-9.]+,[0-9]{2})/g;
+  const values: number[] = [];
+  let match: RegExpExecArray | null;
+  while ((match = periodPattern.exec(text)) !== null) {
+    const value = parseNumber(match[2]);
+    if (value != null) values.push(value);
   }
-
-  const included: IpcPeriodoAplicado[] = [];
-  const missing: string[] = [];
-
-  for (const requiredMonth of requiredMonths) {
-    const point = byMonth.get(requiredMonth);
-    if (!point) {
-      missing.push(requiredMonth);
-      continue;
-    }
-
-    included.push({
-      mes: requiredMonth,
-      fechaDato: point.fecha,
-      valor: point.valor,
-      fuente: point.fuente || "BCRA",
-    });
-  }
-
-  if (missing.length) {
-    return { factor: null, included, missing, requiredMonths };
-  }
-
-  const factor = included.reduce((acc, item) => acc * (1 + item.valor / 100), 1);
 
   return {
-    factor,
-    included,
-    missing,
-    requiredMonths,
+    montoInicial: parsedMontoInicial ?? montoInicial,
+    montoActualizado: parsedMontoActual,
+    aumentoPorcentaje: parsedVariacion,
+    valorIndiceInicial: values.length ? values[0] : null,
+    valorIndiceActualizacion: values.length > 1 ? values[values.length - 1] : null,
+    proyectado: projected,
   };
+}
+
+async function fetchIclSerie(fechaInicio: string, fechaActualizacion: string): Promise<SeriePoint[]> {
+  const desde = subtractDaysIso(fechaInicio, 45);
+  const hasta = addMonthsIso(fechaActualizacion, 1);
+  return fetchBcraSerieById(BCRA_SERIE_ICL, desde, hasta);
 }
 
 function buildError(message: string, status = 400, extra?: Record<string, unknown>) {
   return NextResponse.json({ ok: false, error: message, ...(extra || {}) }, { status });
+}
+
+function buildSuccessResponse(args: {
+  indice: IndiceAjuste;
+  fuente: string;
+  metodo: string;
+  frecuenciaMeses: FrecuenciaMeses;
+  fechaInicio: string;
+  fechaActualizacion: string;
+  fechaCalculo: string;
+  mesesAplicados: number;
+  ciclosAplicados: number;
+  montoInicial: number;
+  montoActualizado: number;
+  factor: number;
+  valorIndiceInicial: number | null;
+  valorIndiceActualizacion: number | null;
+  fechaDatoInicial: string;
+  fechaDatoActualizacion: string;
+  periodosAplicados?: Array<{ mes: string; fechaDato: string; valor: number; fuente?: string; proyectado?: boolean }> | null;
+  nota: string;
+}) {
+  const aumentoMonto = args.montoActualizado - args.montoInicial;
+  const aumentoPorcentaje = (args.factor - 1) * 100;
+
+  return NextResponse.json(
+    {
+      ok: true,
+      indice: args.indice,
+      fuente: args.fuente,
+      metodo: args.metodo,
+      frecuenciaMeses: args.frecuenciaMeses,
+      fechaCalculo: args.fechaCalculo,
+      mesesAplicados: args.mesesAplicados,
+      ciclosAplicados: args.ciclosAplicados,
+      montoInicial: roundMoney(args.montoInicial),
+      montoActualizado: roundMoney(args.montoActualizado),
+      montoActual: roundMoney(args.montoActualizado),
+      aumentoMonto: roundMoney(aumentoMonto),
+      aumentoPorcentaje: roundRatio(aumentoPorcentaje),
+      variacionAcumulada: roundRatio(aumentoPorcentaje),
+      factor: roundRatio(args.factor),
+      fechaInicio: args.fechaInicio,
+      fechaActualizacion: args.fechaActualizacion,
+      fechaDatoInicial: args.fechaDatoInicial,
+      fechaDatoActualizacion: args.fechaDatoActualizacion,
+      valorIndiceInicial: args.valorIndiceInicial == null ? 1 : roundRatio(args.valorIndiceInicial),
+      valorIndiceActualizacion:
+        args.valorIndiceActualizacion == null ? roundRatio(args.factor) : roundRatio(args.valorIndiceActualizacion),
+      cantidadPeriodos: args.periodosAplicados?.length ?? null,
+      periodosAplicados: args.periodosAplicados ?? null,
+      unidadMonto: "ARS",
+      nota: args.nota,
+    },
+    {
+      headers: {
+        "Cache-Control": "no-store",
+      },
+    }
+  );
 }
 
 export async function POST(request: Request) {
@@ -549,7 +515,10 @@ export async function POST(request: Request) {
       return buildError("Ingresá una fecha de inicio válida.");
     }
 
-    const fechaCalculo = normalizeDate(body?.fechaCalculo) || normalizeDate(body?.fechaActualizacion) || toIsoDate(new Date());
+    const fechaCalculo =
+      normalizeDate(body?.fechaCalculo) ||
+      normalizeDate(body?.fechaActualizacion) ||
+      toIsoDate(new Date());
 
     if (toDate(fechaCalculo).getTime() <= toDate(fechaInicio).getTime()) {
       return buildError("La fecha de cálculo debe ser posterior a la fecha de inicio.");
@@ -561,9 +530,6 @@ export async function POST(request: Request) {
       fechaCalculo
     );
 
-    // Siempre calculamos hasta el último ciclo completo según fechaCalculo.
-    // No usamos fechaActualizacion enviada desde versiones anteriores del componente,
-    // porque hacía que un contrato trimestral de enero quedara fijo en abril.
     const fechaActualizacion = resolved.fechaActualizacion;
     const mesesAplicados = resolved.mesesAplicados;
     const ciclosAplicados = resolved.ciclosAplicados;
@@ -574,161 +540,182 @@ export async function POST(request: Request) {
           frecuenciaMeses === 1 ? "" : "es"
         } desde ${fechaInicio}.`,
         400,
-        {
-          indice,
-          frecuenciaMeses,
-          fechaInicio,
-          fechaCalculo,
-          fechaActualizacion,
-          mesesAplicados,
-          ciclosAplicados,
-        }
+        { indice, frecuenciaMeses, fechaInicio, fechaCalculo, fechaActualizacion, mesesAplicados, ciclosAplicados }
       );
     }
 
     if (indice === "IPC") {
-      const [datosGobSeries, bcraSeries, argentinaDatosSeries] = await Promise.all([
-        fetchIpcDatosGob(fechaInicio, mesesAplicados),
-        fetchIpcBcraMensual(fechaInicio, mesesAplicados),
-        fetchIpcArgentinaDatos(),
-      ]);
+      const serieOriginal = await fetchIpcNivelDatosGob(fechaInicio, fechaActualizacion);
+      const targetStartMonth = monthKey(fechaInicio);
+      const targetEndMonth = monthKey(fechaActualizacion);
+      const serieConProyeccion = projectIndexSeriesToMonth(serieOriginal, targetEndMonth);
+      const startPoint = pickPointByMonth(serieConProyeccion, targetStartMonth);
+      const endPoint = pickPointByMonth(serieConProyeccion, targetEndMonth);
 
-      // Orden de prioridad: ArgentinaDatos < BCRA < DatosGobAr.
-      // datos.gob.ar se usa como fuente principal para IPC porque expone la serie oficial
-      // 145.3_INGNACUAL_DICI_M_38 de variación mensual nacional.
-      const mergedSeries = mergeIpcSeries(
-        argentinaDatosSeries,
-        bcraSeries,
-        datosGobSeries
-      );
-      const ipcCalc = calculateIpcFactor(mergedSeries, fechaInicio, mesesAplicados);
+      if (startPoint && endPoint && startPoint.valor > 0 && endPoint.valor > 0) {
+        const factor = endPoint.valor / startPoint.valor;
+        const montoActualizado = montoInicial * factor;
+        const endProjected = Boolean(endPoint.proyectado);
 
-      if (!ipcCalc.factor) {
-        return buildError(
-          `No hay datos oficiales suficientes de IPC para completar ${mesesAplicados} mes${
-            mesesAplicados === 1 ? "" : "es"
-          } desde ${fechaInicio}.`,
-          404,
-          {
-            indice,
-            fuente: "DatosGobAr / BCRA / ArgentinaDatos",
-            mesesRequeridos: ipcCalc.requiredMonths,
-            mesesDisponibles: ipcCalc.included.map((item) => item.mes),
-            mesesFaltantes: ipcCalc.missing,
-            puntosDatosGobAr: datosGobSeries.length,
-            puntosBcra: bcraSeries.length,
-            puntosArgentinaDatos: argentinaDatosSeries.length,
-            detalle:
-              "El cálculo IPC exige que estén publicados todos los meses de la frecuencia seleccionada.",
-          }
-        );
-      }
-
-      const factor = ipcCalc.factor;
-      const montoActualizado = montoInicial * factor;
-      const aumentoMonto = montoActualizado - montoInicial;
-      const aumentoPorcentaje = (factor - 1) * 100;
-      const first = ipcCalc.included[0];
-      const last = ipcCalc.included[ipcCalc.included.length - 1];
-      const fuentes = Array.from(new Set(ipcCalc.included.map((item) => item.fuente)));
-
-      return NextResponse.json(
-        {
-          ok: true,
+        return buildSuccessResponse({
           indice,
-          fuente: fuentes.join(" / "),
-          metodo: "IPC mensual compuesto por frecuencia",
+          fuente: endProjected ? "DatosGobAr / proyección por tendencia" : "DatosGobAr",
+          metodo: endProjected ? "IPC nivel general con proyección de meses no publicados" : "IPC nivel general oficial",
           frecuenciaMeses,
+          fechaInicio,
+          fechaActualizacion,
           fechaCalculo,
           mesesAplicados,
           ciclosAplicados,
-          montoInicial: roundMoney(montoInicial),
-          montoActualizado: roundMoney(montoActualizado),
-          montoActual: roundMoney(montoActualizado),
-          aumentoMonto: roundMoney(aumentoMonto),
-          aumentoPorcentaje: roundRatio(aumentoPorcentaje),
-          variacionAcumulada: roundRatio(aumentoPorcentaje),
-          factor: roundRatio(factor),
+          montoInicial,
+          montoActualizado,
+          factor,
+          valorIndiceInicial: startPoint.valor,
+          valorIndiceActualizacion: endPoint.valor,
+          fechaDatoInicial: startPoint.fecha,
+          fechaDatoActualizacion: endPoint.fecha,
+          periodosAplicados: [
+            {
+              mes: targetEndMonth,
+              fechaDato: endPoint.fecha,
+              valor: (factor - 1) * 100,
+              fuente: endProjected ? "DatosGobAr / proyección" : "DatosGobAr",
+              proyectado: endProjected,
+            },
+          ],
+          nota: endProjected
+            ? "Cálculo orientativo. El IPC del período final todavía no estaba publicado en datos.gob.ar, por eso se proyectó usando la tendencia de los últimos meses disponibles."
+            : "Cálculo orientativo según IPC Nivel General Nacional publicado en datos.gob.ar.",
+        });
+      }
+
+      const colegio = await fetchColegioCalculator(
+        indice,
+        montoInicial,
+        fechaInicio,
+        frecuenciaMeses
+      );
+
+      if (colegio) {
+        const factor = colegio.montoActualizado / montoInicial;
+        return buildSuccessResponse({
+          indice,
+          fuente: colegio.proyectado ? "DatosGobAr / CUCICBA proyección" : "DatosGobAr / CUCICBA",
+          metodo: colegio.proyectado ? "IPC con proyección de valores no publicados" : "IPC nivel general",
+          frecuenciaMeses,
           fechaInicio,
           fechaActualizacion,
-          fechaDatoInicial: first?.fechaDato ?? fechaInicio,
-          fechaDatoActualizacion: last?.fechaDato ?? fechaActualizacion,
-          valorIndiceInicial: 1,
-          valorIndiceActualizacion: roundRatio(factor),
-          cantidadPeriodos: ipcCalc.included.length,
-          periodosAplicados: ipcCalc.included,
-          unidadMonto: "ARS",
-          nota:
-            "Cálculo orientativo por acumulación compuesta de IPC mensual para la frecuencia seleccionada.",
-        },
-        {
-          headers: {
-            "Cache-Control": "no-store",
-          },
-        }
-      );
-    }
+          fechaCalculo,
+          mesesAplicados,
+          ciclosAplicados,
+          montoInicial,
+          montoActualizado: colegio.montoActualizado,
+          factor,
+          valorIndiceInicial: colegio.valorIndiceInicial,
+          valorIndiceActualizacion: colegio.valorIndiceActualizacion,
+          fechaDatoInicial: fechaInicio,
+          fechaDatoActualizacion: fechaActualizacion,
+          periodosAplicados: [
+            {
+              mes: monthKey(fechaActualizacion),
+              fechaDato: fechaActualizacion,
+              valor: colegio.aumentoPorcentaje,
+              fuente: colegio.proyectado ? "CUCICBA proyección" : "CUCICBA",
+              proyectado: colegio.proyectado,
+            },
+          ],
+          nota: colegio.proyectado
+            ? "Cálculo orientativo con valor proyectado para el último período, similar al criterio usado por calculadoras profesionales cuando el dato oficial aún no está publicado."
+            : "Cálculo orientativo basado en valores públicos del IPC.",
+        });
+      }
 
-    const { idVariable, serie } = await fetchIclSerie(fechaInicio, fechaActualizacion);
-    const startPoint = pickPointForDate(serie, fechaInicio);
-    const endPoint = pickPointForDate(serie, fechaActualizacion);
-
-    if (!startPoint || !endPoint || startPoint.valor <= 0 || endPoint.valor <= 0) {
       return buildError(
-        "No hay datos suficientes de ICL para el período seleccionado.",
+        "No hay datos suficientes de IPC para el período seleccionado.",
         404,
         {
           indice,
-          fuente: "BCRA",
-          idVariable,
+          fuente: "DatosGobAr",
+          puntosDatosGobAr: serieOriginal.length,
           fechaInicio,
           fechaActualizacion,
-          puntosEncontrados: serie.length,
-          detalle:
-            "Se intentó consultar la serie diaria oficial del ICL en BCRA usando la serie 7988 de Principales Variables. Si la API devuelve cero puntos, puede ser un problema temporal del endpoint o del rango solicitado.",
         }
       );
     }
 
-    const factor = endPoint.valor / startPoint.valor;
-    const montoActualizado = montoInicial * factor;
-    const aumentoMonto = montoActualizado - montoInicial;
-    const aumentoPorcentaje = (factor - 1) * 100;
+    const serieIcl = await fetchIclSerie(fechaInicio, fechaActualizacion);
+    const startPoint = pickPointForDate(serieIcl, fechaInicio);
+    const endPoint = pickPointForDate(serieIcl, fechaActualizacion);
 
-    return NextResponse.json(
-      {
-        ok: true,
+    if (startPoint && endPoint && startPoint.valor > 0 && endPoint.valor > 0) {
+      const factor = endPoint.valor / startPoint.valor;
+      const montoActualizado = montoInicial * factor;
+
+      return buildSuccessResponse({
         indice,
         fuente: "BCRA",
         metodo: "ICL actual / ICL inicial",
         frecuenciaMeses,
+        fechaInicio,
+        fechaActualizacion,
         fechaCalculo,
         mesesAplicados,
         ciclosAplicados,
-        montoInicial: roundMoney(montoInicial),
-        montoActualizado: roundMoney(montoActualizado),
-        montoActual: roundMoney(montoActualizado),
-        aumentoMonto: roundMoney(aumentoMonto),
-        aumentoPorcentaje: roundRatio(aumentoPorcentaje),
-        variacionAcumulada: roundRatio(aumentoPorcentaje),
-        factor: roundRatio(factor),
-        fechaInicio,
-        fechaActualizacion,
+        montoInicial,
+        montoActualizado,
+        factor,
+        valorIndiceInicial: startPoint.valor,
+        valorIndiceActualizacion: endPoint.valor,
         fechaDatoInicial: startPoint.fecha,
         fechaDatoActualizacion: endPoint.fecha,
-        valorIndiceInicial: roundRatio(startPoint.valor),
-        valorIndiceActualizacion: roundRatio(endPoint.valor),
-        cantidadPeriodos: null,
         periodosAplicados: null,
-        unidadMonto: "ARS",
-        idVariable,
         nota:
-          "Cálculo orientativo según la variación del ICL publicado por BCRA entre la fecha inicial y la fecha de actualización. Si la fecha cae en día no hábil, se usa el último dato disponible anterior.",
-      },
+          "Cálculo orientativo según la variación del ICL publicado por BCRA entre la fecha inicial y la fecha de actualización.",
+      });
+    }
+
+    const colegio = await fetchColegioCalculator(
+      indice,
+      montoInicial,
+      fechaInicio,
+      frecuenciaMeses
+    );
+
+    if (colegio) {
+      const factor = colegio.montoActualizado / montoInicial;
+      return buildSuccessResponse({
+        indice,
+        fuente: "BCRA / CUCICBA fallback",
+        metodo: "ICL de contratos de locación",
+        frecuenciaMeses,
+        fechaInicio,
+        fechaActualizacion,
+        fechaCalculo,
+        mesesAplicados,
+        ciclosAplicados,
+        montoInicial,
+        montoActualizado: colegio.montoActualizado,
+        factor,
+        valorIndiceInicial: colegio.valorIndiceInicial,
+        valorIndiceActualizacion: colegio.valorIndiceActualizacion,
+        fechaDatoInicial: fechaInicio,
+        fechaDatoActualizacion: fechaActualizacion,
+        periodosAplicados: null,
+        nota:
+          "Cálculo orientativo con fallback a CUCICBA porque la API del BCRA no devolvió puntos para el rango consultado desde Vercel.",
+      });
+    }
+
+    return buildError(
+      "No hay datos suficientes de ICL para el período seleccionado.",
+      404,
       {
-        headers: {
-          "Cache-Control": "no-store",
-        },
+        indice,
+        fuente: "BCRA",
+        idVariable: BCRA_SERIE_ICL,
+        fechaInicio,
+        fechaActualizacion,
+        puntosEncontrados: serieIcl.length,
       }
     );
   } catch (error) {

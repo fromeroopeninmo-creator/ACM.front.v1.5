@@ -214,15 +214,22 @@ function mapBcraSerie(payload: BcraSeriePayload | null): SeriePoint[] {
   const detalle = payload?.results?.[0]?.detalle;
   if (!Array.isArray(detalle)) return [];
 
-  return detalle
-    .map((item) => {
-      const fecha = normalizeDate(item.fecha);
-      const valor = parseNumber(item.valor);
-      if (!fecha || valor == null) return null;
-      return { fecha, valor, fuente: "BCRA" as const };
-    })
-    .filter((item): item is SeriePoint => item !== null)
-    .sort((a, b) => compareIsoDates(a.fecha, b.fecha));
+  const points: SeriePoint[] = [];
+
+  for (const item of detalle) {
+    const fecha = normalizeDate(item.fecha);
+    const valor = parseNumber(item.valor);
+
+    if (!fecha || valor == null) continue;
+
+    points.push({
+      fecha,
+      valor,
+      fuente: "BCRA",
+    });
+  }
+
+  return points.sort((a, b) => compareIsoDates(a.fecha, b.fecha));
 }
 
 async function fetchBcraSerieById(
@@ -281,15 +288,22 @@ async function fetchIpcArgentinaDatos(): Promise<SeriePoint[]> {
 
   if (!Array.isArray(payload)) return [];
 
-  return payload
-    .map((item) => {
-      const fecha = normalizeDate(item.fecha);
-      const valor = parseNumber(item.valor);
-      if (!fecha || valor == null) return null;
-      return { fecha, valor, fuente: "ArgentinaDatos" as const };
-    })
-    .filter((item): item is SeriePoint => item !== null)
-    .sort((a, b) => compareIsoDates(a.fecha, b.fecha));
+  const points: SeriePoint[] = [];
+
+  for (const item of payload) {
+    const fecha = normalizeDate(item.fecha);
+    const valor = parseNumber(item.valor);
+
+    if (!fecha || valor == null) continue;
+
+    points.push({
+      fecha,
+      valor,
+      fuente: "ArgentinaDatos",
+    });
+  }
+
+  return points.sort((a, b) => compareIsoDates(a.fecha, b.fecha));
 }
 
 function mergeIpcSeries(primaryBcra: SeriePoint[], fallbackArgentinaDatos: SeriePoint[]): SeriePoint[] {

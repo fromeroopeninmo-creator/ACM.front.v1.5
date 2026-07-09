@@ -14,7 +14,7 @@ type PeriodoAplicado = {
 type ResultadoAjuste = {
   ok: boolean;
   indice: IndiceAjuste;
-  fuente: "BCRA" | "ArgentinaDatos";
+  fuente: string;
   metodo: string;
   frecuenciaMeses: number;
   montoInicial: number;
@@ -26,6 +26,9 @@ type ResultadoAjuste = {
   factor: number;
   fechaInicio: string;
   fechaActualizacion: string;
+  fechaCalculo?: string;
+  mesesAplicados?: number;
+  ciclosAplicados?: number;
   fechaDatoInicial: string;
   fechaDatoActualizacion: string;
   valorIndiceInicial: number;
@@ -152,15 +155,12 @@ export default function CalculadoraActualizacionAlquiler() {
   const [frecuenciaMeses, setFrecuenciaMeses] = useState<FrecuenciaMeses>("3");
   const [montoInicial, setMontoInicial] = useState("500000");
   const [fechaInicio, setFechaInicio] = useState(threeMonthsAgoIso());
+  const [fechaCalculo, setFechaCalculo] = useState(todayIso());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [resultado, setResultado] = useState<ResultadoAjuste | null>(null);
 
   const frecuenciaNumero = Number(frecuenciaMeses);
-  const fechaActualizacion = useMemo(
-    () => addMonthsIso(fechaInicio || todayIso(), frecuenciaNumero),
-    [fechaInicio, frecuenciaNumero]
-  );
 
   const indiceDescripcion = useMemo(
     () => INDICES.find((item) => item.value === indice)?.description ?? "",
@@ -187,7 +187,7 @@ export default function CalculadoraActualizacionAlquiler() {
           indice,
           montoInicial: parseMonto(montoInicial),
           fechaInicio,
-          fechaActualizacion,
+          fechaCalculo,
           frecuenciaMeses: frecuenciaNumero,
         }),
       });
@@ -302,8 +302,20 @@ export default function CalculadoraActualizacionAlquiler() {
                 onChange={(event) => setFechaInicio(event.target.value)}
                 className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-slate-900 focus:ring-1 focus:ring-slate-900"
               />
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-medium text-slate-700">
+                Calcular hasta
+              </label>
+              <input
+                type="date"
+                value={fechaCalculo}
+                onChange={(event) => setFechaCalculo(event.target.value)}
+                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-slate-900 focus:ring-1 focus:ring-slate-900"
+              />
               <p className="mt-1 text-xs text-slate-500">
-                Fecha de actualización: {formatDate(fechaActualizacion)}
+                Se aplican los períodos completos vencidos según la frecuencia.
               </p>
             </div>
           </div>
@@ -379,8 +391,21 @@ export default function CalculadoraActualizacionAlquiler() {
               <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm leading-6 text-blue-900">
                 <strong>Método:</strong> {resultado.metodo}. Fuente: {resultado.fuente}.
                 <br />
-                <strong>Período:</strong> {formatDate(resultado.fechaInicio)} a {" "}
+                <strong>Período ajustado:</strong> {formatDate(resultado.fechaInicio)} a {" "}
                 {formatDate(resultado.fechaActualizacion)}.
+                {resultado.fechaCalculo ? (
+                  <>
+                    <br />
+                    <strong>Fecha de cálculo:</strong> {formatDate(resultado.fechaCalculo)}.
+                  </>
+                ) : null}
+                {typeof resultado.mesesAplicados === "number" ? (
+                  <>
+                    <br />
+                    <strong>Meses aplicados:</strong> {resultado.mesesAplicados} mes
+                    {resultado.mesesAplicados !== 1 ? "es" : ""}.
+                  </>
+                ) : null}
                 <br />
                 {resultado.indice === "IPC" && resultado.periodosAplicados?.length ? (
                   <>

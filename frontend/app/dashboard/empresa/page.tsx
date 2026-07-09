@@ -11,6 +11,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import UvaCalculatorModal from "@/components/UvaCalculatorModal";
 import CotizacionDolar from "@/components/CotizacionDolar";
+import IndicadoresEconomicos from "@/components/IndicadoresEconomicos";
 
 
 function parseBillingDate(value?: string | null): Date | null {
@@ -410,7 +411,7 @@ export default function EmpresaDashboardPage() {
             }}
           >
             <span>🧮</span>
-            <span>Calculadora Créditos UVA - Gratis</span>
+            <span>Calculadora Créditos UVA</span>
           </button>
 
           {/* 📐 Factibilidad Constructiva */}
@@ -502,9 +503,13 @@ export default function EmpresaDashboardPage() {
         </div>
       </section>
 
-      {/* 💵 Cotización diaria del dólar */}
-      <div className="cotizacion-dolar-vertical max-w-2xl">
-        <CotizacionDolar />
+      {/* 💵 Cotización diaria del dólar + indicadores económicos */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:items-start max-w-5xl">
+        <div className="cotizacion-dolar-vertical">
+          <CotizacionDolar />
+        </div>
+
+        <IndicadoresEconomicos />
       </div>
 
       <style jsx global>{`

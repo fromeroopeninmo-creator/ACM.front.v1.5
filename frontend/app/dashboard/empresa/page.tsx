@@ -7,10 +7,37 @@ import { useTheme } from "@/context/ThemeContext";
 import Link from "next/link";
 import PlanStatusBanner from "./components/PlanStatusBanner";
 import { supabase } from "#lib/supabaseClient";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import UvaCalculatorModal from "@/components/UvaCalculatorModal";
 import CotizacionDolar from "@/components/CotizacionDolar";
+
+
+function parseBillingDate(value?: string | null): Date | null {
+  if (!value) return null;
+
+  const datePart = value.includes("T") ? value.split("T")[0] : value;
+  const [year, month, day] = datePart.split("-").map(Number);
+
+  if (!year || !month || !day) {
+    const fallback = new Date(value);
+    return Number.isNaN(fallback.getTime()) ? null : fallback;
+  }
+
+  return new Date(year, month - 1, day, 12, 0, 0, 0);
+}
+
+function daysUntilDate(target: Date): number {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const normalizedTarget = new Date(target);
+  normalizedTarget.setHours(0, 0, 0, 0);
+
+  return Math.ceil(
+    (normalizedTarget.getTime() - today.getTime()) / (1000 * 60 * 60 * 24),
+  );
+}
 
 export default function EmpresaDashboardPage() {
   const { user } = useAuth();
@@ -22,6 +49,7 @@ export default function EmpresaDashboardPage() {
   );
   const [billingLoading, setBillingLoading] = useState<boolean>(true);
   const [showUvaCalc, setShowUvaCalc] = useState(false);
+  const [billingEstado, setBillingEstado] = useState<any>(null);
 
   // 🔹 Función para obtener datos de empresa (incluye updated_at para bust)
   const fetchEmpresa = async (userId: string) => {
@@ -169,6 +197,7 @@ export default function EmpresaDashboardPage() {
         }
 
         const data: any = await res.json().catch(() => null);
+        setBillingEstado(data);
         const plan = data?.plan || null;
 
         const nombrePlan: string | null = plan?.nombre ?? null;
@@ -189,6 +218,37 @@ export default function EmpresaDashboardPage() {
       }
     })();
   }, [user]);
+
+
+  const cicloReminder = useMemo(() => {
+    const estado = billingEstado?.estado ?? null;
+
+    if (!billingEstado || !estado) return null;
+
+    const estaSuspendida = estado?.suspendida === true;
+    const planVencido = estado?.plan_vencido === true || estado?.planVencido === true;
+    const enGracia = estado?.en_periodo_gracia === true || estado?.enPeriodoGracia === true;
+
+    if (estaSuspendida || planVencido || enGracia) return null;
+
+    const fechaCicloIso =
+      billingEstado?.ciclo?.proximoCobro ?? billingEstado?.ciclo?.fin ?? null;
+
+    const fechaCiclo = parseBillingDate(fechaCicloIso);
+    if (!fechaCiclo) return null;
+
+    const dias = daysUntilDate(fechaCiclo);
+
+    if (dias === 2) {
+      return "Tu plan vence en 2 días";
+    }
+
+    if (dias === 1) {
+      return "Tu plan vence en 1 día";
+    }
+
+    return null;
+  }, [billingEstado]);
 
   if (isLoading)
     return (
@@ -254,6 +314,12 @@ export default function EmpresaDashboardPage() {
 
           {/* Acciones de gestión (alineadas a la derecha, mismo ancho) */}
           <div className="flex flex-col gap-3 md:items-end">
+            {cicloReminder ? (
+              <div className="inline-flex items-center justify-center rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-800 shadow-sm md:self-end">
+                ⏰ {cicloReminder}
+              </div>
+            ) : null}
+
             <Link
               href="/dashboard/empresa/planes"
               className="px-5 py-2 bg-green-600 text-white font-semibold rounded-lg shadow hover:bg-green-700 transition w-full md:w-[230px]"
@@ -411,6 +477,27 @@ export default function EmpresaDashboardPage() {
           >
             <span>📅</span>
             <span>Agenda</span>
+          </Link>
+
+          {/* 🌐 VAI Market Data */}
+          <Link
+            href="/dashboard/empresa/mercado"
+            className="w-full px-5 py-3 text-sm sm:text-base text-white font-semibold rounded-xl shadow-md border border-black/10 text-center inline-flex items-center justify-center gap-2 hover:shadow-lg transform hover:-translate-y-0.5 active:translate-y-0 transition"
+            style={{
+              backgroundColor: primaryColor,
+              boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
+            }}
+            onMouseEnter={(e) => {
+              (e.currentTarget as HTMLAnchorElement).style.filter =
+                "brightness(1.05)";
+            }}
+            onMouseLeave={(e) => {
+              (e.currentTarget as HTMLAnchorElement).style.filter =
+                "brightness(1)";
+            }}
+          >
+            <span>🌐</span>
+            <span>VAI Market Data</span>
           </Link>
         </div>
       </section>

@@ -2,17 +2,27 @@
 
 import { useMemo, useState } from "react";
 
-type IndiceAjuste = "ICL" | "IPC" | "UVA" | "CER";
+type IndiceAjuste = "ICL" | "IPC";
+type FrecuenciaMeses = "1" | "2" | "3" | "4" | "6" | "12";
+
+type PeriodoAplicado = {
+  mes: string;
+  fechaDato: string;
+  valor: number;
+};
 
 type ResultadoAjuste = {
   ok: boolean;
   indice: IndiceAjuste;
   fuente: "BCRA" | "ArgentinaDatos";
   metodo: string;
+  frecuenciaMeses: number;
   montoInicial: number;
   montoActualizado: number;
+  montoActual?: number;
   aumentoMonto: number;
   aumentoPorcentaje: number;
+  variacionAcumulada?: number;
   factor: number;
   fechaInicio: string;
   fechaActualizacion: string;
@@ -21,6 +31,7 @@ type ResultadoAjuste = {
   valorIndiceInicial: number;
   valorIndiceActualizacion: number;
   cantidadPeriodos: number | null;
+  periodosAplicados?: PeriodoAplicado[] | null;
   unidadMonto: "ARS";
   nota: string;
 };
@@ -31,25 +42,29 @@ const INDICES: Array<{
   description: string;
 }> = [
   {
+    value: "IPC",
+    label: "IPC - Inflación mensual",
+    description:
+      "Actualiza por IPC mensual compuesto según la frecuencia seleccionada.",
+  },
+  {
     value: "ICL",
     label: "ICL - Contratos de locación",
-    description: "Índice de contratos de locación publicado por BCRA.",
+    description:
+      "Actualiza por el Índice para Contratos de Locación publicado por BCRA.",
   },
-  {
-    value: "IPC",
-    label: "IPC - Inflación mensual acumulada",
-    description: "Actualización por inflación mensual acumulada.",
-  },
-  {
-    value: "UVA",
-    label: "UVA",
-    description: "Unidad de Valor Adquisitivo publicada por BCRA.",
-  },
-  {
-    value: "CER",
-    label: "CER",
-    description: "Coeficiente de Estabilización de Referencia publicado por BCRA.",
-  },
+];
+
+const FRECUENCIAS: Array<{
+  value: FrecuenciaMeses;
+  label: string;
+}> = [
+  { value: "1", label: "Mensual - 1 mes" },
+  { value: "2", label: "Bimestral - 2 meses" },
+  { value: "3", label: "Trimestral - 3 meses" },
+  { value: "4", label: "Cuatrimestral - 4 meses" },
+  { value: "6", label: "Semestral - 6 meses" },
+  { value: "12", label: "Anual - 12 meses" },
 ];
 
 function todayIso(): string {
@@ -60,35 +75,58 @@ function todayIso(): string {
   return `${year}-${month}-${day}`;
 }
 
-function oneYearAgoIso(): string {
+function threeMonthsAgoIso(): string {
   const now = new Date();
-  now.setFullYear(now.getFullYear() - 1);
+  now.setMonth(now.getMonth() - 3);
   const year = now.getFullYear();
   const month = String(now.getMonth() + 1).padStart(2, "0");
   const day = String(now.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
 }
 
+function addMonthsIso(dateIso: string, months: number): string {
+  const [year, month, day] = dateIso.split("-").map(Number);
+  const date = new Date(year, month - 1, day, 12, 0, 0, 0);
+  const originalDay = date.getDate();
+
+  date.setMonth(date.getMonth() + months);
+
+  if (date.getDate() !== originalDay) {
+    date.setDate(0);
+  }
+
+  const nextYear = date.getFullYear();
+  const nextMonth = String(date.getMonth() + 1).padStart(2, "0");
+  const nextDay = String(date.getDate()).padStart(2, "0");
+
+  return `${nextYear}-${nextMonth}-${nextDay}`;
+}
+
 function formatMoney(value?: number | null): string {
   if (value == null || !Number.isFinite(value)) return "—";
-  return `${new Intl.NumberFormat("es-AR", {
-    maximumFractionDigits: 0,
-  }).format(value)} ARS`;
+  return new Intl.NumberFormat("es-AR", {
+    style: "currency",
+    currency: "ARS",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(value);
 }
 
 function formatNumber(value?: number | null, decimals = 4): string {
   if (value == null || !Number.isFinite(value)) return "—";
   return new Intl.NumberFormat("es-AR", {
+    minimumFractionDigits: Math.min(decimals, 2),
     maximumFractionDigits: decimals,
   }).format(value);
 }
 
 function formatPercent(value?: number | null): string {
   if (value == null || !Number.isFinite(value)) return "—";
-  return `${new Intl.NumberFormat("es-AR", {
+  const sign = value > 0 ? "+" : "";
+  return `${sign}${new Intl.NumberFormat("es-AR", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
-  }).format(value)} %`;
+  }).format(value)}%`;
 }
 
 function formatDate(value?: string | null): string {
@@ -105,21 +143,34 @@ function parseMonto(value: string): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function getIndiceUnidad(indice: IndiceAjuste): string {
+  return indice === "IPC" ? "%" : "ICL";
+}
+
 export default function CalculadoraActualizacionAlquiler() {
-  const [indice, setIndice] = useState<IndiceAjuste>("ICL");
-  const [montoInicial, setMontoInicial] = useState("300000");
-  const [fechaInicio, setFechaInicio] = useState(oneYearAgoIso());
-  const [fechaActualizacion, setFechaActualizacion] = useState(todayIso());
+  const [indice, setIndice] = useState<IndiceAjuste>("IPC");
+  const [frecuenciaMeses, setFrecuenciaMeses] = useState<FrecuenciaMeses>("3");
+  const [montoInicial, setMontoInicial] = useState("500000");
+  const [fechaInicio, setFechaInicio] = useState(threeMonthsAgoIso());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [resultado, setResultado] = useState<ResultadoAjuste | null>(null);
+
+  const frecuenciaNumero = Number(frecuenciaMeses);
+  const fechaActualizacion = useMemo(
+    () => addMonthsIso(fechaInicio || todayIso(), frecuenciaNumero),
+    [fechaInicio, frecuenciaNumero]
+  );
 
   const indiceDescripcion = useMemo(
     () => INDICES.find((item) => item.value === indice)?.description ?? "",
     [indice]
   );
 
-  const montoPreview = useMemo(() => formatMoney(parseMonto(montoInicial)), [montoInicial]);
+  const montoPreview = useMemo(
+    () => formatMoney(parseMonto(montoInicial)),
+    [montoInicial]
+  );
 
   async function calcular() {
     setLoading(true);
@@ -137,6 +188,7 @@ export default function CalculadoraActualizacionAlquiler() {
           montoInicial: parseMonto(montoInicial),
           fechaInicio,
           fechaActualizacion,
+          frecuenciaMeses: frecuenciaNumero,
         }),
       });
 
@@ -149,7 +201,11 @@ export default function CalculadoraActualizacionAlquiler() {
       setResultado(payload as ResultadoAjuste);
     } catch (err) {
       console.error("Error calculando actualización de alquiler:", err);
-      setError(err instanceof Error ? err.message : "No se pudo calcular el ajuste.");
+      setError(
+        err instanceof Error
+          ? err.message
+          : "No se pudo calcular el ajuste."
+      );
     } finally {
       setLoading(false);
     }
@@ -166,8 +222,9 @@ export default function CalculadoraActualizacionAlquiler() {
             Calculadora de actualización de alquileres
           </h1>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
-            Calculá un valor orientativo de actualización usando ICL, IPC, UVA o CER.
-            El resultado se expresa en ARS y depende de los datos publicados para las fechas seleccionadas.
+            Calculá un valor orientativo de actualización usando IPC o ICL. El
+            resultado se expresa en ARS y depende de los datos publicados para
+            la frecuencia seleccionada.
           </p>
         </div>
 
@@ -188,10 +245,12 @@ export default function CalculadoraActualizacionAlquiler() {
                 inputMode="decimal"
                 value={montoInicial}
                 onChange={(event) => setMontoInicial(event.target.value)}
-                placeholder="Ej.: 300000"
+                placeholder="Ej.: 500000"
                 className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-slate-900 focus:ring-1 focus:ring-slate-900"
               />
-              <p className="mt-1 text-xs text-slate-500">Vista previa: {montoPreview}</p>
+              <p className="mt-1 text-xs text-slate-500">
+                Vista previa: {montoPreview}
+              </p>
             </div>
 
             <div>
@@ -209,12 +268,33 @@ export default function CalculadoraActualizacionAlquiler() {
                   </option>
                 ))}
               </select>
-              <p className="mt-1 text-xs leading-5 text-slate-500">{indiceDescripcion}</p>
+              <p className="mt-1 text-xs leading-5 text-slate-500">
+                {indiceDescripcion}
+              </p>
             </div>
 
             <div>
               <label className="mb-2 block text-sm font-medium text-slate-700">
-                Fecha inicio / valor base
+                Frecuencia de ajuste
+              </label>
+              <select
+                value={frecuenciaMeses}
+                onChange={(event) =>
+                  setFrecuenciaMeses(event.target.value as FrecuenciaMeses)
+                }
+                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-slate-900 focus:ring-1 focus:ring-slate-900"
+              >
+                {FRECUENCIAS.map((item) => (
+                  <option key={item.value} value={item.value}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-medium text-slate-700">
+                Fecha de inicio del período
               </label>
               <input
                 type="date"
@@ -222,18 +302,9 @@ export default function CalculadoraActualizacionAlquiler() {
                 onChange={(event) => setFechaInicio(event.target.value)}
                 className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-slate-900 focus:ring-1 focus:ring-slate-900"
               />
-            </div>
-
-            <div>
-              <label className="mb-2 block text-sm font-medium text-slate-700">
-                Fecha de actualización
-              </label>
-              <input
-                type="date"
-                value={fechaActualizacion}
-                onChange={(event) => setFechaActualizacion(event.target.value)}
-                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-slate-900 focus:ring-1 focus:ring-slate-900"
-              />
+              <p className="mt-1 text-xs text-slate-500">
+                Fecha de actualización: {formatDate(fechaActualizacion)}
+              </p>
             </div>
           </div>
 
@@ -247,7 +318,7 @@ export default function CalculadoraActualizacionAlquiler() {
           </button>
 
           {error ? (
-            <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+            <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm leading-6 text-red-700">
               {error}
             </div>
           ) : null}
@@ -257,12 +328,12 @@ export default function CalculadoraActualizacionAlquiler() {
           {resultado ? (
             <div>
               <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5 text-emerald-950">
-                <p className="text-sm font-medium opacity-80">Alquiler actualizado</p>
+                <p className="text-sm font-medium opacity-80">Monto actual</p>
                 <p className="mt-2 text-4xl font-bold tracking-tight">
                   {formatMoney(resultado.montoActualizado)}
                 </p>
                 <p className="mt-2 text-sm opacity-75">
-                  Aumento estimado: {formatMoney(resultado.aumentoMonto)} · {formatPercent(resultado.aumentoPorcentaje)}
+                  Variación acumulada: {formatPercent(resultado.aumentoPorcentaje)}
                 </p>
               </div>
 
@@ -278,44 +349,60 @@ export default function CalculadoraActualizacionAlquiler() {
 
                 <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
                   <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Factor aplicado
+                    Monto actual
                   </p>
                   <p className="mt-1 text-lg font-bold text-slate-900">
-                    × {formatNumber(resultado.factor, 6)}
+                    {formatMoney(resultado.montoActualizado)}
                   </p>
                 </div>
 
                 <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
                   <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Índice inicial
+                    Variación acumulada
                   </p>
                   <p className="mt-1 text-lg font-bold text-slate-900">
-                    {formatNumber(resultado.valorIndiceInicial, 6)} {resultado.indice}
-                  </p>
-                  <p className="mt-1 text-xs text-slate-500">
-                    Fecha dato: {formatDate(resultado.fechaDatoInicial)}
+                    {formatPercent(resultado.aumentoPorcentaje)}
                   </p>
                 </div>
 
                 <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
                   <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Índice actualización
+                    Frecuencia aplicada
                   </p>
                   <p className="mt-1 text-lg font-bold text-slate-900">
-                    {formatNumber(resultado.valorIndiceActualizacion, 6)} {resultado.indice}
-                  </p>
-                  <p className="mt-1 text-xs text-slate-500">
-                    Fecha dato: {formatDate(resultado.fechaDatoActualizacion)}
+                    {resultado.frecuenciaMeses} mes
+                    {resultado.frecuenciaMeses !== 1 ? "es" : ""}
                   </p>
                 </div>
               </div>
 
               <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm leading-6 text-blue-900">
                 <strong>Método:</strong> {resultado.metodo}. Fuente: {resultado.fuente}.
-                {resultado.cantidadPeriodos ? (
-                  <> Períodos considerados: {resultado.cantidadPeriodos}.</>
-                ) : null}
                 <br />
+                <strong>Período:</strong> {formatDate(resultado.fechaInicio)} a {" "}
+                {formatDate(resultado.fechaActualizacion)}.
+                <br />
+                {resultado.indice === "IPC" && resultado.periodosAplicados?.length ? (
+                  <>
+                    <strong>IPC aplicado:</strong>{" "}
+                    {resultado.periodosAplicados
+                      .map(
+                        (item) =>
+                          `${item.mes}: ${formatNumber(item.valor, 2)} ${getIndiceUnidad(resultado.indice)}`
+                      )
+                      .join(" · ")}
+                    <br />
+                  </>
+                ) : (
+                  <>
+                    <strong>Índice inicial:</strong>{" "}
+                    {formatNumber(resultado.valorIndiceInicial, 6)} {resultado.indice} ({formatDate(resultado.fechaDatoInicial)})
+                    <br />
+                    <strong>Índice actualización:</strong>{" "}
+                    {formatNumber(resultado.valorIndiceActualizacion, 6)} {resultado.indice} ({formatDate(resultado.fechaDatoActualizacion)})
+                    <br />
+                  </>
+                )}
                 {resultado.nota}
               </div>
             </div>
@@ -328,7 +415,7 @@ export default function CalculadoraActualizacionAlquiler() {
                 Completá los datos del contrato
               </h2>
               <p className="mt-2 max-w-md text-sm leading-6 text-slate-500">
-                La calculadora va a buscar los valores históricos disponibles y calculará el ajuste entre ambas fechas.
+                La calculadora buscará los valores históricos disponibles y calculará el ajuste según la frecuencia elegida.
               </p>
             </div>
           )}

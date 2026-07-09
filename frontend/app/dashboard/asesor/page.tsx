@@ -7,6 +7,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import UvaCalculatorModal from "@/components/UvaCalculatorModal";
 import CotizacionDolar from "@/components/CotizacionDolar";
+import IndicadoresEconomicos from "@/components/IndicadoresEconomicos";
 
 export default function AsesorDashboardPage() {
   const { user } = useAuth();
@@ -246,7 +247,7 @@ export default function AsesorDashboardPage() {
             }}
           >
             <span>🧮</span>
-            <span>Calculadora Créditos UVA -Gratis</span>
+            <span>Calculadora Créditos UVA</span>
           </button>
 
           {/* 🧮 Factibilidad Constructiva */}
@@ -291,9 +292,13 @@ export default function AsesorDashboardPage() {
         </div>
       </section>
 
-      {/* 💵 Cotización diaria del dólar */}
-      <div className="cotizacion-dolar-vertical max-w-2xl">
-        <CotizacionDolar />
+      {/* 💵 Cotización diaria del dólar + indicadores económicos */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:items-start max-w-5xl">
+        <div className="cotizacion-dolar-vertical">
+          <CotizacionDolar />
+        </div>
+
+        <IndicadoresEconomicos />
       </div>
 
       <style jsx global>{`

@@ -617,13 +617,19 @@ const handleDownloadPDF = async () => {
   const border = { r: 226, g: 232, b: 240 };
   const muted = { r: 100, g: 116, b: 139 };
   const dark = { r: 15, g: 23, b: 42 };
-  const black = { r: 12, g: 12, b: 12 };
 
   const usd = (value: number | null | undefined) => {
     if (value == null || isNaN(value)) return "—";
     return `${value.toLocaleString("es-AR", {
       maximumFractionDigits: 0,
     })} USD`;
+  };
+
+  const percentFromUnit = (value: number | null | undefined) => {
+    if (value == null || isNaN(value)) return "—";
+    return `${(Number(value) * 100).toLocaleString("es-AR", {
+      maximumFractionDigits: 0,
+    })}%`;
   };
 
   const imageFormat = (src: string) =>
@@ -666,6 +672,11 @@ const handleDownloadPDF = async () => {
       doc.addPage();
       y = margin;
     }
+  };
+
+  const goToNewPage = () => {
+    doc.addPage();
+    y = margin;
   };
 
   const drawSectionTitle = (title: string) => {
@@ -824,7 +835,9 @@ const handleDownloadPDF = async () => {
   drawLabelValueAt("Matrícula N°", cpi, pageW / 2 + 12, y + 39, 215);
   y += 82;
 
-  // ===== 1) Datos del lote =====
+  // =========================
+  // Página 1: datos del lote + normativa
+  // =========================
   drawSectionTitle("Datos del lote");
 
   const cardX = margin;
@@ -887,7 +900,6 @@ const handleDownloadPDF = async () => {
 
   y += cardH + 18;
 
-  // ===== 2) Normativa urbanística y morfología =====
   drawSectionTitle("Normativa urbanística y morfología");
 
   const perfTxt =
@@ -900,7 +912,7 @@ const handleDownloadPDF = async () => {
 
   drawGridCard(
     [
-      ["FOS", `${numero(formData.FOS, 2)}`],
+      ["FOS", percentFromUnit(formData.FOS)],
       ["FOT", `${numero(formData.FOT, 2)}`],
       ["Altura máxima", `${numero(formData.alturaMaxima)} m`],
       ["Pisos máximos", `${numero(formData.pisosMaximos)}`],
@@ -912,7 +924,11 @@ const handleDownloadPDF = async () => {
     { columns: 2 }
   );
 
-  // ===== 3) Usos previstos y eficiencia =====
+  // =========================
+  // Página 2: eficiencia + incidencia + precio sugerido
+  // =========================
+  goToNewPage();
+
   drawSectionTitle("Usos previstos y eficiencia");
 
   const sConstruible = (calculos as any)?.superficieConstruibleTotal ?? null;
@@ -949,7 +965,6 @@ const handleDownloadPDF = async () => {
     { columns: 2 }
   );
 
-  // ===== 4) Incidencia del lote y precio sugerido =====
   drawSectionTitle("Incidencia del lote y precio sugerido");
 
   const indice = formData.indiceIncidenciaZonal ?? null;
@@ -978,39 +993,34 @@ const handleDownloadPDF = async () => {
     { columns: 2, minHeight: 82 }
   );
 
-  ensureSpace(96);
+  ensureSpace(94);
   const priceBoxW = pageW - margin * 2;
-  const priceBoxH = 72;
+  const priceBoxH = 76;
   const priceBoxX = margin;
 
-  doc.setFillColor(black.r, black.g, black.b);
-  doc.setDrawColor(pc.r, pc.g, pc.b);
-  doc.setLineWidth(1);
+  doc.setFillColor(255, 255, 255);
+  doc.setDrawColor(border.r, border.g, border.b);
+  doc.setLineWidth(0.8);
   doc.rect(priceBoxX, y, priceBoxW, priceBoxH, "FD");
 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(11);
-  doc.setTextColor(255, 255, 255);
+  doc.setTextColor(muted.r, muted.g, muted.b);
   doc.text("Precio sugerido del lote", priceBoxX + 16, y + 24);
 
+  doc.setFont("helvetica", "bold");
   doc.setFontSize(22);
-  doc.setTextColor(pc.r, pc.g, pc.b);
-  doc.text(usd(precioSugeridoLote ?? null), priceBoxX + 16, y + 53);
-
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(8.8);
-  doc.setTextColor(226, 232, 240);
-  doc.text(
-    "Estimación orientativa según incidencia zonal, superficie vendible y costos informados.",
-    priceBoxX + priceBoxW - 16,
-    y + 53,
-    { align: "right" }
-  );
+  doc.setTextColor(dark.r, dark.g, dark.b);
+  doc.text(usd(precioSugeridoLote ?? null), priceBoxX + 16, y + 56);
   doc.setTextColor(0, 0, 0);
 
   y += priceBoxH + 18;
 
-  // ===== 5) Conclusión =====
+  // =========================
+  // Página 3: conclusión
+  // =========================
+  goToNewPage();
+
   drawSectionTitle("Conclusión");
   drawTextBlock("Observaciones", formData.observaciones);
   drawTextBlock("Riesgos", formData.riesgos);

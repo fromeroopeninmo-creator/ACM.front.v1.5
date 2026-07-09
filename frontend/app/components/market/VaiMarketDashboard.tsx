@@ -58,6 +58,7 @@ type MarketStatsResponse = {
   valor_m2_promedio?: number | null;
   fecha_desde?: string | null;
   fecha_hasta?: string | null;
+  dias_a_la_venta_promedio?: number | null;
   gap_disponible?: boolean;
   cantidad_operaciones_gap?: number;
   gap_promedio?: number | null;
@@ -110,13 +111,21 @@ function parseNullableNumber(value: string): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function getDisplayCurrency(
+  tipoOperacion: TipoOperacion | undefined,
+  moneda: string
+): string {
+  if (moneda.trim()) return moneda.trim().toUpperCase();
+  return tipoOperacion === "alquiler" ? "ARS" : "USD";
+}
+
 function formatMoney(value: number | null | undefined, moneda: string): string {
   if (value == null || !Number.isFinite(value)) return "—";
-  const symbol = moneda === "USD" ? "US$" : moneda === "ARS" ? "$" : moneda;
+  const currency = moneda.trim().toUpperCase();
   const amount = new Intl.NumberFormat("es-AR", {
     maximumFractionDigits: 0,
   }).format(value);
-  return symbol ? `${symbol} ${amount}` : amount;
+  return currency ? `${amount} ${currency}` : amount;
 }
 
 function formatNumber(
@@ -189,7 +198,7 @@ function StatCard({
   accent = false,
 }: {
   title: string;
-  value: string;
+  value: React.ReactNode;
   subtitle?: string;
   accent?: boolean;
 }) {
@@ -308,7 +317,10 @@ export default function VaiMarketDashboard() {
   const [precioCompraUsd, setPrecioCompraUsd] = useState("");
   const [alquilerMensualUsd, setAlquilerMensualUsd] = useState("");
 
-  const selectedCurrency = filters.moneda;
+  const resultCurrency = getDisplayCurrency(
+    lastAppliedFilters?.tipo_operacion ?? filters.tipo_operacion,
+    lastAppliedFilters?.moneda ?? filters.moneda
+  );
 
   const buildRpcParams = useCallback(
     (currentFilters: FiltersState) => ({
@@ -432,7 +444,7 @@ export default function VaiMarketDashboard() {
       try {
         const [statsResponse] = await Promise.all([
           supabase.rpc(
-            "get_vai_market_stats_v2",
+            "get_vai_market_stats_v3",
             buildRpcParams(currentFilters)
           ),
           cargarOpciones(currentFilters),
@@ -992,9 +1004,7 @@ export default function VaiMarketDashboard() {
               <p className="mt-3 text-sm text-zinc-500">
                 {formatNumber(stats.cantidad_operaciones, 0)} operaciones
                 analizadas entre {formatDate(stats.fecha_desde)} y {formatDate(stats.fecha_hasta)}
-                {lastAppliedFilters?.moneda
-                  ? ` · Valores expresados en ${lastAppliedFilters.moneda}`
-                  : ""}
+                {` · Valores expresados en ${resultCurrency}`}
               </p>
             </section>
 
@@ -1015,16 +1025,16 @@ export default function VaiMarketDashboard() {
 
               <StatCard
                 title={
-                  filters.tipo_operacion === "venta"
+                  (lastAppliedFilters?.tipo_operacion ?? filters.tipo_operacion) === "venta"
                     ? "Precio promedio"
                     : "Alquiler promedio"
                 }
-                value={formatMoney(stats.valor_promedio, selectedCurrency)}
+                value={formatMoney(stats.valor_promedio, resultCurrency)}
               />
 
               <StatCard
                 title="Valor mediano"
-                value={formatMoney(stats.valor_mediano, selectedCurrency)}
+                value={formatMoney(stats.valor_mediano, resultCurrency)}
                 subtitle="Referencia central con menor sensibilidad a operaciones atípicas."
               />
 
@@ -1035,7 +1045,7 @@ export default function VaiMarketDashboard() {
                     ? "—"
                     : `${formatMoney(
                         stats.valor_m2_promedio,
-                        selectedCurrency
+                        resultCurrency
                       )}/m²`
                 }
                 subtitle={`${formatNumber(
@@ -1046,10 +1056,16 @@ export default function VaiMarketDashboard() {
 
               <StatCard
                 title="Rango observado"
-                value={`${formatMoney(
-                  stats.valor_minimo,
-                  selectedCurrency
-                )} – ${formatMoney(stats.valor_maximo, selectedCurrency)}`}
+                value={
+                  <span className="block leading-tight">
+                    <span className="block">
+                      {formatMoney(stats.valor_minimo, resultCurrency)}
+                    </span>
+                    <span className="mt-1 block text-lg text-zinc-300">
+                      a {formatMoney(stats.valor_maximo, resultCurrency)}
+                    </span>
+                  </span>
+                }
               />
 
               <StatCard
@@ -1062,10 +1078,13 @@ export default function VaiMarketDashboard() {
               />
 
               <StatCard
-                title="Período analizado"
-                value={`${formatDate(stats.fecha_desde)} – ${formatDate(
-                  stats.fecha_hasta
-                )}`}
+                title="Días a la venta"
+                value={
+                  stats.dias_a_la_venta_promedio == null
+                    ? "—"
+                    : `${formatNumber(stats.dias_a_la_venta_promedio, 0)} días`
+                }
+                subtitle="Promedio desde la salida al mercado hasta el cierre."
               />
 
               <StatCard
@@ -1077,11 +1096,11 @@ export default function VaiMarketDashboard() {
                 }
                 subtitle={
                   stats.gap_disponible
-                    ? `Calculado sobre ${formatNumber(
+                    ? `Diferencia entre el precio de publicación y el precio real de cierre. Base: ${formatNumber(
                         stats.cantidad_operaciones_gap,
                         0
-                      )} ventas con precio inicial y cierre informado.`
-                    : "Se necesitan al menos 3 ventas captadas con precio inicial comparable."
+                      )} ventas.`
+                    : "El GAP mide la diferencia entre publicación y cierre; se necesitan al menos 3 ventas captadas comparables."
                 }
                 accent={Boolean(stats.gap_disponible)}
               />
@@ -1091,8 +1110,8 @@ export default function VaiMarketDashboard() {
               <section className="mt-4 rounded-2xl border border-zinc-800 bg-zinc-950 px-5 py-4 text-xs leading-5 text-zinc-500">
                 Para reducir distorsiones, la estadística excluyó operaciones
                 fuera del rango comprendido entre los percentiles 5 y 95: {" "}
-                {formatMoney(stats.percentil_inferior, selectedCurrency)} – {" "}
-                {formatMoney(stats.percentil_superior, selectedCurrency)}.
+                {formatMoney(stats.percentil_inferior, resultCurrency)} – {" "}
+                {formatMoney(stats.percentil_superior, resultCurrency)}.
               </section>
             ) : null}
 

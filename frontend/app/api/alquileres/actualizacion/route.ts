@@ -37,14 +37,14 @@ type AjusteRequest = {
 type SeriePoint = {
   fecha: string;
   valor: number;
-  fuente?: "BCRA" | "ArgentinaDatos";
+  fuente?: "BCRA" | "DatosGobAr" | "ArgentinaDatos";
 };
 
 type IpcPeriodoAplicado = {
   mes: string;
   fechaDato: string;
   valor: number;
-  fuente: "BCRA" | "ArgentinaDatos";
+  fuente: "BCRA" | "DatosGobAr" | "ArgentinaDatos";
 };
 
 const BCRA_BASE_URL = "https://api.bcra.gob.ar/estadisticas/v4.0/Monetarias";
@@ -218,6 +218,31 @@ async function fetchJson<T>(url: string): Promise<T | null> {
   }
 }
 
+async function fetchText(url: string): Promise<string | null> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 14000);
+
+  try {
+    const response = await fetch(url, {
+      cache: "no-store",
+      signal: controller.signal,
+      headers: {
+        Accept: "text/html,text/plain;q=0.9,*/*;q=0.8",
+        "Accept-Language": "es-AR,es;q=0.9",
+        "User-Agent": "VAI-Prop/1.0",
+      },
+    });
+
+    if (!response.ok) return null;
+    const text = await response.text();
+    return text.trim() ? text : null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 async function fetchBcraVariables(): Promise<RawBcraVariable[]> {
   const payload = await fetchJson<{ results?: RawBcraVariable[] }>(
     `${BCRA_BASE_URL}?Limit=300`
@@ -299,14 +324,74 @@ async function fetchBcraSerieById(
   return [];
 }
 
+function parseBcraPublicDate(value: string): string | null {
+  const match = value.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (!match) return null;
+  const [, day, month, year] = match;
+  return `${year}-${month}-${day}`;
+}
+
+function parseHtmlEntities(value: string): string {
+  return value
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+async function fetchBcraPublicIclSerie(): Promise<SeriePoint[]> {
+  const urls = [
+    "https://www.bcra.gob.ar/PublicacionesEstadisticas/Principales_variables_datos.asp?serie=7988",
+    "https://www.bcra.gov.ar/PublicacionesEstadisticas/Principales_variables_datos.asp?serie=7988",
+  ];
+
+  for (const url of urls) {
+    const html = await fetchText(url);
+    if (!html) continue;
+
+    const clean = parseHtmlEntities(html);
+    const points: SeriePoint[] = [];
+    const pattern = /(\d{2}\/\d{2}\/\d{4})\s+([0-9]{1,6}(?:[.,][0-9]{1,6})?)/g;
+    let match: RegExpExecArray | null;
+
+    while ((match = pattern.exec(clean)) !== null) {
+      const fecha = parseBcraPublicDate(match[1]);
+      const valor = parseNumber(match[2]);
+
+      if (!fecha || valor == null) continue;
+      points.push({ fecha, valor, fuente: "BCRA" });
+    }
+
+    const unique = new Map<string, SeriePoint>();
+    for (const point of points) unique.set(point.fecha, point);
+
+    const serie = Array.from(unique.values()).sort((a, b) =>
+      compareIsoDates(a.fecha, b.fecha)
+    );
+
+    if (serie.length > 0) return serie;
+  }
+
+  return [];
+}
+
 async function fetchIclSerie(fechaInicio: string, fechaActualizacion: string) {
   const desde = subtractDaysIso(fechaInicio, 45);
   const hasta = fechaActualizacion;
-  const variables = await fetchBcraVariables();
-  const idVariable = findIclVariableId(variables);
-  const serie = await fetchBcraSerieById(idVariable, desde, hasta);
+  const idVariable = BCRA_VARIABLE_IDS.ICL;
 
-  return { idVariable, serie };
+  const serieApi = await fetchBcraSerieById(idVariable, desde, hasta);
+  if (serieApi.length > 0) return { idVariable, serie: serieApi };
+
+  const seriePublica = await fetchBcraPublicIclSerie();
+  const serieFiltrada = seriePublica.filter(
+    (item) =>
+      compareIsoDates(item.fecha, desde) >= 0 &&
+      compareIsoDates(item.fecha, hasta) <= 0
+  );
+
+  return { idVariable, serie: serieFiltrada.length ? serieFiltrada : seriePublica };
 }
 
 async function fetchIpcBcraMensual(
@@ -316,6 +401,32 @@ async function fetchIpcBcraMensual(
   const desde = subtractDaysIso(fechaInicio, 45);
   const hasta = addMonthsIso(fechaInicio, mesesAplicados + 1);
   return fetchBcraSerieById(BCRA_VARIABLE_IDS.IPC_MENSUAL, desde, hasta);
+}
+
+async function fetchIpcDatosGob(fechaInicio: string, mesesAplicados: number): Promise<SeriePoint[]> {
+  const desde = fechaInicio;
+  const hasta = addMonthsIso(fechaInicio, mesesAplicados + 1);
+  const url =
+    "https://apis.datos.gob.ar/series/api/series" +
+    `?ids=145.3_INGNACUAL_DICI_M_38&start_date=${encodeURIComponent(desde)}` +
+    `&end_date=${encodeURIComponent(hasta)}&format=json`;
+
+  const payload = await fetchJson<{ data?: unknown[][] }>(url);
+  const rows = payload?.data;
+  if (!Array.isArray(rows)) return [];
+
+  const points: SeriePoint[] = [];
+
+  for (const row of rows) {
+    const fechaRaw = typeof row?.[0] === "string" ? row[0] : null;
+    const fecha = normalizeDate(fechaRaw);
+    const valor = parseNumber(row?.[1]);
+
+    if (!fecha || valor == null) continue;
+    points.push({ fecha, valor, fuente: "DatosGobAr" });
+  }
+
+  return points.sort((a, b) => compareIsoDates(a.fecha, b.fecha));
 }
 
 async function fetchIpcArgentinaDatos(): Promise<SeriePoint[]> {
@@ -341,15 +452,13 @@ async function fetchIpcArgentinaDatos(): Promise<SeriePoint[]> {
   return points.sort((a, b) => compareIsoDates(a.fecha, b.fecha));
 }
 
-function mergeIpcSeries(primaryBcra: SeriePoint[], fallbackArgentinaDatos: SeriePoint[]): SeriePoint[] {
+function mergeIpcSeries(...seriesGroups: SeriePoint[][]): SeriePoint[] {
   const byMonth = new Map<string, SeriePoint>();
 
-  for (const item of fallbackArgentinaDatos) {
-    byMonth.set(monthKey(item.fecha), item);
-  }
-
-  for (const item of primaryBcra) {
-    byMonth.set(monthKey(item.fecha), item);
+  for (const group of seriesGroups) {
+    for (const item of group) {
+      byMonth.set(monthKey(item.fecha), item);
+    }
   }
 
   return Array.from(byMonth.values()).sort((a, b) => compareIsoDates(a.fecha, b.fecha));
@@ -452,13 +561,12 @@ export async function POST(request: Request) {
       fechaCalculo
     );
 
-    const fechaActualizacion = normalizeDate(body?.fechaActualizacion) || resolved.fechaActualizacion;
-    const mesesAplicados = normalizeDate(body?.fechaActualizacion)
-      ? monthsBetweenIso(fechaInicio, fechaActualizacion)
-      : resolved.mesesAplicados;
-    const ciclosAplicados = normalizeDate(body?.fechaActualizacion)
-      ? Math.floor(mesesAplicados / frecuenciaMeses)
-      : resolved.ciclosAplicados;
+    // Siempre calculamos hasta el último ciclo completo según fechaCalculo.
+    // No usamos fechaActualizacion enviada desde versiones anteriores del componente,
+    // porque hacía que un contrato trimestral de enero quedara fijo en abril.
+    const fechaActualizacion = resolved.fechaActualizacion;
+    const mesesAplicados = resolved.mesesAplicados;
+    const ciclosAplicados = resolved.ciclosAplicados;
 
     if (mesesAplicados < frecuenciaMeses || ciclosAplicados < 1) {
       return buildError(
@@ -479,12 +587,20 @@ export async function POST(request: Request) {
     }
 
     if (indice === "IPC") {
-      const [bcraSeries, argentinaDatosSeries] = await Promise.all([
+      const [datosGobSeries, bcraSeries, argentinaDatosSeries] = await Promise.all([
+        fetchIpcDatosGob(fechaInicio, mesesAplicados),
         fetchIpcBcraMensual(fechaInicio, mesesAplicados),
         fetchIpcArgentinaDatos(),
       ]);
 
-      const mergedSeries = mergeIpcSeries(bcraSeries, argentinaDatosSeries);
+      // Orden de prioridad: ArgentinaDatos < BCRA < DatosGobAr.
+      // datos.gob.ar se usa como fuente principal para IPC porque expone la serie oficial
+      // 145.3_INGNACUAL_DICI_M_38 de variación mensual nacional.
+      const mergedSeries = mergeIpcSeries(
+        argentinaDatosSeries,
+        bcraSeries,
+        datosGobSeries
+      );
       const ipcCalc = calculateIpcFactor(mergedSeries, fechaInicio, mesesAplicados);
 
       if (!ipcCalc.factor) {
@@ -495,10 +611,11 @@ export async function POST(request: Request) {
           404,
           {
             indice,
-            fuente: "BCRA / ArgentinaDatos",
+            fuente: "DatosGobAr / BCRA / ArgentinaDatos",
             mesesRequeridos: ipcCalc.requiredMonths,
             mesesDisponibles: ipcCalc.included.map((item) => item.mes),
             mesesFaltantes: ipcCalc.missing,
+            puntosDatosGobAr: datosGobSeries.length,
             puntosBcra: bcraSeries.length,
             puntosArgentinaDatos: argentinaDatosSeries.length,
             detalle:

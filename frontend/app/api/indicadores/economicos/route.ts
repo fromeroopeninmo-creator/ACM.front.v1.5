@@ -129,7 +129,8 @@ async function fetchBcraVariables(): Promise<RawBcraVariable[]> {
   const payload = await fetchJson<{ results?: RawBcraVariable[] }>(
     `${BCRA_BASE_URL}?Limit=200`
   );
-  return Array.isArray(payload?.results) ? payload.results : [];
+  const results = payload?.results;
+  return Array.isArray(results) ? results : [];
 }
 
 async function fetchBcraSerieLatest(idVariable: number): Promise<RawSerieItem | null> {

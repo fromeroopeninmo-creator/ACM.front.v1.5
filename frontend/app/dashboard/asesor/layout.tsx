@@ -17,7 +17,7 @@ type BillingEstadoFlags = {
 type BillingPlan = {
   id: string;
   nombre: string;
-  tipo_plan?: string | null; // FULL / CORE / TRACKER_ONLY / etc
+  tipo_plan?: string | null;
   incluye_valuador?: boolean | null;
   incluye_tracker?: boolean | null;
 };
@@ -42,10 +42,14 @@ type BillingEstadoResponse = {
 
 function esRutaTrackerAsesor(pathname: string | null): boolean {
   if (!pathname) return false;
-  // /dashboard/asesor/tracker y /dashboard/asesor/tracker-analytics (+ subrutas)
   if (pathname.startsWith("/dashboard/asesor/tracker")) return true;
   if (pathname.startsWith("/dashboard/asesor/tracker-analytics")) return true;
   return false;
+}
+
+function esRutaSuspendidoAsesor(pathname: string | null): boolean {
+  if (!pathname) return false;
+  return pathname.startsWith("/dashboard/asesor/suspendido");
 }
 
 export default function AsesorLayout({
@@ -59,10 +63,9 @@ export default function AsesorLayout({
 
   const [checkingBilling, setCheckingBilling] = useState(true);
   const [planIncluyeTracker, setPlanIncluyeTracker] = useState<boolean | null>(
-    null
+    null,
   );
 
-  // ⚠️ Guard adicional: si el usuario NO es asesor, no debería estar en este segmento
   const rawRole =
     (user as any)?.role || (user as any)?.user_metadata?.role || null;
   const isAsesor = rawRole === "asesor";
@@ -81,12 +84,10 @@ export default function AsesorLayout({
       try {
         const res = await fetch("/api/billing/estado", { cache: "no-store" });
 
-        // 🧱 Cambio clave: si la API falla (400, 500, etc.), por seguridad
-        // asumimos que NO tiene tracker habilitado.
         if (!res.ok) {
           console.error(
             "Error al consultar /api/billing/estado (asesor):",
-            res.status
+            res.status,
           );
           if (!cancelled) {
             setPlanIncluyeTracker(false);
@@ -99,27 +100,28 @@ export default function AsesorLayout({
         const estado = data?.estado;
         const plan = data?.plan;
 
-        // Si la API devolvió un error lógico (ej: "No se pudo resolver la empresa...")
-        // lo tratamos igual que un fallo: sin tracker.
         if (data?.error && !cancelled) {
           console.error(
             "Error lógico en /api/billing/estado (asesor):",
-            data.error
+            data.error,
           );
           setPlanIncluyeTracker(false);
           setCheckingBilling(false);
           return;
         }
 
-        // 🔒 Si la cuenta está suspendida o plan vencido sin gracia,
-        // redirigimos igual que en empresa: asesores no pueden seguir usando nada.
         if (estado) {
           const debeSuspender =
             estado.suspendida ||
             (estado.plan_vencido && !estado.en_periodo_gracia);
 
           if (debeSuspender) {
-            router.replace("/dashboard/empresa/suspendido");
+            if (!esRutaSuspendidoAsesor(pathname)) {
+              router.replace("/dashboard/asesor/suspendido");
+              return;
+            }
+          } else if (esRutaSuspendidoAsesor(pathname)) {
+            router.replace("/dashboard/asesor");
             return;
           }
         }
@@ -132,7 +134,6 @@ export default function AsesorLayout({
         }
       } catch (err) {
         console.error("Error verificando estado de suscripción (asesor):", err);
-        // En caso de error de red u otra cosa, también cerramos el grifo
         if (!cancelled) {
           setPlanIncluyeTracker(false);
           setCheckingBilling(false);
@@ -163,7 +164,6 @@ export default function AsesorLayout({
     );
   }
 
-  // 🧱 Blindaje por rol: solo asesores deberían ver este segmento
   if (!isAsesor) {
     return (
       <div className="w-full h-full flex items-center justify-center">
@@ -179,11 +179,12 @@ export default function AsesorLayout({
     );
   }
 
+  if (esRutaSuspendidoAsesor(pathname)) {
+    return <div className="w-full h-full">{children}</div>;
+  }
+
   const esTracker = esRutaTrackerAsesor(pathname);
 
-  // 🧱 Blindaje por plan: si la empresa NO tiene tracker habilitado
-  // o no pudimos resolver la empresa / estado de billing,
-  // el asesor no puede entrar al tracker ni al analytics.
   if (esTracker && planIncluyeTracker === false) {
     return (
       <div className="w-full h-full flex items-center justify-center">
@@ -206,6 +207,5 @@ export default function AsesorLayout({
     );
   }
 
-  // ✅ Si pasa todos los chequeos, renderizamos normalmente el dashboard de asesor
   return <div className="w-full h-full">{children}</div>;
 }

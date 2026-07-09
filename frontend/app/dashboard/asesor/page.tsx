@@ -183,7 +183,7 @@ export default function AsesorDashboardPage() {
 
   // estilo base para los botones (alineado con dashboard empresa)
   const buttonBaseClasses =
-    "w-full px-5 py-3 text-sm sm:text-base text-white font-semibold rounded-xl shadow-md border border-black/10 text-center inline-flex items-center justify-center gap-2 hover:shadow-lg transform hover:-translate-y-0.5 active:translate-y-0 transition";
+    "w-full min-h-[72px] px-5 py-3 text-sm sm:text-base text-white font-semibold rounded-xl shadow-md border border-black/10 text-center inline-flex items-center justify-center gap-2 hover:shadow-lg transform hover:-translate-y-0.5 active:translate-y-0 transition";
   const buttonStyle = {
     backgroundColor: primaryColor,
     boxShadow: "0 2px 8px rgba(0,0,0,0.15)",

@@ -278,6 +278,16 @@ export default function AsesorDashboardPage() {
             <span>📅</span>
             <span>Agenda</span>
           </Link>
+
+          {/* 🌐 VAI Market Data */}
+          <Link
+            href="/dashboard/asesor/mercado"
+            className={buttonBaseClasses}
+            style={buttonStyle}
+          >
+            <span>🌐</span>
+            <span>VAI Market Data</span>
+          </Link>
         </div>
       </section>
 

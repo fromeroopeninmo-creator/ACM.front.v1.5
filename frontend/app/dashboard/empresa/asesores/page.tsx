@@ -625,10 +625,10 @@ export default function AsesoresPage() {
       <div className="flex min-w-0 flex-col justify-between gap-4 lg:flex-row lg:items-start">
         <div className="min-w-0">
           <h1 className="text-2xl font-semibold text-gray-950 dark:text-white">
-            Equipo y rendimiento
+            Gestión de equipo
           </h1>
           <p className="mt-1 max-w-3xl text-sm leading-6 text-gray-500 dark:text-gray-400">
-            Seguimiento práctico de actividad, uso de herramientas y avance comercial del equipo.
+            Evalua el despempeño de tu equipo mediante seguimiento práctico de actividades, uso de herramientas y avance comercial. 
           </p>
         </div>
 

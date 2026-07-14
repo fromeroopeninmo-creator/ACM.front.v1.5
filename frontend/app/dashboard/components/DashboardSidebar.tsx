@@ -179,7 +179,7 @@ export default function DashboardSidebar({ role, color }: SidebarProps) {
       {/* Desktop: barra compacta que se despliega al acercar el mouse */}
       <div className="relative hidden w-[72px] shrink-0 md:block">
         <aside
-          className="group/sidebar fixed bottom-0 left-0 top-16 z-30 flex w-[72px] flex-col overflow-hidden px-3 py-5 text-white shadow-[4px_0_20px_rgba(15,23,42,0.12)] transition-[width,box-shadow] duration-300 ease-out hover:w-60 hover:shadow-[8px_0_30px_rgba(15,23,42,0.18)]"
+          className="group/sidebar fixed bottom-0 left-0 top-20 z-30 flex w-[72px] flex-col overflow-hidden px-3 py-5 text-white shadow-[4px_0_20px_rgba(15,23,42,0.12)] transition-[width,box-shadow] duration-300 ease-out hover:w-60 hover:shadow-[8px_0_30px_rgba(15,23,42,0.18)]"
           style={{ backgroundColor: bgColor }}
           aria-label="Barra lateral"
         >

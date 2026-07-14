@@ -92,6 +92,8 @@ type InformeRentabilidadForm = {
   tipologia: string;
   ambientes: string;
   antiguedad: string;
+  estadoPropiedad: string;
+  demandaAlquiler: string;
   alquilerPromedio: string;
   monedaAlquilerPromedio: "ARS" | "USD";
   observaciones: string;
@@ -104,6 +106,8 @@ const INITIAL_INFORME_RENTABILIDAD: InformeRentabilidadForm = {
   tipologia: "",
   ambientes: "",
   antiguedad: "",
+  estadoPropiedad: "",
+  demandaAlquiler: "",
   alquilerPromedio: "",
   monedaAlquilerPromedio: "ARS",
   observaciones: "",
@@ -829,10 +833,19 @@ export default function VaiMarketDashboard() {
         h: number,
         title: string,
         value: string,
-        subtitle?: string
+        subtitle?: string,
+        accent?: {
+          text: { r: number; g: number; b: number };
+          fill: { r: number; g: number; b: number };
+          border: { r: number; g: number; b: number };
+        }
       ) => {
-        doc.setFillColor(255, 255, 255);
-        doc.setDrawColor(border.r, border.g, border.b);
+        const fillColor = accent?.fill ?? { r: 255, g: 255, b: 255 };
+        const borderColor = accent?.border ?? border;
+        const valueColor = accent?.text ?? dark;
+
+        doc.setFillColor(fillColor.r, fillColor.g, fillColor.b);
+        doc.setDrawColor(borderColor.r, borderColor.g, borderColor.b);
         doc.roundedRect(x, y, w, h, 6, 6, "FD");
         doc.setFont("helvetica", "normal");
         doc.setFontSize(8.5);
@@ -840,7 +853,7 @@ export default function VaiMarketDashboard() {
         doc.text(title, x + 14, y + 20);
         doc.setFont("helvetica", "bold");
         doc.setFontSize(18);
-        doc.setTextColor(dark.r, dark.g, dark.b);
+        doc.setTextColor(valueColor.r, valueColor.g, valueColor.b);
         doc.text(value, x + 14, y + 48);
         if (subtitle) {
           doc.setFont("helvetica", "normal");
@@ -1036,7 +1049,7 @@ export default function VaiMarketDashboard() {
       drawSectionTitle("Datos del Cliente y de la Propiedad", 178);
       doc.setFillColor(255, 255, 255);
       doc.setDrawColor(border.r, border.g, border.b);
-      doc.rect(margin, 214, pageW - margin * 2, 168, "FD");
+      doc.rect(margin, 214, pageW - margin * 2, 194, "FD");
 
       const leftX = margin + 16;
       const rightX = pageW / 2 + 8;
@@ -1055,6 +1068,8 @@ export default function VaiMarketDashboard() {
             ? `${informeForm.antiguedad.trim()} años`
             : "-",
         ],
+        ["Estado", informeForm.estadoPropiedad],
+        ["Demanda", informeForm.demandaAlquiler],
         ["Precio de compra", pdfMoney(Number(precioCompraUsd), "USD")],
         [
           "Alquiler usado en el cálculo",
@@ -1072,18 +1087,18 @@ export default function VaiMarketDashboard() {
       ];
 
       leftRows.forEach(([label, value], index) => {
-        drawLabelValue(label, value, leftX, 238 + index * 27, columnW);
+        drawLabelValue(label, value, leftX, 238 + index * 30, columnW);
       });
       rightRows.forEach(([label, value], index) => {
-        drawLabelValue(label, value, rightX, 238 + index * 34, columnW);
+        drawLabelValue(label, value, rightX, 238 + index * 28, columnW);
       });
 
-      drawSectionTitle("Resultado del Análisis", 408);
+      drawSectionTitle("Resultado del Análisis", 434);
       const kpiGap = 12;
       const kpiW = (pageW - margin * 2 - kpiGap) / 2;
       drawKpi(
         margin,
-        444,
+        470,
         kpiW,
         88,
         "Rentabilidad anual bruta",
@@ -1092,7 +1107,7 @@ export default function VaiMarketDashboard() {
       );
       drawKpi(
         margin + kpiW + kpiGap,
-        444,
+        470,
         kpiW,
         88,
         "Recuperación estimada",
@@ -1101,37 +1116,57 @@ export default function VaiMarketDashboard() {
       );
       drawKpi(
         margin,
-        544,
+        570,
         kpiW,
         88,
         "Ingreso anual estimado",
         pdfMoney(perCalculation.annualIncome, "USD"),
         "Alquiler mensual utilizado multiplicado por doce meses."
       );
+      const evaluationAccent =
+        perCalculation.perYears < 15
+          ? {
+              text: { r: 21, g: 128, b: 61 },
+              fill: { r: 240, g: 253, b: 244 },
+              border: { r: 134, g: 239, b: 172 },
+            }
+          : perCalculation.perYears <= 20
+          ? {
+              text: { r: 180, g: 83, b: 9 },
+              fill: { r: 255, g: 251, b: 235 },
+              border: { r: 252, g: 211, b: 77 },
+            }
+          : {
+              text: { r: 185, g: 28, b: 28 },
+              fill: { r: 254, g: 242, b: 242 },
+              border: { r: 252, g: 165, b: 165 },
+            };
+
       drawKpi(
         margin + kpiW + kpiGap,
-        544,
+        570,
         kpiW,
         88,
         "Evaluación de la inversión",
         perCalculation.status.label,
-        perCalculation.status.description
+        perCalculation.status.description,
+        evaluationAccent
       );
 
       doc.setFillColor(255, 251, 235);
       doc.setDrawColor(245, 158, 11);
-      doc.roundedRect(margin, 650, pageW - margin * 2, 54, 5, 5, "FD");
+      doc.roundedRect(margin, 676, pageW - margin * 2, 54, 5, 5, "FD");
       doc.setFont("helvetica", "bold");
       doc.setFontSize(9);
       doc.setTextColor(146, 64, 14);
-      doc.text("Referencia orientativa", margin + 14, 671);
+      doc.text("Referencia orientativa", margin + 14, 697);
       doc.setFont("helvetica", "normal");
       doc.setFontSize(8.2);
       const disclaimer = doc.splitTextToSize(
         "El cálculo es bruto y no contempla gastos, impuestos, vacancia, mantenimiento, expensas ni costos de adquisición. No reemplaza un análisis financiero, legal o impositivo específico.",
         pageW - margin * 2 - 28
       );
-      doc.text(disclaimer as string[], margin + 14, 687);
+      doc.text(disclaimer as string[], margin + 14, 713);
 
       doc.addPage();
       drawPageHeader("Informe de Rentabilidad y PER");
@@ -2039,6 +2074,50 @@ export default function VaiMarketDashboard() {
                         updateInformeField("antiguedad", event.target.value)
                       }
                     />
+                  </div>
+
+                  <div>
+                    <FieldLabel htmlFor="informe-estado-propiedad">
+                      Estado de la propiedad
+                    </FieldLabel>
+                    <select
+                      id="informe-estado-propiedad"
+                      className={fieldClassName}
+                      value={informeForm.estadoPropiedad}
+                      onChange={(event) =>
+                        updateInformeField("estadoPropiedad", event.target.value)
+                      }
+                    >
+                      <option value="">Seleccionar estado</option>
+                      <option value="A estrenar">A estrenar</option>
+                      <option value="Excelente">Excelente</option>
+                      <option value="Muy buena">Muy buena</option>
+                      <option value="Buena">Buena</option>
+                      <option value="Mala">Mala</option>
+                      <option value="A reciclar">A reciclar</option>
+                      <option value="Reciclada">Reciclada</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <FieldLabel htmlFor="informe-demanda-alquiler">
+                      Demanda de alquileres en la zona
+                    </FieldLabel>
+                    <select
+                      id="informe-demanda-alquiler"
+                      className={fieldClassName}
+                      value={informeForm.demandaAlquiler}
+                      onChange={(event) =>
+                        updateInformeField("demandaAlquiler", event.target.value)
+                      }
+                    >
+                      <option value="">Seleccionar demanda</option>
+                      <option value="Muy alta">Muy alta</option>
+                      <option value="Alta">Alta</option>
+                      <option value="Moderada">Moderada</option>
+                      <option value="Baja">Baja</option>
+                      <option value="Muy baja">Muy baja</option>
+                    </select>
                   </div>
 
                   <div>

@@ -165,7 +165,7 @@ export default function Header() {
                 hover:bg-gray-100 transition
               "
             >
-              ⬅️ Volver al Dashboard
+              ⬅️ Inicio
             </button>
           ) : null}
         </div>

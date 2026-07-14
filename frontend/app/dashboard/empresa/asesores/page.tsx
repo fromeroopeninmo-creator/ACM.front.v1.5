@@ -980,106 +980,110 @@ export default function AsesoresPage() {
               )}
             </div>
 
-            <div className="hidden overflow-x-auto lg:block">
-              <table className="w-full min-w-[1120px]">
-                <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500 dark:bg-gray-900 dark:text-gray-400">
-                  <tr>
-                    <th className="px-4 py-3 text-left">
-                      Asesor
-                    </th>
-                    <th className="px-4 py-3 text-center">
-                      Prospectos
-                    </th>
-                    <th className="px-4 py-3 text-center">
-                      Actividades
-                    </th>
-                    <th className="px-4 py-3 text-center">
-                      Informes
-                    </th>
-                    <th className="px-4 py-3 text-center">
-                      Propiedades
-                    </th>
-                    <th className="px-4 py-3 text-center">
-                      Cierres
-                    </th>
-                    <th className="px-4 py-3 text-center">
-                      Conversión
-                    </th>
-                    <th className="px-4 py-3 text-left">
-                      Última actividad
-                    </th>
-                    <th className="px-4 py-3 text-center">
-                      Estado
-                    </th>
-                    <th className="px-4 py-3 text-right">
-                      Acciones
-                    </th>
-                  </tr>
-                </thead>
+            <div className="hidden min-w-0 lg:block">
+              <div className="divide-y divide-gray-100 dark:divide-gray-800">
+                {asesoresOrdenados.map((asesor) => {
+                  const activity =
+                    getActivityLabel(
+                      asesor.ultima_actividad_at
+                    );
 
-                <tbody>
-                  {asesoresOrdenados.map((asesor) => {
-                    const activity =
-                      getActivityLabel(
-                        asesor.ultima_actividad_at
-                      );
-
-                    return (
-                      <tr
-                        key={asesor.id}
-                        className="border-t border-gray-100 text-sm dark:border-gray-800"
-                      >
-                        <td className="px-4 py-4">
-                          <p className="font-semibold text-gray-950 dark:text-white">
+                  return (
+                    <article
+                      key={asesor.id}
+                      className="min-w-0 px-4 py-4 sm:px-5"
+                    >
+                      <div className="grid min-w-0 grid-cols-[minmax(180px,1.4fr)_repeat(6,minmax(72px,0.65fr))_minmax(170px,1fr)_auto] items-center gap-3">
+                        <div className="min-w-0">
+                          <p className="truncate font-semibold text-gray-950 dark:text-white">
                             {asesor.nombre_completo}
                           </p>
-                          <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                          <p className="mt-0.5 truncate text-xs text-gray-500 dark:text-gray-400">
                             {asesor.email}
                           </p>
-                        </td>
-                        <td className="px-4 py-4 text-center font-medium">
-                          {asesor.prospectos}
-                        </td>
-                        <td className="px-4 py-4 text-center font-medium">
-                          {asesor.actividades}
-                        </td>
-                        <td className="px-4 py-4 text-center font-medium">
-                          {asesor.informes_totales}
-                        </td>
-                        <td className="px-4 py-4 text-center font-medium">
-                          {asesor.propiedades_captadas}
-                        </td>
-                        <td className="px-4 py-4 text-center">
-                          <p className="font-semibold">
+                        </div>
+
+                        <div className="min-w-0 text-center">
+                          <p className="text-[11px] uppercase tracking-wide text-gray-500">
+                            Prospectos
+                          </p>
+                          <p className="mt-1 font-semibold">
+                            {asesor.prospectos}
+                          </p>
+                        </div>
+
+                        <div className="min-w-0 text-center">
+                          <p className="text-[11px] uppercase tracking-wide text-gray-500">
+                            Actividades
+                          </p>
+                          <p className="mt-1 font-semibold">
+                            {asesor.actividades}
+                          </p>
+                        </div>
+
+                        <div className="min-w-0 text-center">
+                          <p className="text-[11px] uppercase tracking-wide text-gray-500">
+                            Informes
+                          </p>
+                          <p className="mt-1 font-semibold">
+                            {asesor.informes_totales}
+                          </p>
+                        </div>
+
+                        <div className="min-w-0 text-center">
+                          <p className="text-[11px] uppercase tracking-wide text-gray-500">
+                            Propiedades
+                          </p>
+                          <p className="mt-1 font-semibold">
+                            {asesor.propiedades_captadas}
+                          </p>
+                        </div>
+
+                        <div className="min-w-0 text-center">
+                          <p className="text-[11px] uppercase tracking-wide text-gray-500">
+                            Cierres
+                          </p>
+                          <p className="mt-1 font-semibold">
                             {asesor.cierres_totales}
                           </p>
-                          <p className="text-xs text-gray-500">
+                          <p className="mt-0.5 text-[10px] text-gray-500">
                             {asesor.cierres_propios} propios ·{" "}
                             {asesor.cierres_terceros} terceros
                           </p>
-                        </td>
-                        <td className="px-4 py-4 text-center font-semibold">
-                          {asesor.conversion_embudo_pct.toLocaleString(
-                            "es-AR",
-                            {
-                              maximumFractionDigits: 2,
-                            }
-                          )}
-                          %
-                        </td>
-                        <td className="px-4 py-4">
-                          <p className="text-gray-800 dark:text-gray-200">
+                        </div>
+
+                        <div className="min-w-0 text-center">
+                          <p className="text-[11px] uppercase tracking-wide text-gray-500">
+                            Conversión
+                          </p>
+                          <p className="mt-1 font-semibold">
+                            {asesor.conversion_embudo_pct.toLocaleString(
+                              "es-AR",
+                              {
+                                maximumFractionDigits: 2,
+                              }
+                            )}
+                            %
+                          </p>
+                        </div>
+
+                        <div className="min-w-0">
+                          <p className="text-[11px] uppercase tracking-wide text-gray-500">
+                            Última actividad
+                          </p>
+                          <p className="mt-1 truncate text-sm text-gray-800 dark:text-gray-200">
                             {formatDateTime(
                               asesor.ultima_actividad_at
                             )}
                           </p>
                           <span
-                            className={`mt-1 inline-flex rounded-full px-2 py-1 text-xs font-medium ${activity.className}`}
+                            className={`mt-1 inline-flex max-w-full truncate rounded-full px-2 py-1 text-xs font-medium ${activity.className}`}
                           >
                             {activity.text}
                           </span>
-                        </td>
-                        <td className="px-4 py-4 text-center">
+                        </div>
+
+                        <div className="flex shrink-0 flex-col items-end gap-2">
                           <button
                             type="button"
                             onClick={() =>
@@ -1098,42 +1102,36 @@ export default function AsesoresPage() {
                               ? "Activo"
                               : "Inactivo"}
                           </button>
-                        </td>
-                        <td className="px-4 py-4 text-right">
-                          <div className="flex justify-end gap-2">
-                            <Link
-                              href={`/dashboard/empresa/asesores/${asesor.id}?fecha_desde=${fechaDesde}&fecha_hasta=${fechaHasta}`}
-                              className="rounded-lg border border-[#E6A930] px-3 py-2 text-xs font-semibold text-gray-900 transition hover:bg-[#E6A930]/10 dark:text-white"
-                            >
-                              Ver detalle
-                            </Link>
-                            <button
-                              type="button"
-                              onClick={() =>
-                                eliminarAsesor(asesor.id)
-                              }
-                              className="rounded-lg px-3 py-2 text-xs font-semibold text-red-600 transition hover:bg-red-50 dark:hover:bg-red-950/30"
-                            >
-                              Eliminar
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
 
-                  {asesoresOrdenados.length === 0 && (
-                    <tr>
-                      <td
-                        colSpan={10}
-                        className="px-5 py-10 text-center text-gray-500"
-                      >
-                        No hay asesores que coincidan con el filtro.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
+                          <Link
+                            href={`/dashboard/empresa/asesores/${asesor.id}?fecha_desde=${fechaDesde}&fecha_hasta=${fechaHasta}`}
+                            className="rounded-lg border border-[#E6A930] px-3 py-2 text-xs font-semibold text-gray-900 transition hover:bg-[#E6A930]/10 dark:text-white"
+                          >
+                            Ver detalle
+                          </Link>
+
+                          <button
+                            type="button"
+                            onClick={() =>
+                              eliminarAsesor(asesor.id)
+                            }
+                            className="rounded-lg px-3 py-1.5 text-xs font-semibold text-red-600 transition hover:bg-red-50 dark:hover:bg-red-950/30"
+                          >
+                            Eliminar
+                          </button>
+                        </div>
+                      </div>
+                    </article>
+                  );
+                })}
+
+                {asesoresOrdenados.length === 0 && (
+                  <div className="px-5 py-10 text-center text-gray-500">
+                    No hay asesores que coincidan con el filtro.
+                  </div>
+                )}
+              </div>
+            </div>
             </div>
           </div>
         </>

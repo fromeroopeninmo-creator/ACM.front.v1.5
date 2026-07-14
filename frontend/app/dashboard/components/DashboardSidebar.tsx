@@ -163,7 +163,7 @@ export default function DashboardSidebar({ role, color }: SidebarProps) {
               className={
                 mobile
                   ? "truncate"
-                  : "pointer-events-none max-w-0 overflow-hidden whitespace-nowrap opacity-0 transition-all duration-200 group-hover/sidebar:max-w-[180px] group-hover/sidebar:opacity-100 group-focus-within/sidebar:max-w-[180px] group-focus-within/sidebar:opacity-100"
+                  : "pointer-events-none max-w-0 overflow-hidden whitespace-nowrap opacity-0 transition-all duration-200 group-hover/sidebar:max-w-[180px] group-hover/sidebar:opacity-100"
               }
             >
               {item.name}
@@ -179,7 +179,7 @@ export default function DashboardSidebar({ role, color }: SidebarProps) {
       {/* Desktop: barra compacta que se despliega al acercar el mouse */}
       <div className="relative hidden w-[72px] shrink-0 md:block">
         <aside
-          className="group/sidebar fixed bottom-0 left-0 top-0 z-30 flex w-[72px] flex-col overflow-hidden px-3 py-5 text-white shadow-[4px_0_20px_rgba(15,23,42,0.12)] transition-[width,box-shadow] duration-300 ease-out hover:w-60 hover:shadow-[8px_0_30px_rgba(15,23,42,0.18)] focus-within:w-60"
+          className="group/sidebar fixed bottom-0 left-0 top-16 z-30 flex w-[72px] flex-col overflow-hidden px-3 py-5 text-white shadow-[4px_0_20px_rgba(15,23,42,0.12)] transition-[width,box-shadow] duration-300 ease-out hover:w-60 hover:shadow-[8px_0_30px_rgba(15,23,42,0.18)]"
           style={{ backgroundColor: bgColor }}
           aria-label="Barra lateral"
         >
@@ -188,7 +188,7 @@ export default function DashboardSidebar({ role, color }: SidebarProps) {
               V
             </div>
 
-            <div className="pointer-events-none max-w-0 overflow-hidden whitespace-nowrap opacity-0 transition-all duration-200 group-hover/sidebar:max-w-[160px] group-hover/sidebar:opacity-100 group-focus-within/sidebar:max-w-[160px] group-focus-within/sidebar:opacity-100">
+            <div className="pointer-events-none max-w-0 overflow-hidden whitespace-nowrap opacity-0 transition-all duration-200 group-hover/sidebar:max-w-[160px] group-hover/sidebar:opacity-100">
               <div className="text-sm font-semibold leading-tight">VAI Prop</div>
               <div className="text-[11px] text-white/65">Panel de navegación</div>
             </div>

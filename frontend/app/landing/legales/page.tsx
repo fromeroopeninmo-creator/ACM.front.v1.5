@@ -77,15 +77,22 @@ export default function LegalesPage() {
                   Sus asesores, agentes o colaboradores (en adelante, “Asesores”),
                 </li>
               </ul>
-              <p>crear, editar y gestionar:</p>
+              <p>crear, editar, consultar y gestionar, según el plan contratado:</p>
               <ul className="ml-5 list-disc space-y-1 text-neutral-300">
                 <li>Informes de valuación de activos inmobiliarios (VAI).</li>
                 <li>Informes de factibilidad constructiva.</li>
+                <li>Contactos, prospectos, propiedades y actividad comercial mediante Business Tracker.</li>
+                <li>Indicadores, métricas y análisis mediante Business Analytics.</li>
+                <li>Actividades y eventos mediante el módulo Agenda.</li>
+                <li>
+                  Referencias estadísticas del mercado inmobiliario mediante VAI Market Data.
+                </li>
+                <li>Calculadoras y otras herramientas complementarias de apoyo profesional.</li>
               </ul>
               <p>
                 La Plataforma se ofrece bajo la modalidad Software como Servicio (SaaS), accesible
                 vía internet. No es un servicio de tasación oficial, ni un dictamen técnico, ni
-                asesoramiento legal, contable o impositivo.
+                asesoramiento legal, financiero, contable o impositivo.
               </p>
 
               <h3 className="mt-4 text-base font-semibold text-neutral-100">
@@ -257,6 +264,52 @@ export default function LegalesPage() {
                 Usuario o terceros hagan de dichos informes.
               </p>
 
+              <h4 className="mt-2 text-sm font-semibold text-neutral-100">
+                8.4. VAI Market Data, agregación y anonimización
+              </h4>
+              <p>
+                VAI Market Data es un módulo de inteligencia inmobiliaria que presenta referencias,
+                métricas y tendencias construidas a partir de información de operaciones inmobiliarias
+                tratada de manera agregada y anonimizada.
+              </p>
+              <p>
+                La información mostrada en este módulo no identifica ni permite visualizar directamente
+                a la Empresa, al Asesor, al propietario, al cliente, al prospecto ni a ninguna otra
+                persona vinculada con la operación. En particular, VAI Market Data no publica:
+              </p>
+              <ul className="ml-5 list-disc space-y-1 text-neutral-300">
+                <li>Nombres y apellidos de personas.</li>
+                <li>Números de documento, CUIT o datos registrales personales.</li>
+                <li>Teléfonos, correos electrónicos u otros datos de contacto.</li>
+                <li>Credenciales de acceso o información de autenticación.</li>
+                <li>El nombre de la inmobiliaria, desarrolladora o profesional que aportó el dato.</li>
+                <li>La identidad del Asesor que registró o gestionó la operación.</li>
+                <li>Observaciones internas, notas comerciales o historial de contacto.</li>
+                <li>
+                  Direcciones exactas del inmueble cuando su exposición pudiera permitir identificar
+                  a una persona, una operación concreta o la fuente del dato.
+                </li>
+              </ul>
+              <p>
+                El módulo utiliza únicamente los campos necesarios para producir estadísticas y
+                referencias de mercado, tales como zona o ubicación general, tipología, características
+                del inmueble, moneda, valores de publicación y cierre, superficies, fechas y otros
+                parámetros objetivos relacionados con la operación.
+              </p>
+              <p>
+                Los resultados se muestran únicamente cuando existe una cantidad mínima de operaciones
+                suficiente para reducir el riesgo de individualización. VAI Prop podrá aplicar reglas
+                adicionales de agrupación, exclusión, redondeo, depuración o supresión cuando una
+                combinación de filtros pudiera permitir inferir una operación o una fuente concreta.
+              </p>
+              <p>
+                El Usuario acepta que los datos objetivos de operaciones que registre en la Plataforma
+                podrán ser utilizados de esta forma agregada y anonimizada para mejorar las referencias
+                del mercado y fortalecer la utilidad colectiva de VAI Market Data. Esta autorización no
+                comprende la publicación ni la comercialización de datos personales identificables,
+                datos de contacto, información interna o secretos comerciales del Usuario.
+              </p>
+
               <h3 className="mt-4 text-base font-semibold text-neutral-100">
                 9. Disponibilidad del servicio
               </h3>
@@ -416,7 +469,10 @@ export default function LegalesPage() {
                 <li>Nombre y apellido.</li>
                 <li>Correo electrónico.</li>
                 <li>Teléfono.</li>
-                <li>Contraseña (almacenada de forma cifrada).</li>
+                <li>
+                  Credenciales de autenticación gestionadas mediante mecanismos de seguridad; VAI Prop
+                  no accede ni almacena contraseñas en texto plano.
+                </li>
                 <li>Rol de usuario (empresa / asesor).</li>
               </ul>
 
@@ -436,13 +492,22 @@ export default function LegalesPage() {
                 2.3. Datos de uso de la Plataforma
               </h4>
               <ul className="ml-5 list-disc space-y-1 text-neutral-300">
-                <li>Informes creados (valuación, factibilidad).</li>
+                <li>Informes creados, como valuaciones, factibilidades y análisis de rentabilidad.</li>
                 <li>
-                  Parámetros de inmuebles y proyectos (ubicación, superficies, costos estimados,
-                  etc.).
+                  Parámetros de inmuebles y proyectos, como ubicación general, superficies, precios,
+                  costos estimados y características objetivas.
                 </li>
+                <li>
+                  Información registrada en Business Tracker, incluyendo contactos, prospectos,
+                  propiedades, operaciones, estados comerciales y asignaciones a Asesores.
+                </li>
+                <li>
+                  Datos necesarios para Business Analytics y VAI Market Data, tratados conforme a las
+                  finalidades y medidas de anonimización descriptas en esta Política.
+                </li>
+                <li>Actividades y eventos creados en el módulo Agenda.</li>
                 <li>Configuración de planes y facturación.</li>
-                <li>Registros de acceso y actividad básica (logs).</li>
+                <li>Registros de acceso, seguridad y actividad básica (logs).</li>
               </ul>
 
               <h4 className="mt-2 text-sm font-semibold text-neutral-100">
@@ -517,6 +582,32 @@ export default function LegalesPage() {
                 requisitos de uso limitado.
               </p>
 
+              <h4 className="mt-2 text-sm font-semibold text-neutral-100">
+                2.7. VAI Market Data y protección de información sensible
+              </h4>
+              <p>
+                Para generar VAI Market Data, VAI Prop puede procesar determinados datos objetivos de
+                operaciones inmobiliarias registrados en Business Tracker u otros módulos habilitados.
+                Antes de exhibir resultados a otros Usuarios, dichos datos son sometidos a procesos de
+                agregación y anonimización.
+              </p>
+              <p>
+                Los paneles de VAI Market Data no muestran datos personales ni información que permita
+                identificar directamente a Usuarios, Empresas, Asesores, propietarios, clientes o
+                prospectos. Tampoco exhiben teléfonos, correos electrónicos, documentos, observaciones
+                internas, nombres comerciales de la fuente ni credenciales.
+              </p>
+              <p>
+                VAI Prop aplica controles de acceso, separación lógica por Empresa y reglas de muestra
+                mínima. Cuando una consulta pudiera arrojar una muestra insuficiente o incrementar el
+                riesgo de individualización, el resultado puede ser ocultado, agrupado o limitado.
+              </p>
+              <p>
+                Los datos personales, datos de contacto e información interna permanecen disponibles
+                únicamente para los Usuarios autorizados de la Empresa correspondiente, según el rol,
+                los permisos configurados y las medidas de seguridad de la Plataforma.
+              </p>
+
               <h3 className="mt-3 text-base font-semibold text-neutral-100">
                 3. Finalidades del tratamiento
               </h3>
@@ -537,7 +628,12 @@ export default function LegalesPage() {
                 </li>
                 <li>
                   Analizar de forma agregada y anonimizada el uso de la Plataforma con fines
-                  estadísticos y de mejora.
+                  estadísticos, de seguridad y de mejora.
+                </li>
+                <li>
+                  Generar referencias, métricas y tendencias inmobiliarias agregadas y anonimizadas
+                  mediante VAI Market Data, sin revelar datos personales, contactos, identidades de
+                  Empresas o Asesores ni información interna de una operación.
                 </li>
                 <li>
                   Crear, actualizar y eliminar eventos en Google Calendar cuando el Usuario haya
@@ -678,13 +774,24 @@ export default function LegalesPage() {
               </h3>
               <p>
                 Implementamos medidas técnicas y organizativas razonables para proteger los datos
-                personales contra:
+                personales y la información comercial contra:
               </p>
               <ul className="ml-5 list-disc space-y-1 text-neutral-300">
                 <li>Acceso no autorizado.</li>
-                <li>Pérdida o destrucción.</li>
+                <li>Pérdida, alteración o destrucción.</li>
                 <li>Uso indebido o divulgación no autorizada.</li>
+                <li>Acceso entre Empresas o cuentas que no se encuentren autorizadas.</li>
               </ul>
+              <p>
+                Estas medidas pueden incluir autenticación de Usuarios, controles de acceso por rol,
+                segregación lógica de la información por Empresa, políticas de acceso a nivel de base
+                de datos, registro de actividad y protección de credenciales e integraciones.
+              </p>
+              <p>
+                Los datos de contacto de clientes y prospectos se utilizan para las funcionalidades
+                solicitadas por la Empresa y no se exponen en VAI Market Data ni se comparten con otras
+                Empresas o Asesores ajenos a la cuenta autorizada.
+              </p>
               <p>
                 No obstante, ningún sistema es completamente invulnerable. El Usuario acepta los
                 riesgos inherentes al uso de servicios en línea. En caso de incidente de seguridad que
@@ -731,6 +838,8 @@ export default function LegalesPage() {
               <ul className="ml-5 list-disc space-y-1 text-neutral-300">
                 <li>Informes de valuación de activos inmobiliarios (VAI).</li>
                 <li>Informes de factibilidad constructiva.</li>
+                <li>Informes de rentabilidad y PER.</li>
+                <li>Referencias, estadísticas y resultados de VAI Market Data.</li>
               </ul>
               <p>son estimaciones y proyecciones realizadas a partir de:</p>
               <ul className="ml-5 list-disc space-y-1 text-neutral-300">
@@ -750,6 +859,28 @@ export default function LegalesPage() {
                 </li>
                 <li>Asesoramiento legal, fiscal, contable o financiero.</li>
               </ul>
+
+              <h3 className="mt-3 text-base font-semibold text-neutral-100">
+                1.1. Alcance de VAI Market Data y de los análisis de rentabilidad
+              </h3>
+              <p>
+                Los valores, promedios, medianas, rangos, indicadores, tiempos de comercialización,
+                rentabilidades y relaciones PER son referencias estadísticas u orientativas basadas en
+                los datos disponibles y en los filtros aplicados. No constituyen una promesa de
+                resultado, una recomendación de inversión personalizada ni una garantía de precio,
+                renta, liquidez o plazo de recuperación.
+              </p>
+              <p>
+                Los cálculos de rentabilidad y PER son estimaciones brutas y pueden no contemplar
+                impuestos, gastos de adquisición, mantenimiento, expensas, períodos de vacancia,
+                comisiones, variaciones cambiarias, actualización del alquiler u otros costos que
+                afecten el rendimiento real.
+              </p>
+              <p>
+                VAI Market Data presenta información agregada y anonimizada. Su finalidad es ofrecer
+                referencias generales del mercado, no identificar operaciones particulares ni
+                reemplazar el análisis profesional de cada inmueble o inversión.
+              </p>
 
               <h3 className="mt-3 text-base font-semibold text-neutral-100">
                 2. Responsabilidad del Usuario y del profesional a cargo

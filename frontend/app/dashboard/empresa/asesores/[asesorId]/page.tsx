@@ -235,7 +235,7 @@ export default function AsesorDetallePage() {
             <div className="mt-5 divide-y dark:divide-gray-800">
               {detalle.ultimos_movimientos.map((mov, i) => (
                 <div key={`${mov.fecha}-${i}`} className="flex flex-col gap-1 py-4 sm:flex-row sm:items-center sm:justify-between">
-                  <div><p className="font-medium">{mov.descripcion}</p><p className="mt-1 text-xs uppercase tracking-wide text-gray-500">{mov.tipo.replaceAll("_", " ")}</p></div>
+                  <div><p className="font-medium">{mov.descripcion}</p><p className="mt-1 text-xs uppercase tracking-wide text-gray-500">{mov.tipo.split("_").join(" ")}</p></div>
                   <p className="text-sm text-gray-500">{formatDateTime(mov.fecha)}</p>
                 </div>
               ))}

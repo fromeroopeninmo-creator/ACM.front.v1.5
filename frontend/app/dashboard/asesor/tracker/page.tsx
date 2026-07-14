@@ -2618,8 +2618,8 @@ export default function AsesorTrackerPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="max-w-6xl xl:max-w-7xl mx-auto px-4 py-6 space-y-6">
+    <div className="min-h-screen min-w-0 overflow-x-hidden bg-gray-50">
+      <div className="mx-auto w-full min-w-0 max-w-6xl space-y-6 px-3 py-5 sm:px-4 sm:py-6 xl:max-w-7xl">
         <header className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
           <div>
             <h1 className="text-2xl md:text-3xl font-semibold text-slate-900">
@@ -2686,12 +2686,12 @@ export default function AsesorTrackerPage() {
                 captaciones.
               </p>
             </div>
-            <div className="flex items-center gap-2 text-xs">
+            <div className="flex min-w-0 flex-col gap-2 text-xs sm:flex-row sm:flex-wrap sm:items-center">
               <span className="text-slate-500">Período:</span>
               <select
                 value={kpiRange}
                 onChange={(e) => setKpiRange(e.target.value as KpiRange)}
-                className="rounded-full border border-gray-300 bg-white px-3 py-1 text-xs text-slate-700"
+                className="w-full min-w-0 rounded-full border border-gray-300 bg-white px-3 py-2 text-xs text-slate-700 sm:w-auto sm:py-1"
               >
                 <option value="30d">Últimos 30 días</option>
                 <option value="90d">Últimos 3 meses</option>
@@ -2705,14 +2705,14 @@ export default function AsesorTrackerPage() {
                     type="date"
                     value={customFechaDesde}
                     onChange={(e) => setCustomFechaDesde(e.target.value)}
-                    className="rounded-full border border-gray-300 bg-white px-3 py-1 text-xs text-slate-700"
+                    className="w-full min-w-0 rounded-full border border-gray-300 bg-white px-3 py-2 text-xs text-slate-700 sm:w-auto sm:py-1"
                   />
                   <span className="text-slate-400">a</span>
                   <input
                     type="date"
                     value={customFechaHasta}
                     onChange={(e) => setCustomFechaHasta(e.target.value)}
-                    className="rounded-full border border-gray-300 bg-white px-3 py-1 text-xs text-slate-700"
+                    className="w-full min-w-0 rounded-full border border-gray-300 bg-white px-3 py-2 text-xs text-slate-700 sm:w-auto sm:py-1"
                   />
                 </>
               )}
@@ -2720,10 +2720,10 @@ export default function AsesorTrackerPage() {
           </div>
 
           {tipoOperacionFiltro === "venta" ? (
-            <div className="grid gap-4 md:grid-cols-5">
-              <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
+            <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
+              <div className="min-w-0 rounded-xl border border-gray-200 bg-white px-4 py-3">
                 <p className="text-xs text-slate-500">Prospectos</p>
-                <p className="mt-1 text-2xl md:text-3xl font-semibold text-slate-900">
+                <p className="mt-1 break-words text-2xl font-semibold text-slate-900 md:text-3xl">
                   {kpis.prospectos}
                 </p>
                 <p className="mt-1 text-[11px] text-slate-500">
@@ -2731,9 +2731,9 @@ export default function AsesorTrackerPage() {
                 </p>
               </div>
 
-              <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
+              <div className="min-w-0 rounded-xl border border-gray-200 bg-white px-4 py-3">
                 <p className="text-xs text-slate-500">Prelisting</p>
-                <p className="mt-1 text-2xl md:text-3xl font-semibold text-slate-900">
+                <p className="mt-1 break-words text-2xl font-semibold text-slate-900 md:text-3xl">
                   {kpis.prelisting}
                 </p>
                 <p className="mt-1 text-[11px] text-slate-500">
@@ -2741,9 +2741,9 @@ export default function AsesorTrackerPage() {
                 </p>
               </div>
 
-              <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
+              <div className="min-w-0 rounded-xl border border-gray-200 bg-white px-4 py-3">
                 <p className="text-xs text-slate-500">Captaciones propias</p>
-                <p className="mt-1 text-2xl md:text-3xl font-semibold text-slate-900">
+                <p className="mt-1 break-words text-2xl font-semibold text-slate-900 md:text-3xl">
                   {kpis.captacionesPropias}
                 </p>
                 <p className="mt-1 text-[11px] text-slate-500">
@@ -2751,9 +2751,9 @@ export default function AsesorTrackerPage() {
                 </p>
               </div>
 
-              <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
+              <div className="min-w-0 rounded-xl border border-gray-200 bg-white px-4 py-3">
                 <p className="text-xs text-slate-500">Cierres propios</p>
-                <p className="mt-1 text-2xl md:text-3xl font-semibold text-slate-900">
+                <p className="mt-1 break-words text-2xl font-semibold text-slate-900 md:text-3xl">
                   {kpis.cierresPropios}
                 </p>
                 <p className="mt-1 text-[11px] text-slate-500">
@@ -2761,24 +2761,24 @@ export default function AsesorTrackerPage() {
                 </p>
               </div>
 
-              <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
+              <div className="min-w-0 rounded-xl border border-gray-200 bg-white px-4 py-3">
                 <p className="text-xs text-slate-500">Ventas totales</p>
-                <p className="mt-1 text-2xl md:text-3xl font-semibold text-slate-900">
+                <p className="mt-1 break-words text-2xl font-semibold text-slate-900 md:text-3xl">
                   {kpis.ventasTotales}
                 </p>
                 <p className="mt-1 text-[11px] text-slate-500">
                   Terceros: {kpis.ventasTerceros}
                 </p>
-                <p className="mt-1 text-[11px] font-medium text-slate-700">
+                <p className="mt-1 break-words text-[11px] font-medium text-slate-700">
                   Honorarios TOTALES: {fmtCurrency(kpis.honorariosTotal, "USD")}
                 </p>
               </div>
             </div>
           ) : (
-            <div className="grid gap-4 md:grid-cols-5">
-              <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
+            <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
+              <div className="min-w-0 rounded-xl border border-gray-200 bg-white px-4 py-3">
                 <p className="text-xs text-slate-500">Prospectos</p>
-                <p className="mt-1 text-2xl md:text-3xl font-semibold text-slate-900">
+                <p className="mt-1 break-words text-2xl font-semibold text-slate-900 md:text-3xl">
                   {kpis.prospectos}
                 </p>
                 <p className="mt-1 text-[11px] text-slate-500">
@@ -2786,9 +2786,9 @@ export default function AsesorTrackerPage() {
                 </p>
               </div>
 
-              <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
+              <div className="min-w-0 rounded-xl border border-gray-200 bg-white px-4 py-3">
                 <p className="text-xs text-slate-500">Propiedades en alquiler</p>
-                <p className="mt-1 text-2xl md:text-3xl font-semibold text-slate-900">
+                <p className="mt-1 break-words text-2xl font-semibold text-slate-900 md:text-3xl">
                   {kpis.propiedadesEnAlquiler}
                 </p>
                 <p className="mt-1 text-[11px] text-slate-500">
@@ -2796,9 +2796,9 @@ export default function AsesorTrackerPage() {
                 </p>
               </div>
 
-              <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
+              <div className="min-w-0 rounded-xl border border-gray-200 bg-white px-4 py-3">
                 <p className="text-xs text-slate-500">Propiedades alquiladas</p>
-                <p className="mt-1 text-2xl md:text-3xl font-semibold text-slate-900">
+                <p className="mt-1 break-words text-2xl font-semibold text-slate-900 md:text-3xl">
                   {kpis.propiedadesAlquiladas}
                 </p>
                 <p className="mt-1 text-[11px] text-slate-500">
@@ -2806,9 +2806,9 @@ export default function AsesorTrackerPage() {
                 </p>
               </div>
 
-              <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
+              <div className="min-w-0 rounded-xl border border-gray-200 bg-white px-4 py-3">
                 <p className="text-xs text-slate-500">Administración de alquileres</p>
-                <p className="mt-1 text-2xl md:text-3xl font-semibold text-slate-900">
+                <p className="mt-1 break-words text-2xl font-semibold text-slate-900 md:text-3xl">
                   {kpis.administracionesAlquiler}
                 </p>
                 <p className="mt-1 text-[11px] text-slate-500">
@@ -2816,9 +2816,9 @@ export default function AsesorTrackerPage() {
                 </p>
               </div>
 
-              <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
+              <div className="min-w-0 rounded-xl border border-gray-200 bg-white px-4 py-3">
                 <p className="text-xs text-slate-500">Honorarios por contratos</p>
-                <p className="mt-1 text-2xl md:text-3xl font-semibold text-slate-900">
+                <p className="mt-1 break-words text-2xl font-semibold text-slate-900 md:text-3xl">
                   {fmtCurrency(kpis.honorariosTotal, "ARS")}
                 </p>
                 <p className="mt-1 text-[11px] text-slate-500">
@@ -2829,7 +2829,7 @@ export default function AsesorTrackerPage() {
           )}
         </section>
 
-        <nav className="flex flex-wrap gap-2 text-sm">
+        <nav className="grid min-w-0 grid-cols-1 gap-2 text-sm sm:flex sm:flex-wrap">
           {[
             { id: "contactos", label: "Contactos" },
             {
@@ -2848,7 +2848,7 @@ export default function AsesorTrackerPage() {
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id as TrackerTab)}
-                className={`rounded-full px-4 py-1.5 border text-sm transition ${
+                className={`w-full rounded-full border px-4 py-2 text-sm transition sm:w-auto sm:py-1.5 ${
                   isActive
                     ? "bg-black text-white border-black"
                     : "bg-white text-slate-700 border-gray-300 hover:bg-gray-100"
@@ -2860,8 +2860,8 @@ export default function AsesorTrackerPage() {
           })}
         </nav>
 
-        <section className="rounded-2xl bg-white border border-gray-200 shadow-sm p-4 space-y-4">
-          <div className="flex flex-wrap items-center gap-2 text-xs">
+        <section className="min-w-0 space-y-4 rounded-2xl border border-gray-200 bg-white p-3 shadow-sm sm:p-4">
+          <div className="grid min-w-0 grid-cols-1 gap-2 text-xs sm:flex sm:flex-wrap sm:items-center">
             <span className="text-slate-500">Tipología:</span>
             <select
               className="rounded-full border border-gray-300 bg-white px-3 py-1 text-xs text-slate-700"
@@ -2908,14 +2908,114 @@ export default function AsesorTrackerPage() {
                 </div>
                 <button
                   onClick={openNuevoContacto}
-                  className="inline-flex items-center gap-1 rounded-full bg-black text-white px-3 py-1.5 text-xs font-medium hover:bg-slate-900"
+                  className="inline-flex w-full items-center justify-center gap-1 rounded-full bg-black px-3 py-2 text-xs font-medium text-white hover:bg-slate-900 md:w-auto md:py-1.5"
                 >
                   <span className="text-sm">＋</span>
                   Nuevo contacto
                 </button>
               </div>
 
-              <div className="overflow-x-auto">
+              <div className="grid min-w-0 grid-cols-1 gap-3 md:hidden">
+                {contactosFiltradosPorVista.length === 0 && (
+                  <div className="rounded-xl border border-dashed border-gray-300 px-4 py-8 text-center text-xs text-slate-500">
+                    No hay contactos con los filtros seleccionados.
+                  </div>
+                )}
+
+                {contactosFiltradosPorVista.map((c) => {
+                  const ultAct = actividadesDeContacto(c.id)[0];
+
+                  return (
+                    <article
+                      key={c.id}
+                      className="min-w-0 rounded-xl border border-gray-200 bg-white p-4 shadow-sm"
+                    >
+                      <div className="flex min-w-0 items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="truncate font-semibold text-slate-900">
+                            {contactoNombreCorto(c)}
+                          </p>
+                          <p className="mt-1 truncate text-[11px] text-slate-500">
+                            {c.email || c.origen || "Sin email/origen"}
+                          </p>
+                        </div>
+
+                        <span
+                          className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-medium ${classEstadoContacto(
+                            c.estado
+                          )}`}
+                        >
+                          {labelEstadoContacto(c.estado)}
+                        </span>
+                      </div>
+
+                      <div className="mt-4 grid grid-cols-2 gap-3 text-xs">
+                        <div className="min-w-0 rounded-lg bg-gray-50 p-3">
+                          <p className="text-slate-500">Teléfono</p>
+                          <p className="mt-1 truncate font-medium text-slate-800">
+                            {c.telefono || "—"}
+                          </p>
+                        </div>
+
+                        <div className="min-w-0 rounded-lg bg-gray-50 p-3">
+                          <p className="text-slate-500">Tipología</p>
+                          <p className="mt-1 truncate font-medium text-slate-800">
+                            {labelTipologia(c.tipologia)}
+                          </p>
+                        </div>
+
+                        <div className="min-w-0 rounded-lg bg-gray-50 p-3">
+                          <p className="text-slate-500">Zona</p>
+                          <p className="mt-1 truncate font-medium text-slate-800">
+                            {c.zona || "—"}
+                          </p>
+                        </div>
+
+                        <div className="min-w-0 rounded-lg bg-gray-50 p-3">
+                          <p className="text-slate-500">Última actividad</p>
+                          <p className="mt-1 font-medium text-slate-800">
+                            {ultAct
+                              ? `${dateKeyFromString(
+                                  ultAct.fecha_programada
+                                ).substring(8, 10)}/${dateKeyFromString(
+                                  ultAct.fecha_programada
+                                ).substring(5, 7)}`
+                              : "—"}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="mt-4 grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => openEditarContacto(c)}
+                          className="rounded-lg border border-gray-300 px-3 py-2 text-xs font-medium text-slate-700"
+                        >
+                          Ver / editar
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => openNuevaPropiedad(c.id)}
+                          className="rounded-lg border border-[rgba(230,169,48,0.8)] px-3 py-2 text-xs font-medium text-[rgba(190,130,20,1)]"
+                        >
+                          Captar
+                        </button>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => eliminarContacto(c.id)}
+                        className="mt-2 w-full rounded-lg px-3 py-2 text-xs font-medium text-red-600"
+                      >
+                        Eliminar
+                      </button>
+                    </article>
+                  );
+                })}
+              </div>
+
+              <div className="hidden overflow-x-auto md:block">
                 <table className="min-w-full text-xs">
                   <thead>
                     <tr className="border-b border-gray-200 bg-gray-50 text-[11px] text-slate-500">
@@ -3051,14 +3151,160 @@ export default function AsesorTrackerPage() {
                 </div>
                 <button
                   onClick={() => openNuevaPropiedad()}
-                  className="inline-flex items-center gap-1 rounded-full bg-black text-white px-3 py-1.5 text-xs font-medium hover:bg-slate-900"
+                  className="inline-flex w-full items-center justify-center gap-1 rounded-full bg-black px-3 py-2 text-xs font-medium text-white hover:bg-slate-900 md:w-auto md:py-1.5"
                 >
                   <span className="text-sm">＋</span>
                   {tipoOperacionFiltro === "alquiler" ? "Nuevo alquiler" : "Nueva propiedad captada"}
                 </button>
               </div>
 
-              <div className="overflow-x-auto">
+              <div className="grid min-w-0 grid-cols-1 gap-3 md:hidden">
+                {propiedadesFiltradas.length === 0 && (
+                  <div className="rounded-xl border border-dashed border-gray-300 px-4 py-8 text-center text-xs text-slate-500">
+                    No hay propiedades captadas con los filtros seleccionados.
+                  </div>
+                )}
+
+                {propiedadesFiltradas.map((p) => {
+                  const contacto =
+                    p.contacto_id && contactoPorId(p.contacto_id)
+                      ? contactoPorId(p.contacto_id)
+                      : p.contacto ?? null;
+
+                  const esAlquiler = p.tipo_operacion === "alquiler";
+                  const cerrada = esAlquiler
+                    ? isValidAlquilerContratado(p)
+                    : isValidClose(p);
+                  const cierreIncompleto = esAlquiler
+                    ? false
+                    : (!!p.fecha_cierre && !cerrada) ||
+                      (!!p.precio_cierre && !p.fecha_cierre);
+                  const diasVenta = diasEntreFechas(
+                    p.fecha_inicio_comercializacion,
+                    esAlquiler
+                      ? p.alquiler_fecha_inicio_contrato
+                      : cerrada
+                      ? p.fecha_cierre
+                      : null
+                  );
+                  const honorarios = esAlquiler
+                    ? p.alquiler_comision_monto
+                    : calcularHonorarios(
+                        p.precio_cierre,
+                        p.honorarios_pct_vendedor,
+                        p.honorarios_pct_comprador
+                      );
+
+                  return (
+                    <article
+                      key={p.id}
+                      className={`min-w-0 rounded-xl border p-4 shadow-sm ${
+                        cerrada
+                          ? "border-emerald-200 bg-emerald-50"
+                          : cierreIncompleto
+                          ? "border-amber-200 bg-amber-50"
+                          : "border-gray-200 bg-white"
+                      }`}
+                    >
+                      <div className="flex min-w-0 items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="truncate font-semibold text-slate-900">
+                            {contacto
+                              ? contactoNombreCorto(contacto)
+                              : "Sin asignar"}
+                          </p>
+                          <p className="mt-1 truncate text-[11px] text-slate-500">
+                            {p.direccion || "Sin dirección"}
+                            {p.zona ? ` · ${p.zona}` : ""}
+                          </p>
+                        </div>
+
+                        <span className="shrink-0 rounded-full bg-white/80 px-2 py-1 text-[10px] font-medium text-slate-700">
+                          {cerrada
+                            ? esAlquiler
+                              ? "Contrato iniciado"
+                              : "Cerrada"
+                            : cierreIncompleto
+                            ? "Cierre incompleto"
+                            : esAlquiler
+                            ? "En alquiler"
+                            : "Activa"}
+                        </span>
+                      </div>
+
+                      <div className="mt-4 grid grid-cols-2 gap-3 text-xs">
+                        <div className="min-w-0 rounded-lg bg-white/70 p-3">
+                          <p className="text-slate-500">Tipología</p>
+                          <p className="mt-1 truncate font-medium text-slate-800">
+                            {labelTipologia(p.tipologia)}
+                          </p>
+                        </div>
+
+                        <div className="min-w-0 rounded-lg bg-white/70 p-3">
+                          <p className="text-slate-500">Operación</p>
+                          <p className="mt-1 truncate font-medium text-slate-800">
+                            {labelTipoOperacion(p.tipo_operacion)}
+                          </p>
+                        </div>
+
+                        <div className="min-w-0 rounded-lg bg-white/70 p-3">
+                          <p className="text-slate-500">
+                            {esAlquiler ? "Valor mensual" : "Precio actual"}
+                          </p>
+                          <p className="mt-1 break-words font-medium text-slate-800">
+                            {fmtCurrency(
+                              esAlquiler
+                                ? p.alquiler_valor_mensual_actual ??
+                                    p.alquiler_valor_mensual_inicial ??
+                                    p.precio_actual ??
+                                    p.precio_lista_inicial
+                                : p.precio_actual ?? p.precio_lista_inicial,
+                              p.moneda
+                            )}
+                          </p>
+                        </div>
+
+                        <div className="min-w-0 rounded-lg bg-white/70 p-3">
+                          <p className="text-slate-500">Honorarios</p>
+                          <p className="mt-1 break-words font-medium text-slate-800">
+                            {fmtCurrency(honorarios, p.moneda)}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="mt-3 text-[11px] text-slate-500">
+                        {diasVenta != null ? `${diasVenta} días` : "Sin días calculados"}
+                        {cerrada && !esAlquiler && p.fecha_cierre
+                          ? ` · Cierre ${dateKeyFromString(p.fecha_cierre)}`
+                          : ""}
+                        {cerrada && esAlquiler && p.alquiler_fecha_inicio_contrato
+                          ? ` · Inicio ${dateKeyFromString(
+                              p.alquiler_fecha_inicio_contrato
+                            )}`
+                          : ""}
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => openEditarPropiedad(p)}
+                        className="mt-4 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-medium text-slate-700"
+                      >
+                        Ver detalle / editar
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => eliminarPropiedad(p.id)}
+                        className="mt-2 w-full rounded-lg px-3 py-2 text-xs font-medium text-red-600"
+                      >
+                        Eliminar
+                      </button>
+                    </article>
+                  );
+                })}
+              </div>
+
+              <div className="hidden overflow-x-auto md:block">
                 <table className="min-w-full text-xs">
                   <thead>
                     <tr className="border-b border-gray-200 bg-gray-50 text-[11px] text-slate-500">
@@ -3260,14 +3506,102 @@ export default function AsesorTrackerPage() {
                 </div>
                 <button
                   onClick={openNuevoTercero}
-                  className="inline-flex items-center gap-1 rounded-full bg-black text-white px-3 py-1.5 text-xs font-medium hover:bg-slate-900"
+                  className="inline-flex w-full items-center justify-center gap-1 rounded-full bg-black px-3 py-2 text-xs font-medium text-white hover:bg-slate-900 md:w-auto md:py-1.5"
                 >
                   <span className="text-sm">＋</span>
                   Nueva venta de tercero
                 </button>
               </div>
 
-              <div className="overflow-x-auto">
+              <div className="grid min-w-0 grid-cols-1 gap-3 md:hidden">
+                {tercerosFiltrados.length === 0 && (
+                  <div className="rounded-xl border border-dashed border-gray-300 px-4 py-8 text-center text-xs text-slate-500">
+                    Todavía no hay propiedades de terceros con los filtros seleccionados.
+                  </div>
+                )}
+
+                {tercerosFiltrados.map((p) => {
+                  const honorarios = calcularHonorarios(
+                    p.precio_cierre,
+                    p.honorarios_pct_vendedor,
+                    p.honorarios_pct_comprador
+                  );
+
+                  return (
+                    <article
+                      key={p.id}
+                      className="min-w-0 rounded-xl border border-gray-200 bg-white p-4 shadow-sm"
+                    >
+                      <div className="flex min-w-0 items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="truncate font-semibold text-slate-900">
+                            {p.comprador_nombre || "Sin comprador"}
+                          </p>
+                          <p className="mt-1 truncate text-[11px] text-slate-500">
+                            {p.direccion || "Sin dirección"}
+                            {p.zona ? ` · ${p.zona}` : ""}
+                          </p>
+                        </div>
+
+                        <span className="shrink-0 rounded-full bg-gray-100 px-2 py-1 text-[10px] font-medium text-slate-700">
+                          {labelTipoOperacion(p.tipo_operacion)}
+                        </span>
+                      </div>
+
+                      <div className="mt-4 grid grid-cols-2 gap-3 text-xs">
+                        <div className="min-w-0 rounded-lg bg-gray-50 p-3">
+                          <p className="text-slate-500">Tipología</p>
+                          <p className="mt-1 truncate font-medium text-slate-800">
+                            {labelTipologia(p.tipologia)}
+                          </p>
+                        </div>
+
+                        <div className="min-w-0 rounded-lg bg-gray-50 p-3">
+                          <p className="text-slate-500">Zona</p>
+                          <p className="mt-1 truncate font-medium text-slate-800">
+                            {p.zona || "—"}
+                          </p>
+                        </div>
+
+                        <div className="min-w-0 rounded-lg bg-gray-50 p-3">
+                          <p className="text-slate-500">Cierre</p>
+                          <p className="mt-1 break-words font-medium text-slate-800">
+                            {fmtCurrency(p.precio_cierre, p.moneda)}
+                          </p>
+                          <p className="mt-1 text-[10px] text-slate-500">
+                            {dateKeyFromString(p.fecha_cierre)}
+                          </p>
+                        </div>
+
+                        <div className="min-w-0 rounded-lg bg-gray-50 p-3">
+                          <p className="text-slate-500">Honorarios</p>
+                          <p className="mt-1 break-words font-medium text-slate-800">
+                            {fmtCurrency(honorarios, p.moneda)}
+                          </p>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => openEditarTercero(p)}
+                        className="mt-4 w-full rounded-lg border border-gray-300 px-3 py-2 text-xs font-medium text-slate-700"
+                      >
+                        Ver detalle / editar
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => eliminarTercero(p.id)}
+                        className="mt-2 w-full rounded-lg px-3 py-2 text-xs font-medium text-red-600"
+                      >
+                        Eliminar
+                      </button>
+                    </article>
+                  );
+                })}
+              </div>
+
+              <div className="hidden overflow-x-auto md:block">
                 <table className="min-w-full text-xs">
                   <thead>
                     <tr className="border-b border-gray-200 bg-gray-50 text-[11px] text-slate-500">

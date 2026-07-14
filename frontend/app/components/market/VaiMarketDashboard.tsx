@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "#lib/supabaseClient";
+import { useTheme } from "@/context/ThemeContext";
+import { useAuth } from "@/context/AuthContext";
 
 type TipoOperacion = "venta" | "alquiler";
 type PeriodoRapido = "" | "3" | "6" | "12" | "todo" | "personalizado";
@@ -81,6 +83,30 @@ type FiltersState = {
   m2_cubiertos_hasta: string;
   fecha_desde: string;
   fecha_hasta: string;
+};
+
+type InformeRentabilidadForm = {
+  nombreCliente: string;
+  localidad: string;
+  zona: string;
+  tipologia: string;
+  ambientes: string;
+  antiguedad: string;
+  alquilerPromedio: string;
+  monedaAlquilerPromedio: "ARS" | "USD";
+  observaciones: string;
+};
+
+const INITIAL_INFORME_RENTABILIDAD: InformeRentabilidadForm = {
+  nombreCliente: "",
+  localidad: "",
+  zona: "",
+  tipologia: "",
+  ambientes: "",
+  antiguedad: "",
+  alquilerPromedio: "",
+  monedaAlquilerPromedio: "ARS",
+  observaciones: "",
 };
 
 const INITIAL_FILTERS: FiltersState = {
@@ -172,6 +198,24 @@ function getErrorMessage(error: unknown): string {
     if (typeof message === "string") return message;
   }
   return "Ocurrió un error inesperado.";
+}
+
+async function fetchToDataURL(url?: string | null): Promise<string | null> {
+  try {
+    if (!url) return null;
+    const response = await fetch(url);
+    if (!response.ok) return null;
+    const blob = await response.blob();
+
+    return await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = () => reject(new Error("No se pudo leer la imagen."));
+      reader.readAsDataURL(blob);
+    });
+  } catch {
+    return null;
+  }
 }
 
 function FieldLabel({
@@ -298,6 +342,14 @@ function RankingPanel({
 }
 
 export default function VaiMarketDashboard() {
+  const { user } = useAuth();
+  const theme = useTheme();
+  const themePrimaryColor = (theme as any)?.primaryColor as string | undefined;
+  const themeCompanyName = (theme as any)?.companyName as string | undefined;
+  const themeLogoUrl =
+    (theme as any)?.logoUrlBusted ?? (theme as any)?.logoUrl ?? undefined;
+  const effectivePrimaryColor = themePrimaryColor || "#E6A930";
+
   const [filters, setFilters] = useState<FiltersState>(INITIAL_FILTERS);
   const [periodoRapido, setPeriodoRapido] = useState<PeriodoRapido>("");
   const [provincias, setProvincias] = useState<GeoOption[]>([]);
@@ -316,6 +368,12 @@ export default function VaiMarketDashboard() {
 
   const [precioCompraUsd, setPrecioCompraUsd] = useState("");
   const [alquilerMensualUsd, setAlquilerMensualUsd] = useState("");
+  const [informeModalAbierto, setInformeModalAbierto] = useState(false);
+  const [generandoInforme, setGenerandoInforme] = useState(false);
+  const [informeError, setInformeError] = useState<string | null>(null);
+  const [informeForm, setInformeForm] = useState<InformeRentabilidadForm>(
+    INITIAL_INFORME_RENTABILIDAD
+  );
 
   const resultCurrency = getDisplayCurrency(
     lastAppliedFilters?.tipo_operacion ?? filters.tipo_operacion,
@@ -559,6 +617,575 @@ export default function VaiMarketDashboard() {
 
     return { annualIncome, annualYield, perYears, status };
   }, [alquilerMensualUsd, precioCompraUsd]);
+
+  function updateInformeField<K extends keyof InformeRentabilidadForm>(
+    key: K,
+    value: InformeRentabilidadForm[K]
+  ) {
+    setInformeForm((current) => ({ ...current, [key]: value }));
+  }
+
+  function abrirModalInforme() {
+    if (!perCalculation) return;
+    setInformeError(null);
+    setInformeModalAbierto(true);
+  }
+
+  function cerrarModalInforme() {
+    if (generandoInforme) return;
+    setInformeModalAbierto(false);
+    setInformeError(null);
+  }
+
+  async function handleDownloadRentabilidadPDF() {
+    if (!perCalculation) {
+      setInformeError(
+        "Completá el precio de compra y el alquiler mensual antes de generar el informe."
+      );
+      return;
+    }
+
+    setGenerandoInforme(true);
+    setInformeError(null);
+
+    try {
+      const { jsPDF } = await import("jspdf");
+      const doc = new jsPDF("p", "pt", "a4");
+      const pageW = doc.internal.pageSize.getWidth();
+      const pageH = doc.internal.pageSize.getHeight();
+      const margin = 38;
+      const anyUser = user as any;
+
+      let matriculado = anyUser?.matriculado_nombre || "-";
+      let cpi = anyUser?.cpi || "-";
+      let inmobiliaria = themeCompanyName || anyUser?.inmobiliaria || "-";
+      const asesorNombre =
+        anyUser?.nombre && anyUser?.apellido
+          ? `${anyUser.nombre} ${anyUser.apellido}`
+          : "-";
+      const role = String(anyUser?.role || "").toLowerCase();
+      const isAsesor = role === "asesor";
+
+      if (inmobiliaria === "-" || matriculado === "-" || cpi === "-") {
+        try {
+          let query = supabase
+            .from("empresas")
+            .select("id, nombre_comercial, matriculado, cpi, user_id")
+            .limit(1);
+
+          if (isAsesor && anyUser?.empresa_id) {
+            query = query.eq("id", anyUser.empresa_id);
+          } else if (anyUser?.id) {
+            query = query.eq("user_id", anyUser.id);
+          }
+
+          const { data: empresaRow, error: empresaError } =
+            await query.maybeSingle();
+
+          if (!empresaError && empresaRow) {
+            if (inmobiliaria === "-" && empresaRow.nombre_comercial) {
+              inmobiliaria = empresaRow.nombre_comercial;
+            }
+            if (matriculado === "-" && empresaRow.matriculado) {
+              matriculado = empresaRow.matriculado;
+            }
+            if (cpi === "-" && empresaRow.cpi) {
+              cpi = empresaRow.cpi;
+            }
+          }
+        } catch (empresaRequestError) {
+          console.warn(
+            "No se pudieron resolver los datos de la empresa para el PDF:",
+            empresaRequestError
+          );
+        }
+      }
+
+      const hexToRgb = (hex: string) => {
+        const safe = /^#?[0-9A-Fa-f]{3,6}$/.test(hex || "")
+          ? hex
+          : "#E6A930";
+        const raw = safe.replace("#", "");
+        const normalized =
+          raw.length === 3
+            ? raw
+                .split("")
+                .map((char) => char + char)
+                .join("")
+            : raw;
+        const parsed = parseInt(normalized, 16);
+        return {
+          r: (parsed >> 16) & 255,
+          g: (parsed >> 8) & 255,
+          b: parsed & 255,
+        };
+      };
+
+      const pc = hexToRgb(effectivePrimaryColor);
+      const border = { r: 226, g: 232, b: 240 };
+      const soft = { r: 248, g: 250, b: 252 };
+      const muted = { r: 100, g: 116, b: 139 };
+      const dark = { r: 15, g: 23, b: 42 };
+      const reportDate = new Date().toLocaleDateString("es-AR");
+      const logoData = await fetchToDataURL(themeLogoUrl || null);
+
+      const safeValue = (value: string | number | null | undefined) => {
+        const normalized = String(value ?? "").trim();
+        return normalized || "-";
+      };
+
+      const pdfMoney = (value: number, currency: "ARS" | "USD") => {
+        const amount = new Intl.NumberFormat("es-AR", {
+          maximumFractionDigits: 0,
+        }).format(value);
+        return currency === "USD" ? `USD ${amount}` : `$ ${amount}`;
+      };
+
+      const imageFormat = (src: string) =>
+        src.startsWith("data:image/png") ? "PNG" : "JPEG";
+
+      const addImageContain = (
+        src: string,
+        x: number,
+        y: number,
+        boxW: number,
+        boxH: number
+      ) => {
+        try {
+          const props = (doc as any).getImageProperties(src);
+          const imgW = Number(props?.width) || boxW;
+          const imgH = Number(props?.height) || boxH;
+          const ratio = Math.min(boxW / imgW, boxH / imgH);
+          const drawW = imgW * ratio;
+          const drawH = imgH * ratio;
+          doc.addImage(
+            src,
+            imageFormat(src),
+            x + (boxW - drawW) / 2,
+            y + (boxH - drawH) / 2,
+            drawW,
+            drawH,
+            undefined,
+            "FAST"
+          );
+        } catch (imageError) {
+          console.warn("No se pudo insertar el logo en el PDF:", imageError);
+        }
+      };
+
+      const drawPageHeader = (title: string) => {
+        doc.setFillColor(pc.r, pc.g, pc.b);
+        doc.rect(0, 0, pageW, 74, "F");
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(18);
+        doc.setTextColor(255, 255, 255);
+        doc.text(title, margin, 32);
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(9.5);
+        doc.text(`${inmobiliaria}  |  ${reportDate}`, margin, 52);
+        if (logoData) {
+          addImageContain(logoData, pageW - margin - 100, 8, 100, 58);
+        }
+        doc.setTextColor(0, 0, 0);
+      };
+
+      const drawSectionTitle = (title: string, y: number) => {
+        doc.setFillColor(pc.r, pc.g, pc.b);
+        doc.rect(margin, y, pageW - margin * 2, 24, "F");
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(11);
+        doc.setTextColor(255, 255, 255);
+        doc.text(title, margin + 12, y + 16);
+        doc.setTextColor(0, 0, 0);
+      };
+
+      const drawLabelValue = (
+        label: string,
+        value: string,
+        x: number,
+        y: number,
+        maxW: number
+      ) => {
+        const labelText = `${label}: `;
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(9);
+        doc.setTextColor(muted.r, muted.g, muted.b);
+        doc.text(labelText, x, y);
+        const labelW = doc.getTextWidth(labelText);
+        doc.setFont("helvetica", "normal");
+        doc.setTextColor(dark.r, dark.g, dark.b);
+        const lines = doc.splitTextToSize(
+          safeValue(value),
+          Math.max(45, maxW - labelW - 8)
+        );
+        doc.text(lines as string[], x + labelW + 8, y);
+        doc.setTextColor(0, 0, 0);
+      };
+
+      const drawKpi = (
+        x: number,
+        y: number,
+        w: number,
+        h: number,
+        title: string,
+        value: string,
+        subtitle?: string
+      ) => {
+        doc.setFillColor(255, 255, 255);
+        doc.setDrawColor(border.r, border.g, border.b);
+        doc.roundedRect(x, y, w, h, 6, 6, "FD");
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(8.5);
+        doc.setTextColor(muted.r, muted.g, muted.b);
+        doc.text(title, x + 14, y + 20);
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(18);
+        doc.setTextColor(dark.r, dark.g, dark.b);
+        doc.text(value, x + 14, y + 48);
+        if (subtitle) {
+          doc.setFont("helvetica", "normal");
+          doc.setFontSize(7.5);
+          doc.setTextColor(muted.r, muted.g, muted.b);
+          const lines = doc.splitTextToSize(subtitle, w - 28);
+          doc.text(lines as string[], x + 14, y + h - 17);
+        }
+        doc.setTextColor(0, 0, 0);
+      };
+
+      const drawPERGraph = (
+        graphX: number,
+        graphY: number,
+        graphW: number,
+        graphH: number
+      ) => {
+        const plotPadL = 42;
+        const plotPadR = 18;
+        const plotPadT = 28;
+        const plotPadB = 34;
+        const x0 = graphX + plotPadL;
+        const y0 = graphY + graphH - plotPadB;
+        const plotW = graphW - plotPadL - plotPadR;
+        const plotH = graphH - plotPadT - plotPadB;
+        const xMin = 5;
+        const xMax = 30;
+        const yMax = 20;
+        const mapX = (value: number) =>
+          x0 + ((value - xMin) / (xMax - xMin)) * plotW;
+        const mapY = (value: number) => y0 - (value / yMax) * plotH;
+
+        doc.setFillColor(255, 255, 255);
+        doc.setDrawColor(border.r, border.g, border.b);
+        doc.rect(graphX, graphY, graphW, graphH, "FD");
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(11);
+        doc.setTextColor(dark.r, dark.g, dark.b);
+        doc.text(
+          "Relación PER y Rentabilidad Anual",
+          graphX + graphW / 2,
+          graphY + 17,
+          { align: "center" }
+        );
+
+        doc.setFillColor(209, 250, 229);
+        doc.rect(mapX(5), graphY + plotPadT, mapX(15) - mapX(5), plotH, "F");
+        doc.setFillColor(254, 243, 199);
+        doc.rect(mapX(15), graphY + plotPadT, mapX(20) - mapX(15), plotH, "F");
+        doc.setFillColor(254, 226, 226);
+        doc.rect(mapX(20), graphY + plotPadT, mapX(30) - mapX(20), plotH, "F");
+
+        doc.setDrawColor(229, 231, 235);
+        doc.setLineWidth(0.4);
+        [5, 10, 15, 20, 25, 30].forEach((tick) => {
+          const tx = mapX(tick);
+          doc.line(tx, graphY + plotPadT, tx, y0);
+        });
+        [0, 5, 10, 15, 20].forEach((tick) => {
+          const ty = mapY(tick);
+          doc.line(x0, ty, x0 + plotW, ty);
+        });
+
+        doc.setDrawColor(71, 85, 105);
+        doc.setLineWidth(0.8);
+        doc.line(x0, y0, x0 + plotW, y0);
+        doc.line(x0, graphY + plotPadT, x0, y0);
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(7.2);
+        doc.setTextColor(71, 85, 105);
+        [5, 10, 15, 20, 25, 30].forEach((tick) => {
+          doc.text(String(tick), mapX(tick), y0 + 11, { align: "center" });
+        });
+        [0, 5, 10, 15, 20].forEach((tick) => {
+          doc.text(`${tick}%`, x0 - 6, mapY(tick) + 2, { align: "right" });
+        });
+        doc.text(
+          "PER (años de alquiler)",
+          graphX + graphW / 2,
+          graphY + graphH - 9,
+          { align: "center" }
+        );
+        doc.text(
+          "Rentabilidad anual (%)",
+          graphX + 9,
+          graphY + graphH / 2,
+          { angle: 90, align: "center" } as any
+        );
+
+        doc.setDrawColor(34, 197, 94);
+        doc.setLineDashPattern([3, 3], 0);
+        doc.line(mapX(15), graphY + plotPadT, mapX(15), y0);
+        doc.setDrawColor(245, 158, 11);
+        doc.line(mapX(20), graphY + plotPadT, mapX(20), y0);
+        doc.setLineDashPattern([], 0);
+
+        doc.setDrawColor(220, 38, 38);
+        doc.setLineWidth(1.4);
+        let previousX = mapX(5);
+        let previousY = mapY(20);
+        for (let per = 5.25; per <= 30; per += 0.25) {
+          const rent = Math.min(20, 100 / per);
+          const pointX = mapX(per);
+          const pointY = mapY(rent);
+          doc.line(previousX, previousY, pointX, pointY);
+          previousX = pointX;
+          previousY = pointY;
+        }
+
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(6.8);
+        doc.setTextColor(22, 101, 52);
+        doc.text("Buena Inversión", mapX(10), y0 - 5, { align: "center" });
+        doc.setTextColor(146, 64, 14);
+        doc.text("Rentabilidad", mapX(17.5), y0 - 10, { align: "center" });
+        doc.text("Aceptable", mapX(17.5), y0 - 3, { align: "center" });
+        doc.setTextColor(153, 27, 27);
+        doc.text("Recuperación Lenta", mapX(25), y0 - 5, {
+          align: "center",
+        });
+
+        const markerPer = Math.max(5, Math.min(30, perCalculation.perYears));
+        const markerRent = Math.min(20, 100 / markerPer);
+        const markerX = mapX(markerPer);
+        const markerY = mapY(markerRent);
+        doc.setFillColor(pc.r, pc.g, pc.b);
+        doc.circle(markerX, markerY, 3.2, "F");
+
+        const markerLabel = `PER ${formatNumber(perCalculation.perYears, 1)}`;
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(7.2);
+        const markerLabelW = doc.getTextWidth(markerLabel) + 10;
+        const markerLabelX =
+          markerPer > 22 ? markerX - markerLabelW - 6 : markerX + 7;
+        const markerLabelY = markerY - 12;
+        doc.setFillColor(255, 255, 255);
+        doc.setDrawColor(border.r, border.g, border.b);
+        doc.roundedRect(
+          markerLabelX,
+          markerLabelY - 8,
+          markerLabelW,
+          13,
+          2,
+          2,
+          "FD"
+        );
+        doc.setTextColor(pc.r, pc.g, pc.b);
+        doc.text(markerLabel, markerLabelX + 5, markerLabelY);
+
+        const legendX = graphX + graphW - 196;
+        const legendY = graphY + 32;
+        doc.setFillColor(255, 255, 255);
+        doc.setDrawColor(148, 163, 184);
+        doc.roundedRect(legendX - 7, legendY - 8, 172, 43, 3, 3, "FD");
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(6.7);
+        doc.setTextColor(30, 41, 59);
+        doc.setFillColor(187, 247, 208);
+        doc.setDrawColor(34, 197, 94);
+        doc.rect(legendX, legendY, 9, 7, "FD");
+        doc.text("Buena inversión (PER < 15)", legendX + 13, legendY + 6);
+        doc.setFillColor(253, 230, 138);
+        doc.setDrawColor(245, 158, 11);
+        doc.rect(legendX, legendY + 12, 9, 7, "FD");
+        doc.text(
+          "Rentabilidad aceptable (15 a 20)",
+          legendX + 13,
+          legendY + 18
+        );
+        doc.setFillColor(252, 165, 165);
+        doc.setDrawColor(185, 28, 28);
+        doc.rect(legendX, legendY + 24, 9, 7, "FD");
+        doc.text("Recuperación lenta (PER > 20)", legendX + 13, legendY + 30);
+        doc.setTextColor(0, 0, 0);
+      };
+
+      drawPageHeader("Informe de Rentabilidad y PER");
+
+      doc.setFillColor(soft.r, soft.g, soft.b);
+      doc.setDrawColor(border.r, border.g, border.b);
+      doc.rect(margin, 96, pageW - margin * 2, 58, "FD");
+      drawLabelValue("Empresa", inmobiliaria, margin + 12, 115, 225);
+      drawLabelValue(
+        "Asesor",
+        isAsesor ? asesorNombre : "-",
+        margin + 12,
+        135,
+        225
+      );
+      drawLabelValue("Profesional", matriculado, pageW / 2 + 12, 115, 215);
+      drawLabelValue("Matrícula N°", cpi, pageW / 2 + 12, 135, 215);
+
+      drawSectionTitle("Datos del Cliente y de la Propiedad", 178);
+      doc.setFillColor(255, 255, 255);
+      doc.setDrawColor(border.r, border.g, border.b);
+      doc.rect(margin, 214, pageW - margin * 2, 168, "FD");
+
+      const leftX = margin + 16;
+      const rightX = pageW / 2 + 8;
+      const columnW = pageW / 2 - margin - 28;
+      const leftRows: Array<[string, string]> = [
+        ["Cliente", informeForm.nombreCliente],
+        ["Localidad", informeForm.localidad],
+        ["Zona/Barrio", informeForm.zona],
+        ["Tipología", informeForm.tipologia],
+        ["Ambientes", informeForm.ambientes],
+      ];
+      const rightRows: Array<[string, string]> = [
+        [
+          "Antigüedad",
+          informeForm.antiguedad.trim()
+            ? `${informeForm.antiguedad.trim()} años`
+            : "-",
+        ],
+        ["Precio de compra", pdfMoney(Number(precioCompraUsd), "USD")],
+        [
+          "Alquiler usado en el cálculo",
+          pdfMoney(Number(alquilerMensualUsd), "USD"),
+        ],
+        [
+          "Alquiler promedio informado",
+          informeForm.alquilerPromedio.trim()
+            ? pdfMoney(
+                Number(informeForm.alquilerPromedio),
+                informeForm.monedaAlquilerPromedio
+              )
+            : "-",
+        ],
+      ];
+
+      leftRows.forEach(([label, value], index) => {
+        drawLabelValue(label, value, leftX, 238 + index * 27, columnW);
+      });
+      rightRows.forEach(([label, value], index) => {
+        drawLabelValue(label, value, rightX, 238 + index * 34, columnW);
+      });
+
+      drawSectionTitle("Resultado del Análisis", 408);
+      const kpiGap = 12;
+      const kpiW = (pageW - margin * 2 - kpiGap) / 2;
+      drawKpi(
+        margin,
+        444,
+        kpiW,
+        88,
+        "Rentabilidad anual bruta",
+        formatPercentage(perCalculation.annualYield),
+        "Relación entre el ingreso anual estimado y el precio de compra."
+      );
+      drawKpi(
+        margin + kpiW + kpiGap,
+        444,
+        kpiW,
+        88,
+        "Recuperación estimada",
+        `${formatNumber(perCalculation.perYears, 1)} años`,
+        "PER bruto calculado a partir del alquiler mensual informado."
+      );
+      drawKpi(
+        margin,
+        544,
+        kpiW,
+        88,
+        "Ingreso anual estimado",
+        pdfMoney(perCalculation.annualIncome, "USD"),
+        "Alquiler mensual utilizado multiplicado por doce meses."
+      );
+      drawKpi(
+        margin + kpiW + kpiGap,
+        544,
+        kpiW,
+        88,
+        "Evaluación de la inversión",
+        perCalculation.status.label,
+        perCalculation.status.description
+      );
+
+      doc.setFillColor(255, 251, 235);
+      doc.setDrawColor(245, 158, 11);
+      doc.roundedRect(margin, 650, pageW - margin * 2, 54, 5, 5, "FD");
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(9);
+      doc.setTextColor(146, 64, 14);
+      doc.text("Referencia orientativa", margin + 14, 671);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8.2);
+      const disclaimer = doc.splitTextToSize(
+        "El cálculo es bruto y no contempla gastos, impuestos, vacancia, mantenimiento, expensas ni costos de adquisición. No reemplaza un análisis financiero, legal o impositivo específico.",
+        pageW - margin * 2 - 28
+      );
+      doc.text(disclaimer as string[], margin + 14, 687);
+
+      doc.addPage();
+      drawPageHeader("Informe de Rentabilidad y PER");
+      drawSectionTitle("Gráfico de PER y Rentabilidad", 96);
+      drawPERGraph(margin, 132, pageW - margin * 2, 286);
+
+      drawSectionTitle("Observaciones Generales", 446);
+      doc.setFillColor(255, 255, 255);
+      doc.setDrawColor(border.r, border.g, border.b);
+      doc.rect(margin, 482, pageW - margin * 2, 244, "FD");
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9.5);
+      doc.setTextColor(dark.r, dark.g, dark.b);
+      const observationLines = doc.splitTextToSize(
+        safeValue(informeForm.observaciones),
+        pageW - margin * 2 - 28
+      );
+      doc.text(observationLines as string[], margin + 14, 506);
+
+      const footerText = `${matriculado}  |  Matrícula N°: ${cpi}`;
+      const totalPages = (doc as any).getNumberOfPages
+        ? (doc as any).getNumberOfPages()
+        : doc.internal.pages.length - 1;
+
+      for (let page = 1; page <= totalPages; page += 1) {
+        doc.setPage(page);
+        doc.setDrawColor(border.r, border.g, border.b);
+        doc.line(margin, pageH - 44, pageW - margin, pageH - 44);
+        doc.setFont("helvetica", "italic");
+        doc.setFontSize(8.5);
+        doc.setTextColor(71, 85, 105);
+        doc.text(footerText, pageW / 2, pageH - 28, { align: "center" });
+        doc.text(`Página ${page} de ${totalPages}`, pageW - margin, pageH - 28, {
+          align: "right",
+        });
+      }
+
+      const clientSlug = informeForm.nombreCliente
+        .trim()
+        .replace(/[^a-zA-Z0-9áéíóúÁÉÍÓÚñÑ]+/g, "_")
+        .replace(/^_+|_+$/g, "");
+      const filename = clientSlug
+        ? `Informe_Rentabilidad_PER_${clientSlug}.pdf`
+        : "Informe_Rentabilidad_PER.pdf";
+
+      doc.save(filename);
+      setInformeModalAbierto(false);
+    } catch (pdfError) {
+      console.error("Generar informe de rentabilidad:", pdfError);
+      setInformeError(getErrorMessage(pdfError));
+    } finally {
+      setGenerandoInforme(false);
+    }
+  }
 
   function updateFilter<K extends keyof FiltersState>(
     key: K,
@@ -1257,6 +1884,14 @@ export default function VaiMarketDashboard() {
                       <p className="mt-1 opacity-70">Recuperación lenta</p>
                     </div>
                   </div>
+
+                  <button
+                    type="button"
+                    onClick={abrirModalInforme}
+                    className="mt-5 inline-flex min-h-[46px] w-full items-center justify-center rounded-xl bg-gradient-to-r from-[#D99A22] to-[#F0BE54] px-6 py-2.5 text-sm font-bold text-black shadow-lg shadow-[#E6A930]/10 transition hover:brightness-110"
+                  >
+                    Generar informe
+                  </button>
                 </div>
               ) : (
                 <div className="flex min-h-[260px] flex-col items-center justify-center rounded-2xl border border-dashed border-zinc-800 bg-zinc-950/50 p-6 text-center">
@@ -1273,6 +1908,243 @@ export default function VaiMarketDashboard() {
             </div>
           </div>
         </section>
+
+        {informeModalAbierto && perCalculation ? (
+          <div
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="informe-rentabilidad-title"
+            onMouseDown={(event) => {
+              if (event.target === event.currentTarget) cerrarModalInforme();
+            }}
+          >
+            <div className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-3xl border border-zinc-700 bg-zinc-950 shadow-2xl shadow-black/60">
+              <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-zinc-800 bg-zinc-950/95 px-5 py-5 backdrop-blur sm:px-7">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#E6A930]">
+                    Informe descargable
+                  </p>
+                  <h2
+                    id="informe-rentabilidad-title"
+                    className="mt-1 text-xl font-bold text-white sm:text-2xl"
+                  >
+                    Informe de Rentabilidad y PER
+                  </h2>
+                  <p className="mt-2 text-sm leading-6 text-zinc-500">
+                    Todos los campos son opcionales. Los datos no completados se
+                    mostrarán con un guion en el PDF.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={cerrarModalInforme}
+                  disabled={generandoInforme}
+                  aria-label="Cerrar"
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-zinc-700 bg-zinc-900 text-xl text-zinc-300 transition hover:border-zinc-500 hover:bg-zinc-800 disabled:opacity-50"
+                >
+                  ×
+                </button>
+              </div>
+
+              <div className="p-5 sm:p-7">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="sm:col-span-2">
+                    <FieldLabel htmlFor="informe-nombre-cliente">
+                      Nombre del cliente
+                    </FieldLabel>
+                    <input
+                      id="informe-nombre-cliente"
+                      className={fieldClassName}
+                      type="text"
+                      placeholder="Ej.: Juan Pérez"
+                      value={informeForm.nombreCliente}
+                      onChange={(event) =>
+                        updateInformeField("nombreCliente", event.target.value)
+                      }
+                    />
+                  </div>
+
+                  <div>
+                    <FieldLabel htmlFor="informe-localidad">Localidad</FieldLabel>
+                    <input
+                      id="informe-localidad"
+                      className={fieldClassName}
+                      type="text"
+                      placeholder="Ej.: Córdoba"
+                      value={informeForm.localidad}
+                      onChange={(event) =>
+                        updateInformeField("localidad", event.target.value)
+                      }
+                    />
+                  </div>
+
+                  <div>
+                    <FieldLabel htmlFor="informe-zona">Zona / Barrio</FieldLabel>
+                    <input
+                      id="informe-zona"
+                      className={fieldClassName}
+                      type="text"
+                      placeholder="Ej.: Nueva Córdoba"
+                      value={informeForm.zona}
+                      onChange={(event) =>
+                        updateInformeField("zona", event.target.value)
+                      }
+                    />
+                  </div>
+
+                  <div>
+                    <FieldLabel htmlFor="informe-tipologia">Tipología</FieldLabel>
+                    <input
+                      id="informe-tipologia"
+                      className={fieldClassName}
+                      type="text"
+                      placeholder="Ej.: Departamento"
+                      value={informeForm.tipologia}
+                      onChange={(event) =>
+                        updateInformeField("tipologia", event.target.value)
+                      }
+                    />
+                  </div>
+
+                  <div>
+                    <FieldLabel htmlFor="informe-ambientes">Ambientes</FieldLabel>
+                    <input
+                      id="informe-ambientes"
+                      className={fieldClassName}
+                      type="number"
+                      min="0"
+                      step="1"
+                      placeholder="Ej.: 3"
+                      value={informeForm.ambientes}
+                      onChange={(event) =>
+                        updateInformeField("ambientes", event.target.value)
+                      }
+                    />
+                  </div>
+
+                  <div>
+                    <FieldLabel htmlFor="informe-antiguedad">
+                      Antigüedad (años)
+                    </FieldLabel>
+                    <input
+                      id="informe-antiguedad"
+                      className={fieldClassName}
+                      type="number"
+                      min="0"
+                      step="1"
+                      placeholder="Ej.: 8"
+                      value={informeForm.antiguedad}
+                      onChange={(event) =>
+                        updateInformeField("antiguedad", event.target.value)
+                      }
+                    />
+                  </div>
+
+                  <div>
+                    <FieldLabel htmlFor="informe-alquiler-promedio">
+                      Valor del alquiler promedio
+                    </FieldLabel>
+                    <input
+                      id="informe-alquiler-promedio"
+                      className={fieldClassName}
+                      type="number"
+                      min="0"
+                      step="1"
+                      placeholder="Ej.: 650000"
+                      value={informeForm.alquilerPromedio}
+                      onChange={(event) =>
+                        updateInformeField("alquilerPromedio", event.target.value)
+                      }
+                    />
+                  </div>
+
+                  <div>
+                    <FieldLabel htmlFor="informe-moneda-alquiler">
+                      Moneda del alquiler promedio
+                    </FieldLabel>
+                    <select
+                      id="informe-moneda-alquiler"
+                      className={fieldClassName}
+                      value={informeForm.monedaAlquilerPromedio}
+                      onChange={(event) =>
+                        updateInformeField(
+                          "monedaAlquilerPromedio",
+                          event.target.value as "ARS" | "USD"
+                        )
+                      }
+                    >
+                      <option value="ARS">ARS</option>
+                      <option value="USD">USD</option>
+                    </select>
+                  </div>
+
+                  <div className="sm:col-span-2">
+                    <FieldLabel htmlFor="informe-observaciones">
+                      Observaciones generales
+                    </FieldLabel>
+                    <textarea
+                      id="informe-observaciones"
+                      className={`${fieldClassName} min-h-[140px] resize-y`}
+                      placeholder="Podés agregar comentarios sobre el inmueble, la inversión, fortalezas, aspectos a considerar u otra información relevante."
+                      value={informeForm.observaciones}
+                      onChange={(event) =>
+                        updateInformeField("observaciones", event.target.value)
+                      }
+                    />
+                  </div>
+                </div>
+
+                <div className="mt-5 rounded-2xl border border-zinc-800 bg-black/30 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.15em] text-zinc-500">
+                    Datos tomados de la calculadora
+                  </p>
+                  <div className="mt-3 grid gap-3 text-sm sm:grid-cols-2">
+                    <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
+                      <span className="text-zinc-500">Precio de compra:</span>{" "}
+                      <strong className="text-white">
+                        USD {formatNumber(Number(precioCompraUsd), 0)}
+                      </strong>
+                    </div>
+                    <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
+                      <span className="text-zinc-500">Alquiler para PER:</span>{" "}
+                      <strong className="text-white">
+                        USD {formatNumber(Number(alquilerMensualUsd), 0)}
+                      </strong>
+                    </div>
+                  </div>
+                </div>
+
+                {informeError ? (
+                  <div className="mt-5 rounded-xl border border-red-900/70 bg-red-950/30 p-4 text-sm text-red-200">
+                    {informeError}
+                  </div>
+                ) : null}
+
+                <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+                  <button
+                    type="button"
+                    onClick={cerrarModalInforme}
+                    disabled={generandoInforme}
+                    className="inline-flex min-h-[46px] items-center justify-center rounded-xl border border-zinc-700 bg-zinc-900 px-5 py-2.5 text-sm font-semibold text-zinc-200 transition hover:border-zinc-500 hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleDownloadRentabilidadPDF}
+                    disabled={generandoInforme}
+                    className="inline-flex min-h-[46px] items-center justify-center rounded-xl bg-gradient-to-r from-[#D99A22] to-[#F0BE54] px-6 py-2.5 text-sm font-bold text-black shadow-lg shadow-[#E6A930]/10 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {generandoInforme
+                      ? "Generando informe..."
+                      : "Descargar informe PDF"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : null}
 
         <section className="mt-6 rounded-3xl border border-[#E6A930]/20 bg-[#E6A930]/5 p-5 sm:p-6">
           <h2 className="text-base font-semibold text-[#E6A930]">

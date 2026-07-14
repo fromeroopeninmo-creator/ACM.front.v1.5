@@ -43,7 +43,7 @@ function nowISO(): string {
  * sin tocar posibles bloqueos manuales administrativos, fraude, abuso, baja comercial, etc.
  */
 function isBillingSuspensionMotivo(motivo?: string | null): boolean {
-  if (!motivo) return true;
+  if (!motivo) return false;
 
   const m = motivo.toLowerCase().trim();
 
@@ -317,19 +317,85 @@ export async function GET(req: Request) {
     const precioNeto = toNum(billingConfig.precio_neto_final);
     const totalConIVA = toNum(billingConfig.precio_total_final);
 
-    const { data: susRow } = await supabaseAdmin
-      .from("suscripciones")
-      .select(
-        "estado, inicio, fin, plan_id, externo_customer_id, externo_subscription_id, created_at"
-      )
-      .eq("empresa_id", empresaId)
-      .order("inicio", { ascending: false })
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+    const ahoraIso = nowISO();
 
-    const cicloInicio = billingConfig.ciclo_inicio ?? planEP.fecha_inicio ?? null;
-    const cicloFin = billingConfig.ciclo_fin ?? planEP.fecha_fin ?? null;
+    const { data: suscripcionActiva, error: suscripcionActivaError } =
+      await supabaseAdmin
+        .from("suscripciones")
+        .select(
+          "id, estado, inicio, fin, plan_id, externo_customer_id, externo_subscription_id, created_at"
+        )
+        .eq("empresa_id", empresaId)
+        .eq("estado", "activa")
+        .lte("inicio", ahoraIso)
+        .or(`fin.is.null,fin.gte.${ahoraIso}`)
+        .order("fin", { ascending: false, nullsFirst: true })
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+    if (suscripcionActivaError) {
+      return NextResponse.json(
+        { error: suscripcionActivaError.message },
+        { status: 400 }
+      );
+    }
+
+    const { data: ultimaSuscripcion, error: ultimaSuscripcionError } =
+      await supabaseAdmin
+        .from("suscripciones")
+        .select(
+          "id, estado, inicio, fin, plan_id, externo_customer_id, externo_subscription_id, created_at"
+        )
+        .eq("empresa_id", empresaId)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+    if (ultimaSuscripcionError) {
+      return NextResponse.json(
+        { error: ultimaSuscripcionError.message },
+        { status: 400 }
+      );
+    }
+
+    const susRow = suscripcionActiva ?? ultimaSuscripcion ?? null;
+
+    const cicloInicio =
+      suscripcionActiva?.inicio ??
+      billingConfig.ciclo_inicio ??
+      planEP.fecha_inicio ??
+      null;
+
+    const cicloFin =
+      suscripcionActiva?.fin ??
+      billingConfig.ciclo_fin ??
+      planEP.fecha_fin ??
+      null;
+
+    if (suscripcionActiva?.fin) {
+      const fechaFinSuscripcion = String(suscripcionActiva.fin).slice(0, 10);
+      const fechaFinPlan = planEP.fecha_fin
+        ? String(planEP.fecha_fin).slice(0, 10)
+        : null;
+
+      if (!fechaFinPlan || fechaFinPlan < fechaFinSuscripcion || !planEP.activo) {
+        const { error: syncPlanError } = await supabaseAdmin
+          .from("empresas_planes")
+          .update({
+            activo: true,
+            fecha_fin: fechaFinSuscripcion,
+          })
+          .eq("id", planEP.id);
+
+        if (syncPlanError) {
+          console.warn(
+            "billing/estado: no se pudo sincronizar empresas_planes:",
+            syncPlanError.message
+          );
+        }
+      }
+    }
 
     const now = new Date();
     let plan_vencido = false;
@@ -386,10 +452,7 @@ export async function GET(req: Request) {
     const acuerdoGratisOVirtual =
       acuerdoVigenteHoy && round2(totalConIVA) <= 0;
 
-    const suscripcionActivaActual =
-      !!susRow &&
-      susRow.estado === "activa" &&
-      (!!susRow.fin ? String(susRow.fin).slice(0, 10) >= hoy : true);
+    const suscripcionActivaActual = !!suscripcionActiva;
 
     // Acuerdo comercial vigente con cobro mensual:
     // si no hay suscripción/ciclo vigente actual, debe pedir pago.
@@ -474,10 +537,14 @@ export async function GET(req: Request) {
       suspendidaPorAcuerdo ? false : en_periodo_gracia;
 
     const planVencidoFinal =
-      acuerdoGratisOVirtual ? false : plan_vencido;
+      acuerdoGratisOVirtual || suscripcionActivaActual
+        ? false
+        : plan_vencido;
 
     const diasDesdeVencimientoFinal =
-      acuerdoGratisOVirtual ? null : dias_desde_vencimiento;
+      acuerdoGratisOVirtual || suscripcionActivaActual
+        ? null
+        : dias_desde_vencimiento;
 
     const tipoPlan = planRow?.tipo_plan ?? null;
     const incluyeValuador = !!planRow?.incluye_valuador;
@@ -500,7 +567,7 @@ export async function GET(req: Request) {
     let estadoPlan: "vigente" | "vencido" | "sin_plan" = "vigente";
     if (!planEP) {
       estadoPlan = "sin_plan";
-    } else if (plan_vencido) {
+    } else if (planVencidoFinal) {
       estadoPlan = "vencido";
     } else {
       estadoPlan = "vigente";

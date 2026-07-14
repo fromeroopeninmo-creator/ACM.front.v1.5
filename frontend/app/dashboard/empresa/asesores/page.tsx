@@ -1132,7 +1132,6 @@ export default function AsesoresPage() {
                 )}
               </div>
             </div>
-            </div>
           </div>
         </>
       )}

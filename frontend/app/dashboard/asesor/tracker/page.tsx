@@ -908,44 +908,100 @@ export default function AsesorTrackerPage() {
 
   useEffect(() => {
     const fetchAsesor = async () => {
-      if (!user?.email) {
+      if (!user?.id) {
+        setEmpresaId(null);
+        setAsesorId(null);
         setLoading(false);
         return;
       }
 
       if (user.role !== "asesor") {
-        console.error("Usuario sin rol asesor intentando acceder al tracker de asesor");
+        console.error(
+          "Usuario sin rol asesor intentando acceder al tracker de asesor"
+        );
         setEmpresaId(null);
         setAsesorId(null);
         setLoading(false);
         return;
       }
 
-      const { data, error } = await supabase
-        .from("asesores")
-        .select("id, empresa_id, email")
-        .eq("email", user.email)
-        .maybeSingle();
+      try {
+        let asesorEncontrado: {
+          id: string;
+          empresa_id: string;
+          email: string | null;
+        } | null = null;
 
-      if (error) {
-        console.error("Error buscando asesor para tracker:", error);
+        /*
+         * Método principal:
+         * algunas cuentas nuevas pueden tener asesores.id vinculado al user.id
+         * de Supabase Auth.
+         */
+        const porId = await supabase
+          .from("asesores")
+          .select("id, empresa_id, email")
+          .eq("id", user.id)
+          .maybeSingle();
+
+        if (porId.error) {
+          console.warn(
+            "No se pudo resolver el asesor por id; se intentará por email:",
+            porId.error
+          );
+        } else if (porId.data) {
+          asesorEncontrado = porId.data;
+        }
+
+        /*
+         * Compatibilidad con cuentas históricas:
+         * el email se compara sin distinguir mayúsculas/minúsculas y sin
+         * espacios externos.
+         */
+        if (!asesorEncontrado && user.email) {
+          const emailNormalizado = user.email.trim();
+
+          const porEmail = await supabase
+            .from("asesores")
+            .select("id, empresa_id, email")
+            .ilike("email", emailNormalizado)
+            .maybeSingle();
+
+          if (porEmail.error) {
+            console.error(
+              "Error buscando asesor para tracker por email:",
+              porEmail.error
+            );
+            setEmpresaId(null);
+            setAsesorId(null);
+            setLoading(false);
+            return;
+          }
+
+          if (porEmail.data) {
+            asesorEncontrado = porEmail.data;
+          }
+        }
+
+        if (!asesorEncontrado) {
+          console.error("Error buscando asesor para tracker: sin datos", {
+            authUserId: user.id,
+            authEmail: user.email ?? null,
+          });
+          setEmpresaId(null);
+          setAsesorId(null);
+          setLoading(false);
+          return;
+        }
+
+        setAsesorId(asesorEncontrado.id);
+        setEmpresaId(asesorEncontrado.empresa_id);
+      } catch (error) {
+        console.error("Error inesperado buscando asesor para tracker:", error);
         setEmpresaId(null);
         setAsesorId(null);
+      } finally {
         setLoading(false);
-        return;
       }
-
-      if (!data) {
-        console.error("Error buscando asesor para tracker: sin datos");
-        setEmpresaId(null);
-        setAsesorId(null);
-        setLoading(false);
-        return;
-      }
-
-      setAsesorId(data.id);
-      setEmpresaId(data.empresa_id);
-      setLoading(false);
     };
 
     fetchAsesor();

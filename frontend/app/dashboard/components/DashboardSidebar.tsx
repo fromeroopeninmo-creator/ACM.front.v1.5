@@ -183,17 +183,6 @@ export default function DashboardSidebar({ role, color }: SidebarProps) {
           style={{ backgroundColor: bgColor }}
           aria-label="Barra lateral"
         >
-          <div className="mb-5 flex min-h-10 items-center gap-3 px-1">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/15 text-sm font-bold shadow-sm ring-1 ring-white/15">
-              V
-            </div>
-
-            <div className="pointer-events-none max-w-0 overflow-hidden whitespace-nowrap opacity-0 transition-all duration-200 group-hover/sidebar:max-w-[160px] group-hover/sidebar:opacity-100">
-              <div className="text-sm font-semibold leading-tight">VAI Prop</div>
-              <div className="text-[11px] text-white/65">Panel de navegación</div>
-            </div>
-          </div>
-
           <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
             {renderLinks(false)}
           </div>

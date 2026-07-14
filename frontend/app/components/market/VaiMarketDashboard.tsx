@@ -91,6 +91,7 @@ type InformeRentabilidadForm = {
   zona: string;
   tipologia: string;
   ambientes: string;
+  m2Cubiertos: string;
   antiguedad: string;
   estadoPropiedad: string;
   demandaAlquiler: string;
@@ -105,6 +106,7 @@ const INITIAL_INFORME_RENTABILIDAD: InformeRentabilidadForm = {
   zona: "",
   tipologia: "",
   ambientes: "",
+  m2Cubiertos: "",
   antiguedad: "",
   estadoPropiedad: "",
   demandaAlquiler: "",
@@ -1060,6 +1062,12 @@ export default function VaiMarketDashboard() {
         ["Zona/Barrio", informeForm.zona],
         ["Tipología", informeForm.tipologia],
         ["Ambientes", informeForm.ambientes],
+        [
+          "m² Cubiertos",
+          informeForm.m2Cubiertos.trim()
+            ? `${informeForm.m2Cubiertos.trim()} m²`
+            : "-",
+        ],
       ];
       const rightRows: Array<[string, string]> = [
         [
@@ -1069,14 +1077,14 @@ export default function VaiMarketDashboard() {
             : "-",
         ],
         ["Estado", informeForm.estadoPropiedad],
-        ["Demanda", informeForm.demandaAlquiler],
-        ["Precio de compra", pdfMoney(Number(precioCompraUsd), "USD")],
+        ["Demanda locativa", informeForm.demandaAlquiler],
+        ["Valor de adquisición", pdfMoney(Number(precioCompraUsd), "USD")],
         [
-          "Alquiler usado en el cálculo",
+          "Renta mensual bruta (cálculo)",
           pdfMoney(Number(alquilerMensualUsd), "USD"),
         ],
         [
-          "Alquiler promedio informado",
+          "Alquiler mensual estimado",
           informeForm.alquilerPromedio.trim()
             ? pdfMoney(
                 Number(informeForm.alquilerPromedio),
@@ -1087,7 +1095,7 @@ export default function VaiMarketDashboard() {
       ];
 
       leftRows.forEach(([label, value], index) => {
-        drawLabelValue(label, value, leftX, 238 + index * 30, columnW);
+        drawLabelValue(label, value, leftX, 238 + index * 28, columnW);
       });
       rightRows.forEach(([label, value], index) => {
         drawLabelValue(label, value, rightX, 238 + index * 28, columnW);
@@ -1155,7 +1163,7 @@ export default function VaiMarketDashboard() {
 
       doc.setFillColor(255, 251, 235);
       doc.setDrawColor(245, 158, 11);
-      doc.roundedRect(margin, 676, pageW - margin * 2, 54, 5, 5, "FD");
+      doc.roundedRect(margin, 676, pageW - margin * 2, 66, 5, 5, "FD");
       doc.setFont("helvetica", "bold");
       doc.setFontSize(9);
       doc.setTextColor(146, 64, 14);
@@ -1163,7 +1171,7 @@ export default function VaiMarketDashboard() {
       doc.setFont("helvetica", "normal");
       doc.setFontSize(8.2);
       const disclaimer = doc.splitTextToSize(
-        "El cálculo es bruto y no contempla gastos, impuestos, vacancia, mantenimiento, expensas ni costos de adquisición. No reemplaza un análisis financiero, legal o impositivo específico.",
+        "La Renta mensual bruta (cálculo) es el valor utilizado para determinar la rentabilidad anual y el PER. El cálculo es bruto y no contempla gastos, impuestos, vacancia, mantenimiento, expensas ni costos de adquisición. No reemplaza un análisis financiero, legal o impositivo específico.",
         pageW - margin * 2 - 28
       );
       doc.text(disclaimer as string[], margin + 14, 713);
@@ -2059,6 +2067,24 @@ export default function VaiMarketDashboard() {
                   </div>
 
                   <div>
+                    <FieldLabel htmlFor="informe-m2-cubiertos">
+                      m² cubiertos
+                    </FieldLabel>
+                    <input
+                      id="informe-m2-cubiertos"
+                      className={fieldClassName}
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder="Ej.: 85"
+                      value={informeForm.m2Cubiertos}
+                      onChange={(event) =>
+                        updateInformeField("m2Cubiertos", event.target.value)
+                      }
+                    />
+                  </div>
+
+                  <div>
                     <FieldLabel htmlFor="informe-antiguedad">
                       Antigüedad (años)
                     </FieldLabel>
@@ -2101,7 +2127,7 @@ export default function VaiMarketDashboard() {
 
                   <div>
                     <FieldLabel htmlFor="informe-demanda-alquiler">
-                      Demanda de alquileres en la zona
+                      Demanda locativa en la zona
                     </FieldLabel>
                     <select
                       id="informe-demanda-alquiler"
@@ -2122,7 +2148,7 @@ export default function VaiMarketDashboard() {
 
                   <div>
                     <FieldLabel htmlFor="informe-alquiler-promedio">
-                      Valor del alquiler promedio
+                      Alquiler mensual estimado
                     </FieldLabel>
                     <input
                       id="informe-alquiler-promedio"
@@ -2140,7 +2166,7 @@ export default function VaiMarketDashboard() {
 
                   <div>
                     <FieldLabel htmlFor="informe-moneda-alquiler">
-                      Moneda del alquiler promedio
+                      Moneda del alquiler estimado
                     </FieldLabel>
                     <select
                       id="informe-moneda-alquiler"

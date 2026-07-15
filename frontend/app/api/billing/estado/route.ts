@@ -1,3 +1,4 @@
+// frontend/app/api/billing/estado/route.ts
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -6,8 +7,9 @@ import { createClient } from "@supabase/supabase-js";
 import { supabaseServer } from "#lib/supabaseServer";
 import {
   assertAuthAndGetContext,
+  getEmpresaAcuerdoComercialActivo,
+  getSuscripcionEstado,
   resolveEmpresaBillingConfig,
-  round2,
 } from "#lib/billing/utils";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -22,90 +24,208 @@ type Role =
   | "super_admin_root"
   | string;
 
-function toNum(x: any): number {
-  if (x === null || x === undefined) return 0;
-  if (typeof x === "number") return x;
-  if (typeof x === "string") return parseFloat(x) || 0;
-  return Number(x) || 0;
-}
-
-function todayDateOnlyUTC(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
 function nowISO(): string {
   return new Date().toISOString();
 }
 
-/**
- * Determina si una suspensión persistida parece haber sido generada por billing.
- * La usamos para limpiar automáticamente solo suspensiones operativas de pago/plan,
- * sin tocar posibles bloqueos manuales administrativos, fraude, abuso, baja comercial, etc.
- */
-function isBillingSuspensionMotivo(motivo?: string | null): boolean {
-  if (!motivo) return false;
+function todayUTC(): string {
+  return nowISO().slice(0, 10);
+}
 
-  const m = motivo.toLowerCase().trim();
-
-  const knownBillingMotivos = [
-    "acuerdo comercial pendiente de pago",
-    "trial vencido",
-    "cuenta temporalmente suspendida por falta de pago",
-    "pago no acreditado",
-    "suscripción suspendida",
-    "suscripcion suspendida",
-    "suscripción cancelada",
-    "suscripcion cancelada",
-    "sin plan activo",
-    "plan vencido",
+function isBillingSuspensionReason(reason?: string | null): boolean {
+  if (!reason) return false;
+  const normalized = reason.toLowerCase().trim();
+  return [
     "falta de pago",
-  ];
-
-  return knownBillingMotivos.some((needle) => m.includes(needle));
+    "pago no acreditado",
+    "suscripción vencida",
+    "suscripcion vencida",
+    "plan vencido",
+    "trial vencido",
+    "acuerdo comercial pendiente de pago",
+    "sin ciclo vigente",
+    "sin plan activo",
+  ].some((token) => normalized.includes(token));
 }
 
-async function persistirSuspensionEmpresa(params: {
-  empresaId: string;
-  motivo: string;
-}) {
-  const { empresaId, motivo } = params;
+function daysSince(iso: string | null): number | null {
+  if (!iso) return null;
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return null;
+  return Math.max(
+    0,
+    Math.floor((Date.now() - date.getTime()) / (24 * 60 * 60 * 1000))
+  );
+}
 
-  const { error } = await supabaseAdmin
-    .from("empresas")
-    .update({
-      suspendida: true,
-      suspendida_at: nowISO(),
-      suspension_motivo: motivo,
-      updated_at: nowISO(),
-    })
-    .eq("id", empresaId);
+async function resolveEmpresaId(params: {
+  role: Role;
+  actor: any;
+  empresaIdParam?: string;
+}): Promise<string | null> {
+  const { role, actor, empresaIdParam } = params;
+  const isAdminLike =
+    role === "super_admin_root" ||
+    role === "super_admin" ||
+    role === "soporte";
 
-  if (error) {
-    console.warn(
-      "billing/estado: no se pudo persistir suspensión:",
-      error.message
-    );
+  if (isAdminLike && empresaIdParam) return empresaIdParam;
+  if (actor?.empresaId) return String(actor.empresaId);
+
+  const userId = actor?.userId ?? actor?.id ?? actor?.sub ?? null;
+  if (!userId) return null;
+
+  const { data: byProfileUserId } = await supabaseAdmin
+    .from("profiles")
+    .select("empresa_id")
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (byProfileUserId?.empresa_id) return String(byProfileUserId.empresa_id);
+
+  const { data: byProfileId } = await supabaseAdmin
+    .from("profiles")
+    .select("empresa_id")
+    .eq("id", userId)
+    .maybeSingle();
+
+  if (byProfileId?.empresa_id) return String(byProfileId.empresa_id);
+
+  if (role === "empresa") {
+    const { data: empresa } = await supabaseAdmin
+      .from("empresas")
+      .select("id")
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    if (empresa?.id) return String(empresa.id);
   }
+
+  if (role === "asesor") {
+    const email = actor?.email ?? actor?.user_metadata?.email ?? null;
+    if (email) {
+      const { data: asesor } = await supabaseAdmin
+        .from("asesores")
+        .select("empresa_id")
+        .ilike("email", String(email).trim())
+        .maybeSingle();
+
+      if (asesor?.empresa_id) return String(asesor.empresa_id);
+    }
+  }
+
+  return null;
 }
 
-async function limpiarSuspensionEmpresa(params: { empresaId: string }) {
-  const { empresaId } = params;
+async function getLatestSubscription(empresaId: string) {
+  const { data } = await supabaseAdmin
+    .from("suscripciones")
+    .select(
+      "id, estado, inicio, fin, ciclo_inicio, ciclo_fin, plan_id, plan_actual_id, plan_proximo_id, cambio_programado_para, moneda, precio_neto_override, externo_customer_id, externo_subscription_id, metadata, created_at"
+    )
+    .eq("empresa_id", empresaId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
 
-  const { error } = await supabaseAdmin
-    .from("empresas")
-    .update({
-      suspendida: false,
-      suspendida_at: null,
-      suspension_motivo: null,
-      updated_at: nowISO(),
-    })
-    .eq("id", empresaId);
+  return data ?? null;
+}
 
-  if (error) {
-    console.warn(
-      "billing/estado: no se pudo limpiar suspensión:",
-      error.message
-    );
+async function getLatestExpiredPaidCycle(empresaId: string) {
+  const now = nowISO();
+  const { data } = await supabaseAdmin
+    .from("suscripciones")
+    .select("id, ciclo_inicio, ciclo_fin, inicio, fin, plan_id, plan_actual_id")
+    .eq("empresa_id", empresaId)
+    .eq("estado", "activa")
+    .or(`ciclo_fin.lte.${now},and(ciclo_fin.is.null,fin.lte.${now})`)
+    .order("ciclo_fin", { ascending: false, nullsFirst: false })
+    .order("fin", { ascending: false, nullsFirst: false })
+    .limit(1)
+    .maybeSingle();
+
+  return data ?? null;
+}
+
+async function getLatestAgreement(empresaId: string) {
+  const { data } = await supabaseAdmin
+    .from("empresa_acuerdos_comerciales")
+    .select(
+      "id, empresa_id, plan_id, activo, tipo_acuerdo, descuento_pct, precio_neto_fijo, max_asesores_override, precio_extra_por_asesor_override, modo_iva, iva_pct, fecha_inicio, fecha_fin, motivo, observaciones, created_at"
+    )
+    .eq("empresa_id", empresaId)
+    .order("fecha_inicio", { ascending: false })
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  return data ?? null;
+}
+
+async function syncOperationalPlanFromCurrentCycle(params: {
+  empresaId: string;
+  planId: string;
+  cycleStart: string;
+  cycleEnd: string;
+  maxAsesoresOverride: number | null;
+}) {
+  const { empresaId, planId, cycleStart, cycleEnd, maxAsesoresOverride } = params;
+
+  const { data: current } = await supabaseAdmin
+    .from("empresas_planes")
+    .select("id, plan_id, fecha_inicio, fecha_fin, max_asesores_override")
+    .eq("empresa_id", empresaId)
+    .eq("activo", true)
+    .order("fecha_inicio", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const desiredStart = cycleStart.slice(0, 10);
+  const desiredEnd = cycleEnd.slice(0, 10);
+  const alreadySynced =
+    current &&
+    String(current.plan_id) === planId &&
+    String(current.fecha_inicio ?? "") === desiredStart &&
+    String(current.fecha_fin ?? "") === desiredEnd &&
+    Number(current.max_asesores_override ?? 0) ===
+      Number(maxAsesoresOverride ?? 0);
+
+  if (alreadySynced) return;
+
+  await supabaseAdmin
+    .from("empresas_planes")
+    .update({ activo: false, updated_at: nowISO() })
+    .eq("empresa_id", empresaId)
+    .eq("activo", true);
+
+  const { data: reusable } = await supabaseAdmin
+    .from("empresas_planes")
+    .select("id")
+    .eq("empresa_id", empresaId)
+    .eq("plan_id", planId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const payload = {
+    fecha_inicio: desiredStart,
+    fecha_fin: desiredEnd,
+    activo: true,
+    max_asesores_override: maxAsesoresOverride,
+    updated_at: nowISO(),
+  };
+
+  if (reusable?.id) {
+    await supabaseAdmin
+      .from("empresas_planes")
+      .update(payload)
+      .eq("id", reusable.id);
+  } else {
+    await supabaseAdmin.from("empresas_planes").insert({
+      empresa_id: empresaId,
+      plan_id: planId,
+      ...payload,
+    });
   }
 }
 
@@ -114,91 +234,19 @@ export async function GET(req: Request) {
     const server = supabaseServer();
     const actor = await assertAuthAndGetContext(server);
     const role = (actor.role ?? "") as Role;
-
     const url = new URL(req.url);
-    const empresaIdParam = url.searchParams.get("empresaId") || undefined;
+    const empresaIdParam = url.searchParams.get("empresaId") ?? undefined;
 
-    const isAdminLike =
-      role === "super_admin_root" ||
-      role === "super_admin" ||
-      role === "soporte";
-
-    let empresaId: string | null = null;
-
-    if (isAdminLike && empresaIdParam) {
-      empresaId = empresaIdParam;
-    }
-
-    if (!isAdminLike) {
-      const a: any = actor;
-      const actorUserId = a.userId ?? a.id ?? a.sub ?? null;
-
-      if (!empresaId && actorUserId) {
-        const { data: profileRowByUserId, error: profileErrByUserId } =
-          await supabaseAdmin
-            .from("profiles")
-            .select("empresa_id")
-            .eq("user_id", actorUserId)
-            .maybeSingle();
-
-        if (!profileErrByUserId && profileRowByUserId?.empresa_id) {
-          empresaId = profileRowByUserId.empresa_id;
-        }
-      }
-
-      if (!empresaId && actorUserId) {
-        const { data: profileRow, error: profileErr } = await supabaseAdmin
-          .from("profiles")
-          .select("empresa_id")
-          .eq("id", actorUserId)
-          .maybeSingle();
-
-        if (!profileErr && profileRow?.empresa_id) {
-          empresaId = profileRow.empresa_id;
-        }
-      }
-
-      if (!empresaId && role === "empresa" && actorUserId) {
-        const { data: empFromUser, error: empUserErr } = await supabaseAdmin
-          .from("empresas")
-          .select("id")
-          .eq("user_id", actorUserId)
-          .maybeSingle();
-
-        if (!empUserErr && empFromUser?.id) {
-          empresaId = empFromUser.id;
-        }
-      }
-
-      if (!empresaId && role === "asesor") {
-        const email = a.email ?? a.user_metadata?.email ?? null;
-
-        if (email) {
-          const { data: asesorRow, error: asesorErr } = await supabaseAdmin
-            .from("asesores")
-            .select("empresa_id")
-            .eq("email", email)
-            .maybeSingle();
-
-          if (!asesorErr && asesorRow?.empresa_id) {
-            empresaId = asesorRow.empresa_id;
-          }
-        }
-      }
-    }
+    const empresaId = await resolveEmpresaId({ role, actor, empresaIdParam });
 
     if (!empresaId) {
       return NextResponse.json(
-        {
-          error: isAdminLike
-            ? "Falta 'empresaId' para consulta como admin/soporte."
-            : "No se pudo resolver la empresa del usuario.",
-        },
+        { error: "No se pudo resolver la empresa del usuario." },
         { status: 400 }
       );
     }
 
-    const { data: empRow, error: empErr } = await supabaseAdmin
+    const { data: empresa, error: empresaError } = await supabaseAdmin
       .from("empresas")
       .select(
         "id, nombre_comercial, razon_social, suspendida, suspendida_at, suspension_motivo"
@@ -206,487 +254,365 @@ export async function GET(req: Request) {
       .eq("id", empresaId)
       .maybeSingle();
 
-    if (empErr) {
-      return NextResponse.json({ error: empErr.message }, { status: 400 });
+    if (empresaError) {
+      return NextResponse.json({ error: empresaError.message }, { status: 400 });
     }
-    if (!empRow) {
-      return NextResponse.json(
-        { error: "Empresa no encontrada." },
-        { status: 404 }
-      );
+    if (!empresa) {
+      return NextResponse.json({ error: "Empresa no encontrada." }, { status: 404 });
     }
 
-    const { data: planEP, error: planEpErr } = await supabaseAdmin
+    const { data: operationalPlan } = await supabaseAdmin
       .from("empresas_planes")
-      .select(
-        "id, plan_id, fecha_inicio, fecha_fin, activo, max_asesores_override"
-      )
+      .select("id, plan_id, fecha_inicio, fecha_fin, activo, max_asesores_override")
       .eq("empresa_id", empresaId)
       .eq("activo", true)
       .order("fecha_inicio", { ascending: false })
       .limit(1)
       .maybeSingle();
 
-    if (planEpErr) {
-      return NextResponse.json({ error: planEpErr.message }, { status: 400 });
-    }
+    const currentCycle = await getSuscripcionEstado(supabaseAdmin, empresaId);
+    const latestSubscription = await getLatestSubscription(empresaId);
+    const latestExpiredCycle = currentCycle
+      ? null
+      : await getLatestExpiredPaidCycle(empresaId);
+    const activeAgreement = await getEmpresaAcuerdoComercialActivo(
+      supabaseAdmin,
+      empresaId
+    );
+    const latestAgreement = await getLatestAgreement(empresaId);
 
-    const { data: vEstado } = await supabaseAdmin
-      .from("v_suscripcion_estado")
-      .select("plan_proximo_id, plan_proximo_nombre, cambio_programado_para")
-      .eq("empresa_id", empresaId)
-      .maybeSingle();
+    const cycleMetadata = currentCycle?.metadata ?? {};
+    const cycleSnapshot =
+      cycleMetadata.snapshot && typeof cycleMetadata.snapshot === "object"
+        ? (cycleMetadata.snapshot as Record<string, any>)
+        : (cycleMetadata as Record<string, any>);
 
-    if (!planEP) {
-      const suspensionMotivoSinPlan =
-        empRow.suspension_motivo ??
-        "Sin plan activo. Debe seleccionar un plan para continuar.";
-
-      if (!empRow.suspendida) {
-        await persistirSuspensionEmpresa({
-          empresaId,
-          motivo: suspensionMotivoSinPlan,
-        });
-      }
-
-      return NextResponse.json(
-        {
-          plan: null,
-          ciclo: { inicio: null, fin: null, proximoCobro: null },
-          suscripcion: null,
-          proximoPlan: vEstado?.plan_proximo_id
-            ? {
-                id: vEstado.plan_proximo_id,
-                nombre: vEstado.plan_proximo_nombre ?? "",
-              }
-            : null,
-          cambioProgramadoPara: vEstado?.cambio_programado_para ?? null,
-          estado: {
-            suspendida: true,
-            suspendida_motivo: suspensionMotivoSinPlan,
-            suspendida_at: empRow.suspendida_at ?? nowISO(),
-            plan_vencido: true,
-            estado_plan: "sin_plan",
-            tipo_cobertura_actual: "sin_cobertura",
-            dias_desde_vencimiento: 0,
-            en_periodo_gracia: false,
-            requiere_seleccion_plan: true,
-            requiere_pago: false,
-            requiere_pago_inicial_acuerdo: false,
-          },
-          features: {
-            tipo_plan: null,
-            incluye_valuador: false,
-            incluye_tracker: false,
-          },
-          pricing: null,
-          acuerdoComercial: null,
-          cupos: {
-            max_asesores_plan: null,
-            max_asesores_final: null,
-            precio_extra_por_asesor_plan: null,
-            precio_extra_por_asesor_final: null,
-          },
-        },
-        { status: 200 }
-      );
-    }
-
-    const { data: planRow, error: planErr } = await supabaseAdmin
-      .from("planes")
-      .select(
-        "id, nombre, nombre_comercial, precio, duracion_dias, max_asesores, precio_extra_por_asesor, tipo_plan, incluye_valuador, incluye_tracker, es_trial"
-      )
-      .eq("id", planEP.plan_id)
-      .maybeSingle();
-
-    if (planErr) {
-      return NextResponse.json({ error: planErr.message }, { status: 400 });
-    }
-
-    const billingConfig = await resolveEmpresaBillingConfig({
-      supabase: supabaseAdmin,
-      empresaId,
-      planId: planEP.plan_id,
-      maxAsesoresOverride:
-        planEP.max_asesores_override == null
-          ? null
-          : Number(planEP.max_asesores_override),
-    });
-
-    const precioNeto = toNum(billingConfig.precio_neto_final);
-    const totalConIVA = toNum(billingConfig.precio_total_final);
-
-    const ahoraIso = nowISO();
-
-    const { data: suscripcionActiva, error: suscripcionActivaError } =
-      await supabaseAdmin
-        .from("suscripciones")
-        .select(
-          "id, estado, inicio, fin, plan_id, externo_customer_id, externo_subscription_id, created_at"
-        )
-        .eq("empresa_id", empresaId)
-        .eq("estado", "activa")
-        .lte("inicio", ahoraIso)
-        .or(`fin.is.null,fin.gte.${ahoraIso}`)
-        .order("fin", { ascending: false, nullsFirst: true })
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-    if (suscripcionActivaError) {
-      return NextResponse.json(
-        { error: suscripcionActivaError.message },
-        { status: 400 }
-      );
-    }
-
-    const { data: ultimaSuscripcion, error: ultimaSuscripcionError } =
-      await supabaseAdmin
-        .from("suscripciones")
-        .select(
-          "id, estado, inicio, fin, plan_id, externo_customer_id, externo_subscription_id, created_at"
-        )
-        .eq("empresa_id", empresaId)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-    if (ultimaSuscripcionError) {
-      return NextResponse.json(
-        { error: ultimaSuscripcionError.message },
-        { status: 400 }
-      );
-    }
-
-    const susRow = suscripcionActiva ?? ultimaSuscripcion ?? null;
-
-    const cicloInicio =
-      suscripcionActiva?.inicio ??
-      billingConfig.ciclo_inicio ??
-      planEP.fecha_inicio ??
-      null;
-
-    const cicloFin =
-      suscripcionActiva?.fin ??
-      billingConfig.ciclo_fin ??
-      planEP.fecha_fin ??
-      null;
-
-    if (suscripcionActiva?.fin) {
-      const fechaFinSuscripcion = String(suscripcionActiva.fin).slice(0, 10);
-      const fechaFinPlan = planEP.fecha_fin
-        ? String(planEP.fecha_fin).slice(0, 10)
-        : null;
-
-      if (!fechaFinPlan || fechaFinPlan < fechaFinSuscripcion || !planEP.activo) {
-        const { error: syncPlanError } = await supabaseAdmin
-          .from("empresas_planes")
-          .update({
-            activo: true,
-            fecha_fin: fechaFinSuscripcion,
-          })
-          .eq("id", planEP.id);
-
-        if (syncPlanError) {
-          console.warn(
-            "billing/estado: no se pudo sincronizar empresas_planes:",
-            syncPlanError.message
-          );
-        }
-      }
-    }
-
-    const now = new Date();
-    let plan_vencido = false;
-    let dias_desde_vencimiento: number | null = null;
-    let en_periodo_gracia = false;
-    let proximoCobro: string | null = null;
-
-    if (cicloFin) {
-      try {
-        const fin = new Date(cicloFin as string);
-        proximoCobro = fin.toISOString();
-
-        const diffMs = now.getTime() - fin.getTime();
-        const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-        dias_desde_vencimiento = diffDays;
-
-        if (diffDays >= 0) {
-          plan_vencido = true;
-          en_periodo_gracia = diffDays <= 2;
-        }
-      } catch {
-        proximoCobro = null;
-      }
-    } else if (
-      cicloInicio &&
-      (billingConfig.plan_duracion_dias ?? planRow?.duracion_dias)
-    ) {
-      try {
-        const base = new Date(cicloInicio as string);
-        const d = new Date(base.getTime());
-        d.setDate(
-          d.getDate() +
-            Number(billingConfig.plan_duracion_dias ?? planRow?.duracion_dias ?? 30)
-        );
-        proximoCobro = d.toISOString();
-      } catch {
-        proximoCobro = null;
-      }
-    }
-
-    const hoy = todayDateOnlyUTC();
-
-    const esTrial = billingConfig.plan_es_trial ?? !!planRow?.es_trial;
-    const acuerdoActivo = !!billingConfig.agreement_applied;
-    const acuerdoInicio = billingConfig.agreement_fecha_inicio ?? null;
-    const acuerdoFin = billingConfig.agreement_fecha_fin ?? null;
-
-    const acuerdoVigenteHoy =
-      acuerdoActivo &&
-      !!acuerdoInicio &&
-      acuerdoInicio <= hoy &&
-      (!acuerdoFin || acuerdoFin >= hoy);
-
-    const acuerdoGratisOVirtual =
-      acuerdoVigenteHoy && round2(totalConIVA) <= 0;
-
-    const suscripcionActivaActual = !!suscripcionActiva;
-
-    // Acuerdo comercial vigente con cobro mensual:
-    // si no hay suscripción/ciclo vigente actual, debe pedir pago.
-    const requierePagoInicialAcuerdo =
-      acuerdoVigenteHoy &&
-      !acuerdoGratisOVirtual &&
-      !suscripcionActivaActual;
-
-    // Trial vencido fuera de gracia
-    const requiereSeleccionPlan =
-      !!esTrial && plan_vencido && !en_periodo_gracia;
-
-    // Plan normal vencido fuera de gracia
-    const requierePagoPlanNormal =
-      !esTrial &&
-      !acuerdoVigenteHoy &&
-      plan_vencido &&
-      !en_periodo_gracia;
-
-    const suspendidaPorAcuerdo = requierePagoInicialAcuerdo === true;
-    const suspendidaPorTrial = requiereSeleccionPlan === true;
-    const suspendidaPorPlanNormal = requierePagoPlanNormal === true;
-
-    const suspendidaCalculada =
-      suspendidaPorAcuerdo ||
-      suspendidaPorTrial ||
-      suspendidaPorPlanNormal;
-
-    const suspensionMotivoCalculado = suspendidaPorAcuerdo
-      ? "Acuerdo comercial pendiente de pago del ciclo actual."
-      : suspendidaPorTrial
-      ? "Trial vencido. Debe seleccionar un plan para continuar."
-      : suspendidaPorPlanNormal
-      ? "Cuenta temporalmente suspendida por falta de pago."
+    const cyclePlanId = currentCycle?.plan_actual_id ?? null;
+    const agreementPlanId = activeAgreement?.plan_id ?? null;
+    const operationalPlanId = operationalPlan?.plan_id
+      ? String(operationalPlan.plan_id)
       : null;
+    const planIdForDisplay = cyclePlanId ?? agreementPlanId ?? operationalPlanId;
 
-    let suspendidaPersistidaFinal = !!empRow.suspendida;
-    let suspendidaAtFinal = empRow.suspendida_at ?? null;
-    let motivoPersistidoFinal = empRow.suspension_motivo ?? null;
+    let planRow: any = null;
+    if (planIdForDisplay) {
+      const { data, error } = await supabaseAdmin
+        .from("planes")
+        .select(
+          "id, nombre, nombre_comercial, precio, duracion_dias, max_asesores, precio_extra_por_asesor, tipo_plan, tier_plan, incluye_valuador, incluye_tracker, es_trial, es_desarrollo"
+        )
+        .eq("id", planIdForDisplay)
+        .maybeSingle();
 
-    /**
-     * Sincronización oportunista:
-     * - Si el cálculo dice que debe suspenderse, persistimos suspensión.
-     * - Si el cálculo dice que NO debe suspenderse y la suspensión persistida era de billing,
-     *   la limpiamos automáticamente.
-     * - Si la suspensión persistida parece manual/administrativa no-billing, la respetamos.
-     */
-    if (suspendidaCalculada && suspensionMotivoCalculado) {
-      const debeActualizarMotivo =
-        !empRow.suspendida ||
-        empRow.suspension_motivo !== suspensionMotivoCalculado;
-
-      if (debeActualizarMotivo) {
-        await persistirSuspensionEmpresa({
-          empresaId,
-          motivo: suspensionMotivoCalculado,
-        });
+      if (error) {
+        return NextResponse.json({ error: error.message }, { status: 400 });
       }
+      planRow = data;
+    }
 
-      suspendidaPersistidaFinal = true;
-      suspendidaAtFinal = empRow.suspendida_at ?? nowISO();
-      motivoPersistidoFinal = suspensionMotivoCalculado;
+    let nextPaymentConfig: Awaited<ReturnType<typeof resolveEmpresaBillingConfig>> | null = null;
+    const planIdForNextPayment = agreementPlanId ?? operationalPlanId ?? cyclePlanId;
+
+    if (planIdForNextPayment) {
+      nextPaymentConfig = await resolveEmpresaBillingConfig({
+        supabase: supabaseAdmin,
+        empresaId,
+        planId: planIdForNextPayment,
+        maxAsesoresOverride:
+          operationalPlan?.max_asesores_override == null
+            ? null
+            : Number(operationalPlan.max_asesores_override),
+      });
+    }
+
+    const today = todayUTC();
+    const legacyStart = operationalPlan?.fecha_inicio
+      ? String(operationalPlan.fecha_inicio)
+      : null;
+    const legacyEnd = operationalPlan?.fecha_fin
+      ? String(operationalPlan.fecha_fin)
+      : null;
+    const legacyOperationalCoverage =
+      !!operationalPlan &&
+      !!planRow &&
+      (planRow.es_trial === true || planRow.es_desarrollo === true) &&
+      (!legacyStart || legacyStart <= today) &&
+      (!legacyEnd || legacyEnd >= today);
+
+    const hasPaidCycle = !!currentCycle;
+    const accessByCoverage = hasPaidCycle || legacyOperationalCoverage;
+    const manualSuspension =
+      empresa.suspendida === true &&
+      !isBillingSuspensionReason(empresa.suspension_motivo);
+    const automaticSuspension = !accessByCoverage;
+    const accessAllowed = !manualSuspension && !automaticSuspension;
+
+    const lastCycleEnd =
+      currentCycle?.ciclo_fin ??
+      latestExpiredCycle?.ciclo_fin ??
+      latestExpiredCycle?.fin ??
+      null;
+
+    const isTrial = planRow?.es_trial === true;
+    const requiresPlanSelection = !accessByCoverage && isTrial;
+    const requiresPayment = !accessByCoverage && !isTrial && !!planIdForNextPayment;
+    const requiresAgreementPayment = requiresPayment && !!activeAgreement;
+
+    let automaticReason: string | null = null;
+    if (automaticSuspension) {
+      if (requiresAgreementPayment) {
+        automaticReason = "Acuerdo comercial pendiente de pago del ciclo mensual.";
+      } else if (requiresPlanSelection) {
+        automaticReason = "Trial vencido. Debe seleccionar un plan para continuar.";
+      } else if (planIdForNextPayment) {
+        automaticReason = "Cuenta suspendida por falta de pago: sin ciclo vigente.";
+      } else {
+        automaticReason = "Sin plan activo. Debe seleccionar un plan para continuar.";
+      }
+    }
+
+    if (automaticSuspension && !manualSuspension) {
+      if (
+        empresa.suspendida !== true ||
+        empresa.suspension_motivo !== automaticReason
+      ) {
+        await supabaseAdmin
+          .from("empresas")
+          .update({
+            suspendida: true,
+            suspendida_at: nowISO(),
+            suspension_motivo: automaticReason,
+            updated_at: nowISO(),
+          })
+          .eq("id", empresaId);
+      }
     } else if (
-      empRow.suspendida &&
-      isBillingSuspensionMotivo(empRow.suspension_motivo)
+      accessAllowed &&
+      empresa.suspendida === true &&
+      isBillingSuspensionReason(empresa.suspension_motivo)
     ) {
-      await limpiarSuspensionEmpresa({ empresaId });
-
-      suspendidaPersistidaFinal = false;
-      suspendidaAtFinal = null;
-      motivoPersistidoFinal = null;
+      await supabaseAdmin
+        .from("empresas")
+        .update({
+          suspendida: false,
+          suspendida_at: null,
+          suspension_motivo: null,
+          updated_at: nowISO(),
+        })
+        .eq("id", empresaId);
     }
 
-    const suspendidaFinal =
-      suspendidaCalculada || suspendidaPersistidaFinal;
-
-    const suspensionMotivoFinal = suspendidaCalculada
-      ? suspensionMotivoCalculado
-      : motivoPersistidoFinal;
-
-    const enPeriodoGraciaFinal =
-      suspendidaPorAcuerdo ? false : en_periodo_gracia;
-
-    const planVencidoFinal =
-      acuerdoGratisOVirtual || suscripcionActivaActual
-        ? false
-        : plan_vencido;
-
-    const diasDesdeVencimientoFinal =
-      acuerdoGratisOVirtual || suscripcionActivaActual
-        ? null
-        : dias_desde_vencimiento;
-
-    const tipoPlan = planRow?.tipo_plan ?? null;
-    const incluyeValuador = !!planRow?.incluye_valuador;
-    const incluyeTracker = !!planRow?.incluye_tracker;
-
-    let tipoCoberturaActual:
-      | "trial"
-      | "plan"
-      | "acuerdo_comercial"
-      | "sin_cobertura" = "plan";
-
-    if (esTrial) {
-      tipoCoberturaActual = "trial";
-    } else if (acuerdoVigenteHoy) {
-      tipoCoberturaActual = "acuerdo_comercial";
-    } else {
-      tipoCoberturaActual = "plan";
+    if (currentCycle?.plan_actual_id) {
+      await syncOperationalPlanFromCurrentCycle({
+        empresaId,
+        planId: currentCycle.plan_actual_id,
+        cycleStart: currentCycle.ciclo_inicio,
+        cycleEnd: currentCycle.ciclo_fin,
+        maxAsesoresOverride:
+          cycleSnapshot.max_asesores_final == null
+            ? null
+            : Number(cycleSnapshot.max_asesores_final),
+      });
     }
 
-    let estadoPlan: "vigente" | "vencido" | "sin_plan" = "vigente";
-    if (!planEP) {
-      estadoPlan = "sin_plan";
-    } else if (planVencidoFinal) {
-      estadoPlan = "vencido";
-    } else {
-      estadoPlan = "vigente";
-    }
+    const agreementStatus = activeAgreement
+      ? "vigente"
+      : latestAgreement
+      ? "vencido"
+      : "sin_acuerdo";
+
+    const agreementForResponse = activeAgreement ?? latestAgreement;
+    const agreementPricing = activeAgreement ? nextPaymentConfig : null;
+
+    const planName = planRow
+      ? String(planRow.nombre_comercial ?? planRow.nombre ?? "")
+      : null;
+    const currentCyclePrice =
+      cycleSnapshot.precio_total_final ??
+      cycleSnapshot.precio_neto_final ??
+      null;
 
     return NextResponse.json(
       {
+        acceso: {
+          permitido: accessAllowed,
+          origen: manualSuspension
+            ? "suspension_manual"
+            : hasPaidCycle
+            ? "ciclo_pagado"
+            : legacyOperationalCoverage
+            ? isTrial
+              ? "trial"
+              : "desarrollo"
+            : "sin_cobertura",
+          motivo: manualSuspension
+            ? empresa.suspension_motivo
+            : automaticReason,
+        },
         plan: planRow
           ? {
-              id: planRow.id,
-              nombre:
-                (planRow as any).nombre_comercial ??
-                planRow.nombre,
-
-              precioNeto,
-              totalConIVA,
-
-              precioBaseNeto: billingConfig.precio_base_neto,
-              precioNetoFinal: billingConfig.precio_neto_final,
-              ivaModo: billingConfig.modo_iva,
-              ivaPct: billingConfig.iva_pct,
-              ivaImporte: billingConfig.iva_importe,
-              precioTotalFinal: billingConfig.precio_total_final,
-              pricingSource: billingConfig.pricing_source,
-
-              tipo_plan: tipoPlan,
-              incluye_valuador: incluyeValuador,
-              incluye_tracker: incluyeTracker,
-              es_trial: esTrial,
+              id: String(planRow.id),
+              nombre: planName,
+              precioNeto:
+                nextPaymentConfig?.precio_neto_final ?? Number(planRow.precio ?? 0),
+              totalConIVA:
+                nextPaymentConfig?.precio_total_final ?? Number(planRow.precio ?? 0),
+              precioBaseNeto: nextPaymentConfig?.precio_base_neto ?? null,
+              precioNetoFinal: nextPaymentConfig?.precio_neto_final ?? null,
+              ivaModo: nextPaymentConfig?.modo_iva ?? null,
+              ivaPct: nextPaymentConfig?.iva_pct ?? null,
+              ivaImporte: nextPaymentConfig?.iva_importe ?? null,
+              precioTotalFinal: nextPaymentConfig?.precio_total_final ?? null,
+              pricingSource: nextPaymentConfig?.pricing_source ?? null,
+              tipo_plan: planRow.tipo_plan ?? null,
+              tier_plan: planRow.tier_plan ?? null,
+              incluye_valuador: planRow.incluye_valuador === true,
+              incluye_tracker: planRow.incluye_tracker === true,
+              es_trial: planRow.es_trial === true,
+              es_desarrollo: planRow.es_desarrollo === true,
               duracion_dias:
-                billingConfig.plan_duracion_dias ??
-                (planRow?.duracion_dias == null
-                  ? null
-                  : Number(planRow.duracion_dias)),
+                planRow.duracion_dias == null ? null : Number(planRow.duracion_dias),
             }
           : null,
-        ciclo: {
-          inicio: cicloInicio,
-          fin: cicloFin,
-          proximoCobro,
-        },
-        suscripcion: susRow
+        ciclo: currentCycle
           ? {
-              estado: susRow.estado,
-              externoCustomerId: susRow.externo_customer_id ?? null,
-              externoSubscriptionId: susRow.externo_subscription_id ?? null,
+              id: currentCycle.id,
+              inicio: currentCycle.ciclo_inicio,
+              fin: currentCycle.ciclo_fin,
+              proximoCobro: currentCycle.ciclo_fin,
+              vigente: true,
+              precioPagado: currentCyclePrice,
             }
-          : null,
-        proximoPlan: vEstado?.plan_proximo_id
+          : {
+              id: null,
+              inicio: null,
+              fin: null,
+              proximoCobro: null,
+              vigente: false,
+              ultimoVencimiento: lastCycleEnd,
+            },
+        suscripcion: latestSubscription
           ? {
-              id: vEstado.plan_proximo_id,
-              nombre: vEstado.plan_proximo_nombre ?? "",
+              id: latestSubscription.id,
+              estado: latestSubscription.estado,
+              externoCustomerId:
+                latestSubscription.externo_customer_id ?? null,
+              externoSubscriptionId:
+                latestSubscription.externo_subscription_id ?? null,
             }
           : null,
-        cambioProgramadoPara: vEstado?.cambio_programado_para ?? null,
+        proximoPlan: currentCycle?.plan_proximo_id
+          ? {
+              id: currentCycle.plan_proximo_id,
+              nombre: currentCycle.plan_proximo_nombre ?? "",
+            }
+          : null,
+        cambioProgramadoPara: currentCycle?.cambio_programado_para ?? null,
         estado: {
-          suspendida: suspendidaFinal,
-          suspendida_motivo: suspensionMotivoFinal,
-          suspendida_at: suspendidaAtFinal,
-          plan_vencido: planVencidoFinal,
-          estado_plan: estadoPlan,
-          tipo_cobertura_actual: tipoCoberturaActual,
-          dias_desde_vencimiento: diasDesdeVencimientoFinal,
-          en_periodo_gracia: enPeriodoGraciaFinal,
-          requiere_seleccion_plan: requiereSeleccionPlan,
-          requiere_pago: suspendidaPorAcuerdo || suspendidaPorPlanNormal,
-          requiere_pago_inicial_acuerdo: requierePagoInicialAcuerdo,
+          suspendida: !accessAllowed,
+          suspendida_motivo: manualSuspension
+            ? empresa.suspension_motivo
+            : automaticReason,
+          suspendida_at: !accessAllowed
+            ? empresa.suspendida_at ?? nowISO()
+            : null,
+          plan_vencido: !accessByCoverage,
+          estado_plan: accessByCoverage
+            ? "vigente"
+            : planIdForNextPayment
+            ? "vencido"
+            : "sin_plan",
+          tipo_cobertura_actual: hasPaidCycle
+            ? activeAgreement
+              ? "acuerdo_comercial"
+              : "plan"
+            : legacyOperationalCoverage
+            ? isTrial
+              ? "trial"
+              : "plan"
+            : "sin_cobertura",
+          dias_desde_vencimiento: accessByCoverage ? null : daysSince(lastCycleEnd),
+          en_periodo_gracia: false,
+          requiere_seleccion_plan: requiresPlanSelection || !planIdForNextPayment,
+          requiere_pago: requiresPayment,
+          requiere_pago_inicial_acuerdo: requiresAgreementPayment,
+          suspension_manual: manualSuspension,
         },
         features: {
-          tipo_plan: tipoPlan,
-          incluye_valuador: incluyeValuador,
-          incluye_tracker: incluyeTracker,
+          tipo_plan: planRow?.tipo_plan ?? null,
+          incluye_valuador: planRow?.incluye_valuador === true,
+          incluye_tracker: planRow?.incluye_tracker === true,
         },
-        pricing: {
-          precio_base_neto: billingConfig.precio_base_neto,
-          precio_neto_final: billingConfig.precio_neto_final,
-          modo_iva: billingConfig.modo_iva,
-          iva_pct: billingConfig.iva_pct,
-          iva_importe: billingConfig.iva_importe,
-          precio_total_final: billingConfig.precio_total_final,
-          pricing_source: billingConfig.pricing_source,
-          suscripcion_override_applied:
-            billingConfig.suscripcion_override_applied,
-          suscripcion_precio_neto_override:
-            billingConfig.suscripcion_precio_neto_override,
-        },
-        cupos: {
-          max_asesores_plan: billingConfig.max_asesores_plan,
-          max_asesores_final: billingConfig.max_asesores_final,
-          precio_extra_por_asesor_plan:
-            billingConfig.precio_extra_por_asesor_plan,
-          precio_extra_por_asesor_final:
-            billingConfig.precio_extra_por_asesor_final,
-        },
-        acuerdoComercial: billingConfig.agreement_applied
+        pricing: nextPaymentConfig
           ? {
-              activo: true,
-              id: billingConfig.agreement_id,
-              tipo: billingConfig.agreement_tipo,
-              plan_id: billingConfig.agreement_plan_id,
-              fecha_inicio: billingConfig.agreement_fecha_inicio,
-              fecha_fin: billingConfig.agreement_fecha_fin,
-              modo_iva: billingConfig.modo_iva,
-              iva_pct: billingConfig.iva_pct,
-              precio_neto_final: billingConfig.precio_neto_final,
-              precio_total_final: billingConfig.precio_total_final,
-              max_asesores_final: billingConfig.max_asesores_final,
-              precio_extra_por_asesor_final:
-                billingConfig.precio_extra_por_asesor_final,
+              precio_base_neto: nextPaymentConfig.precio_base_neto,
+              precio_neto_final: nextPaymentConfig.precio_neto_final,
+              modo_iva: nextPaymentConfig.modo_iva,
+              iva_pct: nextPaymentConfig.iva_pct,
+              iva_importe: nextPaymentConfig.iva_importe,
+              precio_total_final: nextPaymentConfig.precio_total_final,
+              pricing_source: nextPaymentConfig.pricing_source,
+              suscripcion_override_applied:
+                nextPaymentConfig.suscripcion_override_applied,
+              suscripcion_precio_neto_override:
+                nextPaymentConfig.suscripcion_precio_neto_override,
             }
           : null,
+        cupos: nextPaymentConfig
+          ? {
+              max_asesores_plan: nextPaymentConfig.max_asesores_plan,
+              max_asesores_final: nextPaymentConfig.max_asesores_final,
+              precio_extra_por_asesor_plan:
+                nextPaymentConfig.precio_extra_por_asesor_plan,
+              precio_extra_por_asesor_final:
+                nextPaymentConfig.precio_extra_por_asesor_final,
+            }
+          : null,
+        acuerdoComercial: agreementForResponse
+          ? {
+              activo: agreementStatus === "vigente",
+              estado: agreementStatus,
+              id: String(agreementForResponse.id),
+              tipo: agreementForResponse.tipo_acuerdo ?? null,
+              plan_id: agreementForResponse.plan_id ?? null,
+              fecha_inicio: agreementForResponse.fecha_inicio ?? null,
+              fecha_fin: agreementForResponse.fecha_fin ?? null,
+              modo_iva:
+                agreementPricing?.modo_iva ?? agreementForResponse.modo_iva ?? null,
+              iva_pct:
+                agreementPricing?.iva_pct ?? agreementForResponse.iva_pct ?? null,
+              precio_neto_final:
+                agreementPricing?.precio_neto_final ??
+                agreementForResponse.precio_neto_fijo ??
+                null,
+              precio_total_final:
+                agreementPricing?.precio_total_final ??
+                agreementForResponse.precio_neto_fijo ??
+                null,
+              max_asesores_final:
+                agreementPricing?.max_asesores_final ??
+                agreementForResponse.max_asesores_override ??
+                null,
+              precio_extra_por_asesor_final:
+                agreementPricing?.precio_extra_por_asesor_final ??
+                agreementForResponse.precio_extra_por_asesor_override ??
+                null,
+            }
+          : {
+              activo: false,
+              estado: "sin_acuerdo",
+              id: null,
+              tipo: null,
+              plan_id: null,
+              fecha_inicio: null,
+              fecha_fin: null,
+            },
       },
       { status: 200 }
     );
-  } catch (e: any) {
-    console.error("billing/estado GET error:", e?.message || e);
-    return NextResponse.json(
-      { error: e?.message || "Error inesperado" },
-      { status: 500 }
-    );
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Error inesperado";
+    console.error("billing/estado GET error:", message);
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

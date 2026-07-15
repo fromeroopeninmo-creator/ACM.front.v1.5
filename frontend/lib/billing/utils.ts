@@ -241,60 +241,154 @@ export async function getEmpresaPlanActivo(
  * - Busca el registro activo en empresas_planes.
  * - Si no tiene fecha_fin, la calcula con planes.duracion_dias (o 30 días default).
  */
+export type SuscripcionCicloEstado = {
+  id: string;
+  empresa_id: string;
+  ciclo_inicio: string;
+  ciclo_fin: string;
+  estado: string;
+  moneda: string;
+  plan_actual_id: string | null;
+  plan_actual_nombre: string | null;
+  plan_proximo_id: string | null;
+  plan_proximo_nombre: string | null;
+  cambio_programado_para: string | null;
+  metadata: Record<string, unknown>;
+  precio_neto_override: number | null;
+  externo_customer_id: string | null;
+  externo_subscription_id: string | null;
+};
+
+function normalizeCycleDate(row: any, primary: "inicio" | "fin"): string | null {
+  const preferred = primary === "inicio" ? row?.ciclo_inicio : row?.ciclo_fin;
+  const fallback = primary === "inicio" ? row?.inicio : row?.fin;
+  const value = preferred ?? fallback ?? null;
+  if (!value) return null;
+  const parsed = new Date(String(value));
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+}
+
+/**
+ * Devuelve el ciclo mensual que realmente cubre el acceso en este momento.
+ * La fuente de verdad es public.suscripciones, nunca empresas_planes.
+ *
+ * Reglas:
+ * - Ignora checkouts pendientes, cancelados y ciclos históricos.
+ * - Prioriza un ciclo activo cuyo inicio <= ahora < fin.
+ * - Si existe un ciclo futuro ya pagado, lo expone como próximo plan/cambio.
+ * - inicio/fin se mantienen como fallback de compatibilidad histórica.
+ */
 export async function getSuscripcionEstado(
   supabase: SupabaseClient,
   empresaId: string
-) {
-  const ep = await getEmpresaPlanActivo(supabase, empresaId);
+): Promise<SuscripcionCicloEstado | null> {
+  const nowIso = new Date().toISOString();
 
-  if (!ep) return null;
+  const { data: rows, error } = await supabase
+    .from("suscripciones")
+    .select(
+      [
+        "id",
+        "empresa_id",
+        "plan_id",
+        "plan_actual_id",
+        "plan_proximo_id",
+        "cambio_programado_para",
+        "estado",
+        "inicio",
+        "fin",
+        "ciclo_inicio",
+        "ciclo_fin",
+        "moneda",
+        "precio_neto_override",
+        "metadata",
+        "externo_customer_id",
+        "externo_subscription_id",
+        "created_at",
+      ].join(", ")
+    )
+    .eq("empresa_id", empresaId)
+    .eq("estado", "activa")
+    .order("ciclo_inicio", { ascending: false, nullsFirst: false })
+    .order("inicio", { ascending: false, nullsFirst: false })
+    .order("created_at", { ascending: false })
+    .limit(50);
 
-  const empresa_id = ep.empresa_id;
-  const plan_actual_id = ep.plan_id;
-  const fecha_inicio = ep.fecha_inicio;
-  let fecha_fin = ep.fecha_fin;
+  if (error) {
+    throw new Error(`Error leyendo ciclo real de suscripciones: ${error.message}`);
+  }
 
-  let plan_actual_nombre: string | null = null;
+  const normalized = (Array.isArray(rows) ? rows : [])
+    .map((row: any) => ({
+      row,
+      inicio: normalizeCycleDate(row, "inicio"),
+      fin: normalizeCycleDate(row, "fin"),
+    }))
+    .filter((item) => item.inicio && item.fin);
 
-  if (plan_actual_id) {
-    const { data: planRow, error: planErr } = await supabase
+  const current = normalized
+    .filter((item) => item.inicio! <= nowIso && item.fin! > nowIso)
+    .sort((a, b) => b.fin!.localeCompare(a.fin!))[0];
+
+  if (!current) return null;
+
+  const future = normalized
+    .filter((item) => item.inicio! >= current.fin! && item.inicio! > nowIso)
+    .sort((a, b) => a.inicio!.localeCompare(b.inicio!))[0];
+
+  const currentPlanId =
+    (current.row.plan_actual_id ?? current.row.plan_id ?? null) as string | null;
+  const futurePlanId = future
+    ? ((future.row.plan_actual_id ?? future.row.plan_id ?? null) as string | null)
+    : ((current.row.plan_proximo_id ?? null) as string | null);
+
+  const planIds = [currentPlanId, futurePlanId].filter(Boolean) as string[];
+  let planNames = new Map<string, string>();
+
+  if (planIds.length > 0) {
+    const { data: plans, error: plansError } = await supabase
       .from("planes")
-      .select("nombre, nombre_comercial, duracion_dias")
-      .eq("id", plan_actual_id)
-      .maybeSingle();
+      .select("id, nombre, nombre_comercial")
+      .in("id", Array.from(new Set(planIds)));
 
-    if (planErr) {
-      throw new Error(
-        `Error leyendo plan en getSuscripcionEstado: ${planErr.message}`
+    if (plansError) {
+      console.warn("getSuscripcionEstado: no se pudieron resolver nombres:", plansError.message);
+    } else {
+      planNames = new Map(
+        (plans ?? []).map((p: any) => [
+          String(p.id),
+          String(p.nombre_comercial ?? p.nombre ?? ""),
+        ])
       );
-    }
-
-    plan_actual_nombre =
-      ((planRow as any)?.nombre_comercial ??
-        (planRow as any)?.nombre ??
-        null) as string | null;
-
-    if (!fecha_fin && fecha_inicio) {
-      const dur =
-        typeof planRow?.duracion_dias === "number" && planRow.duracion_dias > 0
-          ? planRow.duracion_dias
-          : 30;
-
-      fecha_fin = addDaysISO(fecha_inicio, dur);
     }
   }
 
   return {
-    empresa_id,
-    ciclo_inicio: fecha_inicio,
-    ciclo_fin: fecha_fin ?? fecha_inicio,
-    estado: "activa",
-    moneda: "ARS",
-    plan_actual_id,
-    plan_actual_nombre,
-    plan_proximo_id: null,
-    plan_proximo_nombre: null,
-    cambio_programado_para: null,
+    id: String(current.row.id),
+    empresa_id: String(current.row.empresa_id),
+    ciclo_inicio: current.inicio!,
+    ciclo_fin: current.fin!,
+    estado: String(current.row.estado ?? "activa"),
+    moneda: String(current.row.moneda ?? "ARS"),
+    plan_actual_id: currentPlanId,
+    plan_actual_nombre: currentPlanId ? planNames.get(currentPlanId) ?? null : null,
+    plan_proximo_id: futurePlanId,
+    plan_proximo_nombre: futurePlanId ? planNames.get(futurePlanId) ?? null : null,
+    cambio_programado_para:
+      future?.inicio ??
+      (current.row.cambio_programado_para
+        ? new Date(String(current.row.cambio_programado_para)).toISOString()
+        : null),
+    metadata:
+      current.row.metadata && typeof current.row.metadata === "object"
+        ? (current.row.metadata as Record<string, unknown>)
+        : {},
+    precio_neto_override:
+      current.row.precio_neto_override == null
+        ? null
+        : Number(current.row.precio_neto_override),
+    externo_customer_id: current.row.externo_customer_id ?? null,
+    externo_subscription_id: current.row.externo_subscription_id ?? null,
   };
 }
 
@@ -498,17 +592,25 @@ export async function getSuscripcionPrecioNetoOverride(
   empresaId: string,
   planId?: string | null
 ): Promise<number | null> {
-  const query = supabase
+  const nowIso = new Date().toISOString();
+
+  let query = supabase
     .from("suscripciones")
-    .select("precio_neto_override, plan_id, created_at")
+    .select(
+      "precio_neto_override, plan_id, plan_actual_id, ciclo_inicio, ciclo_fin, inicio, fin, created_at"
+    )
     .eq("empresa_id", empresaId)
+    .eq("estado", "activa")
     .not("precio_neto_override", "is", null)
+    .order("ciclo_inicio", { ascending: false, nullsFirst: false })
     .order("created_at", { ascending: false })
     .limit(25);
 
-  const { data, error } = planId
-    ? await query.eq("plan_id", planId)
-    : await query;
+  if (planId) {
+    query = query.or(`plan_id.eq.${planId},plan_actual_id.eq.${planId}`);
+  }
+
+  const { data, error } = await query;
 
   if (error) {
     console.warn(
@@ -518,12 +620,15 @@ export async function getSuscripcionPrecioNetoOverride(
     return null;
   }
 
-  const row = Array.isArray(data) && data.length > 0 ? data[0] : null;
-  if (!row) return null;
+  const row = (data ?? []).find((item: any) => {
+    const inicio = normalizeCycleDate(item, "inicio");
+    const fin = normalizeCycleDate(item, "fin");
+    return !!inicio && !!fin && inicio <= nowIso && fin > nowIso;
+  });
 
   return row?.precio_neto_override == null
     ? null
-    : Number((row as any).precio_neto_override);
+    : Number(row.precio_neto_override);
 }
 
 /**

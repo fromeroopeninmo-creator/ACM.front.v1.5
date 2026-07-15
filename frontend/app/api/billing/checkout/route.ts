@@ -1,23 +1,24 @@
-// app/api/billing/checkout/route.ts
+// frontend/app/api/billing/checkout/route.ts
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { supabaseServer } from "#lib/supabaseServer";
-import { resolveEmpresaBillingConfig, round2 } from "#lib/billing/utils";
+import {
+  getEmpresaAcuerdoComercialActivo,
+  getSuscripcionEstado,
+  resolveEmpresaBillingConfig,
+  round2,
+} from "#lib/billing/utils";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
+const MP_ACCESS_TOKEN =
+  process.env.MERCADOPAGO_ACCESS_TOKEN || process.env.MP_ACCESS_TOKEN || "";
 
 const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE);
-
-// Token de Mercado Pago (backend)
-const MP_ACCESS_TOKEN =
-  process.env.MERCADOPAGO_ACCESS_TOKEN ||
-  process.env.MP_ACCESS_TOKEN ||
-  "";
 
 type Role =
   | "empresa"
@@ -27,178 +28,185 @@ type Role =
   | "super_admin_root";
 
 async function resolveUserRole(userId: string): Promise<Role | null> {
-  const { data: p1 } = await supabaseAdmin
+  const { data: byUserId } = await supabaseAdmin
     .from("profiles")
     .select("role")
     .eq("user_id", userId)
     .maybeSingle();
 
-  if (p1?.role) return p1.role as Role;
+  if (byUserId?.role) return byUserId.role as Role;
 
-  const { data: p2 } = await supabaseAdmin
+  const { data: byId } = await supabaseAdmin
     .from("profiles")
     .select("role")
     .eq("id", userId)
     .maybeSingle();
 
-  return (p2?.role as Role) ?? null;
+  return (byId?.role as Role) ?? null;
 }
 
-async function resolveEmpresaIdForUser(
-  userId: string
-): Promise<string | null> {
-  // 1) Dueño directo
-  const { data: emp } = await supabaseAdmin
+async function resolveEmpresaIdForUser(userId: string): Promise<string | null> {
+  const { data: empresa } = await supabaseAdmin
     .from("empresas")
     .select("id")
     .eq("user_id", userId)
     .maybeSingle();
 
-  if (emp?.id) return emp.id as string;
+  if (empresa?.id) return String(empresa.id);
 
-  // 2) Perfil vinculado
-  const { data: prof } = await supabaseAdmin
+  const { data: profile } = await supabaseAdmin
     .from("profiles")
     .select("empresa_id")
     .eq("user_id", userId)
     .maybeSingle();
 
-  return (prof?.empresa_id as string) ?? null;
+  return profile?.empresa_id ? String(profile.empresa_id) : null;
+}
+
+function buildSnapshot(config: Awaited<ReturnType<typeof resolveEmpresaBillingConfig>>) {
+  return {
+    pricing_source: config.pricing_source,
+    agreement_applied: config.agreement_applied,
+    agreement_id: config.agreement_id,
+    agreement_tipo: config.agreement_tipo,
+    agreement_plan_id: config.agreement_plan_id,
+    agreement_fecha_inicio: config.agreement_fecha_inicio,
+    agreement_fecha_fin: config.agreement_fecha_fin,
+    precio_base_neto: config.precio_base_neto,
+    precio_neto_final: config.precio_neto_final,
+    iva_importe: config.iva_importe,
+    precio_total_final: config.precio_total_final,
+    modo_iva: config.modo_iva,
+    iva_pct: config.iva_pct,
+    max_asesores_plan: config.max_asesores_plan,
+    max_asesores_final: config.max_asesores_final,
+    precio_extra_por_asesor_plan: config.precio_extra_por_asesor_plan,
+    precio_extra_por_asesor_final: config.precio_extra_por_asesor_final,
+    plan_nombre: config.plan_nombre,
+    plan_duracion_dias: config.plan_duracion_dias,
+  };
 }
 
 export async function POST(req: Request) {
   try {
-    // Auth (desde cookie SSR)
     const server = supabaseServer();
     const { data: auth } = await server.auth.getUser();
-    const user = auth?.user || null;
-    const userId = user?.id ?? null;
+    const user = auth?.user ?? null;
 
-    if (!userId) {
-      return NextResponse.json(
-        { error: "No autenticado." },
-        { status: 401 }
-      );
+    if (!user?.id) {
+      return NextResponse.json({ error: "No autenticado." }, { status: 401 });
     }
 
-    // Role
-    const role = await resolveUserRole(userId);
+    const role = await resolveUserRole(user.id);
     const allowed: Role[] = ["empresa", "super_admin", "super_admin_root"];
 
     if (!role || !allowed.includes(role)) {
-      return NextResponse.json(
-        { error: "Acceso denegado." },
-        { status: 403 }
-      );
+      return NextResponse.json({ error: "Acceso denegado." }, { status: 403 });
     }
 
-    const body = await req.json().catch(() => null as any);
-    const planIdBody: string | undefined = body?.planId;
-    const empresaIdParam: string | undefined = body?.empresaId; // solo admins pueden pasarla
+    const body = await req.json().catch(() => ({}));
+    const requestedPlanId =
+      typeof body?.planId === "string" && body.planId.trim()
+        ? body.planId.trim()
+        : null;
+    const empresaIdParam =
+      typeof body?.empresaId === "string" && body.empresaId.trim()
+        ? body.empresaId.trim()
+        : null;
 
-    // Resolver empresaId según rol
     let empresaId: string | null = null;
 
     if (role === "empresa") {
-      empresaId = await resolveEmpresaIdForUser(userId);
-
-      if (!empresaId) {
-        return NextResponse.json(
-          { error: "No se pudo resolver la empresa del usuario." },
-          { status: 400 }
-        );
-      }
+      empresaId = await resolveEmpresaIdForUser(user.id);
     } else {
-      // super_admin / root
-      empresaId = empresaIdParam ?? (await resolveEmpresaIdForUser(userId));
+      empresaId = empresaIdParam ?? (await resolveEmpresaIdForUser(user.id));
+    }
 
-      if (!empresaId) {
-        return NextResponse.json(
-          { error: "Falta 'empresaId' para crear checkout." },
-          { status: 400 }
-        );
+    if (!empresaId) {
+      return NextResponse.json(
+        { error: "No se pudo resolver la empresa para el checkout." },
+        { status: 400 }
+      );
+    }
+
+    const acuerdoVigente = await getEmpresaAcuerdoComercialActivo(
+      supabaseAdmin,
+      empresaId
+    );
+
+    let effectivePlanId = requestedPlanId;
+
+    if (acuerdoVigente) {
+      if (acuerdoVigente.plan_id) {
+        if (requestedPlanId && requestedPlanId !== acuerdoVigente.plan_id) {
+          return NextResponse.json(
+            {
+              error:
+                "La cuenta posee un acuerdo comercial vigente. Solo puede abonarse el plan definido en el acuerdo.",
+            },
+            { status: 409 }
+          );
+        }
+        effectivePlanId = acuerdoVigente.plan_id;
       }
     }
 
-    let effectivePlanId = planIdBody ?? null;
-
-    // Si no viene planId, intentamos resolverlo desde acuerdo activo o plan operativo activo
     if (!effectivePlanId) {
-      const hoy = new Date().toISOString().slice(0, 10);
+      const cicloActual = await getSuscripcionEstado(supabaseAdmin, empresaId);
+      effectivePlanId = cicloActual?.plan_actual_id ?? null;
+    }
 
-      const { data: acuerdoActivo } = await supabaseAdmin
-        .from("empresa_acuerdos_comerciales")
+    if (!effectivePlanId) {
+      const { data: planOperativo } = await supabaseAdmin
+        .from("empresas_planes")
         .select("plan_id")
         .eq("empresa_id", empresaId)
         .eq("activo", true)
-        .lte("fecha_inicio", hoy)
-        .or(`fecha_fin.is.null,fecha_fin.gte.${hoy}`)
-        .order("created_at", { ascending: false })
+        .order("fecha_inicio", { ascending: false })
         .limit(1)
         .maybeSingle();
 
-      if (acuerdoActivo?.plan_id) {
-        effectivePlanId = String(acuerdoActivo.plan_id);
-      } else {
-        const { data: planActivo } = await supabaseAdmin
-          .from("empresas_planes")
-          .select("plan_id")
-          .eq("empresa_id", empresaId)
-          .eq("activo", true)
-          .order("fecha_inicio", { ascending: false })
-          .limit(1)
-          .maybeSingle();
-
-        if (planActivo?.plan_id) {
-          effectivePlanId = String(planActivo.plan_id);
-        }
-      }
+      effectivePlanId = planOperativo?.plan_id
+        ? String(planOperativo.plan_id)
+        : null;
     }
 
     if (!effectivePlanId) {
       return NextResponse.json(
-        {
-          error:
-            "Falta 'planId' y no se pudo resolver un plan para el checkout.",
-        },
+        { error: "No se pudo resolver el plan a abonar." },
         { status: 400 }
       );
     }
 
-    // Validar plan
-    const { data: planRow, error: planErr } = await supabaseAdmin
+    const { data: planRow, error: planError } = await supabaseAdmin
       .from("planes")
-      .select(
-        "id, nombre, precio, duracion_dias, max_asesores, precio_extra_por_asesor"
-      )
+      .select("id, nombre, nombre_comercial, es_trial")
       .eq("id", effectivePlanId)
       .maybeSingle();
 
-    if (planErr) {
-      return NextResponse.json(
-        { error: planErr.message },
-        { status: 400 }
-      );
+    if (planError) {
+      return NextResponse.json({ error: planError.message }, { status: 400 });
     }
 
     if (!planRow) {
+      return NextResponse.json({ error: "Plan no encontrado." }, { status: 404 });
+    }
+
+    if (planRow.es_trial === true) {
       return NextResponse.json(
-        { error: "Plan no encontrado." },
-        { status: 404 }
+        { error: "El plan Trial no puede abonarse mediante checkout." },
+        { status: 409 }
       );
     }
 
-    // Resolver pricing efectivo: si hay acuerdo comercial vigente, manda el acuerdo
-    const billingConfig = await resolveEmpresaBillingConfig({
+    const config = await resolveEmpresaBillingConfig({
       supabase: supabaseAdmin,
       empresaId,
       planId: effectivePlanId,
     });
 
-    const montoNeto = round2(Number(billingConfig.precio_neto_final ?? 0));
-    const montoTotal = round2(
-      Number(billingConfig.precio_total_final ?? montoNeto)
-    );
+    const montoNeto = round2(Number(config.precio_neto_final ?? 0));
+    const montoTotal = round2(Number(config.precio_total_final ?? montoNeto));
     const montoCobrar = montoTotal > 0 ? montoTotal : montoNeto;
 
     if (!Number.isFinite(montoCobrar) || montoCobrar <= 0) {
@@ -208,185 +216,169 @@ export async function POST(req: Request) {
       );
     }
 
-    const hayAcuerdo = !!billingConfig.agreement_applied;
-    const title = hayAcuerdo
-      ? `Acuerdo Comercial - ${billingConfig.plan_nombre ?? planRow.nombre}`
-      : `Plan ${billingConfig.plan_nombre ?? planRow.nombre}`;
+    const snapshot = buildSnapshot(config);
+    const createdAt = new Date().toISOString();
 
-    // Crear registro de suscripción "pendiente"
-    const { data: sus, error: susErr } = await supabaseAdmin
+    const { data: pending, error: pendingError } = await supabaseAdmin
       .from("suscripciones")
       .insert({
         empresa_id: empresaId,
         plan_id: effectivePlanId,
+        plan_actual_id: effectivePlanId,
         estado: "pendiente",
-        inicio: new Date().toISOString(),
+        inicio: createdAt,
         fin: null,
+        ciclo_inicio: null,
+        ciclo_fin: null,
+        moneda: "ARS",
+        precio_neto_override: config.suscripcion_override_applied
+          ? config.suscripcion_precio_neto_override
+          : null,
         externo_customer_id: null,
         externo_subscription_id: null,
         metadata: {
-          initiated_by: userId,
-          role,
-          source: MP_ACCESS_TOKEN ? "checkout_mercadopago" : "checkout_sandbox",
-          pricing_source: billingConfig.pricing_source,
-          agreement_applied: billingConfig.agreement_applied,
-          agreement_id: billingConfig.agreement_id,
-          agreement_tipo: billingConfig.agreement_tipo,
-          precio_base_neto: billingConfig.precio_base_neto,
-          precio_neto_final: billingConfig.precio_neto_final,
-          iva_importe: billingConfig.iva_importe,
-          precio_total_final: billingConfig.precio_total_final,
-          modo_iva: billingConfig.modo_iva,
-          iva_pct: billingConfig.iva_pct,
-        } as any,
+          initiated_by: user.id,
+          initiated_role: role,
+          source: MP_ACCESS_TOKEN
+            ? "checkout_mercadopago"
+            : "checkout_sandbox",
+          cycle_status: "awaiting_payment",
+          snapshot,
+          ...snapshot,
+        },
       })
       .select("id")
-      .maybeSingle();
+      .single();
 
-    if (susErr) {
+    if (pendingError || !pending?.id) {
       return NextResponse.json(
-        { error: susErr.message },
+        { error: pendingError?.message ?? "No se pudo crear el checkout." },
         { status: 400 }
       );
     }
 
-    const suscripcionId = sus?.id as string | undefined;
+    const suscripcionId = String(pending.id);
+    const planNombre = String(
+      planRow.nombre_comercial ?? planRow.nombre ?? "VAI Prop"
+    );
+    const title = config.agreement_applied
+      ? `Acuerdo Comercial - ${planNombre}`
+      : `Plan ${planNombre}`;
 
-    // =============================
-    //  MODO MERCADO PAGO REAL
-    // =============================
-    if (MP_ACCESS_TOKEN) {
-      // email del usuario para el payer
-      const payerEmail =
-        (user as any)?.email ||
-        (user as any)?.user_metadata?.email ||
-        undefined;
-
-      const prefBody = {
-        items: [
-          {
-            title,
-            quantity: 1,
-            unit_price: montoCobrar,
-            currency_id: "ARS",
-          },
-        ],
-        payer: payerEmail ? { email: payerEmail } : undefined,
-
-        // Preferimos que external_reference apunte a la suscripción pendiente,
-        // porque el webhook puede usarla como referencia estable del ciclo de pago.
-        external_reference: suscripcionId ?? `${empresaId}:${effectivePlanId}`,
-
-        metadata: {
-          // Duplicamos snake_case y camelCase por robustez ante normalizaciones
-          // del proveedor o cambios futuros del normalizador del webhook.
-          empresa_id: empresaId,
-          empresaId,
-
-          plan_id: effectivePlanId,
-          planId: effectivePlanId,
-
-          suscripcion_id: suscripcionId ?? null,
-          suscripcionId: suscripcionId ?? null,
-
-          pricing_source: billingConfig.pricing_source,
-          agreement_applied: billingConfig.agreement_applied,
-          agreement_id: billingConfig.agreement_id,
-          agreement_tipo: billingConfig.agreement_tipo,
-          precio_base_neto: billingConfig.precio_base_neto,
-          precio_neto_final: billingConfig.precio_neto_final,
-          iva_importe: billingConfig.iva_importe,
-          precio_total_final: billingConfig.precio_total_final,
-          modo_iva: billingConfig.modo_iva,
-          iva_pct: billingConfig.iva_pct,
-        },
-        notification_url: `${SITE_URL}/api/pagos/webhook`,
-        back_urls: {
-          success: `${SITE_URL}/dashboard/empresa?upgrade_status=success`,
-          failure: `${SITE_URL}/dashboard/empresa?upgrade_status=failure`,
-          pending: `${SITE_URL}/dashboard/empresa?upgrade_status=pending`,
-        },
-        auto_return: "approved" as const,
-      };
-
-      const mpRes = await fetch(
-        "https://api.mercadopago.com/checkout/preferences",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${MP_ACCESS_TOKEN}`,
-          },
-          body: JSON.stringify(prefBody),
-        }
-      );
-
-      if (!mpRes.ok) {
-        const errText = await mpRes.text().catch(() => "");
-        console.error("Error creando preferencia MP:", errText);
-
-        return NextResponse.json(
-          { error: "No se pudo crear la preferencia de pago." },
-          { status: 500 }
-        );
-      }
-
-      const pref = await mpRes.json().catch(() => null as any);
-      const checkoutUrl =
-        pref?.init_point || pref?.sandbox_init_point || null;
-
-      if (!checkoutUrl) {
-        return NextResponse.json(
-          { error: "Preferencia creada pero sin URL de checkout." },
-          { status: 500 }
-        );
-      }
-
+    if (!MP_ACCESS_TOKEN) {
       return NextResponse.json(
         {
-          checkoutUrl,
-          pricing: {
-            source: billingConfig.pricing_source,
-            agreement_applied: billingConfig.agreement_applied,
-            agreement_id: billingConfig.agreement_id,
-            precio_base_neto: billingConfig.precio_base_neto,
-            precio_neto_final: billingConfig.precio_neto_final,
-            iva_importe: billingConfig.iva_importe,
-            precio_total_final: billingConfig.precio_total_final,
-          },
+          error:
+            "Mercado Pago no está configurado. No se generó un checkout real.",
+          suscripcionId,
         },
-        { status: 200 }
+        { status: 503 }
       );
     }
 
-    // =============================
-    //  MODO SANDBOX (fallback)
-    // =============================
-    const checkoutUrl = `${SITE_URL}/checkout/sandbox?empresaId=${encodeURIComponent(
-      empresaId
-    )}&planId=${encodeURIComponent(
-      effectivePlanId
-    )}&suscripcionId=${encodeURIComponent(suscripcionId ?? "")}`;
+    const payerEmail = user.email ?? user.user_metadata?.email ?? undefined;
+
+    const preference = {
+      items: [
+        {
+          title,
+          quantity: 1,
+          unit_price: montoCobrar,
+          currency_id: "ARS",
+        },
+      ],
+      payer: payerEmail ? { email: payerEmail } : undefined,
+      external_reference: suscripcionId,
+      metadata: {
+        empresa_id: empresaId,
+        empresaId,
+        plan_id: effectivePlanId,
+        planId: effectivePlanId,
+        suscripcion_id: suscripcionId,
+        suscripcionId,
+        acuerdo_id: config.agreement_id,
+        agreement_id: config.agreement_id,
+        precio_total_final: config.precio_total_final,
+      },
+      notification_url: `${SITE_URL}/api/pagos/webhook`,
+      back_urls: {
+        success: `${SITE_URL}/dashboard/empresa?upgrade_status=success`,
+        failure: `${SITE_URL}/dashboard/empresa?upgrade_status=failure`,
+        pending: `${SITE_URL}/dashboard/empresa?upgrade_status=pending`,
+      },
+      auto_return: "approved" as const,
+      payment_methods: { installments: 1 },
+    };
+
+    const mpResponse = await fetch(
+      "https://api.mercadopago.com/checkout/preferences",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${MP_ACCESS_TOKEN}`,
+        },
+        body: JSON.stringify(preference),
+      }
+    );
+
+    const mpJson = await mpResponse.json().catch(() => null);
+
+    if (!mpResponse.ok || !mpJson) {
+      await supabaseAdmin
+        .from("suscripciones")
+        .update({
+          estado: "cancelada",
+          updated_at: new Date().toISOString(),
+          metadata: {
+            initiated_by: user.id,
+            initiated_role: role,
+            source: "checkout_mercadopago",
+            cycle_status: "preference_creation_failed",
+            snapshot,
+            ...snapshot,
+            provider_error: mpJson,
+          },
+        })
+        .eq("id", suscripcionId);
+
+      return NextResponse.json(
+        { error: "Mercado Pago no pudo generar el checkout." },
+        { status: 502 }
+      );
+    }
+
+    const checkoutUrl = mpJson.init_point ?? mpJson.sandbox_init_point ?? null;
+
+    if (!checkoutUrl) {
+      return NextResponse.json(
+        { error: "Mercado Pago no devolvió una URL de checkout." },
+        { status: 502 }
+      );
+    }
+
+    await supabaseAdmin
+      .from("suscripciones")
+      .update({
+        externo_subscription_id: String(mpJson.id ?? "") || null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", suscripcionId);
 
     return NextResponse.json(
       {
+        ok: true,
         checkoutUrl,
-        pricing: {
-          source: billingConfig.pricing_source,
-          agreement_applied: billingConfig.agreement_applied,
-          agreement_id: billingConfig.agreement_id,
-          precio_base_neto: billingConfig.precio_base_neto,
-          precio_neto_final: billingConfig.precio_neto_final,
-          iva_importe: billingConfig.iva_importe,
-          precio_total_final: billingConfig.precio_total_final,
-        },
+        suscripcionId,
+        planId: effectivePlanId,
+        agreementApplied: config.agreement_applied,
+        amount: montoCobrar,
       },
       { status: 200 }
     );
-  } catch (e: any) {
-    return NextResponse.json(
-      { error: e?.message || "Error inesperado" },
-      { status: 500 }
-    );
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Error inesperado";
+    console.error("billing/checkout POST error:", message);
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

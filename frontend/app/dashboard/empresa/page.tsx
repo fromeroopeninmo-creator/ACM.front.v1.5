@@ -332,7 +332,7 @@ export default function EmpresaDashboardPage() {
               href="/dashboard/empresa/asesores"
               className="px-5 py-2 bg-blue-600 text-white font-semibold rounded-lg shadow hover:bg-blue-700 transition w-full md:w-[230px]"
             >
-              👥 Gestionar Asesores
+              👥 Gestionar Equipo
             </Link>
           </div>
         </div>

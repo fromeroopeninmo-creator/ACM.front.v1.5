@@ -117,7 +117,7 @@ export default function IndicadoresEconomicos() {
   }, [data]);
 
   return (
-    <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+    <section className="h-full rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
       <div className="mb-4 flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h2 className="text-lg font-semibold text-slate-900">
@@ -134,8 +134,8 @@ export default function IndicadoresEconomicos() {
       </div>
 
       {loading ? (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          {Array.from({ length: 4 }).map((_, index) => (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          {Array.from({ length: 5 }).map((_, index) => (
             <div
               key={index}
               className="h-[92px] animate-pulse rounded-xl bg-slate-100"
@@ -148,7 +148,7 @@ export default function IndicadoresEconomicos() {
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {indicadores.map((item) => (
               <article
                 key={item.codigo}
@@ -180,7 +180,8 @@ export default function IndicadoresEconomicos() {
           </div>
 
           <p className="mt-3 text-[11px] leading-4 text-slate-400">
-            Fuentes: BCRA / ArgentinaDatos. Última consulta: {formatDate(data?.generatedAt)}.
+            Fuentes: BCRA / ArgentinaDatos. Última consulta:{" "}
+            {formatDate(data?.generatedAt)}.
           </p>
         </>
       )}

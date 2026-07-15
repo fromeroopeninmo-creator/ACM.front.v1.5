@@ -491,7 +491,9 @@ export default function EmpresaDashboardPage() {
         }`
       : "/images/default-logo.png";
 
-  const handleTrackerClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
+  const handleTrackerClick = (
+    e: React.MouseEvent<HTMLAnchorElement | HTMLButtonElement>,
+  ) => {
     if (billingLoading) return; // dejamos pasar mientras se carga para no molestar
 
     if (puedeUsarTracker === false) {

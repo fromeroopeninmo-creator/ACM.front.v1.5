@@ -51,6 +51,30 @@ function formatDate(value?: string | null): string {
   });
 }
 
+function subtractOneMonth(value?: string | null): string | null {
+  const parsed = parseBillingDate(value);
+  if (!parsed) return null;
+
+  const originalDay = parsed.getDate();
+  const result = new Date(parsed);
+  result.setDate(1);
+  result.setMonth(result.getMonth() - 1);
+
+  const lastDayOfTargetMonth = new Date(
+    result.getFullYear(),
+    result.getMonth() + 1,
+    0,
+  ).getDate();
+
+  result.setDate(Math.min(originalDay, lastDayOfTargetMonth));
+
+  const year = result.getFullYear();
+  const month = String(result.getMonth() + 1).padStart(2, "0");
+  const day = String(result.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
 function formatMoney(value?: number | string | null): string {
   if (value === null || value === undefined || value === "") {
     return "No informado";
@@ -174,7 +198,7 @@ function ToolIcon({ name }: { name: ToolIconName }) {
 
 type ToolCardProps = {
   title: string;
-  description: string;
+  description?: string;
   icon: ToolIconName;
   primaryColor: string;
   href?: string;
@@ -187,7 +211,6 @@ type ToolCardProps = {
 
 function ToolCard({
   title,
-  description,
   icon,
   primaryColor,
   href,
@@ -205,9 +228,6 @@ function ToolCard({
       <span className="min-w-0 flex-1">
         <span className="block text-sm font-semibold leading-tight text-gray-900 sm:text-base">
           {title}
-        </span>
-        <span className="mt-1 block text-xs leading-5 text-gray-500">
-          {description}
         </span>
       </span>
 
@@ -228,7 +248,7 @@ function ToolCard({
   );
 
   const className =
-    "group flex min-h-[92px] w-full items-center gap-3 rounded-2xl border border-gray-200 bg-white px-4 py-4 text-left shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-gray-300 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2";
+    "group flex min-h-[76px] w-full items-center gap-3 rounded-2xl border border-gray-200 bg-white px-4 py-4 text-left shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-gray-300 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2";
 
   if (href) {
     return (
@@ -512,16 +532,16 @@ export default function EmpresaDashboardPage() {
   const nombrePlanActual =
     billingEstado?.plan?.nombre || "No informado";
 
-  const cicloInicio =
-    billingEstado?.ciclo?.inicio ?? null;
-
-  const cicloFin =
-    billingEstado?.ciclo?.fin ??
-    billingEstado?.ciclo?.proximoCobro ??
-    null;
+  const acuerdoFechaInicio =
+    billingEstado?.acuerdoComercial?.fecha_inicio ?? null;
 
   const acuerdoFechaFin =
     billingEstado?.acuerdoComercial?.fecha_fin ?? null;
+
+  const cicloFin =
+    billingEstado?.ciclo?.proximoCobro ?? null;
+
+  const cicloInicio = subtractOneMonth(cicloFin);
 
   const importeTotal =
     billingEstado?.pricing?.precio_total_final ??
@@ -568,7 +588,7 @@ export default function EmpresaDashboardPage() {
             VAI TOOLS
           </h2>
           <p className="mt-1 max-w-3xl text-sm leading-6 text-gray-600 sm:text-base">
-            Accedé a las herramientas digitales de VAIPROP para valuar propiedades,
+            Accedé a las herramientas digitales de VAI para valuar propiedades,
             analizar proyectos y gestionar el desempeño comercial de tu equipo
             desde un solo lugar.
           </p>
@@ -577,8 +597,7 @@ export default function EmpresaDashboardPage() {
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <ToolCard
             href="/vai/acmforms"
-            title="Valuador de Activos"
-            description="Valuaciones inmobiliarias e informes profesionales."
+            title="Valuador de Activos Inmobiliarios"
             icon="valuation"
             primaryColor={primaryColor}
           />
@@ -586,7 +605,6 @@ export default function EmpresaDashboardPage() {
           <ToolCard
             href="/dashboard/empresa/tracker"
             title="Business Tracker"
-            description="Gestión comercial de contactos, captaciones y cierres."
             icon="tracker"
             primaryColor={primaryColor}
             onClick={handleTrackerClick}
@@ -594,7 +612,6 @@ export default function EmpresaDashboardPage() {
 
           <ToolCard
             title="Calculadora Créditos UVA"
-            description="Simulación y análisis de créditos hipotecarios UVA."
             icon="uva"
             primaryColor={primaryColor}
             onClick={() => setShowUvaCalc(true)}
@@ -603,7 +620,6 @@ export default function EmpresaDashboardPage() {
           <ToolCard
             href="/dashboard/empresa/agenda"
             title="Agenda"
-            description="Organización de actividades y seguimiento del equipo."
             icon="agenda"
             primaryColor={primaryColor}
             onClick={handleTrackerClick}
@@ -612,7 +628,6 @@ export default function EmpresaDashboardPage() {
           <ToolCard
             href="/dashboard/empresa/factibilidad"
             title="Factibilidad Constructiva"
-            description="Análisis preliminar del potencial constructivo."
             icon="feasibility"
             primaryColor={primaryColor}
           />
@@ -620,7 +635,6 @@ export default function EmpresaDashboardPage() {
           <ToolCard
             href="/dashboard/empresa/tracker-analytics"
             title="Business Analytics"
-            description="Indicadores, rendimiento y evolución comercial."
             icon="analytics"
             primaryColor={primaryColor}
             onClick={handleTrackerClick}
@@ -629,7 +643,6 @@ export default function EmpresaDashboardPage() {
           <ToolCard
             href="/dashboard/empresa/calculadora-alquileres"
             title="Calculadora de Alquileres"
-            description="Proyecciones, actualizaciones y rentabilidad."
             icon="rent"
             primaryColor={primaryColor}
           />
@@ -637,7 +650,6 @@ export default function EmpresaDashboardPage() {
           <ToolCard
             href="/dashboard/empresa/mercado"
             title="VAI Market Data"
-            description="Datos agregados del mercado inmobiliario."
             icon="market"
             primaryColor={primaryColor}
           />
@@ -645,7 +657,7 @@ export default function EmpresaDashboardPage() {
       </section>
 
       {/* 💵 Cotización diaria del dólar + indicadores económicos */}
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2 xl:items-stretch">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,0.82fr)_minmax(0,1.18fr)] xl:items-stretch">
         <div className="cotizacion-dolar-alineada h-full">
           <CotizacionDolar />
         </div>
@@ -666,8 +678,13 @@ export default function EmpresaDashboardPage() {
             grid-template-columns: minmax(0, 1fr) !important;
           }
 
-          .indicadores-economicos-alineados section > div.grid {
+          .indicadores-economicos-alineados .grid {
             grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+          }
+
+          .indicadores-economicos-alineados > section,
+          .indicadores-economicos-alineados > div {
+            width: 100%;
           }
         }
       `}</style>
@@ -756,7 +773,7 @@ export default function EmpresaDashboardPage() {
                     Vigencia del acuerdo comercial
                   </dt>
                   <dd className="mt-0.5 font-medium text-gray-900">
-                    Hasta {formatDate(acuerdoFechaFin)}
+                    {formatDate(acuerdoFechaInicio)} — {formatDate(acuerdoFechaFin)}
                   </dd>
                 </div>
               ) : null}
@@ -771,7 +788,9 @@ export default function EmpresaDashboardPage() {
               <div>
                 <dt className="text-xs text-gray-500">Ciclo actual</dt>
                 <dd className="mt-0.5 font-medium text-gray-900">
-                  {formatDate(cicloInicio)} — {formatDate(cicloFin)}
+                  {cicloFin
+                    ? `${formatDate(cicloInicio)} — ${formatDate(cicloFin)}`
+                    : "No informado"}
                 </dd>
               </div>
 

@@ -51,29 +51,6 @@ function formatDate(value?: string | null): string {
   });
 }
 
-function subtractOneMonth(value?: string | null): string | null {
-  const parsed = parseBillingDate(value);
-  if (!parsed) return null;
-
-  const originalDay = parsed.getDate();
-  const result = new Date(parsed);
-  result.setDate(1);
-  result.setMonth(result.getMonth() - 1);
-
-  const lastDayOfTargetMonth = new Date(
-    result.getFullYear(),
-    result.getMonth() + 1,
-    0,
-  ).getDate();
-
-  result.setDate(Math.min(originalDay, lastDayOfTargetMonth));
-
-  const year = result.getFullYear();
-  const month = String(result.getMonth() + 1).padStart(2, "0");
-  const day = String(result.getDate()).padStart(2, "0");
-
-  return `${year}-${month}-${day}`;
-}
 
 function formatMoney(value?: number | string | null): string {
   if (value === null || value === undefined || value === "") {
@@ -225,7 +202,7 @@ function ToolCard({
         <ToolIcon name={icon} />
       </span>
 
-      <span className="min-w-0 flex-1">
+      <span className="min-w-0 flex-1 text-center">
         <span className="block text-sm font-semibold leading-tight text-gray-900 sm:text-base">
           {title}
         </span>
@@ -538,10 +515,11 @@ export default function EmpresaDashboardPage() {
   const acuerdoFechaFin =
     billingEstado?.acuerdoComercial?.fecha_fin ?? null;
 
-  const cicloFin =
-    billingEstado?.ciclo?.proximoCobro ?? null;
+  const cicloInicio =
+    billingEstado?.ciclo?.inicio ?? null;
 
-  const cicloInicio = subtractOneMonth(cicloFin);
+  const cicloFin =
+    billingEstado?.ciclo?.fin ?? null;
 
   const importeTotal =
     billingEstado?.pricing?.precio_total_final ??
@@ -588,7 +566,7 @@ export default function EmpresaDashboardPage() {
             VAI TOOLS
           </h2>
           <p className="mt-1 max-w-3xl text-sm leading-6 text-gray-600 sm:text-base">
-            Accedé a las herramientas digitales de VAI para valuar propiedades,
+            Accedé a las herramientas digitales de VAIPROP para valuar propiedades,
             analizar proyectos y gestionar el desempeño comercial de tu equipo
             desde un solo lugar.
           </p>
@@ -657,7 +635,7 @@ export default function EmpresaDashboardPage() {
       </section>
 
       {/* 💵 Cotización diaria del dólar + indicadores económicos */}
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,0.82fr)_minmax(0,1.18fr)] xl:items-stretch">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(360px,0.78fr)_minmax(0,1.22fr)] xl:items-stretch">
         <div className="cotizacion-dolar-alineada h-full">
           <CotizacionDolar />
         </div>
@@ -676,10 +654,6 @@ export default function EmpresaDashboardPage() {
 
           .cotizacion-dolar-alineada section > div.grid {
             grid-template-columns: minmax(0, 1fr) !important;
-          }
-
-          .indicadores-economicos-alineados .grid {
-            grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
           }
 
           .indicadores-economicos-alineados > section,

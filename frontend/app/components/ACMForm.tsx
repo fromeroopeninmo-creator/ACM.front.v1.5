@@ -31,97 +31,8 @@ function dataUrlToFile(dataUrl: string, filename: string) {
   return new File([u8arr], filename, { type: mime });
 }
 
-type OperationType = "venta" | "alquiler";
-type CurrencyType = "ARS" | "USD";
-type ACMFormDataWithExtras = ACMFormData & {
-  operationType: OperationType;
-  currency: CurrencyType;
-  includePER: boolean;
-  estimatedMonthlyRentUSD: number | string;
-};
-
-type ComparableImportState = {
-  loading: boolean;
-  type?: "success" | "error";
-  text?: string;
-};
-
-type ImportedComparableData = {
-  source?: string;
-  url?: string;
-  address?: string;
-  neighborhood?: string;
-  price?: number | "";
-  currency?: "USD" | "ARS" | "";
-  builtArea?: number | "";
-  landArea?: number | "";
-  daysPublished?: number | "";
-  daysPublishedText?: string;
-  imageUrl?: string;
-  warnings?: string[];
-};
-
-const MAX_COMPARABLES = 8;
-
-const comparableSlots = [
-  "comp1",
-  "comp2",
-  "comp3",
-  "comp4",
-  "comp5",
-  "comp6",
-  "comp7",
-  "comp8",
-] as const;
-
-const operationOptions: Array<{ label: string; value: OperationType }> = [
-  { label: "Venta", value: "venta" },
-  { label: "Alquiler", value: "alquiler" },
-];
-
-const currencyOptions: Array<{ label: string; value: CurrencyType }> = [
-  { label: "Pesos ($)", value: "ARS" },
-  { label: "Dólar Estadounidense (USD)", value: "USD" },
-];
-
-const formatMoney = (n: number, currency: CurrencyType = "ARS") => {
-  if (isNaN(n)) return "-";
-
-  if (currency === "USD") {
-    return `USD ${n.toLocaleString("es-AR", { maximumFractionDigits: 0 })}`;
-  }
-
-  return n.toLocaleString("es-AR", {
-    style: "currency",
-    currency: "ARS",
-    maximumFractionDigits: 0,
-  });
-};
-
-const isLandLikePropertyType = (propertyType: unknown) => {
-  const value = String(propertyType || "").toLowerCase();
-  return (
-    value.includes("lote") ||
-    value.includes("terreno") ||
-    value.includes("campo")
-  );
-};
-
-const getPERInfo = (per: number | null) => {
-  if (!per || !isFinite(per)) {
-    return { label: "Sin calcular", className: "text-gray-600", pdfColor: [90, 90, 90] as const };
-  }
-
-  if (per < 15) {
-    return { label: "Buena Oportunidad", className: "text-green-700", pdfColor: [22, 163, 74] as const };
-  }
-
-  if (per <= 20) {
-    return { label: "Rentabilidad Aceptable", className: "text-yellow-700", pdfColor: [202, 138, 4] as const };
-  }
-
-  return { label: "Inversión Riesgosa", className: "text-red-700", pdfColor: [220, 38, 38] as const };
-};
+const peso = (n: number) =>
+  isNaN(n) ? '-' : n.toLocaleString('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 });
 
 const numero = (n: number, dec = 0) =>
   isNaN(n) ? '-' : n.toLocaleString('es-AR', { maximumFractionDigits: dec, minimumFractionDigits: dec });
@@ -161,12 +72,8 @@ const emptyComparable: ComparableProperty = {
   photoBase64: undefined,
 };
 
-const makeInitialData = (): ACMFormDataWithExtras => ({
+const makeInitialData = (): ACMFormData => ({
   date: new Date().toISOString(),
-  operationType: "venta",
-  currency: "USD",
-  includePER: false,
-  estimatedMonthlyRentUSD: "",
   clientName: '',
   phone: '',
   email: '',
@@ -195,14 +102,16 @@ const makeInitialData = (): ACMFormDataWithExtras => ({
 
 export default function ACMForm() {
   const { user } = useAuth();
-  const [formData, setFormData] = useState<ACMFormDataWithExtras>(() => makeInitialData());
+  const [formData, setFormData] = useState<ACMFormData>(() => makeInitialData());
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // --- Mensajes inline y manejo de carga/ID ---
   type InlineMsg = { type: "success" | "error"; text: string } | null;
   const [saveMsg, setSaveMsg] = useState<InlineMsg>(null);
+  const [loadMsg, setLoadMsg] = useState<InlineMsg>(null);
   const [informeId, setInformeId] = useState<string | null>(null);
-  const [comparableImportStatus, setComparableImportStatus] = useState<Record<number, ComparableImportState>>({});
+  const [loadOpen, setLoadOpen] = useState(false);
+  const [loadIdInput, setLoadIdInput] = useState("");
 
   // Theme...
   const theme = useTheme();
@@ -240,7 +149,12 @@ useEffect(() => {
       if (!payload) throw new Error("El informe no contiene datos_json");
 
       const principalUrl: string = inf?.imagen_principal_url || "";
-      const compUrls: string[] = comparableSlots.map((slot) => inf?.[`${slot}_url`] || "");
+      const compUrls: string[] = [
+        inf?.comp1_url || "",
+        inf?.comp2_url || "",
+        inf?.comp3_url || "",
+        inf?.comp4_url || "",
+      ];
 
       // Cargar URLs en photoUrl y dejar photoBase64 vacío (no guardar URL como base64)
       const comparablesCargados = Array.isArray(payload?.comparables)
@@ -276,14 +190,13 @@ const handleFieldChange = (
   const booleanFields = new Set([
     'hasPlans',
     'isRented',
-    'includePER',
     'services.luz',
     'services.agua',
     'services.gas',
     'services.cloacas',
     'services.pavimento',
   ]);
-  const numberFields = new Set(['landArea', 'builtArea', 'age', 'estimatedMonthlyRentUSD']);
+  const numberFields = new Set(['landArea', 'builtArea', 'age']);
 
   if (name.startsWith('services.')) {
     const key = name.split('.')[1] as keyof Services;
@@ -387,113 +300,9 @@ const updateComparable = <K extends keyof ComparableProperty>(
 };
 
 
-const setComparableStatus = (index: number, status: ComparableImportState) => {
-  setComparableImportStatus((prev) => ({
-    ...prev,
-    [index]: status,
-  }));
-};
-
-const importComparableFromUrl = async (index: number) => {
-  const url = String(formData.comparables[index]?.listingUrl || "").trim();
-
-  if (!url) {
-    setComparableStatus(index, {
-      loading: false,
-      type: "error",
-      text: "Pegá primero el link de la publicación.",
-    });
-    return;
-  }
-
-  try {
-    setComparableStatus(index, {
-      loading: true,
-      text: "Importando datos públicos...",
-    });
-
-    const res = await fetch("/api/comparables/import", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ url }),
-    });
-
-    const json = await res.json().catch(() => ({}));
-
-    if (!res.ok || !json?.ok) {
-      throw new Error(json?.error || "No se pudo importar el comparable.");
-    }
-
-    const data = (json?.data || {}) as ImportedComparableData;
-
-    setFormData((prev) => {
-      const copy = { ...prev };
-      const arr = [...copy.comparables];
-      const current = arr[index];
-
-      if (!current) return prev;
-
-      const isLandLike = isLandLikePropertyType(copy.propertyType);
-      const importedArea = isLandLike
-        ? data.landArea || data.builtArea || ""
-        : data.builtArea || data.landArea || "";
-
-      const next: ComparableProperty = {
-        ...current,
-        listingUrl: url,
-        address: data.address || current.address || "",
-        neighborhood: data.neighborhood || current.neighborhood || "",
-        price:
-          typeof data.price === "number" && Number.isFinite(data.price)
-            ? data.price
-            : current.price,
-        builtArea:
-          typeof importedArea === "number" && Number.isFinite(importedArea)
-            ? importedArea
-            : current.builtArea,
-        daysPublished:
-          typeof data.daysPublished === "number" && Number.isFinite(data.daysPublished)
-            ? data.daysPublished
-            : current.daysPublished,
-      };
-
-      const built = Number(next.builtArea) || 0;
-      const price = Number(next.price) || 0;
-      next.pricePerM2 = built > 0 ? price / built : 0;
-
-      arr[index] = next;
-      copy.comparables = arr;
-      return copy;
-    });
-
-    const warnings = Array.isArray(data.warnings) ? data.warnings.filter(Boolean) : [];
-    const currencyWarning =
-      data.currency && data.currency !== currency
-        ? ` La publicación parece estar en ${data.currency}, pero el informe está en ${currency}. Revisá el precio.`
-        : "";
-
-    setComparableStatus(index, {
-      loading: false,
-      type: warnings.length ? "error" : "success",
-      text: warnings.length
-        ? `Datos importados parcialmente. Revisá/corregí antes de guardar.${currencyWarning}`
-        : `Datos importados. Revisá/corregí antes de guardar.${currencyWarning}`,
-    });
-  } catch (err: any) {
-    console.error("Importar comparable:", err);
-    setComparableStatus(index, {
-      loading: false,
-      type: "error",
-      text: err?.message || "No se pudo importar el comparable.",
-    });
-  }
-};
-
 const addComparable = () => {
   setFormData((prev) => {
-    if (prev.comparables.length >= MAX_COMPARABLES) return prev;
+    if (prev.comparables.length >= 4) return prev;
     return {
       ...prev,
       comparables: [...prev.comparables, { ...emptyComparable }],
@@ -640,24 +449,18 @@ const handleComparablePhotoSelect = async (index: number, e: React.ChangeEvent<H
   e.target.value = '';
 };
 
-/** ========= Guardar Informe (API) ========= */
+/** ========= Guardar / Cargar Informe (API) ========= */
 const saveInforme = async () => {
   try {
     setIsSubmitting(true);
     setSaveMsg(null);
 
     // 1) Clonar y limpiar base64 para no guardar blobs enormes en datos_json
-    const datosLimpios = structuredClone(formData) as ACMFormDataWithExtras;
-
-    // Actualiza la fecha del informe cada vez que se guarda.
-    // Esto evita que un informe viejo siga mostrando la fecha original.
-    datosLimpios.date = new Date().toISOString();
-
+    const datosLimpios = structuredClone(formData) as ACMFormData;
     const mainB64 = datosLimpios.mainPhotoBase64; // (YA COMPRIMIDO)
     datosLimpios.mainPhotoBase64 = undefined;
 
     const compsB64 = formData.comparables.map((c) => c.photoBase64 || undefined);
-
     datosLimpios.comparables = datosLimpios.comparables.map((c) => ({
       ...c,
       photoBase64: undefined,
@@ -669,51 +472,36 @@ const saveInforme = async () => {
       datos: datosLimpios,
       titulo: (formData as any)?.titulo || "Informe VAI",
     };
-
     const res = await fetch("/api/informes/create", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
-
     if (!res.ok) {
       const errTxt = await res.text().catch(() => "");
       throw new Error(`Error al guardar el informe. ${errTxt}`);
     }
-
     const data = await res.json();
     const id = data?.informe?.id as string | undefined;
-
-    if (!id) {
-      throw new Error("No se recibió ID de informe.");
-    }
+    if (!id) throw new Error("No se recibió ID de informe.");
 
     setInformeId(id);
 
     // 3) Subir imágenes (si había base64) y recolectar URLs NUEVAS en variables locales
     const newUrls = {
       principal: "",
-      comps: Array(MAX_COMPARABLES).fill("") as string[],
+      comps: ["", "", "", ""] as string[],
     };
 
     // Principal (usa base64 YA COMPRIMIDO)
     if (isDataUrl(mainB64)) {
       const file = dataUrlToFile(mainB64!, "principal.jpg");
       const fd = new FormData();
-
       fd.append("file", file);
       fd.append("informeId", id);
       fd.append("slot", "principal");
-
-      const up = await fetch("/api/informes/upload", {
-        method: "POST",
-        body: fd,
-      });
-
+      const up = await fetch("/api/informes/upload", { method: "POST", body: fd });
       const upData = await up.json();
-
       if (up.ok && upData?.url) {
         newUrls.principal = String(upData.url);
       } else {
@@ -721,31 +509,18 @@ const saveInforme = async () => {
       }
     }
 
-    // Comparables 1..8 (base64 YA COMPRIMIDOS)
-    for (
-      let i = 0;
-      i < Math.min(formData.comparables.length, MAX_COMPARABLES);
-      i++
-    ) {
+    // Comparables 1..4 (base64 YA COMPRIMIDOS)
+    for (let i = 0; i < Math.min(formData.comparables.length, 4); i++) {
       const b64 = compsB64[i];
-
       if (!isDataUrl(b64)) continue;
-
-      const slot = comparableSlots[i];
+      const slot = `comp${i + 1}` as "comp1" | "comp2" | "comp3" | "comp4";
       const file = dataUrlToFile(b64!, `${slot}.jpg`);
       const fd = new FormData();
-
       fd.append("file", file);
       fd.append("informeId", id);
       fd.append("slot", slot);
-
-      const up = await fetch("/api/informes/upload", {
-        method: "POST",
-        body: fd,
-      });
-
+      const up = await fetch("/api/informes/upload", { method: "POST", body: fd });
       const upData = await up.json();
-
       if (up.ok && upData?.url) {
         newUrls.comps[i] = String(upData.url);
       } else {
@@ -754,26 +529,17 @@ const saveInforme = async () => {
     }
 
     // 4) Persistir en datos_json las URLs ya subidas (sin depender de setState)
-    const datosConUrls: ACMFormDataWithExtras = (() => {
-      const copy = structuredClone(datosLimpios) as ACMFormDataWithExtras;
-
-      // Mantener la fecha nueva también en el segundo guardado
-      copy.date = datosLimpios.date;
-
+    const datosConUrls: ACMFormData = (() => {
+      const copy = structuredClone(datosLimpios) as ACMFormData;
       // principal
       copy.mainPhotoUrl =
         newUrls.principal || formData.mainPhotoUrl || copy.mainPhotoUrl || "";
-
       copy.mainPhotoBase64 = undefined;
 
       // comparables
       copy.comparables = copy.comparables.map((c, idx) => ({
         ...c,
-        photoUrl:
-          newUrls.comps[idx] ||
-          formData.comparables[idx]?.photoUrl ||
-          c.photoUrl ||
-          "",
+        photoUrl: newUrls.comps[idx] || formData.comparables[idx]?.photoUrl || c.photoUrl || "",
         photoBase64: undefined as any,
       }));
 
@@ -782,55 +548,101 @@ const saveInforme = async () => {
 
     const upd = await fetch("/api/informes/update", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        id,
-        datos: datosConUrls,
-      }),
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, datos: datosConUrls }),
     });
-
     if (!upd.ok) {
       const t = await upd.text().catch(() => "");
       console.warn("Update datos_json con URLs falló:", t);
     }
 
-    // Opcional: refrescar el estado visual con las URLs finales y la fecha nueva
+    // Opcional: refrescar el estado visual con las URLs finales
     setFormData((prev) => {
-      const withUrls = structuredClone(prev) as ACMFormDataWithExtras;
-
-      // Actualizar también el estado en pantalla
-      withUrls.date = datosConUrls.date;
-
-      if (datosConUrls.mainPhotoUrl) {
-        withUrls.mainPhotoUrl = datosConUrls.mainPhotoUrl;
-      }
-
+      const withUrls = structuredClone(prev);
+      if (datosConUrls.mainPhotoUrl) withUrls.mainPhotoUrl = datosConUrls.mainPhotoUrl;
       withUrls.mainPhotoBase64 = "";
-
       withUrls.comparables = withUrls.comparables.map((c, i) => ({
         ...c,
         photoUrl: datosConUrls.comparables[i]?.photoUrl || c.photoUrl || "",
         photoBase64: "",
       }));
-
       return withUrls;
     });
 
-    setSaveMsg({
-      type: "success",
-      text: `Informe guardado con éxito. ID: ${id}`,
-    });
+    setSaveMsg({ type: "success", text: `Informe guardado con éxito. ID: ${id}` });
   } catch (err: any) {
     console.error("Guardar Informe", err);
-
-    setSaveMsg({
-      type: "error",
-      text: err?.message || "No se pudo guardar el informe",
-    });
+    setSaveMsg({ type: "error", text: err?.message || "No se pudo guardar el informe" });
   } finally {
     setIsSubmitting(false);
+  }
+};
+
+
+// === Abrir modal de carga (reemplaza el prompt) ===
+const loadInforme = () => {
+  setLoadMsg(null);
+  setLoadIdInput("");
+  setLoadOpen(true);
+};
+
+// === Confirmar carga desde el modal ===
+const handleConfirmLoad = async () => {
+  if (!loadIdInput) {
+    setLoadMsg({ type: "error", text: "Por favor, ingresá un ID válido." });
+    return;
+  }
+  try {
+    setLoadMsg(null);
+
+    const res = await fetch(`/api/informes/get?id=${encodeURIComponent(loadIdInput)}`);
+    const data = await res.json();
+
+    if (!res.ok) {
+      throw new Error(data?.error || "No se pudo obtener el informe");
+    }
+
+    // La API devuelve { ok: true, informe: {...} }
+    const inf = data?.informe ?? data;
+    const payload = inf?.datos_json;
+    if (!payload) {
+      throw new Error("El informe no contiene datos_json");
+    }
+
+    // URLs guardadas en storage (si existen)
+    const principalUrl: string = inf?.imagen_principal_url || "";
+    const compUrls: string[] = [
+      inf?.comp1_url || "",
+      inf?.comp2_url || "",
+      inf?.comp3_url || "",
+      inf?.comp4_url || "",
+    ];
+
+    // Ajustar comparables: colocar las URLs en photoUrl (no en base64)
+    const comparablesCargados = Array.isArray(payload?.comparables)
+      ? payload.comparables.map((c: any, idx: number) => ({
+          ...c,
+          photoUrl: compUrls[idx] || c?.photoUrl || "",
+          photoBase64: "", // no usar URL como base64
+        }))
+      : formData.comparables;
+
+    setFormData((prev) => ({
+      ...prev,
+      ...payload,
+      mainPhotoUrl: principalUrl || prev.mainPhotoUrl || "",
+      mainPhotoBase64: "", // no guardar URL en base64
+      comparables: comparablesCargados,
+    }));
+
+    const loadedId = inf?.id || loadIdInput;
+    setInformeId(loadedId);
+
+    setLoadMsg({ type: "success", text: `Informe cargado correctamente (ID: ${loadedId}).` });
+    setLoadOpen(false);
+  } catch (err: any) {
+    console.error("Cargar Informe", err);
+    setLoadMsg({ type: "error", text: `Error al cargar: ${err?.message || "desconocido"}` });
   }
 };
 
@@ -863,25 +675,6 @@ const suggestedPrice = useMemo(() => {
   return Math.round(averageAdjustedPricePerM2 * built);
 }, [averageAdjustedPricePerM2, formData.builtArea]);
 
-const operationType = ((formData as any).operationType || "venta") as OperationType;
-const currency = ((formData as any).currency || "ARS") as CurrencyType;
-const operationLabel = operationType === "alquiler" ? "Alquiler" : "Venta";
-const operationLabelLower = operationType === "alquiler" ? "alquiler" : "venta";
-const suggestedPriceTitle = `Precio sugerido de ${operationLabelLower}`;
-const comparablePriceLabel = `Precio ${operationType === "alquiler" ? "del alquiler" : "de venta"} (${currency === "USD" ? "USD" : "$"})`;
-const money = (n: number) => formatMoney(n, currency);
-
-const estimatedMonthlyRentUSD = Number((formData as any).estimatedMonthlyRentUSD) || 0;
-const canCalculatePER =
-  operationType === "venta" &&
-  currency === "USD" &&
-  suggestedPrice > 0 &&
-  estimatedMonthlyRentUSD > 0;
-const perValue = canCalculatePER
-  ? suggestedPrice / (estimatedMonthlyRentUSD * 12)
-  : null;
-const perInfo = getPERInfo(perValue);
-
 /** ========= Helpers PDF ========= */
 const fetchToDataURL = async (url?: string | null): Promise<string | null> => {
   try {
@@ -906,7 +699,7 @@ const handleDownloadPDF = async () => {
   const doc = new jsPDF("p", "pt", "a4");
   const pageW = doc.internal.pageSize.getWidth();
   const pageH = doc.internal.pageSize.getHeight();
-  const margin = 38;
+  const margin = 40;
   let y = margin;
 
   // Datos (desde AuthContext / Theme)
@@ -934,8 +727,10 @@ const handleDownloadPDF = async () => {
         .limit(1);
 
       if (isAsesor && anyUser?.empresa_id) {
+        // Asesor → buscamos la empresa asociada por id
         query = query.eq("id", anyUser.empresa_id);
       } else if (anyUser?.id) {
+        // Empresa (owner) → buscamos por user_id
         query = query.eq("user_id", anyUser.id);
       }
 
@@ -959,297 +754,118 @@ const handleDownloadPDF = async () => {
     }
   }
 
+
+  // Logo desde Theme si existe
   const themeLogo = themeLogoUrl || null;
 
+  // Color primario
   const hexToRgb = (hex: string) => {
-    const safe = /^#?[0-9A-Fa-f]{3,6}$/.test(hex || "") ? hex : "#0ea5e9";
-    const m = safe.replace("#", "");
-    const normalized =
-      m.length === 3 ? m.split("").map((c) => c + c).join("") : m;
-    const int = parseInt(normalized, 16);
-    return {
-      r: (int >> 16) & 255,
-      g: (int >> 8) & 255,
-      b: int & 255,
-    };
+    const m = hex.replace("#", "");
+    const int = parseInt(m.length === 3 ? m.split("").map((c) => c + c).join("") : m, 16);
+    return { r: (int >> 16) & 255, g: (int >> 8) & 255, b: int & 255 };
   };
-
   const pc = hexToRgb(effectivePrimaryColor);
-  const soft = { r: 248, g: 250, b: 252 };
-  const border = { r: 226, g: 232, b: 240 };
-  const muted = { r: 100, g: 116, b: 139 };
-  const dark = { r: 15, g: 23, b: 42 };
 
-  const imageFormat = (src: string) =>
-    src.startsWith("data:image/png") ? "PNG" : "JPEG";
+  // === Título centrado ===
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(16);
+  doc.setTextColor(pc.r, pc.g, pc.b);
+  doc.text("Valuación de Activo Inmobiliario", pageW / 2, y, { align: "center" });
+  doc.setTextColor(0, 0, 0);
+  y += 30;
 
-  const addImageContain = (
-    src: string,
-    x: number,
-    yImg: number,
-    boxW: number,
-    boxH: number
-  ) => {
+  // === Encabezado ===
+  const colLeftX = margin;
+  const colRightX = pageW - margin - 200;
+
+  doc.setFontSize(11);
+  doc.setFont("helvetica", "normal");
+
+  // Columna izquierda
+  doc.text(`Empresa: ${inmobiliaria}`, colLeftX, y);
+  doc.text(`Asesor: ${isAsesor ? asesorNombre : "—"}`, colLeftX, y + 15);
+
+  // Columna derecha
+  doc.text(`Profesional: ${matriculado}`, colRightX, y);
+  doc.text(`Matricula N°: ${cpi}`, colRightX, y + 15);
+  doc.text(`Fecha: ${new Date(formData.date).toLocaleDateString("es-AR")}`, colRightX, y + 30);
+
+  // Logo centrado (si existe)
+  if (themeLogo) {
     try {
-      const props = (doc as any).getImageProperties(src);
-      const imgW = Number(props?.width) || boxW;
-      const imgH = Number(props?.height) || boxH;
-      const ratio = Math.min(boxW / imgW, boxH / imgH);
-      const drawW = imgW * ratio;
-      const drawH = imgH * ratio;
-      const drawX = x + (boxW - drawW) / 2;
-      const drawY = yImg + (boxH - drawH) / 2;
-
-      doc.addImage(
-        src,
-        imageFormat(src),
-        drawX,
-        drawY,
-        drawW,
-        drawH,
-        undefined,
-        "FAST"
-      );
-    } catch (e) {
-      console.warn("No se pudo insertar imagen en PDF:", e);
-    }
-  };
-
-  const ensureSpace = (needed: number) => {
-    if (y + needed > pageH - 58) {
-      doc.addPage();
-      y = margin;
-    }
-  };
-
-  const drawSectionTitle = (title: string) => {
-    ensureSpace(34);
-    doc.setFillColor(pc.r, pc.g, pc.b);
-    doc.rect(margin, y, pageW - margin * 2, 24, "F");
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(11);
-    doc.setTextColor(255, 255, 255);
-    doc.text(title, margin + 12, y + 16);
-    doc.setTextColor(0, 0, 0);
-    y += 36;
-  };
-
-  const drawLabelValue = (
-    label: string,
-    value: string,
-    x: number,
-    yLine: number,
-    maxW = 220
-  ) => {
-    const labelText = `${label}: `;
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(9);
-    doc.setTextColor(muted.r, muted.g, muted.b);
-    doc.text(labelText, x, yLine);
-
-    doc.setFont("helvetica", "normal");
-    doc.setTextColor(dark.r, dark.g, dark.b);
-    const labelW = doc.getTextWidth(labelText);
-    const lines = doc.splitTextToSize(value || "-", maxW - labelW - 8);
-    doc.text(lines as any, x + labelW + 8, yLine);
-    doc.setTextColor(0, 0, 0);
-    return Array.isArray(lines) ? lines.length * 11 : 11;
-  };
-
-  const drawTextBlock = (title: string, text: string) => {
-    const cleanText = text?.trim() || "-";
-    ensureSpace(46);
-
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(11);
-    doc.setTextColor(pc.r, pc.g, pc.b);
-    doc.text(title, margin, y);
-    y += 22;
-
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(9.5);
-    doc.setTextColor(30, 41, 59);
-
-    const lines = doc.splitTextToSize(cleanText, pageW - margin * 2);
-    for (const line of lines as string[]) {
-      if (y > pageH - 64) {
-        doc.addPage();
-        y = margin;
+      const base64Img = await fetchToDataURL(themeLogo);
+      if (base64Img) {
+        const logoW = 70;
+        const logoH = 70;
+        const centerX = pageW / 2 - logoW / 2;
+        doc.addImage(base64Img, "PNG", centerX, y - 14, logoW, logoH, undefined, "FAST");
       }
-      doc.text(line, margin, y);
-      y += 12.5;
+    } catch (err) {
+      console.warn("⚠️ No se pudo cargar el logo del tema en el PDF", err);
     }
+  }
 
-    y += 20;
-    doc.setTextColor(0, 0, 0);
-  };
+  y += 60;
 
-  const startHeaderPage = async () => {
-    // Encabezado superior de la primera página
-    doc.setFillColor(pc.r, pc.g, pc.b);
-    doc.rect(0, 0, pageW, 74, "F");
+  // === Línea separadora ===
+  doc.setDrawColor(pc.r, pc.g, pc.b);
+  doc.setLineWidth(0.8);
+  doc.line(margin, y, pageW - margin, y);
+  y += 20;
 
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(18);
-    doc.setTextColor(255, 255, 255);
-    doc.text("Valuación de Activo Inmobiliario", margin, 32);
+  // === Datos de la propiedad ===
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(13);
+  doc.setTextColor(pc.r, pc.g, pc.b);
+  doc.text("Datos de la Propiedad", pageW / 2, y, { align: "center" });
+  doc.setTextColor(0, 0, 0);
+  y += 20;
 
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(9.5);
-    doc.text(
-      `${inmobiliaria || "—"}  |  ${new Date(formData.date).toLocaleDateString("es-AR")}`,
-      margin,
-      52
-    );
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+  const lh = 15;
 
-    if (themeLogo) {
-      try {
-        const logoData = await fetchToDataURL(themeLogo);
-        if (logoData) {
-          // Un poco más grande que la versión anterior, pero contenido dentro del encabezado.
-          const logoBoxW = 100;
-          const logoBoxH = 58;
-          const logoX = pageW - margin - logoBoxW;
-          const logoY = 8;
-          addImageContain(logoData, logoX, logoY, logoBoxW, logoBoxH);
-        }
-      } catch (err) {
-        console.warn("⚠️ No se pudo cargar el logo del tema en el PDF", err);
-      }
-    }
-
-    doc.setTextColor(0, 0, 0);
-    y = 96;
-  };
-
-  await startHeaderPage();
-
-  // Datos de cabecera
-  doc.setFillColor(soft.r, soft.g, soft.b);
-  doc.setDrawColor(border.r, border.g, border.b);
-  doc.rect(margin, y, pageW - margin * 2, 58, "FD");
-
-  drawLabelValue("Empresa", inmobiliaria, margin + 12, y + 19, 225);
-  drawLabelValue("Asesor", isAsesor ? asesorNombre : "—", margin + 12, y + 39, 225);
-  drawLabelValue("Profesional", matriculado, pageW / 2 + 12, y + 19, 215);
-  drawLabelValue("Matrícula N°", cpi, pageW / 2 + 12, y + 39, 215);
-  y += 82;
-
-  // =========================
-  // Página 1: Datos de la propiedad
-  // =========================
-  drawSectionTitle("Datos de la Propiedad");
-
-  const cardX = margin;
-  const cardY = y;
-  const cardW = pageW - margin * 2;
-  const photoW = 230;
-  const photoH = 168;
-  const cardH = 398;
-
-  doc.setFillColor(255, 255, 255);
-  doc.setDrawColor(border.r, border.g, border.b);
-  doc.rect(cardX, cardY, cardW, cardH, "FD");
-
-  const leftX = cardX + 18;
-  const photoX = cardX + cardW - photoW - 18;
-  const topInfoW = photoX - leftX - 20;
-
-  const drawKV = (
-    label: string,
-    value: string,
-    x: number,
-    yLine: number,
-    maxValueW = 170
-  ) => {
-    const labelText = `${label}: `;
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(8.8);
-    doc.setTextColor(muted.r, muted.g, muted.b);
-    doc.text(labelText, x, yLine);
-
-    const labelW = doc.getTextWidth(labelText);
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(8.8);
-    doc.setTextColor(dark.r, dark.g, dark.b);
-
-    const safeValue = value || "-";
-    const valueW = Math.max(45, maxValueW - labelW - 9);
-    const lines = doc.splitTextToSize(safeValue, valueW);
-    doc.text(lines as any, x + labelW + 9, yLine);
-    doc.setTextColor(0, 0, 0);
-
-    return Math.max(14, (Array.isArray(lines) ? (lines as string[]).length : 1) * 10 + 3);
-  };
-
-  const datosA = [
-    ["Cliente", formData.clientName || "-"],
-    ["Teléfono", formData.phone || "-"],
-    ["Email", formData.email || "-"],
-    ["Dirección", formData.address || "-"],
-    ["Barrio", formData.neighborhood || "-"],
-    ["Localidad", formData.locality || "-"],
-    ["Operación", operationLabel],
-    ["Moneda", currency],
+  const datosIzq = [
+    `Cliente: ${formData.clientName || "-"}`,
+    `Teléfono: ${formData.phone || "-"}`,
+    `Email: ${formData.email || "-"}`,
+    `Dirección: ${formData.address || "-"}`,
+    `Barrio: ${formData.neighborhood || "-"}`,
+    `Localidad: ${formData.locality || "-"}`,
+    `Tipología: ${formData.propertyType}`,
+    `m² Terreno: ${numero(Number(formData.landArea) || 0)}`,
+    `m² Cubiertos: ${numero(Number(formData.builtArea) || 0)}`,
+    `Planos: ${formData.hasPlans ? "Sí" : "No"}`,
+    `Título: ${formData.titleType}`,
   ];
 
-  // Bloque superior: datos principales en una sola columna + foto a la derecha.
-  // Esto evita que los textos largos invadan la imagen principal.
-  let topY = cardY + 25;
-  datosA.forEach(([label, value]) => {
-    topY += drawKV(label, value, leftX, topY, topInfoW) + 6;
+  let yDatos = y;
+  datosIzq.forEach((line) => {
+    doc.text(line, margin, yDatos);
+    yDatos += lh;
   });
 
+  // Foto principal: base64 o URL
   let principalDataURL: string | null = null;
   if (formData.mainPhotoBase64) principalDataURL = formData.mainPhotoBase64;
   else if (formData.mainPhotoUrl) principalDataURL = await fetchToDataURL(formData.mainPhotoUrl);
 
-  doc.setFillColor(248, 250, 252);
-  doc.setDrawColor(border.r, border.g, border.b);
-  doc.rect(photoX, cardY + 22, photoW, photoH, "FD");
   if (principalDataURL) {
-    addImageContain(principalDataURL, photoX + 5, cardY + 27, photoW - 10, photoH - 10);
+    try {
+      doc.addImage(principalDataURL, "JPEG", pageW - margin - 180, y, 180, 135, undefined, "FAST");
+    } catch {}
   }
+  y = Math.max(yDatos, y + 135) + 20;
 
-  // Línea divisoria interna para separar la ficha principal de las características.
-  const dividerY = cardY + 214;
-  doc.setDrawColor(border.r, border.g, border.b);
-  doc.line(cardX + 18, dividerY, cardX + cardW - 18, dividerY);
-
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(9.2);
-  doc.setTextColor(muted.r, muted.g, muted.b);
-  doc.text("Características", leftX, dividerY + 22);
-
-  // Segunda parte de datos, debajo de la foto, usando 3 columnas para aprovechar el ancho.
-  const secondY = dividerY + 45;
-  const col1X = leftX;
-  const col2X = leftX + 174;
-  const col3X = leftX + 348;
-  const colW = 158;
-
-  const datosB = [
-    ["Tipología", String(formData.propertyType || "-")],
-    ["m² Terreno", numero(Number(formData.landArea) || 0)],
-    ["m² Cubiertos", numero(Number(formData.builtArea) || 0)],
-    ["Planos", formData.hasPlans ? "Sí" : "No"],
-    ["Título", String(formData.titleType || "-")],
-    ["Antigüedad", `${numero(Number(formData.age) || 0)} años`],
-    ["Estado", String(formData.condition || "-")],
-    ["Ubicación", String(formData.locationQuality || "-")],
-    ["Orientación", String(formData.orientation || "-")],
-    ["Posee renta", formData.isRented ? "Sí" : "No"],
+  // Parte inferior: dos columnas
+  const datosIzq2 = [
+    `Antigüedad: ${numero(Number(formData.age) || 0)} años`,
+    `Estado: ${formData.condition}`,
+    `Ubicación: ${formData.locationQuality}`,
+    `Orientación: ${formData.orientation}`,
+    `Posee renta: ${formData.isRented ? "Sí" : "No"}`,
   ];
 
-  datosB.forEach(([label, value], idx) => {
-    const col = idx % 3;
-    const row = Math.floor(idx / 3);
-    const x = col === 0 ? col1X : col === 1 ? col2X : col3X;
-    const yy = secondY + row * 26;
-    drawKV(label, value, x, yy, colW);
-  });
-
-  // Servicios en formato horizontal, al pie de la ficha, para no competir con la foto.
   const servicios = [
     `Luz: ${formData.services.luz ? "Sí" : "No"}`,
     `Agua: ${formData.services.agua ? "Sí" : "No"}`,
@@ -1258,31 +874,32 @@ const handleDownloadPDF = async () => {
     `Pavimento: ${formData.services.pavimento ? "Sí" : "No"}`,
   ];
 
-  const servY = cardY + cardH - 42;
+  let yCol = y;
+  datosIzq2.forEach((line) => {
+    doc.text(line, margin, yCol);
+    yCol += lh;
+  });
+
+  let yCol2 = y;
+  servicios.forEach((line) => {
+    doc.text(line, pageW - margin - 200, yCol2);
+    yCol2 += lh;
+  });
+
+  y = Math.max(yCol, yCol2) + 30;
+
+  // === Comparables ===
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(9.2);
-  doc.setTextColor(muted.r, muted.g, muted.b);
-  doc.text("Servicios", leftX, servY);
-
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(8.8);
-  doc.setTextColor(dark.r, dark.g, dark.b);
-  const servText = servicios.join("   ·   ");
-  const servLines = doc.splitTextToSize(servText, cardW - 36);
-  doc.text(servLines as any, leftX, servY + 16);
+  doc.setFontSize(12);
+  doc.setTextColor(pc.r, pc.g, pc.b);
+  doc.text("Propiedades Comparadas en la Zona", pageW / 2, y, { align: "center" });
   doc.setTextColor(0, 0, 0);
+  y += 16;
 
-  // =========================
-  // Página 2 en adelante: Comparables
-  // =========================
-  doc.addPage();
-  y = margin;
-  drawSectionTitle("Propiedades Comparadas en la Zona");
-
-  const cols = 2;
-  const gap = 12;
-  const compCardW = (pageW - margin * 2 - gap) / cols;
-  const compCardH = 244;
+  const cols = 4;
+  const gap = 10;
+  const cardW = (pageW - margin * 2 - gap * (cols - 1)) / cols;
+  const cardH = 250;
   let cx = margin;
   let cy = y;
 
@@ -1292,330 +909,142 @@ const handleDownloadPDF = async () => {
     yCard: number,
     index: number
   ) => {
-    doc.setFillColor(255, 255, 255);
-    doc.setDrawColor(border.r, border.g, border.b);
-    doc.rect(x, yCard, compCardW, compCardH, "FD");
+    doc.setDrawColor(200, 200, 200);
+    doc.setLineWidth(0.8);
+    doc.rect(x, yCard, cardW, cardH);
 
-    doc.setFillColor(pc.r, pc.g, pc.b);
-    doc.rect(x, yCard, compCardW, 24, "F");
+    const innerPad = 8;
+    let cursorY = yCard + innerPad;
 
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(10.5);
-    doc.setTextColor(255, 255, 255);
-    doc.text(`Propiedad Nº ${index + 1}`, x + 10, yCard + 16);
-    doc.setTextColor(0, 0, 0);
+    doc.setFontSize(11);
+    doc.text(`Propiedad Nº ${index + 1}`, x + innerPad, cursorY);
+    cursorY += 18;
 
-    const innerPad = 10;
-    const imgX = x + innerPad;
-    const imgY = yCard + 34;
-    const imgW = compCardW - innerPad * 2;
-    const imgH = 72;
-
-    doc.setFillColor(248, 250, 252);
-    doc.setDrawColor(border.r, border.g, border.b);
-    doc.rect(imgX, imgY, imgW, imgH, "FD");
-
+    // Imagen comparable: base64 o URL
     let cmpDataURL: string | null = null;
     if (c.photoBase64) cmpDataURL = c.photoBase64;
     else if (c.photoUrl) cmpDataURL = await fetchToDataURL(c.photoUrl);
 
-    if (cmpDataURL) addImageContain(cmpDataURL, imgX + 3, imgY + 3, imgW - 6, imgH - 6);
+    if (cmpDataURL) {
+      try {
+        doc.addImage(cmpDataURL, "JPEG", x + innerPad, cursorY, cardW - innerPad * 2, 80, undefined, "FAST");
+        cursorY += 95;
+      } catch {}
+    }
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+
+    let dirLines = doc.splitTextToSize(`Dirección: ${c.address || "-"}`, cardW - innerPad * 2);
+    doc.text(dirLines, x + innerPad, cursorY);
+    cursorY += (dirLines as string[]).length * 12;
+
+    let barrioLines = doc.splitTextToSize(`Barrio: ${c.neighborhood || "-"}`, cardW - innerPad * 2);
+    doc.text(barrioLines, x + innerPad, cursorY);
+    cursorY += (barrioLines as string[]).length * 12;
 
     const builtAreaNum = Number(c.builtArea) || 0;
     const priceNum = Number(c.price) || 0;
     const coefNum =
-      typeof c.coefficient === "number"
-        ? c.coefficient
-        : parseFloat(String(c.coefficient)) || 1;
+      typeof c.coefficient === "number" ? c.coefficient : parseFloat(String(c.coefficient)) || 1;
 
     const ppm2Base = builtAreaNum > 0 ? priceNum / builtAreaNum : 0;
     const ppm2Adj = ppm2Base * coefNum;
 
-    let textY = imgY + imgH + 18;
-    const textX = x + innerPad;
-    const maxTextW = compCardW - innerPad * 2;
-
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(9.5);
-    doc.setTextColor(dark.r, dark.g, dark.b);
-
-    const dirLines = doc.splitTextToSize(`Dirección: ${c.address || "-"}`, maxTextW);
-    doc.text(dirLines as any, textX, textY);
-    textY += (dirLines as string[]).length * 11;
-
-    const barrioLines = doc.splitTextToSize(`Barrio: ${c.neighborhood || "-"}`, maxTextW);
-    doc.text(barrioLines as any, textX, textY);
-    textY += (barrioLines as string[]).length * 11 + 2;
-
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(9.5);
-    doc.text(`Precio: ${money(priceNum)}`, textX, textY);
-    textY += 13;
-    doc.text(`m² Cubiertos: ${numero(builtAreaNum)}`, textX, textY);
-    textY += 13;
-    doc.text(`Precio/m²: ${money(ppm2Adj)}`, textX, textY);
-    textY += 13;
+    doc.setFontSize(10);
 
-    doc.text(`Días publicada: ${c.daysPublished || "-"}`, textX, textY);
-    textY += 13;
+    let precioLines = doc.splitTextToSize(`Precio: ${peso(priceNum)}`, cardW - innerPad * 2);
+    doc.text(precioLines, x + innerPad, cursorY);
+    cursorY += (precioLines as string[]).length * 12;
+
+    doc.text(`m² Cubiertos: ${numero(builtAreaNum)}`, x + innerPad, cursorY);
+    cursorY += 14;
+
+    doc.text(`Precio/m²: ${peso(ppm2Adj)}`, x + innerPad, cursorY);
+    cursorY += 14;
 
     if (c.listingUrl) {
-      doc.setTextColor(2, 132, 199);
-      doc.textWithLink("Ver Propiedad", textX, textY, { url: c.listingUrl });
+      doc.setTextColor(33, 150, 243);
+      doc.textWithLink("Ver Propiedad", x + innerPad, cursorY, { url: c.listingUrl });
       doc.setTextColor(0, 0, 0);
-      textY += 13;
+      cursorY += 14;
     }
 
     const desc = c.description || "";
-    if (desc) {
-      doc.setFontSize(8.5);
-      doc.setTextColor(71, 85, 105);
-      const textLines = doc.splitTextToSize(desc, maxTextW);
-      const clipped = (textLines as string[]).slice(0, 4);
-      doc.text(clipped as any, textX, textY);
-      doc.setTextColor(0, 0, 0);
-    }
+    const textLines = doc.splitTextToSize(desc, cardW - innerPad * 2);
+    const maxLines = 5;
+    const clipped = (textLines as string[]).slice(0, maxLines);
+    doc.text(clipped as any, x + innerPad, cursorY);
   };
 
+  // Respetamos await por el fetch de imágenes
   for (let i = 0; i < formData.comparables.length; i++) {
     if (i > 0 && i % cols === 0) {
-      cy += compCardH + gap;
+      cy += cardH + gap;
       cx = margin;
     }
-
-    if (cy + compCardH > pageH - 72) {
-      doc.addPage();
-      y = margin;
-      drawSectionTitle("Propiedades Comparadas en la Zona (cont.)");
-      cy = y;
-      cx = margin;
-    }
-
     // eslint-disable-next-line no-await-in-loop
     await drawComparableCard(formData.comparables[i], cx, cy, i);
-    cx += compCardW + gap;
+    cx += cardW + gap;
   }
 
-  // =========================
-  // Página siguiente: Precio sugerido y conclusión
-  // =========================
-  doc.addPage();
-  y = margin;
+  y = cy + cardH + 16;
+  if (y > pageH - 200) {
+    doc.addPage();
+    y = margin;
+  }
 
-  doc.setFillColor(255, 251, 235);
-  doc.setDrawColor(245, 158, 11);
-  doc.rect(margin, y, pageW - margin * 2, 64, "FD");
+  doc.setDrawColor(pc.r, pc.g, pc.b);
+  doc.line(margin, y, pageW - margin, y);
+  y += 14;
 
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(13);
-  doc.setTextColor(146, 64, 14);
-  doc.text(suggestedPriceTitle, margin + 14, y + 38);
-
-  doc.setFontSize(24);
-  doc.setTextColor(dark.r, dark.g, dark.b);
-  doc.text(money(suggestedPrice), pageW - margin - 14, y + 39, { align: "right" });
-
+  doc.setFontSize(12);
+  doc.setTextColor(pc.r, pc.g, pc.b);
+  doc.text("Precio sugerido de venta", margin, y);
   doc.setTextColor(0, 0, 0);
-  y += 94;
+  y += 16;
 
-  drawSectionTitle("Conclusión");
-  y += 20;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(18);
+  doc.text(peso(suggestedPrice), pageW / 2, y, { align: "center" });
+  y += 30;
 
-  drawTextBlock("Observaciones", formData.observations);
-  drawTextBlock("Fortalezas", formData.strengths);
-  drawTextBlock("Debilidades", formData.weaknesses);
-  drawTextBlock("A considerar", formData.considerations);
+  doc.setDrawColor(pc.r, pc.g, pc.b);
+  doc.line(margin, y, pageW - margin, y);
+  y += 14;
 
-  // =========================
-  // Última página: Gráficos
-  // =========================
-  doc.addPage();
-  y = margin;
-  drawSectionTitle("Gráficos y Referencias");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(12);
+  doc.setTextColor(pc.r, pc.g, pc.b);
+  doc.text("Conclusión", margin, y);
+  doc.setTextColor(0, 0, 0);
+  y += 16;
 
-  const drawPERGraph = (graphX: number, graphY: number, graphW: number, graphH: number) => {
-    const plotPadL = 42;
-    const plotPadR = 18;
-    const plotPadT = 28;
-    const plotPadB = 34;
-    const x0 = graphX + plotPadL;
-    const y0 = graphY + graphH - plotPadB;
-    const plotW = graphW - plotPadL - plotPadR;
-    const plotH = graphH - plotPadT - plotPadB;
-    const xMin = 5;
-    const xMax = 30;
-    const yMax = 20;
-    const mapX = (v: number) => x0 + ((v - xMin) / (xMax - xMin)) * plotW;
-    const mapY = (v: number) => y0 - (v / yMax) * plotH;
-
-    doc.setFillColor(255, 255, 255);
-    doc.setDrawColor(border.r, border.g, border.b);
-    doc.rect(graphX, graphY, graphW, graphH, "FD");
-
+  const block = (title: string, text: string) => {
     doc.setFont("helvetica", "bold");
     doc.setFontSize(11);
-    doc.setTextColor(dark.r, dark.g, dark.b);
-    doc.text("Relación PER y Rentabilidad Anual", graphX + graphW / 2, graphY + 17, { align: "center" });
-
-    // Zonas de referencia
-    doc.setFillColor(209, 250, 229);
-    doc.rect(mapX(5), graphY + plotPadT, mapX(15) - mapX(5), plotH, "F");
-    doc.setFillColor(254, 243, 199);
-    doc.rect(mapX(15), graphY + plotPadT, mapX(20) - mapX(15), plotH, "F");
-    doc.setFillColor(254, 226, 226);
-    doc.rect(mapX(20), graphY + plotPadT, mapX(30) - mapX(20), plotH, "F");
-
-    // Grilla
-    doc.setDrawColor(229, 231, 235);
-    doc.setLineWidth(0.4);
-    [5, 10, 15, 20, 25, 30].forEach((tick) => {
-      const tx = mapX(tick);
-      doc.line(tx, graphY + plotPadT, tx, y0);
-    });
-    [0, 5, 10, 15, 20].forEach((tick) => {
-      const ty = mapY(tick);
-      doc.line(x0, ty, x0 + plotW, ty);
-    });
-
-    // Ejes
-    doc.setDrawColor(71, 85, 105);
-    doc.setLineWidth(0.8);
-    doc.line(x0, y0, x0 + plotW, y0);
-    doc.line(x0, graphY + plotPadT, x0, y0);
-
+    doc.text(title, margin, y);
+    y += 12;
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(7.2);
-    doc.setTextColor(71, 85, 105);
-    [5, 10, 15, 20, 25, 30].forEach((tick) => {
-      doc.text(String(tick), mapX(tick), y0 + 11, { align: "center" });
-    });
-    [0, 5, 10, 15, 20].forEach((tick) => {
-      doc.text(`${tick}%`, x0 - 6, mapY(tick) + 2, { align: "right" });
-    });
-    doc.text("PER (años de alquiler)", graphX + graphW / 2, graphY + graphH - 9, { align: "center" });
-    doc.text("Rentabilidad anual (%)", graphX + 9, graphY + graphH / 2, { angle: 90, align: "center" } as any);
-
-    // Límites 15 y 20
-    doc.setDrawColor(34, 197, 94);
-    doc.setLineDashPattern([3, 3], 0);
-    doc.line(mapX(15), graphY + plotPadT, mapX(15), y0);
-    doc.setDrawColor(245, 158, 11);
-    doc.line(mapX(20), graphY + plotPadT, mapX(20), y0);
-    doc.setLineDashPattern([], 0);
-
-    // Curva aproximada de rentabilidad: 100 / PER
-    doc.setDrawColor(220, 38, 38);
-    doc.setLineWidth(1.4);
-    let prevX = mapX(5);
-    let prevY = mapY(20);
-    for (let per = 5.25; per <= 30; per += 0.25) {
-      const rent = Math.min(20, 100 / per);
-      const px = mapX(per);
-      const py = mapY(rent);
-      doc.line(prevX, prevY, px, py);
-      prevX = px;
-      prevY = py;
+    doc.setFontSize(10);
+    const lines = doc.splitTextToSize(text || "-", pageW - margin * 2);
+    doc.text(lines as any, margin, y);
+    y += (Array.isArray(lines) ? (lines as string[]).length : 1) * 14 + 8;
+    if (y > pageH - 80) {
+      doc.addPage();
+      y = margin;
     }
-
-    // Referencias internas, cerca del eje X para que no tapen el marcador.
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(6.8);
-    doc.setTextColor(22, 101, 52);
-    doc.text("Buena Inversión", mapX(10), y0 - 5, { align: "center" });
-
-    // En la franja amarilla lo partimos en dos líneas para que quede centrado
-    // y no se desborde hacia las franjas verde/roja.
-    doc.setTextColor(146, 64, 14);
-    doc.text("Rentabilidad", mapX(17.5), y0 - 10, { align: "center" });
-    doc.text("Aceptable", mapX(17.5), y0 - 3, { align: "center" });
-
-    doc.setTextColor(153, 27, 27);
-    doc.text("Inversión Riesgosa", mapX(25), y0 - 5, { align: "center" });
-
-    // Marcador del PER calculado
-    if (canCalculatePER && perValue) {
-      const p = Math.max(5, Math.min(30, perValue));
-      const rent = Math.min(20, 100 / p);
-      const markerX = mapX(p);
-      const markerY = mapY(rent);
-      doc.setFillColor(pc.r, pc.g, pc.b);
-      doc.circle(markerX, markerY, 3.2, "F");
-
-      const label = `PER ${numero(perValue, 1)}`;
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(7.2);
-      const labelW = doc.getTextWidth(label) + 10;
-      const labelX = p > 22 ? markerX - labelW - 6 : markerX + 7;
-      const labelY = markerY - 12;
-      doc.setFillColor(255, 255, 255);
-      doc.setDrawColor(border.r, border.g, border.b);
-      doc.roundedRect(labelX, labelY - 8, labelW, 13, 2, 2, "FD");
-      doc.setTextColor(pc.r, pc.g, pc.b);
-      doc.text(label, labelX + 5, labelY);
-    }
-
-    // Leyenda con marco y fondo blanco para mejorar contraste.
-    const legX = graphX + graphW - 196;
-    const legY = graphY + 32;
-    const legW = 172;
-    const legH = 43;
-    doc.setFillColor(255, 255, 255);
-    doc.setDrawColor(148, 163, 184);
-    doc.roundedRect(legX - 7, legY - 8, legW, legH, 3, 3, "FD");
-
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(6.7);
-    doc.setTextColor(30, 41, 59);
-
-    doc.setFillColor(187, 247, 208);
-    doc.setDrawColor(34, 197, 94);
-    doc.rect(legX, legY, 9, 7, "FD");
-    doc.text("Buena inversión (PER < 15)", legX + 13, legY + 6);
-
-    doc.setFillColor(253, 230, 138);
-    doc.setDrawColor(245, 158, 11);
-    doc.rect(legX, legY + 12, 9, 7, "FD");
-    doc.text("Rentabilidad aceptable (15 a 20)", legX + 13, legY + 18);
-
-    doc.setFillColor(252, 165, 165);
-    doc.setDrawColor(185, 28, 28);
-    doc.rect(legX, legY + 24, 9, 7, "FD");
-    doc.text("Inversión riesgosa (PER > 20)", legX + 13, legY + 30);
-
-    doc.setTextColor(0, 0, 0);
-    doc.setLineWidth(0.8);
   };
 
-  if ((formData as any).includePER && operationType === "venta") {
-    const perText = canCalculatePER
-      ? `PER (Price Earnings Ratio): ${numero(perValue || 0, 1)} años para recuperar la inversión - ${perInfo.label}.`
-      : currency !== "USD"
-      ? "PER (Price Earnings Ratio): para calcularlo, el valor sugerido de venta debe estar expresado en USD."
-      : "PER (Price Earnings Ratio): no se pudo calcular por falta de alquiler estimativo mensual en USD.";
+  block("Observaciones", formData.observations);
+  block("Fortalezas", formData.strengths);
+  block("Debilidades", formData.weaknesses);
+  block("A considerar", formData.considerations);
 
-    doc.setFillColor(248, 250, 252);
-    doc.setDrawColor(border.r, border.g, border.b);
-    doc.rect(margin, y, pageW - margin * 2, canCalculatePER ? 264 : 82, "FD");
-
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(11);
-    doc.setTextColor(pc.r, pc.g, pc.b);
-    doc.text("PER (Price Earnings Ratio)", margin + 12, y + 20);
-
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(9.5);
-    doc.setTextColor(dark.r, dark.g, dark.b);
-    doc.text(perText, margin + 12, y + 42);
-
-    if (canCalculatePER) {
-      drawPERGraph(margin + 18, y + 62, pageW - margin * 2 - 36, 184);
-    }
-
-    doc.setTextColor(0, 0, 0);
-    y += canCalculatePER ? 286 : 104;
-  }
-
-  // Imagen final opcional, grande y centrada en la página de gráficos.
+  // === Imagen final opcional ===
   try {
     const graficoUrl = "/grafico1-pdf.png";
     const img = await fetch(graficoUrl);
@@ -1627,55 +1056,39 @@ const handleDownloadPDF = async () => {
     reader.readAsDataURL(blob);
     const base64Img = await base64Promise;
 
-    const availableH = pageH - y - 82;
-    const imgW = pageW * 0.94;
-    const imgH = Math.max(330, Math.min(430, availableH));
+    const tempImg = new Image();
+    tempImg.src = base64Img;
+    await new Promise((res) => (tempImg.onload = res));
+    const ratio = tempImg.height / tempImg.width;
+
+    const imgW = pageW * 0.7;
+    const imgH = imgW * ratio;
     const imgX = (pageW - imgW) / 2;
 
-    y += 18;
-    addImageContain(base64Img, imgX, y, imgW, imgH);
-    y += imgH + 22;
+    y += 40;
+    if (y + imgH > pageH - 60) {
+      doc.addPage();
+      y = margin;
+    }
+
+    doc.addImage(base64Img, "PNG", imgX, y, imgW, imgH, undefined, "FAST");
+    y += imgH + 20;
   } catch (err) {
     console.warn("⚠️ No se pudo agregar la imagen final al PDF", err);
   }
 
-  // Footer en todas las páginas
+  // === Footer (usa los valores resueltos arriba) ===
   const footerText = `${matriculado}  |  Matricula N°: ${cpi}`;
-  const totalPages = (doc as any).getNumberOfPages
-    ? (doc as any).getNumberOfPages()
-    : doc.internal.pages.length - 1;
-
-  for (let page = 1; page <= totalPages; page++) {
-    doc.setPage(page);
-    doc.setDrawColor(border.r, border.g, border.b);
-    doc.line(margin, pageH - 44, pageW - margin, pageH - 44);
-    doc.setFont("helvetica", "italic");
-    doc.setFontSize(8.5);
-    doc.setTextColor(71, 85, 105);
-    doc.text(footerText, pageW / 2, pageH - 28, { align: "center" });
-    doc.text(`Página ${page} de ${totalPages}`, pageW - margin, pageH - 28, {
-      align: "right",
-    });
-  }
+  doc.setFont("helvetica", "italic");
+  doc.setFontSize(9);
+  doc.text(footerText, pageW / 2, pageH - 30, { align: "center" });
 
   doc.save("Informe_VAI.pdf");
 };
-    
-/** ========= Opciones ========= */
-const propertyTypeOptions = useMemo(() => {
-  const base = enumToOptions(PropertyType);
-  const extras = [
-    "Complejo de cabañas",
-    "Hotel",
-    "Cochera/Garage",
-    "Campo",
-    "Depósito/Bodega",
-    "Quinta",
-  ].map((v) => ({ label: v, value: v }));
 
-  const exists = new Set(base.map((o) => o.value));
-  return [...base, ...extras.filter((o) => !exists.has(o.value))];
-}, []);
+
+/** ========= Opciones ========= */
+const propertyTypeOptions = useMemo(() => enumToOptions(PropertyType), []);
 const titleOptions = useMemo(() => enumToOptions(TitleType), []);
 const conditionOptions = useMemo(() => enumToOptions(PropertyCondition), []);
 const locationOptions = useMemo(() => enumToOptions(LocationQuality), []);
@@ -1709,40 +1122,6 @@ return (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 p-4 sm:p-6">
           {/* Columna izquierda */}
           <div className="lg:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-5">
-            {/* Operación */}
-            <div className="space-y-1">
-              <label className="block text-sm font-medium text-gray-700">Operación</label>
-              <select
-                name="operationType"
-                value={operationType}
-                onChange={handleFieldChange}
-                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
-              >
-                {operationOptions.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Moneda */}
-            <div className="space-y-1">
-              <label className="block text-sm font-medium text-gray-700">Moneda</label>
-              <select
-                name="currency"
-                value={currency}
-                onChange={handleFieldChange}
-                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
-              >
-                {currencyOptions.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-
             {/* Cliente */}
             <div className="space-y-1">
               <label className="block text-sm font-medium text-gray-700">Cliente</label>
@@ -1979,7 +1358,7 @@ return (
             <div className="space-y-3 md:col-span-2">
               <h3 className="text-sm font-semibold text-gray-800">Servicios</h3>
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
-                {(["luz", "agua", "gas", "cloacas", "pavimento"] as Array<Extract<keyof Services, string>>).map((k) => (
+                {(["luz", "agua", "gas", "cloacas", "pavimento"] as Array<keyof Services>).map((k) => (
                   <div key={k} className="space-y-1">
                     <label className="block text-xs font-medium text-gray-600 capitalize">{k}</label>
                     <select
@@ -2094,9 +1473,9 @@ return (
       <div className="mt-6 rounded-xl border border-amber-200 bg-amber-50 p-4 sm:p-6">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
           <h3 className="text-base sm:text-lg font-semibold text-center sm:text-left" style={{ color: effectivePrimaryColor }}>
-            {suggestedPriceTitle}
+            Precio sugerido de venta
           </h3>
-          <span className="text-xl sm:text-2xl font-bold text-center sm:text-right">{money(suggestedPrice)}</span>
+          <span className="text-xl sm:text-2xl font-bold text-center sm:text-right">{peso(suggestedPrice)}</span>
         </div>
         <p className="mt-2 text-xs sm:text-sm text-amber-700 text-center sm:text-left">
           Calculado como promedio del precio/m² ajustado de comparables × m² a valuar de la propiedad principal.
@@ -2227,41 +1606,6 @@ return (
 
                   {/* Datos */}
                   <div className="lg:col-span-5 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-                    {/* Link + autocompletar */}
-                    <div className="space-y-1 sm:col-span-2 md:col-span-3">
-                      <label className="block text-sm font-medium text-gray-700">Link de la publicación</label>
-                      <div className="flex flex-col sm:flex-row gap-2">
-                        <input
-                          value={c.listingUrl || ""}
-                          onChange={(e) => updateComparable(i, "listingUrl", e.target.value)}
-                          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
-                          placeholder="https://..."
-                        />
-                        <button
-                          type="button"
-                          onClick={() => importComparableFromUrl(i)}
-                          disabled={!!comparableImportStatus[i]?.loading || !String(c.listingUrl || "").trim()}
-                          className="inline-flex shrink-0 items-center justify-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                          {comparableImportStatus[i]?.loading ? "Importando..." : "Autocompletar datos"}
-                        </button>
-                      </div>
-                      {comparableImportStatus[i]?.text && (
-                        <p
-                          className={
-                            comparableImportStatus[i]?.type === "success"
-                              ? "text-xs text-green-600"
-                              : "text-xs text-amber-700"
-                          }
-                        >
-                          {comparableImportStatus[i]?.text}
-                        </p>
-                      )}
-                      <p className="text-xs text-gray-500">
-                        Completa datos públicos disponibles. Revisá y corregí manualmente antes de guardar.
-                      </p>
-                    </div>
-
                     {/* Dirección */}
                     <div className="space-y-1 sm:col-span-2">
                       <label className="block text-sm font-medium text-gray-700">Dirección</label>
@@ -2303,7 +1647,7 @@ return (
 
                     {/* Precio */}
                     <div className="space-y-1">
-                      <label className="block text-sm font-medium text-gray-700">{comparablePriceLabel}</label>
+                      <label className="block text-sm font-medium text-gray-700">Precio ($)</label>
                       <input
                         type="text"
                         inputMode="numeric"
@@ -2318,7 +1662,7 @@ return (
                           updateComparable(i, "price", numericValue);
                         }}
                         className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-right focus:outline-none focus:ring-2 focus:ring-offset-1"
-                        placeholder={currency === "USD" ? "Ej: 120.000" : "Ej: 1.200.000"}
+                        placeholder="Ej: 1.200.000"
                       />
                     </div>
 
@@ -2336,6 +1680,17 @@ return (
                         }}
                         className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
                         placeholder="Ej: 45"
+                      />
+                    </div>
+
+                    {/* Link */}
+                    <div className="space-y-1 sm:col-span-2">
+                      <label className="block text-sm font-medium text-gray-700">Link de la publicación</label>
+                      <input
+                        value={c.listingUrl || ""}
+                        onChange={(e) => updateComparable(i, "listingUrl", e.target.value)}
+                        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
+                        placeholder="https://..."
                       />
                     </div>
 
@@ -2362,7 +1717,7 @@ return (
                     <div className="space-y-1">
                       <label className="block text-sm font-medium text-gray-700">Precio por m² (ajustado por coeficiente)</label>
                       <div className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm">
-                        {money(ppm2Adj)}
+                        {peso(ppm2Adj)}
                       </div>
                     </div>
 
@@ -2387,7 +1742,7 @@ return (
             <button
               type="button"
               onClick={addComparable}
-              disabled={formData.comparables.length >= MAX_COMPARABLES}
+              disabled={formData.comparables.length >= 4}
               className="inline-flex items-center justify-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
             >
               Agregar comparable
@@ -2395,91 +1750,6 @@ return (
           </div>
         </div>
       </div>
-
-
-      {/* PER opcional */}
-      {operationType === "venta" && (
-        <div className="mt-6 rounded-xl border border-gray-200 bg-white shadow-sm">
-          <div className="border-b border-gray-200 p-4 sm:p-6">
-            <h2 className="text-base sm:text-lg font-semibold text-center sm:text-left" style={{ color: effectivePrimaryColor }}>
-              PER (Price Earnings Ratio)
-            </h2>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-5 p-4 sm:p-6">
-            <label className="md:col-span-1 flex items-center gap-3 text-sm font-medium text-gray-700">
-              <input
-                type="checkbox"
-                checked={Boolean((formData as any).includePER)}
-                onChange={(e) =>
-                  setFormData((prev) => ({
-                    ...prev,
-                    includePER: e.target.checked,
-                  }))
-                }
-                className="h-4 w-4"
-              />
-              Incluir cálculo PER
-            </label>
-
-            {Boolean((formData as any).includePER) && (
-              <>
-                <div className="space-y-1">
-                  <label className="block text-sm font-medium text-gray-700">
-                    Alquiler estimativo mensual (USD)
-                  </label>
-                  <input
-                    name="estimatedMonthlyRentUSD"
-                    type="number"
-                    inputMode="decimal"
-                    value={(formData as any).estimatedMonthlyRentUSD ?? ""}
-                    onChange={(e) => {
-                      const value = e.target.value === "" ? "" : parseFloat(e.target.value);
-                      handleFieldChange({
-                        target: { name: "estimatedMonthlyRentUSD", value },
-                      } as any);
-                    }}
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
-                    placeholder="Ej: 700"
-                  />
-                </div>
-
-                <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
-                  <p className="text-xs text-gray-500">Resultado PER</p>
-                  {canCalculatePER ? (
-                    <>
-                      <p className="text-lg font-bold text-gray-900">
-                        {numero(perValue || 0, 1)} años para recuperar la inversión
-                      </p>
-                      <p className={`text-sm font-semibold ${perInfo.className}`}>
-                        {perInfo.label}
-                      </p>
-                    </>
-                  ) : (
-                    <p className="text-sm text-gray-600">
-                      {currency !== "USD"
-                        ? "Para calcular PER, seleccioná USD como moneda de venta."
-                        : "Completá el alquiler mensual estimativo en USD."}
-                    </p>
-                  )}
-                </div>
-
-                <div className="md:col-span-3 grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
-                  <div className="rounded-md border border-green-200 bg-green-50 px-3 py-2 text-green-700">
-                    Menor a 15 = Buena Oportunidad
-                  </div>
-                  <div className="rounded-md border border-yellow-200 bg-yellow-50 px-3 py-2 text-yellow-700">
-                    Entre 15 y 20 = Rentabilidad Aceptable
-                  </div>
-                  <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-red-700">
-                    Más de 20 = Inversión Riesgosa
-                  </div>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      )}
 
       {/* Conclusión */}
       <div className="mt-6 rounded-xl border border-gray-200 bg-white shadow-sm">
@@ -2553,6 +1823,14 @@ return (
             >
               {isSubmitting ? "Guardando..." : "Guardar Informe"}
             </button>
+
+            <button
+              type="button"
+              onClick={loadInforme}
+              className="inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-semibold w-full sm:w-auto text-center border"
+            >
+              Cargar Informe
+            </button>
           </div>
 
           <div>
@@ -2572,11 +1850,49 @@ return (
           {saveMsg && (
             <p className={saveMsg.type === "success" ? "text-green-600" : "text-red-600"}>{saveMsg.text}</p>
           )}
+          {loadMsg && (
+            <p className={loadMsg.type === "success" ? "text-green-600" : "text-red-600"}>{loadMsg.text}</p>
+          )}
           {informeId && <p className="text-xs text-gray-500">ID actual del informe: {informeId}</p>}
         </div>
       </div>
     </div>
 
+    {/* === Modal de Carga de Informe === */}
+    {loadOpen && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+        <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-5">
+          <h3 className="text-lg font-semibold text-gray-800 mb-1">Valuador de Activos Inmobiliarios</h3>
+          <p className="text-sm text-gray-600 mb-4">Ingrese el ID del informe que desea cargar</p>
+
+          <input
+            type="text"
+            value={loadIdInput}
+            onChange={(e) => setLoadIdInput(e.target.value)}
+            className="w-full border rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-sky-500"
+            placeholder="Ej: 4b3a6d1e-...."
+          />
+
+          <div className="mt-5 flex items-center justify-end gap-3">
+            <button
+              type="button"
+              onClick={() => setLoadOpen(false)}
+              className="px-4 py-2 rounded-lg border text-gray-700 hover:bg-gray-50"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={handleConfirmLoad}
+              className="px-4 py-2 rounded-lg text-white"
+              style={{ backgroundColor: effectivePrimaryColor }}
+            >
+              Cargar
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
   </>
 );
 }

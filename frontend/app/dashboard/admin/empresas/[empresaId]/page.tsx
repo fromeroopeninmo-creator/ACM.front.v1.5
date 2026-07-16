@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { supabaseServer } from "#lib/supabaseServer";
 import { getEmpresaDetalle, type EmpresaDetalle } from "#lib/soporteApi";
 import AcuerdoComercialAdminCard from "./AcuerdoComercialAdminCard";
+import AccessControlAdminCard from "./AccessControlAdminCard";
 
 export const dynamic = "force-dynamic";
 
@@ -173,7 +174,6 @@ export default async function AdminEmpresaDetallePage({
 
   const modal = searchParams?.modal ?? null;
   const acuerdoModalOpen = modal === "acuerdo";
-  const planModalOpen = modal === "plan";
 
   return (
     <main className="p-4 md:p-6 space-y-4">
@@ -191,6 +191,20 @@ export default async function AdminEmpresaDetallePage({
           ← Volver
         </a>
       </header>
+
+      {!errorMsg && detalle ? (
+        <AccessControlAdminCard
+          empresaId={params.empresaId}
+          accesoPermitido={billingEstado?.acceso?.permitido === true}
+          origenAcceso={billingEstado?.acceso?.origen ?? null}
+          motivoActual={billingEstado?.acceso?.motivo ?? suspendidaMotivo}
+          suspensionManual={billingEstado?.estado?.suspension_manual === true}
+          habilitacionManual={billingEstado?.estado?.habilitacion_manual === true}
+          habilitacionManualHasta={billingEstado?.estado?.habilitacion_manual_hasta ?? null}
+          habilitacionManualMotivo={billingEstado?.estado?.habilitacion_manual_motivo ?? null}
+        />
+      ) : null}
+
 
       {errorMsg ? (
         <section className="rounded-2xl border border-red-200 bg-red-50 p-4 text-red-700">
@@ -695,63 +709,7 @@ export default async function AdminEmpresaDetallePage({
             </div>
           )}
 
-          {planModalOpen && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-              <a
-                href={`/dashboard/admin/empresas/${encodeURIComponent(params.empresaId)}`}
-                aria-label="Cerrar modal"
-                className="absolute inset-0 bg-black/50"
-              />
-              <div className="relative z-10 w-full max-w-3xl rounded-2xl border bg-white shadow-2xl dark:bg-neutral-950">
-                <div className="flex items-center justify-between gap-3 border-b px-4 py-3">
-                  <div>
-                    <h3 className="text-lg font-semibold">Cambiar Plan</h3>
-                    <p className="text-sm text-gray-500">
-                      Esta acción queda separada del acuerdo comercial. En el próximo ajuste movemos el selector de plan a un componente independiente.
-                    </p>
-                  </div>
-                  <a
-                    href={`/dashboard/admin/empresas/${encodeURIComponent(params.empresaId)}`}
-                    className="rounded-xl border px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-neutral-800"
-                  >
-                    Cerrar
-                  </a>
-                </div>
-                <div className="p-4">
-                  <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-                    El layout ya quedó preparado para separar “Cambiar Plan” de “Acuerdo Comercial”.
-                    Para que el selector de plan deje de aparecer dentro del acuerdo y pase a esta ventana,
-                    el siguiente archivo a corregir es <strong>AcuerdoComercialAdminCard.tsx</strong>.
-                  </div>
 
-                  <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
-                    <div className="rounded-xl border p-3">
-                      <div className="text-xs text-gray-500 mb-1">Plan actual</div>
-                      <div className="font-medium">{plan?.nombre || "—"}</div>
-                    </div>
-                    <div className="rounded-xl border p-3">
-                      <div className="text-xs text-gray-500 mb-1">Cupo final</div>
-                      <div className="font-medium">
-                        {fmtNumber(plan?.max_asesores_final ?? plan?.max_asesores ?? null)}
-                      </div>
-                    </div>
-                    <div className="rounded-xl border p-3">
-                      <div className="text-xs text-gray-500 mb-1">Ciclo actual</div>
-                      <div className="font-medium">
-                        {fmtDateOnly(cicloInicio)} — {fmtDateOnly(cicloFin)}
-                      </div>
-                    </div>
-                    <div className="rounded-xl border p-3">
-                      <div className="text-xs text-gray-500 mb-1">Estado</div>
-                      <div className="font-medium">
-                        {planVencido ? "Vencido" : "Vigente"}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
         </>
       )}
     </main>

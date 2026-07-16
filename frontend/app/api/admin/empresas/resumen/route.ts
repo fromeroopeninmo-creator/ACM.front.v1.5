@@ -38,13 +38,14 @@ export async function GET(req: Request) {
 
     const now = Date.now();
     const today = new Date().toISOString().slice(0, 10);
-    const [empQ, subQ, acuQ, planQ] = await Promise.all([
+    const [empQ, subQ, epQ, acuQ, planQ] = await Promise.all([
       admin.from("empresas").select("id, razon_social, nombre_comercial, cuit, provincia, localidad, suspendida, suspendida_at, suspension_motivo, created_at, eliminada_at"),
       admin.from("suscripciones").select("id, empresa_id, estado, inicio, fin, ciclo_inicio, ciclo_fin, plan_id, plan_actual_id, metadata"),
+      admin.from("empresas_planes").select("id, empresa_id, plan_id, fecha_inicio, fecha_fin, activo, max_asesores_override, created_at"),
       admin.from("empresa_acuerdos_comerciales").select("id, empresa_id, activo, tipo_acuerdo, plan_id, precio_neto_fijo, max_asesores_override, fecha_inicio, fecha_fin"),
-      admin.from("planes").select("id, nombre, es_trial, es_desarrollo"),
+      admin.from("planes").select("id, nombre, nombre_comercial, duracion_dias, es_trial, es_desarrollo"),
     ]);
-    for (const result of [empQ, subQ, acuQ, planQ]) if (result.error) throw new Error(result.error.message);
+    for (const result of [empQ, subQ, epQ, acuQ, planQ]) if (result.error) throw new Error(result.error.message);
 
     const plans = new Map((planQ.data ?? []).map((p: any) => [String(p.id), p]));
     const cycleMap = new Map<string, any>();
@@ -56,6 +57,23 @@ export async function GET(req: Request) {
       const prev = cycleMap.get(String(s.empresa_id));
       if (!prev || end > (time(prev.ciclo_fin ?? prev.fin) ?? 0)) cycleMap.set(String(s.empresa_id), s);
     }
+    const operationalCoverageMap = new Map<string, any>();
+    for (const ep of epQ.data ?? []) {
+      if (ep.activo !== true) continue;
+      const plan = plans.get(String(ep.plan_id)) ?? null;
+      if (!plan || (plan.es_trial !== true && plan.es_desarrollo !== true)) continue;
+
+      const start = time(ep.fecha_inicio ? `${ep.fecha_inicio}T00:00:00Z` : null);
+      const end = time(ep.fecha_fin ? `${ep.fecha_fin}T23:59:59Z` : null);
+      const vigente = (start == null || start <= now) && (end == null || end > now);
+      if (!vigente) continue;
+
+      const prev = operationalCoverageMap.get(String(ep.empresa_id));
+      const prevEnd = prev?.fecha_fin ? time(`${prev.fecha_fin}T23:59:59Z`) ?? 0 : Number.MAX_SAFE_INTEGER;
+      const nextEnd = end ?? Number.MAX_SAFE_INTEGER;
+      if (!prev || nextEnd > prevEnd) operationalCoverageMap.set(String(ep.empresa_id), ep);
+    }
+
     const agreementMap = new Map<string, any>();
     for (const a of acuQ.data ?? []) {
       if (!a.activo || String(a.fecha_inicio) > today || (a.fecha_fin && String(a.fecha_fin) < today)) continue;
@@ -63,11 +81,47 @@ export async function GET(req: Request) {
     }
 
     let items = (empQ.data ?? []).filter((e: any) => !e.eliminada_at).map((e: any) => {
-      const ciclo = cycleMap.get(String(e.id)) ?? null;
+      const cicloPagado = cycleMap.get(String(e.id)) ?? null;
+      const coberturaEspecial = operationalCoverageMap.get(String(e.id)) ?? null;
       const acuerdo = agreementMap.get(String(e.id)) ?? null;
-      const plan = ciclo ? plans.get(String(ciclo.plan_actual_id ?? ciclo.plan_id)) ?? null : null;
-      const cicloFin = ciclo?.ciclo_fin ?? ciclo?.fin ?? null;
-      const acceso = !e.suspendida && !!ciclo;
+
+      const cobertura = cicloPagado ?? coberturaEspecial;
+      const planId = cicloPagado
+        ? String(cicloPagado.plan_actual_id ?? cicloPagado.plan_id)
+        : coberturaEspecial
+          ? String(coberturaEspecial.plan_id)
+          : null;
+      const plan = planId ? plans.get(planId) ?? null : null;
+
+      const cicloInicio = cicloPagado
+        ? cicloPagado.ciclo_inicio ?? cicloPagado.inicio ?? null
+        : coberturaEspecial?.fecha_inicio ?? null;
+      const cicloFin = cicloPagado
+        ? cicloPagado.ciclo_fin ?? cicloPagado.fin ?? null
+        : coberturaEspecial?.fecha_fin ?? null;
+
+      const motivoPersistido = String(e.suspension_motivo ?? "").trim();
+      const motivoNormalizado = motivoPersistido.toLowerCase();
+      const suspensionAutomaticaPersistida = [
+        "falta de pago",
+        "sin ciclo vigente",
+        "trial vencido",
+        "plan vencido",
+        "sin plan activo",
+        "pendiente de pago",
+      ].some((fragmento) => motivoNormalizado.includes(fragmento));
+      const suspensionManual = e.suspendida === true && !suspensionAutomaticaPersistida;
+      const coberturaVigente = !!cobertura;
+      const acceso = coberturaVigente && !suspensionManual;
+
+      let suspensionMotivo: string | null = null;
+      if (!acceso) {
+        if (suspensionManual) suspensionMotivo = motivoPersistido || "Suspensión administrativa.";
+        else if (plan?.es_trial === true || motivoNormalizado.includes("trial")) suspensionMotivo = "Trial vencido.";
+        else if (planId || motivoNormalizado.includes("pago") || motivoNormalizado.includes("ciclo")) suspensionMotivo = "Falta de pago: no existe un ciclo vigente.";
+        else suspensionMotivo = motivoPersistido || "Sin plan o ciclo vigente.";
+      }
+
       return {
         id: e.id,
         nombre: e.nombre_comercial || e.razon_social || "Empresa sin nombre",
@@ -75,12 +129,15 @@ export async function GET(req: Request) {
         cuit: e.cuit,
         ubicacion: [e.localidad, e.provincia].filter(Boolean).join(", ") || null,
         creadaEn: e.created_at,
-        suspendida: !!e.suspendida,
-        suspensionMotivo: e.suspension_motivo,
+        suspendida: !acceso,
+        suspensionMotivo,
         acceso,
-        estado: e.suspendida ? "suspendida" : ciclo ? "activa" : "sin_ciclo",
-        plan: plan?.nombre ?? null,
-        cicloId: ciclo?.id ?? null,
+        estado: acceso ? "activa" : "suspendida",
+        plan: plan?.es_trial === true ? "Trial" : plan?.nombre_comercial ?? plan?.nombre ?? null,
+        esTrial: plan?.es_trial === true,
+        esDesarrollo: plan?.es_desarrollo === true,
+        cicloId: cobertura?.id ?? null,
+        cicloInicio,
         cicloFin,
         diasParaVencer: cicloFin ? Math.ceil(((time(cicloFin) ?? now) - now) / 86400000) : null,
         acuerdo: acuerdo ? {

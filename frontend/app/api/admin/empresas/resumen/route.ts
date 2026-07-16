@@ -63,7 +63,7 @@ export async function GET(req: Request) {
       admin
         .from("empresas")
         .select(
-          "id, razon_social, nombre_comercial, cuit, provincia, localidad, suspendida, suspendida_at, suspension_motivo, created_at, eliminada_at",
+          "id, razon_social, nombre_comercial, cuit, provincia, localidad, suspendida, suspendida_at, suspension_motivo, suspension_manual_admin, habilitacion_manual_hasta, habilitacion_manual_motivo, created_at, eliminada_at",
         ),
       admin
         .from("suscripciones")
@@ -170,10 +170,15 @@ export async function GET(req: Request) {
           "sin plan activo",
           "pendiente de pago",
         ].some((fragmento) => motivoNormalizado.includes(fragmento));
+        const habilitacionHasta = time(e.habilitacion_manual_hasta);
+        const habilitacionManual =
+          habilitacionHasta != null && habilitacionHasta > now;
         const suspensionManual =
-          e.suspendida === true && !suspensionAutomaticaPersistida;
+          e.suspendida === true &&
+          (e.suspension_manual_admin === true || !suspensionAutomaticaPersistida);
         const coberturaVigente = !!cobertura;
-        const acceso = coberturaVigente && !suspensionManual;
+        const acceso =
+          !suspensionManual && (coberturaVigente || habilitacionManual);
 
         let suspensionMotivo: string | null = null;
         if (!acceso) {
@@ -205,6 +210,13 @@ export async function GET(req: Request) {
           suspendida: !acceso,
           suspensionMotivo,
           acceso,
+          habilitacionManual,
+          habilitacionManualHasta: habilitacionManual
+            ? e.habilitacion_manual_hasta
+            : null,
+          habilitacionManualMotivo: habilitacionManual
+            ? e.habilitacion_manual_motivo
+            : null,
           estado: acceso ? "activa" : "suspendida",
           plan:
             plan?.es_trial === true

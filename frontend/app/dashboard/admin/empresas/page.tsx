@@ -1,459 +1,65 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { supabaseServer } from "#lib/supabaseServer";
-import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 
-type SearchParams = {
-  q?: string;
-  plan?: string;
-  estado?: "activo" | "inactivo" | "";
-  page?: string;
-  pageSize?: string;
-};
+type Params = { q?: string; estado?: string; creada_desde?: string; creada_hasta?: string; ciclo_hasta?: string; acuerdo_hasta?: string; page?: string; pageSize?: string };
+type Row = { id:string; nombre:string; razonSocial?:string|null; cuit?:string|null; ubicacion?:string|null; creadaEn?:string|null; suspendida:boolean; suspensionMotivo?:string|null; acceso:boolean; estado:string; plan?:string|null; cicloFin?:string|null; diasParaVencer?:number|null; acuerdo?:{id:string;tipo?:string|null;fechaFin?:string|null;precioNeto?:number|null;maxAsesores?:number|null;diasParaVencer?:number|null}|null };
+type Response = { page:number; pageSize:number; total:number; items:Row[] };
 
-type EmpresaRow = {
-  id: string;
-  razon_social: string | null;
-  cuit: string | null;
-  plan_nombre: string | null;
-  max_asesores: number | null;
-  max_asesores_override: number | null;
-  plan_activo: boolean | null;
-  fecha_inicio: string | null;
-  fecha_fin: string | null;
-  logo_url?: string | null;
-  color?: string | null;
+function cookieHeader() { return cookies().getAll().map((c) => `${c.name}=${c.value}`).join("; "); }
+function baseUrl() { const v=process.env.NEXT_PUBLIC_SITE_URL||process.env.NEXT_PUBLIC_VERCEL_URL||process.env.VERCEL_URL; return v?(v.startsWith("http")?v:`https://${v}`):"http://localhost:3000"; }
+function date(v?:string|null){ if(!v)return "—"; const d=new Date(v); return Number.isNaN(d.getTime())?"—":new Intl.DateTimeFormat("es-AR",{dateStyle:"medium"}).format(d); }
+function money(v?:number|null){ return v==null?"—":new Intl.NumberFormat("es-AR",{style:"currency",currency:"ARS",maximumFractionDigits:0}).format(v); }
+function isoFromOffset(days:number){ const d=new Date(Date.now()+days*86400000); return d.toISOString().slice(0,10); }
 
-  acuerdo_comercial_activo?: boolean;
-  acuerdo_comercial_id?: string | null;
-  acuerdo_comercial_tipo?: string | null;
-  acuerdo_comercial_modo_iva?: string | null;
-  acuerdo_comercial_iva_pct?: number | null;
-  acuerdo_comercial_precio_neto_fijo?: number | null;
-  acuerdo_comercial_descuento_pct?: number | null;
-  acuerdo_comercial_max_asesores_override?: number | null;
-  acuerdo_comercial_precio_extra_por_asesor_override?: number | null;
-  acuerdo_comercial_fecha_inicio?: string | null;
-  acuerdo_comercial_fecha_fin?: string | null;
-};
+export default async function EmpresasPage({ searchParams }: { searchParams: Params }) {
+  const s=supabaseServer(); const {data:{user}}=await s.auth.getUser(); if(!user)redirect("/login");
+  const {data:p}=await s.from("profiles").select("role").or(`id.eq.${user.id},user_id.eq.${user.id}`).limit(1).maybeSingle();
+  const role=p?.role??(user.user_metadata as any)?.role; if(role!=="super_admin"&&role!=="super_admin_root")redirect("/");
 
-type ApiResponse = {
-  items: EmpresaRow[];
-  page: number;
-  pageSize: number;
-  total: number;
-};
+  const normalized={...searchParams};
+  if(searchParams.ciclo_hasta==="proximos7") normalized.ciclo_hasta=isoFromOffset(7);
+  if(searchParams.acuerdo_hasta==="proximos30") normalized.acuerdo_hasta=isoFromOffset(30);
+  const usp=new URLSearchParams(); Object.entries(normalized).forEach(([k,v])=>{if(v)usp.set(k,String(v));});
+  let data:Response={page:1,pageSize:20,total:0,items:[]}; let error:string|null=null;
+  try{ const r=await fetch(`${baseUrl()}/api/admin/empresas/resumen?${usp}`,{headers:{cookie:cookieHeader()},cache:"no-store"}); if(!r.ok)throw new Error(await r.text()); data=await r.json(); }catch(e:any){error=e?.message??"No se pudo cargar empresas.";}
+  const pages=Math.max(1,Math.ceil(data.total/data.pageSize));
+  const href=(page:number)=>{const q=new URLSearchParams(usp);q.set("page",String(page));return `/dashboard/admin/empresas?${q}`;};
 
-function fmtNumber(n?: number | null) {
-  if (n === null || n === undefined) return "—";
-  return new Intl.NumberFormat("es-AR").format(n);
-}
+  return <main className="mx-auto w-full max-w-[1700px] space-y-5 p-4 md:p-6 xl:p-8">
+    <header className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+      <div><p className="text-xs font-semibold uppercase tracking-[.2em] text-amber-600">Administración comercial</p><h1 className="mt-1 text-2xl font-bold md:text-3xl">Empresas</h1><p className="mt-1 text-sm text-slate-500">Acceso real, ciclos pagados y acuerdos próximos a vencer.</p></div>
+      <a href="/dashboard/admin" className="w-full rounded-xl border bg-white px-4 py-2.5 text-center text-sm font-semibold hover:bg-slate-50 dark:bg-neutral-900 sm:w-auto">← Volver al panel</a>
+    </header>
 
-function fmtDateOnly(d?: string | null) {
-  if (!d) return "—";
-  const dt = new Date(d);
-  if (Number.isNaN(dt.getTime())) return "—";
-  return dt.toLocaleDateString();
-}
+    <section className="rounded-2xl border bg-white p-4 shadow-sm dark:bg-neutral-900">
+      <form className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-7">
+        <label className="sm:col-span-2"><span className="mb-1 block text-xs font-medium text-slate-500">Buscar</span><input name="q" defaultValue={searchParams.q} placeholder="Empresa, CUIT o ubicación" className="w-full rounded-xl border bg-transparent px-3 py-2.5 text-sm"/></label>
+        <label><span className="mb-1 block text-xs font-medium text-slate-500">Estado</span><select name="estado" defaultValue={searchParams.estado??"todos"} className="w-full rounded-xl border bg-transparent px-3 py-2.5 text-sm"><option value="todos">Todos</option><option value="activa">Activas</option><option value="suspendida">Suspendidas</option><option value="sin_ciclo">Sin ciclo</option></select></label>
+        <label><span className="mb-1 block text-xs font-medium text-slate-500">Creada desde</span><input type="date" name="creada_desde" defaultValue={searchParams.creada_desde} className="w-full rounded-xl border bg-transparent px-3 py-2.5 text-sm"/></label>
+        <label><span className="mb-1 block text-xs font-medium text-slate-500">Creada hasta</span><input type="date" name="creada_hasta" defaultValue={searchParams.creada_hasta} className="w-full rounded-xl border bg-transparent px-3 py-2.5 text-sm"/></label>
+        <label><span className="mb-1 block text-xs font-medium text-slate-500">Ciclo vence hasta</span><input type="date" name="ciclo_hasta" defaultValue={normalized.ciclo_hasta} className="w-full rounded-xl border bg-transparent px-3 py-2.5 text-sm"/></label>
+        <label><span className="mb-1 block text-xs font-medium text-slate-500">Acuerdo vence hasta</span><input type="date" name="acuerdo_hasta" defaultValue={normalized.acuerdo_hasta} className="w-full rounded-xl border bg-transparent px-3 py-2.5 text-sm"/></label>
+        <div className="flex gap-2 sm:col-span-2 xl:col-span-7"><button className="rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white">Aplicar filtros</button><a href="/dashboard/admin/empresas" className="rounded-xl border px-4 py-2.5 text-sm font-semibold">Limpiar</a></div>
+      </form>
+    </section>
 
-function buildCookieHeader(): string {
-  const jar = cookies();
-  const all = jar.getAll();
-  if (!all?.length) return "";
-  return all.map((c) => `${c.name}=${c.value}`).join("; ");
-}
+    {error?<div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>:null}
+    <div className="flex items-center justify-between"><p className="text-sm text-slate-500"><strong className="text-slate-900 dark:text-white">{data.total}</strong> empresas encontradas</p></div>
 
-function getBaseUrl() {
-  const envUrl =
-    process.env.NEXT_PUBLIC_SITE_URL ||
-    process.env.NEXT_PUBLIC_VERCEL_URL ||
-    process.env.VERCEL_URL;
+    <section className="grid gap-3 lg:hidden">
+      {data.items.map((x)=><article key={x.id} className="rounded-2xl border bg-white p-4 shadow-sm dark:bg-neutral-900">
+        <div className="flex items-start justify-between gap-3"><div className="min-w-0"><h2 className="truncate font-semibold">{x.nombre}</h2><p className="mt-1 text-xs text-slate-500">{x.cuit||"Sin CUIT"} · {x.ubicacion||"Sin ubicación"}</p></div><span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${x.estado==="activa"?"bg-emerald-50 text-emerald-700":x.estado==="suspendida"?"bg-red-50 text-red-700":"bg-amber-50 text-amber-700"}`}>{x.estado==="activa"?"Activa":x.estado==="suspendida"?"Suspendida":"Sin ciclo"}</span></div>
+        <dl className="mt-4 grid grid-cols-2 gap-3 text-sm"><div><dt className="text-xs text-slate-500">Plan</dt><dd className="font-medium">{x.plan||"—"}</dd></div><div><dt className="text-xs text-slate-500">Vence ciclo</dt><dd className="font-medium">{date(x.cicloFin)}</dd></div><div><dt className="text-xs text-slate-500">Acuerdo</dt><dd className="font-medium">{x.acuerdo?date(x.acuerdo.fechaFin):"Sin acuerdo"}</dd></div><div><dt className="text-xs text-slate-500">Precio acordado</dt><dd className="font-medium">{money(x.acuerdo?.precioNeto)}</dd></div></dl>
+        {x.acuerdo?.diasParaVencer!=null&&x.acuerdo.diasParaVencer<=30?<p className="mt-3 rounded-xl bg-amber-50 p-2.5 text-xs font-medium text-amber-800">Acuerdo por vencer en {x.acuerdo.diasParaVencer} día(s).</p>:null}
+        <a href={`/dashboard/admin/empresas/${x.id}`} className="mt-4 block rounded-xl bg-slate-950 px-4 py-2.5 text-center text-sm font-semibold text-white">Abrir empresa</a>
+      </article>)}
+    </section>
 
-  if (envUrl) {
-    return envUrl.startsWith("http") ? envUrl : `https://${envUrl}`;
-  }
-  return "http://localhost:3000";
-}
+    <section className="hidden overflow-hidden rounded-2xl border bg-white shadow-sm dark:bg-neutral-900 lg:block"><div className="overflow-x-auto"><table className="min-w-full text-sm"><thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500 dark:bg-neutral-950"><tr><th className="px-4 py-3">Empresa</th><th className="px-4 py-3">Estado</th><th className="px-4 py-3">Plan / ciclo</th><th className="px-4 py-3">Acuerdo</th><th className="px-4 py-3">Alta</th><th className="px-4 py-3 text-right">Acción</th></tr></thead><tbody>{data.items.map((x)=><tr key={x.id} className="border-t align-top hover:bg-slate-50/70 dark:hover:bg-neutral-800"><td className="px-4 py-4"><p className="font-semibold">{x.nombre}</p><p className="mt-1 text-xs text-slate-500">{x.cuit||"Sin CUIT"} · {x.ubicacion||"Sin ubicación"}</p></td><td className="px-4 py-4"><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${x.estado==="activa"?"bg-emerald-50 text-emerald-700":x.estado==="suspendida"?"bg-red-50 text-red-700":"bg-amber-50 text-amber-700"}`}>{x.estado}</span>{x.suspensionMotivo?<p className="mt-2 max-w-52 text-xs text-red-600">{x.suspensionMotivo}</p>:null}</td><td className="px-4 py-4"><p className="font-medium">{x.plan||"—"}</p><p className="mt-1 text-xs text-slate-500">Vence {date(x.cicloFin)}</p>{x.diasParaVencer!=null&&x.diasParaVencer<=7?<p className="mt-1 text-xs font-semibold text-blue-700">{x.diasParaVencer} día(s)</p>:null}</td><td className="px-4 py-4">{x.acuerdo?<><p className="font-medium">{money(x.acuerdo.precioNeto)}</p><p className="mt-1 text-xs text-slate-500">Hasta {date(x.acuerdo.fechaFin)}</p>{x.acuerdo.diasParaVencer!=null&&x.acuerdo.diasParaVencer<=30?<p className="mt-1 text-xs font-semibold text-amber-700">Renegociar · {x.acuerdo.diasParaVencer} día(s)</p>:null}</>:<span className="text-slate-400">Sin acuerdo</span>}</td><td className="px-4 py-4 text-slate-500">{date(x.creadaEn)}</td><td className="px-4 py-4 text-right"><a href={`/dashboard/admin/empresas/${x.id}`} className="inline-flex rounded-lg border px-3 py-2 font-semibold hover:bg-slate-50">Gestionar</a></td></tr>)}</tbody></table></div></section>
 
-function buildListadoUrl(params: {
-  q?: string | null;
-  plan?: string | null;
-  estado?: string | null;
-  page: number;
-  pageSize: number;
-}) {
-  const usp = new URLSearchParams();
-  if (params.q) usp.set("q", params.q);
-  if (params.plan) usp.set("plan", params.plan);
-  if (params.estado) usp.set("estado", params.estado);
-  usp.set("page", String(params.page));
-  usp.set("pageSize", String(params.pageSize));
-  return `/dashboard/admin/empresas?${usp.toString()}`;
-}
-
-function fmtTipoAcuerdo(v?: string | null) {
-  switch (v) {
-    case "descuento_pct":
-      return "Descuento %";
-    case "precio_fijo":
-      return "Precio fijo";
-    case "precio_fijo_con_cupo":
-      return "Precio fijo + cupo";
-    case "descuento_con_cupo":
-      return "Descuento + cupo";
-    default:
-      return "Acuerdo";
-  }
-}
-
-function renderAcuerdoBadges(e: EmpresaRow) {
-  const badges: Array<JSX.Element> = [];
-
-  if (e.acuerdo_comercial_activo) {
-    badges.push(
-      <span
-        key="activo"
-        className="inline-flex items-center rounded-full px-2 py-0.5 text-xs bg-blue-100 text-blue-700"
-      >
-        Acuerdo activo
-      </span>
-    );
-
-    if (e.acuerdo_comercial_modo_iva === "no_aplica") {
-      badges.push(
-        <span
-          key="sin-iva"
-          className="inline-flex items-center rounded-full px-2 py-0.5 text-xs bg-purple-100 text-purple-700"
-        >
-          Sin IVA
-        </span>
-      );
-    }
-
-    if (e.acuerdo_comercial_tipo) {
-      badges.push(
-        <span
-          key="tipo"
-          className="inline-flex items-center rounded-full px-2 py-0.5 text-xs bg-slate-100 text-slate-700"
-        >
-          {fmtTipoAcuerdo(e.acuerdo_comercial_tipo)}
-        </span>
-      );
-    }
-
-    if (
-      e.acuerdo_comercial_precio_neto_fijo != null &&
-      e.acuerdo_comercial_precio_neto_fijo >= 0
-    ) {
-      badges.push(
-        <span
-          key="precio-fijo"
-          className="inline-flex items-center rounded-full px-2 py-0.5 text-xs bg-emerald-100 text-emerald-700"
-        >
-          Precio fijo
-        </span>
-      );
-    }
-
-    if (
-      e.acuerdo_comercial_descuento_pct != null &&
-      e.acuerdo_comercial_descuento_pct > 0
-    ) {
-      badges.push(
-        <span
-          key="descuento"
-          className="inline-flex items-center rounded-full px-2 py-0.5 text-xs bg-amber-100 text-amber-700"
-        >
-          {e.acuerdo_comercial_descuento_pct}% off
-        </span>
-      );
-    }
-
-    if (
-      e.acuerdo_comercial_max_asesores_override != null &&
-      e.acuerdo_comercial_max_asesores_override > 0
-    ) {
-      badges.push(
-        <span
-          key="cupo-especial"
-          className="inline-flex items-center rounded-full px-2 py-0.5 text-xs bg-indigo-100 text-indigo-700"
-        >
-          Cupo especial
-        </span>
-      );
-    }
-  }
-
-  if (badges.length === 0) {
-    return <span className="text-xs text-gray-500">—</span>;
-  }
-
-  return <div className="flex flex-wrap gap-1.5">{badges}</div>;
-}
-
-export default async function AdminEmpresasPage({
-  searchParams,
-}: {
-  searchParams: SearchParams;
-}) {
-  // 1) Guard de sesión + rol
-  const supa = supabaseServer();
-  const {
-    data: { user },
-  } = await supa.auth.getUser();
-
-  if (!user) {
-    redirect("/login");
-  }
-
-  const { data: profile } = await supa
-    .from("profiles")
-    .select("id, role")
-    .eq("id", user.id)
-    .maybeSingle();
-
-  const role = profile?.role || (user.user_metadata as any)?.role || null;
-  const isAdmin = role === "super_admin" || role === "super_admin_root";
-
-  if (!isAdmin) {
-    switch (role) {
-      case "soporte":
-        redirect("/dashboard/soporte");
-      case "empresa":
-        redirect("/dashboard/empresa");
-      case "asesor":
-        redirect("/dashboard/asesor");
-      default:
-        redirect("/");
-    }
-  }
-
-  // 2) Filtros + paginación desde URL
-  const q = (searchParams.q || "").trim() || null;
-  const plan = (searchParams.plan || "").trim() || null;
-  const estado = (searchParams.estado || "") as "activo" | "inactivo" | "";
-  const page = Math.max(1, parseInt(searchParams.page || "1", 10) || 1);
-  const pageSize = [10, 20, 50].includes(parseInt(searchParams.pageSize || "", 10))
-    ? parseInt(searchParams.pageSize!, 10)
-    : 10;
-
-  // 3) Fetch al endpoint admin/soporte enriquecido
-  const cookieHeader = buildCookieHeader();
-  const baseUrl = getBaseUrl();
-
-  const apiUrl = new URL(`${baseUrl}/api/soporte/empresas`);
-  if (q) apiUrl.searchParams.set("q", q);
-  if (plan) apiUrl.searchParams.set("plan", plan);
-  if (estado) apiUrl.searchParams.set("estado", estado);
-  apiUrl.searchParams.set("page", String(page));
-  apiUrl.searchParams.set("pageSize", String(pageSize));
-
-  let items: EmpresaRow[] = [];
-  let total = 0;
-  let errorMsg: string | null = null;
-
-  try {
-    const res = await fetch(apiUrl.toString(), {
-      method: "GET",
-      headers: {
-        cookie: cookieHeader,
-      },
-      cache: "no-store",
-    });
-
-    if (!res.ok) {
-      const body = await res.text().catch(() => "");
-      throw new Error(
-        `Error al cargar empresas: ${res.status} ${res.statusText} ${body}`.trim()
-      );
-    }
-
-    const json = (await res.json()) as ApiResponse;
-
-    items = Array.isArray(json.items) ? json.items : [];
-    total = Number(json.total ?? 0);
-  } catch (e: any) {
-    errorMsg = e?.message || "Error al cargar empresas.";
-  }
-
-  const totalPages = Math.max(1, Math.ceil(total / pageSize));
-
-  // 4) Render
-  return (
-    <main className="p-4 md:p-6 space-y-4">
-      <header className="flex items-center justify-between">
-        <div className="space-y-1">
-          <h1 className="text-xl md:text-2xl font-semibold">Empresas (Administración)</h1>
-          <p className="text-sm text-gray-500">
-            Listado general, filtros y acceso al detalle. Incluye resumen de acuerdos comerciales activos.
-          </p>
-        </div>
-      </header>
-
-      {/* Filtros */}
-      <section className="rounded-2xl border p-4 bg-white dark:bg-neutral-900">
-        <form className="grid grid-cols-1 md:grid-cols-4 gap-3">
-          <div>
-            <label className="block text-sm text-gray-600 mb-1">Buscar</label>
-            <input
-              name="q"
-              defaultValue={q || ""}
-              placeholder="Razón social o CUIT"
-              className="w-full rounded-xl border px-3 py-2 text-sm bg-white dark:bg-neutral-950"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm text-gray-600 mb-1">Plan</label>
-            <input
-              name="plan"
-              defaultValue={plan || ""}
-              placeholder="Ej: Premium"
-              className="w-full rounded-xl border px-3 py-2 text-sm bg-white dark:bg-neutral-950"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm text-gray-600 mb-1">Estado</label>
-            <select
-              name="estado"
-              defaultValue={estado || ""}
-              className="w-full rounded-xl border px-3 py-2 text-sm bg-white dark:bg-neutral-950"
-            >
-              <option value="">Todos</option>
-              <option value="activo">Activo</option>
-              <option value="inactivo">Inactivo</option>
-            </select>
-          </div>
-
-          <div className="flex items-end gap-2">
-            <button
-              type="submit"
-              className="rounded-xl border px-4 py-2 text-sm bg-gray-50 hover:bg-gray-100"
-            >
-              Aplicar
-            </button>
-            <a
-              href="/dashboard/admin/empresas"
-              className="rounded-xl border px-4 py-2 text-sm bg-white hover:bg-gray-50"
-            >
-              Limpiar
-            </a>
-          </div>
-        </form>
-      </section>
-
-      {/* Tabla */}
-      <section className="rounded-2xl border p-0 overflow-hidden bg-white dark:bg-neutral-900">
-        {errorMsg ? (
-          <div className="p-4 text-red-700">{errorMsg}</div>
-        ) : (
-          <div className="overflow-auto">
-            <table className="min-w-full text-sm">
-              <thead className="bg-gray-50 dark:bg-neutral-900">
-                <tr className="text-left">
-                  <th className="px-3 py-2">Razón social</th>
-                  <th className="px-3 py-2">CUIT</th>
-                  <th className="px-3 py-2">Plan</th>
-                  <th className="px-3 py-2">Cupo (base → override)</th>
-                  <th className="px-3 py-2">Acuerdo comercial</th>
-                  <th className="px-3 py-2">Estado</th>
-                  <th className="px-3 py-2">Inicio</th>
-                  <th className="px-3 py-2">Fin</th>
-                  <th className="px-3 py-2"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.length === 0 ? (
-                  <tr>
-                    <td colSpan={9} className="px-3 py-6 text-center text-gray-500">
-                      Sin resultados.
-                    </td>
-                  </tr>
-                ) : (
-                  items.map((e) => {
-                    const cupoBase = e.max_asesores ?? 0;
-                    const cupoOv = e.max_asesores_override ?? 0;
-                    const cupo =
-                      cupoOv > 0 ? `${cupoBase} → ${cupoOv}` : `${cupoBase}`;
-
-                    return (
-                      <tr key={e.id} className="border-t">
-                        <td className="px-3 py-2">{e.razon_social || "—"}</td>
-                        <td className="px-3 py-2">{e.cuit || "—"}</td>
-                        <td className="px-3 py-2">{e.plan_nombre || "—"}</td>
-                        <td className="px-3 py-2">{cupo}</td>
-                        <td className="px-3 py-2">{renderAcuerdoBadges(e)}</td>
-                        <td className="px-3 py-2">
-                          <span
-                            className={
-                              e.plan_activo
-                                ? "inline-flex items-center rounded-full px-2 py-0.5 text-xs bg-green-100 text-green-700"
-                                : "inline-flex items-center rounded-full px-2 py-0.5 text-xs bg-amber-100 text-amber-700"
-                            }
-                          >
-                            {e.plan_activo ? "Activo" : "Inactivo"}
-                          </span>
-                        </td>
-                        <td className="px-3 py-2">{fmtDateOnly(e.fecha_inicio)}</td>
-                        <td className="px-3 py-2">{fmtDateOnly(e.fecha_fin)}</td>
-                        <td className="px-3 py-2">
-                          <Link
-                            href={`/dashboard/admin/empresas/${encodeURIComponent(e.id)}`}
-                            className="text-blue-600 hover:underline"
-                            title="Ver detalle de la empresa (vista Admin)"
-                          >
-                            Ver detalle
-                          </Link>
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
-
-      {/* Paginación */}
-      <section className="flex items-center justify-between">
-        <p className="text-xs text-gray-500">
-          {`Mostrando ${items.length} de ${total} • Página ${page} de ${totalPages}`}
-        </p>
-        <div className="flex items-center gap-2">
-          <a
-            href={buildListadoUrl({
-              q,
-              plan,
-              estado,
-              page: Math.max(1, page - 1),
-              pageSize,
-            })}
-            className={`rounded-xl border px-3 py-1 text-sm ${
-              page <= 1 ? "pointer-events-none opacity-50" : "hover:bg-gray-50"
-            }`}
-          >
-            Anterior
-          </a>
-          <a
-            href={buildListadoUrl({
-              q,
-              plan,
-              estado,
-              page: Math.min(totalPages, page + 1),
-              pageSize,
-            })}
-            className={`rounded-xl border px-3 py-1 text-sm ${
-              page >= totalPages ? "pointer-events-none opacity-50" : "hover:bg-gray-50"
-            }`}
-          >
-            Siguiente
-          </a>
-        </div>
-      </section>
-    </main>
-  );
+    <footer className="flex flex-col items-center justify-between gap-3 sm:flex-row"><p className="text-sm text-slate-500">Página {data.page} de {pages}</p><div className="flex gap-2"><a aria-disabled={data.page<=1} href={data.page<=1?"#":href(data.page-1)} className={`rounded-xl border px-4 py-2 text-sm ${data.page<=1?"pointer-events-none opacity-40":""}`}>Anterior</a><a aria-disabled={data.page>=pages} href={data.page>=pages?"#":href(data.page+1)} className={`rounded-xl border px-4 py-2 text-sm ${data.page>=pages?"pointer-events-none opacity-40":""}`}>Siguiente</a></div></footer>
+  </main>;
 }

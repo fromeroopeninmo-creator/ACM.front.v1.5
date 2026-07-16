@@ -1,3 +1,5 @@
+// frontend/app/dashboard/admin/empresas/[empresaId]/AcuerdoComercialAdminCard.tsx
+
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -393,6 +395,10 @@ export default function AcuerdoComercialAdminCard({
   }
 
   return (
+    <>
+      <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+        <strong>Condiciones del próximo pago.</strong> Crear, editar o finalizar este acuerdo no modifica el ciclo ya abonado ni corta el acceso vigente.
+      </div>
     <div className="space-y-4">
       <div className="rounded-xl border p-3 bg-gray-50 dark:bg-neutral-900/40">
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3 text-sm">
@@ -776,5 +782,6 @@ export default function AcuerdoComercialAdminCard({
         </div>
       )}
     </div>
+    </>
   );
 }

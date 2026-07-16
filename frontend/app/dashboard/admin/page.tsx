@@ -1,241 +1,125 @@
-// frontend/app/dashboard/admin/page.tsx
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { supabaseServer } from "#lib/supabaseServer";
 
 export const dynamic = "force-dynamic";
 
-type KpisResponse = {
-  empresas_activas?: number | null;
-  asesores_activos?: number | null;
-  informes_totales?: number | null;
-  mrr?: number | null; // ingreso mensual recurrente
+type DashboardData = {
+  generatedAt: string;
+  kpis: {
+    empresasTotal: number; empresasConAcceso: number; clientesPagos: number; trials: number;
+    desarrollo: number; suspendidas: number; sinCiclo: number; vencen7d: number;
+    acuerdosPorVencer: number; ingresosMes: number;
+  };
+  ingresosMensuales: Array<{ mes: string; monto: number }>;
+  distribucion: Array<{ label: string; value: number }>;
 };
 
-type CashflowKpisResponse = {
-  rango: { desde: string; hasta: string };
-  mrr_neto: number;
-  ingresos_neto_total: number;
-  ingresos_con_iva: number;
-  arpu_neto: number;
-  empresas_activas: number;
-  churn_empresas: number;
-  upgrades: number;
-  downgrades: number;
-};
-
-function buildCookieHeader(): string {
-  const jar = cookies();
-  const all = jar.getAll();
-  if (!all?.length) return "";
-  return all.map((c) => `${c.name}=${c.value}`).join("; ");
+function cookieHeader() { return cookies().getAll().map((c) => `${c.name}=${c.value}`).join("; "); }
+function baseUrl() {
+  const v = process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_VERCEL_URL || process.env.VERCEL_URL;
+  return v ? (v.startsWith("http") ? v : `https://${v}`) : "http://localhost:3000";
 }
+function money(n: number) { return new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 }).format(n || 0); }
+function num(n: number) { return new Intl.NumberFormat("es-AR").format(n || 0); }
 
-function getBaseUrl() {
-  const envUrl =
-    process.env.NEXT_PUBLIC_SITE_URL ||
-    process.env.NEXT_PUBLIC_VERCEL_URL ||
-    process.env.VERCEL_URL;
-  if (envUrl) return envUrl.startsWith("http") ? envUrl : `https://${envUrl}`;
-  return "http://localhost:3000";
-}
-
-function fmtNumber(n?: number | null) {
-  if (n === null || n === undefined) return "—";
-  return new Intl.NumberFormat("es-AR").format(n);
-}
-function fmtMoney(n?: number | null) {
-  if (n === null || n === undefined) return "—";
-  return new Intl.NumberFormat("es-AR", {
-    style: "currency",
-    currency: "ARS",
-    maximumFractionDigits: 0,
-  }).format(n);
-}
-
-function currentMonthRange(): { desde: string; hasta: string } {
-  // Mes actual en formato YYYY-MM-DD
-  const now = new Date();
-  const y = now.getUTCFullYear();
-  const m = now.getUTCMonth(); // 0-11
-  const first = new Date(Date.UTC(y, m, 1));
-  const last = new Date(Date.UTC(y, m + 1, 0));
-  const pad = (x: number) => String(x).padStart(2, "0");
-  const desde = `${first.getUTCFullYear()}-${pad(first.getUTCMonth() + 1)}-${pad(first.getUTCDate())}`;
-  const hasta = `${last.getUTCFullYear()}-${pad(last.getUTCMonth() + 1)}-${pad(last.getUTCDate())}`;
-  return { desde, hasta };
+async function guard() {
+  const s = supabaseServer();
+  const { data: { user } } = await s.auth.getUser();
+  if (!user) redirect("/login");
+  const { data: p } = await s.from("profiles").select("role").or(`id.eq.${user.id},user_id.eq.${user.id}`).limit(1).maybeSingle();
+  const role = p?.role ?? (user.user_metadata as any)?.role;
+  if (role !== "super_admin" && role !== "super_admin_root") redirect("/");
 }
 
 export default async function AdminHomePage() {
-  // 1) Guard de sesión + rol
-  const supa = supabaseServer();
-  const {
-    data: { user },
-  } = await supa.auth.getUser();
-
-  if (!user) {
-    redirect("/login");
-  }
-
-  const { data: profile } = await supa
-    .from("profiles")
-    .select("id, role")
-    .eq("id", user.id)
-    .maybeSingle();
-
-  const role = profile?.role || (user.user_metadata as any)?.role || null;
-  const isAdmin = role === "super_admin" || role === "super_admin_root";
-
-  if (!isAdmin) {
-    switch (role) {
-      case "soporte":
-        redirect("/dashboard/soporte");
-      case "empresa":
-        redirect("/dashboard/empresa");
-      case "asesor":
-        redirect("/dashboard/asesor");
-      default:
-        redirect("/");
-    }
-  }
-
-  // 2) Fetch SSR de KPIs
-  const cookieHeader = buildCookieHeader();
-  const base = getBaseUrl();
-
-  let kpis: KpisResponse | null = null;
-  let errorMsg: string | null = null;
-
+  await guard();
+  let data: DashboardData | null = null;
+  let error: string | null = null;
   try {
-    const res = await fetch(`${base}/api/admin/kpis`, {
-      method: "GET",
-      headers: {
-        cookie: cookieHeader,
-      },
-      cache: "no-store",
-    });
+    const res = await fetch(`${baseUrl()}/api/admin/dashboard`, { headers: { cookie: cookieHeader() }, cache: "no-store" });
+    if (!res.ok) throw new Error(await res.text());
+    data = await res.json();
+  } catch (e: any) { error = e?.message ?? "No se pudo cargar el panel."; }
 
-    if (!res.ok) {
-      const body = await res.text().catch(() => "");
-      throw new Error(`GET /api/admin/kpis → ${res.status} ${res.statusText} ${body}`);
-    }
-    kpis = (await res.json()) as KpisResponse;
-  } catch (e: any) {
-    errorMsg = e?.message || "Error al cargar KPIs.";
-  }
+  const k = data?.kpis;
+  const maxIncome = Math.max(1, ...(data?.ingresosMensuales ?? []).map((x) => x.monto));
+  const totalDist = Math.max(1, ...(data?.distribucion ?? []).map((x) => x.value));
 
-  // 2.b) Fetch SSR de KPIs de Cashflow (mes actual) para mostrar mini-dato en la card
-  let cashflowMini: CashflowKpisResponse | null = null;
-  try {
-    const { desde, hasta } = currentMonthRange();
-    const res = await fetch(`${base}/api/admin/cashflow/kpis?desde=${desde}&hasta=${hasta}`, {
-      method: "GET",
-      headers: { cookie: cookieHeader },
-      cache: "no-store",
-    });
-    if (res.ok) {
-      cashflowMini = (await res.json()) as CashflowKpisResponse;
-    }
-  } catch {
-    // Silencioso: si falla, simplemente no mostramos el mini-dato
-  }
-
-  // 3) Render
   return (
-    <main className="p-4 md:p-6 space-y-5">
-      <header className="flex items-center justify-between">
-        <div className="space-y-1">
-          <h1 className="text-xl md:text-2xl font-semibold">Panel de Administración</h1>
-          <p className="text-sm text-gray-500">
-            Resumen general del sistema: empresas, asesores, informes y métricas de ingresos.
-          </p>
+    <main className="mx-auto w-full max-w-[1600px] space-y-6 p-4 md:p-6 xl:p-8">
+      <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-amber-600">VAI Prop · Administración</p>
+          <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-950 dark:text-white md:text-3xl">Centro de control</h1>
+          <p className="mt-2 max-w-2xl text-sm text-slate-500">Acceso, renovaciones, acuerdos e ingresos reales en una sola vista.</p>
         </div>
+        <nav className="grid grid-cols-2 gap-2 sm:flex">
+          <a href="/dashboard/admin/empresas" className="rounded-xl bg-slate-950 px-4 py-2.5 text-center text-sm font-semibold text-white hover:bg-slate-800">Gestionar empresas</a>
+          <a href="/dashboard/admin/cashflow" className="rounded-xl border bg-white px-4 py-2.5 text-center text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:bg-neutral-900 dark:text-white">Ver cashflow</a>
+        </nav>
       </header>
 
-      {/* KPIs */}
-      {errorMsg ? (
-        <section className="rounded-2xl border border-red-200 bg-red-50 p-4 text-red-700">
-          {errorMsg}
-        </section>
-      ) : (
-        <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="rounded-2xl border p-4 bg-white dark:bg-neutral-900">
-            <div className="text-xs text-gray-500">Empresas activas</div>
-            <div className="text-2xl font-semibold mt-1">
-              {fmtNumber((kpis?.empresas_activas ?? 0))}
-            </div>
-          </div>
-          <div className="rounded-2xl border p-4 bg-white dark:bg-neutral-900">
-            <div className="text-xs text-gray-500">Asesores activos</div>
-            <div className="text-2xl font-semibold mt-1">
-              {fmtNumber((kpis?.asesores_activos ?? 0))}
-            </div>
-          </div>
-          <div className="rounded-2xl border p-4 bg-white dark:bg-neutral-900">
-            <div className="text-xs text-gray-500">Informes totales</div>
-            <div className="text-2xl font-semibold mt-1">
-              {fmtNumber((kpis?.informes_totales ?? 0))}
-            </div>
-          </div>
-          <div className="rounded-2xl border p-4 bg-white dark:bg-neutral-900">
-            <div className="text-xs text-gray-500">MRR</div>
-            <div className="text-2xl font-semibold mt-1">
-              {fmtMoney((kpis?.mrr ?? 0))}
-            </div>
-          </div>
-        </section>
-      )}
+      {error ? <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div> : null}
 
-      {/* Accesos / módulos */}
-      <section className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-        <a
-          href="/dashboard/admin/empresas"
-          className="rounded-2xl border p-5 bg-white dark:bg-neutral-900 hover:bg-gray-50 dark:hover:bg-neutral-800 transition"
-        >
-          <h2 className="text-base font-semibold">Empresas</h2>
-          <p className="text-sm text-gray-600 dark:text-gray-300 mt-1">
-            Listado y gestión integral de empresas.
-          </p>
-        </a>
-
-        <a
-          href="/dashboard/admin/soporte"
-          className="rounded-2xl border p-5 bg-white dark:bg-neutral-900 hover:bg-gray-50 dark:hover:bg-neutral-800 transition"
-        >
-          <h2 className="text-base font-semibold">Soporte</h2>
-          <p className="text-sm text-gray-600 dark:text-gray-300 mt-1">
-            Alta de agentes, estados y auditoría de acciones.
-          </p>
-        </a>
-
-        <a
-          href="/dashboard/admin/planes"
-          className="rounded-2xl border p-5 bg-white dark:bg-neutral-900 hover:bg-gray-50 dark:hover:bg-neutral-800 transition"
-        >
-          <h2 className="text-base font-semibold">Planes</h2>
-          <p className="text-sm text-gray-600 dark:text-gray-300 mt-1">
-            ABM de planes (precios netos) y auditoría.
-          </p>
-        </a>
-
-        {/* Card conectada a la futura página de Cashflow */}
-        <a
-          href="/dashboard/admin/cashflow"
-          className="rounded-2xl border p-5 bg-white dark:bg-neutral-900 hover:bg-gray-50 dark:hover:bg-neutral-800 transition"
-        >
-          <h2 className="text-base font-semibold">Cashflow / Pagos</h2>
-          <p className="text-sm text-gray-600 dark:text-gray-300 mt-1">
-            Flujo de ingresos y estado de suscripciones.
-          </p>
-          {cashflowMini ? (
-            <div className="mt-3 inline-flex items-center gap-2 text-sm">
-              <span className="px-2 py-0.5 rounded-full border bg-gray-50 dark:bg-neutral-800">
-                MRR (mes): <strong className="ml-1">{fmtMoney(cashflowMini.mrr_neto)}</strong>
-              </span>
-            </div>
-          ) : null}
-        </a>
+      <section className="grid grid-cols-2 gap-3 lg:grid-cols-4 2xl:grid-cols-6">
+        {[
+          ["Clientes pagos", k?.clientesPagos ?? 0, "Ciclo vigente"],
+          ["Con acceso", k?.empresasConAcceso ?? 0, `${k?.empresasTotal ?? 0} empresas`],
+          ["Ingresos del mes", money(k?.ingresosMes ?? 0), "Pagos acreditados"],
+          ["Acuerdos por vencer", k?.acuerdosPorVencer ?? 0, "Próximos 30 días"],
+          ["Ciclos por vencer", k?.vencen7d ?? 0, "Próximos 7 días"],
+          ["Suspendidas", k?.suspendidas ?? 0, `${k?.sinCiclo ?? 0} sin ciclo`],
+        ].map(([label, value, hint]) => (
+          <article key={String(label)} className="min-w-0 rounded-2xl border bg-white p-4 shadow-sm dark:bg-neutral-900">
+            <p className="truncate text-xs font-medium text-slate-500">{label}</p>
+            <p className="mt-2 break-words text-2xl font-bold text-slate-950 dark:text-white">{typeof value === "number" ? num(value) : value}</p>
+            <p className="mt-1 text-xs text-slate-400">{hint}</p>
+          </article>
+        ))}
       </section>
+
+      <section className="grid gap-4 xl:grid-cols-[1.6fr_1fr]">
+        <article className="rounded-2xl border bg-white p-4 shadow-sm dark:bg-neutral-900 md:p-5">
+          <div className="flex items-center justify-between gap-3">
+            <div><h2 className="font-semibold">Ingresos acreditados</h2><p className="text-xs text-slate-500">Últimos seis meses</p></div>
+            <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700">Sin simulaciones</span>
+          </div>
+          <div className="mt-6 flex h-56 items-end gap-2 overflow-x-auto pb-2 sm:gap-4">
+            {(data?.ingresosMensuales ?? []).map((x) => (
+              <div key={x.mes} className="flex h-full min-w-[58px] flex-1 flex-col justify-end gap-2 text-center">
+                <span className="text-[10px] font-medium text-slate-500">{money(x.monto)}</span>
+                <div className="mx-auto w-full max-w-20 rounded-t-xl bg-slate-900/90 transition-all dark:bg-amber-500" style={{ height: `${Math.max(4, (x.monto / maxIncome) * 100)}%` }} />
+                <span className="text-xs text-slate-500">{x.mes.slice(5)}/{x.mes.slice(2,4)}</span>
+              </div>
+            ))}
+          </div>
+        </article>
+
+        <article className="rounded-2xl border bg-white p-4 shadow-sm dark:bg-neutral-900 md:p-5">
+          <h2 className="font-semibold">Estado de cartera</h2>
+          <p className="text-xs text-slate-500">Distribución operativa actual</p>
+          <div className="mt-6 space-y-5">
+            {(data?.distribucion ?? []).map((x) => (
+              <div key={x.label}>
+                <div className="mb-2 flex items-center justify-between text-sm"><span>{x.label}</span><strong>{num(x.value)}</strong></div>
+                <div className="h-3 overflow-hidden rounded-full bg-slate-100 dark:bg-neutral-800"><div className="h-full rounded-full bg-amber-500" style={{ width: `${(x.value / totalDist) * 100}%` }} /></div>
+              </div>
+            ))}
+          </div>
+          <div className="mt-6 grid grid-cols-2 gap-3 border-t pt-4 text-center">
+            <div><p className="text-xl font-bold">{num(k?.trials ?? 0)}</p><p className="text-xs text-slate-500">Trials</p></div>
+            <div><p className="text-xl font-bold">{num(k?.desarrollo ?? 0)}</p><p className="text-xs text-slate-500">Desarrollo</p></div>
+          </div>
+        </article>
+      </section>
+
+      {(k?.acuerdosPorVencer ?? 0) > 0 || (k?.vencen7d ?? 0) > 0 ? (
+        <section className="grid gap-3 md:grid-cols-2">
+          {(k?.acuerdosPorVencer ?? 0) > 0 ? <a href="/dashboard/admin/empresas?acuerdo_hasta=proximos30" className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-900 hover:bg-amber-100"><strong>{k?.acuerdosPorVencer} acuerdo(s) próximos a finalizar</strong><p className="mt-1 text-sm">Conviene iniciar la renegociación antes del vencimiento.</p></a> : null}
+          {(k?.vencen7d ?? 0) > 0 ? <a href="/dashboard/admin/empresas?ciclo_hasta=proximos7" className="rounded-2xl border border-blue-200 bg-blue-50 p-4 text-blue-900 hover:bg-blue-100"><strong>{k?.vencen7d} ciclo(s) próximos a vencer</strong><p className="mt-1 text-sm">Revisá renovaciones y pagos pendientes.</p></a> : null}
+        </section>
+      ) : null}
     </main>
   );
 }

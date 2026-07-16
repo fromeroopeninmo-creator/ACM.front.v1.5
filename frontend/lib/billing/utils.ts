@@ -121,7 +121,13 @@ export function todayUTCDate(): string {
   return `${y}-${m}-${day}`;
 }
 
-/** Lee user + profile (role, empresa_id). Lanza si no hay sesión. */
+/**
+ * Lee user + profile (role, empresa_id). Lanza si no hay sesión.
+ *
+ * Compatibilidad histórica:
+ * - perfiles nuevos pueden vincularse por profiles.user_id = auth.users.id
+ * - perfiles históricos usan profiles.id = auth.users.id
+ */
 export async function assertAuthAndGetContext(
   supabase: SupabaseClient
 ): Promise<ActorCtx> {
@@ -129,17 +135,42 @@ export async function assertAuthAndGetContext(
   if (authErr || !auth?.user?.id) throw new Error("No autenticado");
   const userId = auth.user.id;
 
-  const { data: profile, error: pErr } = await supabase
+  let profile: { role?: Role | null; empresa_id?: string | null } | null = null;
+
+  const { data: profileByUserId, error: byUserIdError } = await supabase
     .from("profiles")
     .select("role, empresa_id")
     .eq("user_id", userId)
     .maybeSingle();
 
-  if (pErr) throw new Error(`Error leyendo profile: ${pErr.message}`);
+  if (!byUserIdError && profileByUserId) {
+    profile = profileByUserId as typeof profile;
+  }
+
+  if (!profile) {
+    const { data: profileById, error: byIdError } = await supabase
+      .from("profiles")
+      .select("role, empresa_id")
+      .eq("id", userId)
+      .maybeSingle();
+
+    if (byIdError) {
+      const firstError = byUserIdError?.message
+        ? `; búsqueda por user_id: ${byUserIdError.message}`
+        : "";
+      throw new Error(`Error leyendo profile: ${byIdError.message}${firstError}`);
+    }
+
+    profile = (profileById as typeof profile) ?? null;
+  }
+
+  const metadataRole =
+    (auth.user.user_metadata?.role as Role | undefined) ??
+    (auth.user.app_metadata?.role as Role | undefined);
 
   return {
     userId,
-    role: (profile?.role as Role) ?? undefined,
+    role: (profile?.role as Role | undefined) ?? metadataRole,
     empresaId: profile?.empresa_id ?? null,
   };
 }
@@ -169,12 +200,14 @@ export async function getEmpresaIdForActor(params: {
     const { data: emp, error } = await supabase
       .from("empresas")
       .select("id")
-      .eq("user_id", actor.userId)
+      .or(`user_id.eq.${actor.userId},id_usuario.eq.${actor.userId}`)
+      .order("created_at", { ascending: false })
+      .limit(1)
       .maybeSingle();
 
     if (error) {
       console.warn(
-        "getEmpresaIdForActor: error buscando empresas por user_id:",
+        "getEmpresaIdForActor: error buscando empresas por user_id/id_usuario:",
         error.message
       );
       return null;

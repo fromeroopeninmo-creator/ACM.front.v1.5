@@ -32,6 +32,7 @@ export async function GET(req: Request) {
     const creadaHasta = url.searchParams.get("creada_hasta");
     const cicloHasta = url.searchParams.get("ciclo_hasta");
     const acuerdoHasta = url.searchParams.get("acuerdo_hasta");
+    const ordenar = url.searchParams.get("ordenar") ?? "prioridad";
     const page = Math.max(1, Number(url.searchParams.get("page") ?? 1));
     const pageSize = [10, 20, 50].includes(Number(url.searchParams.get("pageSize"))) ? Number(url.searchParams.get("pageSize")) : 20;
 
@@ -101,6 +102,9 @@ export async function GET(req: Request) {
     if (acuerdoHasta) items = items.filter((i: any) => i.acuerdo?.fechaFin && String(i.acuerdo.fechaFin) <= acuerdoHasta);
 
     items.sort((a: any, b: any) => {
+      if (ordenar === "ultimas") return (time(b.creadaEn) ?? 0) - (time(a.creadaEn) ?? 0);
+      if (ordenar === "antiguas") return (time(a.creadaEn) ?? 0) - (time(b.creadaEn) ?? 0);
+      if (ordenar === "nombre") return String(a.nombre).localeCompare(String(b.nombre), "es");
       const priority = (x: any) => x.estado === "suspendida" ? 0 : x.acuerdo?.diasParaVencer != null && x.acuerdo.diasParaVencer <= 30 ? 1 : x.diasParaVencer != null && x.diasParaVencer <= 7 ? 2 : 3;
       return priority(a) - priority(b) || String(a.nombre).localeCompare(String(b.nombre), "es");
     });

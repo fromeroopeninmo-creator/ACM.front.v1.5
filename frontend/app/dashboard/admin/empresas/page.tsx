@@ -4,7 +4,7 @@ import { supabaseServer } from "#lib/supabaseServer";
 
 export const dynamic = "force-dynamic";
 
-type Params = { q?: string; estado?: string; creada_desde?: string; creada_hasta?: string; ciclo_hasta?: string; acuerdo_hasta?: string; page?: string; pageSize?: string };
+type Params = { q?: string; estado?: string; ordenar?: string; creada_desde?: string; creada_hasta?: string; ciclo_hasta?: string; acuerdo_hasta?: string; page?: string; pageSize?: string };
 type Row = { id:string; nombre:string; razonSocial?:string|null; cuit?:string|null; ubicacion?:string|null; creadaEn?:string|null; suspendida:boolean; suspensionMotivo?:string|null; acceso:boolean; estado:string; plan?:string|null; cicloFin?:string|null; diasParaVencer?:number|null; acuerdo?:{id:string;tipo?:string|null;fechaFin?:string|null;precioNeto?:number|null;maxAsesores?:number|null;diasParaVencer?:number|null}|null };
 type Response = { page:number; pageSize:number; total:number; items:Row[] };
 
@@ -35,14 +35,14 @@ export default async function EmpresasPage({ searchParams }: { searchParams: Par
     </header>
 
     <section className="rounded-2xl border bg-white p-4 shadow-sm dark:bg-neutral-900">
-      <form className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-7">
+      <form className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-8">
         <label className="sm:col-span-2"><span className="mb-1 block text-xs font-medium text-slate-500">Buscar</span><input name="q" defaultValue={searchParams.q} placeholder="Empresa, CUIT o ubicación" className="w-full rounded-xl border bg-transparent px-3 py-2.5 text-sm"/></label>
-        <label><span className="mb-1 block text-xs font-medium text-slate-500">Estado</span><select name="estado" defaultValue={searchParams.estado??"todos"} className="w-full rounded-xl border bg-transparent px-3 py-2.5 text-sm"><option value="todos">Todos</option><option value="activa">Activas</option><option value="suspendida">Suspendidas</option><option value="sin_ciclo">Sin ciclo</option></select></label>
+        <label><span className="mb-1 block text-xs font-medium text-slate-500">Estado</span><select name="estado" defaultValue={searchParams.estado??"todos"} className="w-full rounded-xl border bg-transparent px-3 py-2.5 text-sm"><option value="todos">Todos</option><option value="activa">Activas</option><option value="suspendida">Suspendidas</option><option value="sin_ciclo">Sin ciclo</option></select></label><label><span className="mb-1 block text-xs font-medium text-slate-500">Ordenar por</span><select name="ordenar" defaultValue={searchParams.ordenar??"prioridad"} className="w-full rounded-xl border bg-transparent px-3 py-2.5 text-sm"><option value="prioridad">Alertas primero</option><option value="ultimas">Últimas empresas</option><option value="antiguas">Más antiguas</option><option value="nombre">Nombre A–Z</option></select></label>
         <label><span className="mb-1 block text-xs font-medium text-slate-500">Creada desde</span><input type="date" name="creada_desde" defaultValue={searchParams.creada_desde} className="w-full rounded-xl border bg-transparent px-3 py-2.5 text-sm"/></label>
         <label><span className="mb-1 block text-xs font-medium text-slate-500">Creada hasta</span><input type="date" name="creada_hasta" defaultValue={searchParams.creada_hasta} className="w-full rounded-xl border bg-transparent px-3 py-2.5 text-sm"/></label>
         <label><span className="mb-1 block text-xs font-medium text-slate-500">Ciclo vence hasta</span><input type="date" name="ciclo_hasta" defaultValue={normalized.ciclo_hasta} className="w-full rounded-xl border bg-transparent px-3 py-2.5 text-sm"/></label>
         <label><span className="mb-1 block text-xs font-medium text-slate-500">Acuerdo vence hasta</span><input type="date" name="acuerdo_hasta" defaultValue={normalized.acuerdo_hasta} className="w-full rounded-xl border bg-transparent px-3 py-2.5 text-sm"/></label>
-        <div className="flex gap-2 sm:col-span-2 xl:col-span-7"><button className="rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white">Aplicar filtros</button><a href="/dashboard/admin/empresas" className="rounded-xl border px-4 py-2.5 text-sm font-semibold">Limpiar</a></div>
+        <div className="flex gap-2 sm:col-span-2 xl:col-span-8"><button className="rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white">Aplicar filtros</button><a href="/dashboard/admin/empresas" className="rounded-xl border px-4 py-2.5 text-sm font-semibold">Limpiar</a></div>
       </form>
     </section>
 

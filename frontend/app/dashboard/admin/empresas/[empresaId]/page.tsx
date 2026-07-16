@@ -1,3 +1,5 @@
+// frontend/app/dashboard/admin/empresas/[empresaId]/page.tsx
+
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { supabaseServer } from "#lib/supabaseServer";
@@ -12,6 +14,13 @@ type PageProps = {
     modal?: string;
   };
 };
+
+
+function getBaseUrl() {
+  const envUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_VERCEL_URL || process.env.VERCEL_URL;
+  if (envUrl) return envUrl.startsWith("http") ? envUrl : `https://${envUrl}`;
+  return "http://localhost:3000";
+}
 
 function buildCookieHeader(): string {
   const jar = cookies();
@@ -138,20 +147,27 @@ export default async function AdminEmpresaDetallePage({
   const override = detalle?.empresa?.override ?? null;
   const acuerdo = detalle?.acuerdo_comercial ?? null;
 
+  let billingEstado: any = null;
+  try {
+    const billingRes = await fetch(`${getBaseUrl()}/api/billing/estado?empresaId=${encodeURIComponent(params.empresaId)}`, {
+      headers: { cookie: cookieHeader },
+      cache: "no-store",
+    });
+    if (billingRes.ok) billingEstado = await billingRes.json();
+  } catch {
+    billingEstado = null;
+  }
+
   const suspendida = !!detalle?.empresa?.suspendida;
   const suspendidaMotivo = detalle?.empresa?.suspension_motivo ?? null;
   const suspendidaAt = detalle?.empresa?.suspendida_at ?? null;
 
-  const cicloInicio = override?.fecha_inicio ?? null;
-  const cicloFin = override?.fecha_fin ?? null;
+  const cicloInicio = billingEstado?.ciclo?.inicio ?? override?.fecha_inicio ?? null;
+  const cicloFin = billingEstado?.ciclo?.fin ?? override?.fecha_fin ?? null;
 
-  const now = new Date();
-  const finDate =
-    cicloFin && !Number.isNaN(new Date(cicloFin).getTime())
-      ? new Date(cicloFin)
-      : null;
-
-  const planVencido = !!(finDate && finDate.getTime() < now.getTime());
+  const planVencido = billingEstado
+    ? !!billingEstado?.estado?.plan_vencido
+    : !!(cicloFin && !Number.isNaN(new Date(cicloFin).getTime()) && new Date(cicloFin).getTime() < Date.now());
   const esTrial = !!plan?.es_trial;
   const tieneAcuerdoActivo = !!acuerdo?.activo;
 

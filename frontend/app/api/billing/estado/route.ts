@@ -92,11 +92,19 @@ async function resolveEmpresaId(params: {
   if (byProfileId?.empresa_id) return String(byProfileId.empresa_id);
 
   if (role === "empresa") {
-    const { data: empresa } = await supabaseAdmin
+    // Compatibilidad con altas históricas:
+    // algunas empresas quedaron vinculadas por user_id y otras por id_usuario.
+    const { data: empresa, error: empresaError } = await supabaseAdmin
       .from("empresas")
       .select("id")
-      .eq("user_id", userId)
+      .or(`user_id.eq.${userId},id_usuario.eq.${userId}`)
+      .order("created_at", { ascending: false })
+      .limit(1)
       .maybeSingle();
+
+    if (empresaError) {
+      console.error("No se pudo resolver empresa por usuario:", empresaError);
+    }
 
     if (empresa?.id) return String(empresa.id);
   }

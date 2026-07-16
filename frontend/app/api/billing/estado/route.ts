@@ -491,14 +491,28 @@ export async function GET(req: Request) {
               vigente: false,
               ultimoVencimiento: lastCycleEnd,
             },
-        suscripcion: latestSubscription
+        suscripcion: currentCycle
+          ? {
+              id: currentCycle.id,
+              estado: currentCycle.estado,
+              externoCustomerId: currentCycle.externo_customer_id ?? null,
+              externoSubscriptionId: currentCycle.externo_subscription_id ?? null,
+            }
+          : latestSubscription
           ? {
               id: latestSubscription.id,
               estado: latestSubscription.estado,
-              externoCustomerId:
-                latestSubscription.externo_customer_id ?? null,
-              externoSubscriptionId:
-                latestSubscription.externo_subscription_id ?? null,
+              externoCustomerId: latestSubscription.externo_customer_id ?? null,
+              externoSubscriptionId: latestSubscription.externo_subscription_id ?? null,
+            }
+          : null,
+        ultimaSuscripcionInformativa: latestSubscription
+          ? {
+              id: latestSubscription.id,
+              estado: latestSubscription.estado,
+              creadoEn: latestSubscription.created_at ?? null,
+              externoCustomerId: latestSubscription.externo_customer_id ?? null,
+              externoSubscriptionId: latestSubscription.externo_subscription_id ?? null,
             }
           : null,
         proximoPlan: currentCycle?.plan_proximo_id

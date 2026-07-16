@@ -214,6 +214,35 @@ async function getCurrentCycleEnd(empresaId: string, excludeId?: string | null) 
   return cycles[0]?.end ?? null;
 }
 
+
+async function closeExpiredHistoricalCycles(empresaId: string, keepId: string) {
+  const now = nowISO();
+  const { data } = await supabaseAdmin
+    .from("suscripciones")
+    .select("id, ciclo_fin, fin, estado")
+    .eq("empresa_id", empresaId)
+    .eq("estado", "activa")
+    .neq("id", keepId)
+    .limit(100);
+
+  const expiredIds = (data ?? [])
+    .filter((row: any) => {
+      const end = safeISO(row.ciclo_fin ?? row.fin);
+      return end != null && end <= now;
+    })
+    .map((row: any) => String(row.id));
+
+  if (expiredIds.length === 0) return;
+
+  await supabaseAdmin
+    .from("suscripciones")
+    .update({
+      estado: "cancelada",
+      updated_at: now,
+    })
+    .in("id", expiredIds);
+}
+
 async function syncOperationalPlan(params: {
   empresaId: string;
   planId: string;
@@ -423,6 +452,8 @@ export async function POST(req: Request) {
           .eq("empresa_id", empresaId)
           .eq("estado", "pendiente")
           .neq("id", pending.id);
+
+        await closeExpiredHistoricalCycles(empresaId, String(pending.id));
 
         await syncOperationalPlan({
           empresaId,

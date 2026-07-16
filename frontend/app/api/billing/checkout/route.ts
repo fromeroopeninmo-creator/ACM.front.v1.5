@@ -63,6 +63,84 @@ async function resolveEmpresaIdForUser(userId: string): Promise<string | null> {
   return profile?.empresa_id ? String(profile.empresa_id) : null;
 }
 
+
+function addOneCalendarMonth(iso: string): string {
+  const source = new Date(iso);
+  const year = source.getUTCFullYear();
+  const month = source.getUTCMonth();
+  const day = source.getUTCDate();
+  const lastDayNextMonth = new Date(Date.UTC(year, month + 2, 0)).getUTCDate();
+
+  return new Date(
+    Date.UTC(
+      year,
+      month + 1,
+      Math.min(day, lastDayNextMonth),
+      source.getUTCHours(),
+      source.getUTCMinutes(),
+      source.getUTCSeconds(),
+      source.getUTCMilliseconds()
+    )
+  ).toISOString();
+}
+
+function formatDateAR(iso: string): string {
+  return new Intl.DateTimeFormat("es-AR", {
+    timeZone: "America/Argentina/Cordoba",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  }).format(new Date(iso));
+}
+
+async function findAlreadyPaidTargetCycle(params: {
+  empresaId: string;
+  targetStart: string | null;
+}) {
+  if (!params.targetStart) return null;
+
+  const { data } = await supabaseAdmin
+    .from("suscripciones")
+    .select("id, estado, inicio, fin, ciclo_inicio, ciclo_fin, plan_id, created_at")
+    .eq("empresa_id", params.empresaId)
+    .eq("estado", "activa")
+    .limit(50);
+
+  return (data ?? []).find((row: any) => {
+    const startRaw = row.ciclo_inicio ?? row.inicio ?? null;
+    const endRaw = row.ciclo_fin ?? row.fin ?? null;
+    if (!startRaw || !endRaw) return false;
+    const start = new Date(String(startRaw)).toISOString();
+    return start >= params.targetStart!;
+  }) ?? null;
+}
+
+async function findReusablePendingCheckout(params: {
+  empresaId: string;
+  planId: string;
+  agreementId: string | null;
+  targetStart: string | null;
+}) {
+  const { data } = await supabaseAdmin
+    .from("suscripciones")
+    .select("id, plan_id, metadata, created_at, externo_subscription_id")
+    .eq("empresa_id", params.empresaId)
+    .eq("estado", "pendiente")
+    .eq("plan_id", params.planId)
+    .order("created_at", { ascending: false })
+    .limit(20);
+
+  return (data ?? []).find((row: any) => {
+    const metadata = row?.metadata && typeof row.metadata === "object" ? row.metadata : {};
+    const sameAgreement =
+      String(metadata.agreement_id ?? metadata.acuerdo_id ?? "") ===
+      String(params.agreementId ?? "");
+    const pendingTarget = metadata.cycle_target_start ?? null;
+    const sameTarget = pendingTarget === params.targetStart;
+    return sameAgreement && sameTarget;
+  }) ?? null;
+}
+
 function buildSnapshot(config: Awaited<ReturnType<typeof resolveEmpresaBillingConfig>>) {
   return {
     pricing_source: config.pricing_source,
@@ -205,6 +283,90 @@ export async function POST(req: Request) {
       planId: effectivePlanId,
     });
 
+    const currentCycle = await getSuscripcionEstado(supabaseAdmin, empresaId);
+    const now = new Date();
+    const renewalWindowMs = 2 * 24 * 60 * 60 * 1000;
+    const cycleEnd = currentCycle?.ciclo_fin ?? null;
+
+    if (cycleEnd) {
+      const remainingMs = new Date(cycleEnd).getTime() - now.getTime();
+      if (remainingMs > renewalWindowMs) {
+        return NextResponse.json(
+          {
+            error: `Tu suscripción está vigente hasta el ${formatDateAR(cycleEnd)}. Podrás renovar cuando falten 2 días para el vencimiento.`,
+            code: "CYCLE_STILL_ACTIVE",
+            cicloFin: cycleEnd,
+            renovacionDisponibleDesde: new Date(
+              new Date(cycleEnd).getTime() - renewalWindowMs
+            ).toISOString(),
+          },
+          { status: 409 }
+        );
+      }
+    }
+
+    const targetStart = cycleEnd && new Date(cycleEnd).getTime() > now.getTime()
+      ? cycleEnd
+      : null;
+    const targetEnd = targetStart ? addOneCalendarMonth(targetStart) : null;
+
+    const alreadyPaidTarget = await findAlreadyPaidTargetCycle({
+      empresaId,
+      targetStart,
+    });
+
+    if (alreadyPaidTarget) {
+      const paidEnd =
+        alreadyPaidTarget.ciclo_fin ?? alreadyPaidTarget.fin ?? null;
+      return NextResponse.json(
+        {
+          error: paidEnd
+            ? `El próximo ciclo ya se encuentra abonado y estará vigente hasta el ${formatDateAR(String(paidEnd))}.`
+            : "El próximo ciclo ya se encuentra abonado.",
+          code: "NEXT_CYCLE_ALREADY_PAID",
+          suscripcionId: String(alreadyPaidTarget.id),
+          cicloFin: paidEnd,
+        },
+        { status: 409 }
+      );
+    }
+
+    const reusablePending = await findReusablePendingCheckout({
+      empresaId,
+      planId: effectivePlanId,
+      agreementId: config.agreement_id,
+      targetStart,
+    });
+
+    if (reusablePending) {
+      const pendingMetadata =
+        reusablePending.metadata && typeof reusablePending.metadata === "object"
+          ? (reusablePending.metadata as Record<string, any>)
+          : {};
+      const existingCheckoutUrl =
+        typeof pendingMetadata.checkout_url === "string"
+          ? pendingMetadata.checkout_url
+          : null;
+
+      return NextResponse.json(
+        {
+          ok: true,
+          reused: true,
+          checkoutUrl: existingCheckoutUrl,
+          suscripcionId: String(reusablePending.id),
+          planId: effectivePlanId,
+          agreementApplied: config.agreement_applied,
+          message: existingCheckoutUrl
+            ? "Ya existe un checkout pendiente para este ciclo. Se reutilizó el enlace existente."
+            : "Ya existe un pago pendiente para este ciclo. Esperá su acreditación antes de generar otro.",
+          code: "PENDING_CHECKOUT_EXISTS",
+          cicloObjetivoInicio: targetStart,
+          cicloObjetivoFin: targetEnd,
+        },
+        { status: existingCheckoutUrl ? 200 : 409 }
+      );
+    }
+
     const montoNeto = round2(Number(config.precio_neto_final ?? 0));
     const montoTotal = round2(Number(config.precio_total_final ?? montoNeto));
     const montoCobrar = montoTotal > 0 ? montoTotal : montoNeto;
@@ -243,6 +405,8 @@ export async function POST(req: Request) {
             ? "checkout_mercadopago"
             : "checkout_sandbox",
           cycle_status: "awaiting_payment",
+          cycle_target_start: targetStart,
+          cycle_target_end: targetEnd,
           snapshot,
           ...snapshot,
         },
@@ -357,11 +521,25 @@ export async function POST(req: Request) {
       );
     }
 
+    const checkoutCreatedAt = new Date().toISOString();
     await supabaseAdmin
       .from("suscripciones")
       .update({
         externo_subscription_id: String(mpJson.id ?? "") || null,
-        updated_at: new Date().toISOString(),
+        updated_at: checkoutCreatedAt,
+        metadata: {
+          initiated_by: user.id,
+          initiated_role: role,
+          source: "checkout_mercadopago",
+          cycle_status: "awaiting_payment",
+          cycle_target_start: targetStart,
+          cycle_target_end: targetEnd,
+          checkout_preference_id: String(mpJson.id ?? "") || null,
+          checkout_url: checkoutUrl,
+          checkout_created_at: checkoutCreatedAt,
+          snapshot,
+          ...snapshot,
+        },
       })
       .eq("id", suscripcionId);
 

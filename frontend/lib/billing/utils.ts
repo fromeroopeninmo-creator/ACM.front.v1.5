@@ -135,7 +135,12 @@ export async function assertAuthAndGetContext(
   if (authErr || !auth?.user?.id) throw new Error("No autenticado");
   const userId = auth.user.id;
 
-  let profile: { role?: Role | null; empresa_id?: string | null } | null = null;
+  type ProfileLookupRow = {
+    role: Role | null;
+    empresa_id: string | null;
+  };
+
+  let profile: ProfileLookupRow | null = null;
 
   const { data: profileByUserId, error: byUserIdError } = await supabase
     .from("profiles")
@@ -144,7 +149,10 @@ export async function assertAuthAndGetContext(
     .maybeSingle();
 
   if (!byUserIdError && profileByUserId) {
-    profile = profileByUserId as typeof profile;
+    profile = {
+      role: (profileByUserId.role as Role | null) ?? null,
+      empresa_id: profileByUserId.empresa_id ?? null,
+    };
   }
 
   if (!profile) {
@@ -161,7 +169,12 @@ export async function assertAuthAndGetContext(
       throw new Error(`Error leyendo profile: ${byIdError.message}${firstError}`);
     }
 
-    profile = (profileById as typeof profile) ?? null;
+    profile = profileById
+      ? {
+          role: (profileById.role as Role | null) ?? null,
+          empresa_id: profileById.empresa_id ?? null,
+        }
+      : null;
   }
 
   const metadataRole =

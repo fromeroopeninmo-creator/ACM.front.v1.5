@@ -12,6 +12,7 @@ type Params = {
   creada_hasta?: string;
   ciclo_hasta?: string;
   acuerdo_hasta?: string;
+  acuerdo?: string;
   page?: string;
   pageSize?: string;
 };
@@ -96,9 +97,7 @@ function EstadoBadge({ row }: { row: Row }) {
     <div className="min-w-0">
       <span
         className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${
-          active
-            ? "bg-emerald-50 text-emerald-700"
-            : "bg-red-50 text-red-700"
+          active ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"
         }`}
       >
         {active ? "Activo" : "Suspendido"}
@@ -152,7 +151,7 @@ export default async function EmpresasPage({
   try {
     const response = await fetch(
       `${baseUrl()}/api/admin/empresas/resumen?${query.toString()}`,
-      { headers: { cookie: cookieHeader() }, cache: "no-store" }
+      { headers: { cookie: cookieHeader() }, cache: "no-store" },
     );
     if (!response.ok) throw new Error(await response.text());
     data = (await response.json()) as Response;
@@ -223,13 +222,29 @@ export default async function EmpresasPage({
               </span>
               <select
                 name="ordenar"
-                defaultValue={searchParams.ordenar ?? "prioridad"}
+                defaultValue={searchParams.ordenar ?? "ultimas"}
                 className="w-full min-w-0 rounded-xl border bg-transparent px-3 py-2.5 text-sm"
               >
-                <option value="prioridad">Alertas primero</option>
                 <option value="ultimas">Últimas empresas</option>
+                <option value="ciclo">Próximos ciclos a vencer</option>
+                <option value="prioridad">Alertas primero</option>
                 <option value="antiguas">Más antiguas</option>
                 <option value="nombre">Nombre A–Z</option>
+              </select>
+            </label>
+
+            <label className="min-w-0">
+              <span className="mb-1 block text-xs font-medium text-slate-500">
+                Acuerdo comercial
+              </span>
+              <select
+                name="acuerdo"
+                defaultValue={searchParams.acuerdo ?? "todos"}
+                className="w-full min-w-0 rounded-xl border bg-transparent px-3 py-2.5 text-sm"
+              >
+                <option value="todos">Todos</option>
+                <option value="con_acuerdo">Con acuerdo</option>
+                <option value="sin_acuerdo">Sin acuerdo</option>
               </select>
             </label>
 
@@ -303,7 +318,9 @@ export default async function EmpresasPage({
 
         <div className="flex min-w-0 items-center justify-between">
           <p className="text-sm text-slate-500">
-            <strong className="text-slate-900 dark:text-white">{data.total}</strong>{" "}
+            <strong className="text-slate-900 dark:text-white">
+              {data.total}
+            </strong>{" "}
             empresas encontradas
           </p>
         </div>
@@ -318,7 +335,8 @@ export default async function EmpresasPage({
                 <div className="min-w-0">
                   <h2 className="break-words font-semibold">{row.nombre}</h2>
                   <p className="mt-1 break-words text-xs text-slate-500">
-                    {row.cuit || "Sin CUIT"} · {row.ubicacion || "Sin ubicación"}
+                    {row.cuit || "Sin CUIT"} ·{" "}
+                    {row.ubicacion || "Sin ubicación"}
                   </p>
                 </div>
                 <div className="shrink-0 sm:max-w-[45%]">
@@ -394,7 +412,8 @@ export default async function EmpresasPage({
                   <td className="min-w-0 px-4 py-4">
                     <p className="break-words font-semibold">{row.nombre}</p>
                     <p className="mt-1 break-words text-xs text-slate-500">
-                      {row.cuit || "Sin CUIT"} · {row.ubicacion || "Sin ubicación"}
+                      {row.cuit || "Sin CUIT"} ·{" "}
+                      {row.ubicacion || "Sin ubicación"}
                     </p>
                   </td>
                   <td className="min-w-0 px-4 py-4">
@@ -405,7 +424,8 @@ export default async function EmpresasPage({
                       {row.plan || "Sin plan"}
                     </p>
                     <p className="mt-1 break-words text-xs text-slate-500">
-                      {row.esTrial ? "Trial" : "Ciclo"}: {date(row.cicloInicio)} → {date(row.cicloFin)}
+                      {row.esTrial ? "Trial" : "Ciclo"}: {date(row.cicloInicio)}{" "}
+                      → {date(row.cicloFin)}
                     </p>
                     {row.diasParaVencer != null && row.diasParaVencer <= 7 ? (
                       <p className="mt-1 text-xs font-semibold text-blue-700">
@@ -416,7 +436,9 @@ export default async function EmpresasPage({
                   <td className="min-w-0 px-4 py-4">
                     {row.acuerdo ? (
                       <>
-                        <p className="font-medium">{money(row.acuerdo.precioNeto)}</p>
+                        <p className="font-medium">
+                          {money(row.acuerdo.precioNeto)}
+                        </p>
                         <p className="mt-1 break-words text-xs text-slate-500">
                           Hasta {date(row.acuerdo.fechaFin)}
                         </p>
@@ -431,7 +453,9 @@ export default async function EmpresasPage({
                       <span className="text-slate-400">Sin acuerdo</span>
                     )}
                   </td>
-                  <td className="px-4 py-4 text-slate-500">{date(row.creadaEn)}</td>
+                  <td className="px-4 py-4 text-slate-500">
+                    {date(row.creadaEn)}
+                  </td>
                   <td className="px-4 py-4 text-right">
                     <a
                       href={`/dashboard/admin/empresas/${row.id}`}

@@ -9,7 +9,6 @@ import { createClient } from "@supabase/supabase-js";
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
-// Admin client (sin RLS)
 const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE, {
   auth: { persistSession: false, autoRefreshToken: false },
 });
@@ -22,23 +21,61 @@ export async function POST() {
       error: authErr,
     } = await server.auth.getUser();
 
-    if (authErr) {
-      return NextResponse.json(
-        { error: `Auth error: ${authErr.message}` },
-        { status: 401 }
-      );
-    }
-    if (!user) {
+    if (authErr || !user?.id) {
       return NextResponse.json({ error: "No autenticado" }, { status: 401 });
     }
 
     const userId = user.id;
 
-    // 1) ¿Ya tiene empresa?
+    // Validar el rol real antes de utilizar service_role.
+    let profile: { role: string | null } | null = null;
+
+    const { data: profileByUserId, error: profileByUserIdError } =
+      await supabaseAdmin
+        .from("profiles")
+        .select("role")
+        .eq("user_id", userId)
+        .maybeSingle();
+
+    if (!profileByUserIdError && profileByUserId) {
+      profile = { role: profileByUserId.role ?? null };
+    }
+
+    if (!profile) {
+      const { data: profileById, error: profileByIdError } = await supabaseAdmin
+        .from("profiles")
+        .select("role")
+        .eq("id", userId)
+        .maybeSingle();
+
+      if (profileByIdError) {
+        return NextResponse.json(
+          { error: `No se pudo validar el perfil: ${profileByIdError.message}` },
+          { status: 400 }
+        );
+      }
+
+      profile = profileById ? { role: profileById.role ?? null } : null;
+    }
+
+    const metadataRole =
+      user.user_metadata?.role ?? user.app_metadata?.role ?? null;
+    const role = String(profile?.role ?? metadataRole ?? "").toLowerCase();
+
+    if (role !== "empresa") {
+      return NextResponse.json(
+        { error: "Esta operación está disponible únicamente para cuentas empresa." },
+        { status: 403 }
+      );
+    }
+
+    // Compatibilidad histórica: empresas.user_id o empresas.id_usuario.
     const { data: existing, error: empErr } = await supabaseAdmin
       .from("empresas")
       .select("*")
-      .eq("user_id", userId)
+      .or(`user_id.eq.${userId},id_usuario.eq.${userId}`)
+      .order("created_at", { ascending: false })
+      .limit(1)
       .maybeSingle();
 
     if (empErr) {
@@ -49,7 +86,7 @@ export async function POST() {
       return NextResponse.json({ ok: true, empresa: existing }, { status: 200 });
     }
 
-    // 2) No existe → la creamos a partir de user_metadata
+    // Se conserva la función de onboarding, pero ya no se ejecuta desde el dashboard.
     const meta: any = user.user_metadata || {};
 
     const insert = {
@@ -65,7 +102,6 @@ export async function POST() {
       matriculado: meta.matriculado || meta.matriculado_nombre || null,
       cpi: meta.cpi || null,
       telefono: meta.telefono || null,
-      // podés sumar más columnas si querés
     };
 
     const { data: created, error: insErr } = await supabaseAdmin
@@ -79,9 +115,12 @@ export async function POST() {
     }
 
     return NextResponse.json({ ok: true, empresa: created }, { status: 200 });
-  } catch (e: any) {
+  } catch (error: unknown) {
     return NextResponse.json(
-      { error: e?.message || "Error inesperado" },
+      {
+        error:
+          error instanceof Error ? error.message : "Error inesperado",
+      },
       { status: 500 }
     );
   }

@@ -4,6 +4,7 @@
 import useSWR from "swr";
 import { useAuth } from "@/context/AuthContext";
 import { useTheme } from "@/context/ThemeContext";
+import { useBilling } from "@/context/BillingContext";
 import Link from "next/link";
 import { supabase } from "#lib/supabaseClient";
 import { useEffect, useMemo, useState } from "react";
@@ -246,13 +247,9 @@ export default function EmpresaDashboardPage() {
   const { user } = useAuth();
   const { setPrimaryColor, setLogoUrl, primaryColor } = useTheme();
   const router = useRouter();
+  const { billing: billingEstado, loading: billingLoading } = useBilling();
 
-  const [puedeUsarTracker, setPuedeUsarTracker] = useState<boolean | null>(
-    null,
-  );
-  const [billingLoading, setBillingLoading] = useState<boolean>(true);
   const [showUvaCalc, setShowUvaCalc] = useState(false);
-  const [billingEstado, setBillingEstado] = useState<any>(null);
 
   // 🔹 Función para obtener datos de empresa (incluye updated_at para bust)
   const fetchEmpresa = async (userId: string) => {
@@ -274,28 +271,6 @@ export default function EmpresaDashboardPage() {
     isLoading,
     mutate,
   } = useSWR(user ? ["empresa", user.id] : null, () => fetchEmpresa(user!.id));
-
-  // 🛠 Asegurar que exista la fila de empresa para este usuario (fix usuarios "fantasma")
-  useEffect(() => {
-    if (!user) return;
-
-    (async () => {
-      try {
-        const res = await fetch("/api/empresa/ensure", {
-          method: "POST",
-        });
-        if (!res.ok) return;
-
-        const j = await res.json().catch(() => null as any);
-        if (j?.ok && j.empresa) {
-          // Actualizamos SWR con la empresa recién creada / encontrada
-          mutate(j.empresa, false);
-        }
-      } catch (e) {
-        console.warn("Error en /api/empresa/ensure:", e);
-      }
-    })();
-  }, [user, mutate]);
 
   // 🧭 Escucha en tiempo real para actualizar sin recargar
   useEffect(() => {
@@ -387,41 +362,18 @@ export default function EmpresaDashboardPage() {
     }
   }, [empresa, setPrimaryColor, setLogoUrl]);
 
-  // 🔎 Billing: saber si el plan permite usar Tracker (Trial o planes con incluye_tracker)
-  useEffect(() => {
-    if (!user?.id) return;
+  // 🔎 Billing centralizado: reutiliza el estado ya cargado por el layout.
+  const puedeUsarTracker = useMemo<boolean | null>(() => {
+    if (!billingEstado) return null;
 
-    (async () => {
-      try {
-        const res = await fetch("/api/billing/estado", { cache: "no-store" });
-        if (!res.ok) {
-          setPuedeUsarTracker(null);
-          return;
-        }
+    const plan = billingEstado.plan || null;
+    const nombrePlan: string | null = plan?.nombre ?? null;
+    const esTrialFlag: boolean = plan?.es_trial === true;
+    const esTrialNombre = nombrePlan === "Trial";
+    const incluyeTracker: boolean = plan?.incluye_tracker === true;
 
-        const data: any = await res.json().catch(() => null);
-        setBillingEstado(data);
-        const plan = data?.plan || null;
-
-        const nombrePlan: string | null = plan?.nombre ?? null;
-        const esTrialFlag: boolean = plan?.es_trial === true;
-        const esTrialNombre = nombrePlan === "Trial";
-        const incluyeTracker: boolean = plan?.incluye_tracker === true;
-
-        if (esTrialFlag || esTrialNombre || incluyeTracker) {
-          setPuedeUsarTracker(true);
-        } else {
-          setPuedeUsarTracker(false);
-        }
-      } catch (e) {
-        console.error("Error obteniendo /api/billing/estado en dashboard:", e);
-        setPuedeUsarTracker(null);
-      } finally {
-        setBillingLoading(false);
-      }
-    })();
-  }, [user]);
-
+    return esTrialFlag || esTrialNombre || incluyeTracker;
+  }, [billingEstado]);
 
   const cicloReminder = useMemo(() => {
     const estado = billingEstado?.estado ?? null;
@@ -574,7 +526,7 @@ export default function EmpresaDashboardPage() {
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <ToolCard
-            href="/vai/acmforms"
+            href="/dashboard/empresa/vai"
             title="Valuador de Activos Inmobiliarios"
             icon="valuation"
             primaryColor={primaryColor}

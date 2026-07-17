@@ -384,7 +384,7 @@ export default function AsesorDashboardPage() {
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <ToolCard
-            href="/vai/acmforms"
+            href="/dashboard/asesor/vai"
             title="Valuador de Activos Inmobiliarios"
             icon="valuation"
             primaryColor={primaryColor}
@@ -412,7 +412,7 @@ export default function AsesorDashboardPage() {
           />
 
           <ToolCard
-            href="/dashboard/empresa/factibilidad"
+            href="/dashboard/asesor/factibilidad"
             title="Factibilidad Constructiva"
             icon="feasibility"
             primaryColor={primaryColor}

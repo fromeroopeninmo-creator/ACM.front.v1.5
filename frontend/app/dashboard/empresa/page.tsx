@@ -248,6 +248,9 @@ export default function EmpresaDashboardPage() {
   const { setPrimaryColor, setLogoUrl, primaryColor } = useTheme();
   const router = useRouter();
   const { billing: billingEstado, loading: billingLoading } = useBilling();
+  // BillingContext conserva un tipo parcial por compatibilidad; la API real incluye
+  // ciclo, pricing y acuerdoComercial. Se normaliza localmente sin alterar el contexto global.
+  const billingData = billingEstado as any;
 
   const [showUvaCalc, setShowUvaCalc] = useState(false);
 
@@ -364,9 +367,9 @@ export default function EmpresaDashboardPage() {
 
   // 🔎 Billing centralizado: reutiliza el estado ya cargado por el layout.
   const puedeUsarTracker = useMemo<boolean | null>(() => {
-    if (!billingEstado) return null;
+    if (!billingData) return null;
 
-    const plan = billingEstado.plan || null;
+    const plan = billingData.plan || null;
     const nombrePlan: string | null = plan?.nombre ?? null;
     const esTrialFlag: boolean = plan?.es_trial === true;
     const esTrialNombre = nombrePlan === "Trial";
@@ -376,9 +379,9 @@ export default function EmpresaDashboardPage() {
   }, [billingEstado]);
 
   const cicloReminder = useMemo(() => {
-    const estado = billingEstado?.estado ?? null;
+    const estado = billingData?.estado ?? null;
 
-    if (!billingEstado || !estado) return null;
+    if (!billingData || !estado) return null;
 
     const estaSuspendida = estado?.suspendida === true;
     const planVencido = estado?.plan_vencido === true;
@@ -387,7 +390,7 @@ export default function EmpresaDashboardPage() {
     if (estaSuspendida || planVencido || enGracia) return null;
 
     const fechaCicloIso =
-      billingEstado?.ciclo?.proximoCobro ?? billingEstado?.ciclo?.fin ?? null;
+      billingData?.ciclo?.proximoCobro ?? billingData?.ciclo?.fin ?? null;
 
     const fechaCiclo = parseBillingDate(fechaCicloIso);
     if (!fechaCiclo) return null;
@@ -456,30 +459,30 @@ export default function EmpresaDashboardPage() {
 
 
   const acuerdoComercialVigente =
-    billingEstado?.acuerdoComercial?.activo === true;
+    billingData?.acuerdoComercial?.activo === true;
 
   const nombrePlanActual =
-    billingEstado?.plan?.nombre || "No informado";
+    billingData?.plan?.nombre || "No informado";
 
   const acuerdoFechaInicio =
-    billingEstado?.acuerdoComercial?.fecha_inicio ?? null;
+    billingData?.acuerdoComercial?.fecha_inicio ?? null;
 
   const acuerdoFechaFin =
-    billingEstado?.acuerdoComercial?.fecha_fin ?? null;
+    billingData?.acuerdoComercial?.fecha_fin ?? null;
 
   const cicloInicio =
-    billingEstado?.ciclo?.inicio ?? null;
+    billingData?.ciclo?.inicio ?? null;
 
   const cicloFin =
-    billingEstado?.ciclo?.fin ?? null;
+    billingData?.ciclo?.fin ?? null;
 
   const importeTotal =
-    billingEstado?.pricing?.precio_total_final ??
-    billingEstado?.acuerdoComercial?.precio_total_final ??
-    billingEstado?.plan?.totalConIVA ??
-    billingEstado?.pricing?.precio_neto_final ??
-    billingEstado?.acuerdoComercial?.precio_neto_final ??
-    billingEstado?.plan?.precioNeto ??
+    billingData?.pricing?.precio_total_final ??
+    billingData?.acuerdoComercial?.precio_total_final ??
+    billingData?.plan?.totalConIVA ??
+    billingData?.pricing?.precio_neto_final ??
+    billingData?.acuerdoComercial?.precio_neto_final ??
+    billingData?.plan?.precioNeto ??
     null;
 
   return (

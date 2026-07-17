@@ -1,7 +1,11 @@
-// lib/supabaseClient.ts
 "use client";
 
-import { createBrowserSupabaseClient } from "@supabase/auth-helpers-nextjs";
+import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
 
-// Cliente Supabase para usar en componentes del lado del cliente
-export const supabase = createBrowserSupabaseClient();
+/**
+ * Cliente único de Supabase para componentes del App Router.
+ *
+ * createBrowserSupabaseClient quedó deprecado. Al exportarlo desde este módulo,
+ * todos los contextos y componentes reutilizan la misma instancia.
+ */
+export const supabase = createClientComponentClient();

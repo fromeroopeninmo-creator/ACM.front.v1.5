@@ -2,9 +2,11 @@
 
 import React, {
   createContext,
+  useCallback,
   useContext,
-  useState,
   useEffect,
+  useRef,
+  useState,
   ReactNode,
 } from "react";
 import { supabase } from "#lib/supabaseClient";
@@ -20,24 +22,36 @@ interface ThemeContextType {
   reloadTheme: () => Promise<void>;
 }
 
+type EmpresaTheme = {
+  id: string;
+  color: string | null;
+  logo_url: string | null;
+};
+
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  let user: any = null;
-  try {
-    user = useAuth()?.user || null;
-  } catch {}
-
+  const { user } = useAuth();
   const pathname = usePathname();
 
   const [primaryColor, setPrimaryColor] = useState("#2563eb");
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [hydrated, setHydrated] = useState(false);
-
-  // ✅ Nuevo: flag de montaje para evitar bloquear el render inicial (SEO)
   const [mounted, setMounted] = useState(false);
+  const [resolvedEmpresaId, setResolvedEmpresaId] = useState<string | null>(
+    null
+  );
 
-  // Bypass de loader SOLO para rutas públicas (landing + clusters SEO)
+  /**
+   * Impide repetir la misma consulta cuando React vuelve a renderizar el
+   * provider sin que haya cambiado el usuario o su empresa.
+   */
+  const loadedThemeKeyRef = useRef<string | null>(null);
+  const themeRequestRef = useRef<{
+    key: string;
+    promise: Promise<EmpresaTheme | null>;
+  } | null>(null);
+
   const isPublicRoute =
     pathname === "/" ||
     pathname.startsWith("/landing") ||
@@ -49,44 +63,24 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     pathname.startsWith("/tutoriales") ||
     pathname.startsWith("/blog");
 
-  // =====================================================
-  // 0️⃣ Marcar montado (para no devolver loader en SSR/primer paint)
-  // =====================================================
   useEffect(() => {
     setMounted(true);
   }, []);
 
-  // =====================================================
-  // 1️⃣ Cargar desde localStorage al montar
-  // =====================================================
   useEffect(() => {
     const color = localStorage.getItem("vai_primaryColor");
     const logo = localStorage.getItem("vai_logoUrl");
+
     if (color) setPrimaryColor(color);
     if (logo) setLogoUrl(logo);
+
     setHydrated(true);
   }, []);
 
-  // =====================================================
-  // 2️⃣ Función principal de carga desde DB (por user_id)
-  // =====================================================
-  const loadCompanyTheme = async () => {
-    if (!user) return;
+  const applyTheme = useCallback((data: EmpresaTheme | null) => {
+    if (!data) return;
 
-    const empresaId =
-      user.role === "empresa"
-        ? user.id
-        : user.empresa_id || user.user_metadata?.empresa_id;
-
-    if (!empresaId) return;
-
-    const { data, error } = await supabase
-      .from("empresas")
-      .select("color, logo_url")
-      .eq("user_id", empresaId) // ✅ unificado: siempre por user_id
-      .maybeSingle();
-
-    if (error || !data) return;
+    setResolvedEmpresaId(data.id);
 
     if (data.color) {
       setPrimaryColor(data.color);
@@ -96,93 +90,181 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     if (data.logo_url) {
       setLogoUrl(data.logo_url);
       localStorage.setItem("vai_logoUrl", data.logo_url);
+    } else {
+      setLogoUrl(null);
+      localStorage.removeItem("vai_logoUrl");
     }
-  };
-
-  // 🔁 Forzar recarga manual del tema (desde Cuenta o Header)
-  const reloadTheme = async () => {
-    await loadCompanyTheme();
-  };
-
-  // =====================================================
-  // 3️⃣ Escuchar actualizaciones manuales (evento global)
-  // =====================================================
-  useEffect(() => {
-    const handleThemeUpdate = (e: CustomEvent) => {
-      if (e.detail?.color) {
-        setPrimaryColor(e.detail.color);
-        localStorage.setItem("vai_primaryColor", e.detail.color);
-      }
-      if (e.detail?.logoUrl) {
-        setLogoUrl(e.detail.logoUrl);
-        localStorage.setItem("vai_logoUrl", e.detail.logoUrl);
-      }
-    };
-
-    window.addEventListener("themeUpdated", handleThemeUpdate as EventListener);
-    return () => {
-      window.removeEventListener(
-        "themeUpdated",
-        handleThemeUpdate as EventListener
-      );
-    };
   }, []);
 
-  // =====================================================
-  // 4️⃣ Listener realtime (empresa/asesor → herencia de color/logo)
-  // =====================================================
-  useEffect(() => {
-    loadCompanyTheme();
-    if (!user) return;
+  const loadCompanyTheme = useCallback(
+    async (force = false): Promise<void> => {
+      if (!user?.id) return;
 
-    const empresaId =
-      user.role === "empresa"
-        ? user.id
-        : user.empresa_id || user.user_metadata?.empresa_id;
-    if (!empresaId) return;
+      const role = String((user as any).role || "").toLowerCase();
+      const profileEmpresaId = (user as any).empresa_id
+        ? String((user as any).empresa_id)
+        : null;
+
+      const key = `${user.id}:${role}:${profileEmpresaId || ""}`;
+
+      if (!force && loadedThemeKeyRef.current === key) return;
+
+      if (themeRequestRef.current?.key === key) {
+        const pending = await themeRequestRef.current.promise;
+        applyTheme(pending);
+        return;
+      }
+
+      const request = (async (): Promise<EmpresaTheme | null> => {
+        if (role === "asesor" && profileEmpresaId) {
+          const { data, error } = await supabase
+            .from("empresas")
+            .select("id, color, logo_url")
+            .eq("id", profileEmpresaId)
+            .maybeSingle();
+
+          if (error) {
+            console.warn("⚠️ Error al cargar tema de empresa:", error.message);
+            return null;
+          }
+
+          return data as EmpresaTheme | null;
+        }
+
+        if (role === "empresa") {
+          /**
+           * Para empresas usamos ambas relaciones históricas.
+           * También aprovechamos empresa_id cuando AuthContext ya lo resolvió.
+           */
+          let query = supabase
+            .from("empresas")
+            .select("id, color, logo_url")
+            .limit(1);
+
+          if (profileEmpresaId) {
+            query = query.eq("id", profileEmpresaId);
+          } else {
+            query = query.or(
+              `user_id.eq.${user.id},id_usuario.eq.${user.id}`
+            );
+          }
+
+          const { data, error } = await query.maybeSingle();
+
+          if (error) {
+            console.warn("⚠️ Error al cargar tema de empresa:", error.message);
+            return null;
+          }
+
+          return data as EmpresaTheme | null;
+        }
+
+        return null;
+      })();
+
+      themeRequestRef.current = { key, promise: request };
+
+      try {
+        const data = await request;
+        applyTheme(data);
+        loadedThemeKeyRef.current = key;
+      } finally {
+        if (themeRequestRef.current?.promise === request) {
+          themeRequestRef.current = null;
+        }
+      }
+    },
+    [applyTheme, user]
+  );
+
+  const reloadTheme = useCallback(async () => {
+    loadedThemeKeyRef.current = null;
+    await loadCompanyTheme(true);
+  }, [loadCompanyTheme]);
+
+  useEffect(() => {
+    void loadCompanyTheme();
+  }, [loadCompanyTheme]);
+
+  useEffect(() => {
+    const handleThemeUpdate = (event: Event) => {
+      const customEvent = event as CustomEvent<{
+        color?: string;
+        logoUrl?: string | null;
+      }>;
+
+      if (customEvent.detail?.color) {
+        setPrimaryColor(customEvent.detail.color);
+        localStorage.setItem(
+          "vai_primaryColor",
+          customEvent.detail.color
+        );
+      }
+
+      if (Object.prototype.hasOwnProperty.call(customEvent.detail || {}, "logoUrl")) {
+        const nextLogo = customEvent.detail?.logoUrl || null;
+        setLogoUrl(nextLogo);
+
+        if (nextLogo) {
+          localStorage.setItem("vai_logoUrl", nextLogo);
+        } else {
+          localStorage.removeItem("vai_logoUrl");
+        }
+      }
+    };
+
+    window.addEventListener("themeUpdated", handleThemeUpdate);
+    return () => window.removeEventListener("themeUpdated", handleThemeUpdate);
+  }, []);
+
+  useEffect(() => {
+    if (!resolvedEmpresaId) return;
 
     const channel = supabase
-      .channel("empresa_theme_realtime")
+      .channel(`empresa_theme_${resolvedEmpresaId}`)
       .on(
         "postgres_changes",
         {
           event: "UPDATE",
           schema: "public",
           table: "empresas",
-          filter: `user_id=eq.${empresaId}`, // ✅ corregido a user_id
+          filter: `id=eq.${resolvedEmpresaId}`,
         },
         (payload) => {
-          const updated = payload.new;
+          const updated = payload.new as Partial<EmpresaTheme> | null;
           if (!updated) return;
 
           if (updated.color) {
             setPrimaryColor(updated.color);
             localStorage.setItem("vai_primaryColor", updated.color);
           }
-          if (updated.logo_url) {
-            setLogoUrl(updated.logo_url);
-            localStorage.setItem("vai_logoUrl", updated.logo_url);
+
+          if (Object.prototype.hasOwnProperty.call(updated, "logo_url")) {
+            const nextLogo = updated.logo_url || null;
+            setLogoUrl(nextLogo);
+
+            if (nextLogo) {
+              localStorage.setItem("vai_logoUrl", nextLogo);
+            } else {
+              localStorage.removeItem("vai_logoUrl");
+            }
           }
         }
       )
       .subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      void supabase.removeChannel(channel);
     };
-  }, [user]);
+  }, [resolvedEmpresaId]);
 
-  // =====================================================
-  // 5️⃣ Aplicar color al DOM
-  // =====================================================
   useEffect(() => {
-    document.documentElement.style.setProperty("--primary-color", primaryColor);
+    document.documentElement.style.setProperty(
+      "--primary-color",
+      primaryColor
+    );
   }, [primaryColor]);
 
-  // =====================================================
-  // 6️⃣ Hidratar correctamente (sin flash)
-  //    ✅ Solo mostrar loader DESPUÉS de montado, y solo en rutas no públicas
-  // =====================================================
   if (mounted && !hydrated && !isPublicRoute) {
     return (
       <div className="flex justify-center items-center h-screen text-gray-400">
@@ -191,9 +273,6 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     );
   }
 
-  // =====================================================
-  // 7️⃣ Proveer contexto global
-  // =====================================================
   return (
     <ThemeContext.Provider
       value={{
@@ -210,13 +289,12 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   );
 }
 
-// =====================================================
-// 🔹 Hook de uso del contexto
-// =====================================================
 export function useTheme() {
   const context = useContext(ThemeContext);
+
   if (!context) {
     throw new Error("useTheme debe usarse dentro de un ThemeProvider");
   }
+
   return context;
 }

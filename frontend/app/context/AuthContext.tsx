@@ -1,8 +1,15 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { supabase } from "#lib/supabaseClient";
-import type { Profile } from "@/types/acm.types"; // <-- Unificamos el tipo Profile
+import type { Profile } from "@/types/acm.types";
 
 interface AuthContextType {
   user: Profile | null;
@@ -16,90 +23,151 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // =====================================================
-  // 🔒 Logout seguro
-  // =====================================================
-  const logout = async () => {
+  /**
+   * Evita que getSession() y el evento INITIAL_SESSION consulten profiles
+   * simultáneamente para el mismo usuario.
+   */
+  const profileRequestRef = useRef<{
+    userId: string;
+    promise: Promise<Profile | null>;
+  } | null>(null);
+
+  const loadedUserIdRef = useRef<string | null>(null);
+
+  const logout = useCallback(async () => {
     await supabase.auth.signOut();
+    loadedUserIdRef.current = null;
+    profileRequestRef.current = null;
     setUser(null);
     window.location.replace("/auth/login");
-  };
+  }, []);
 
-  // =====================================================
-  // 📦 Cargar perfil extendido desde Supabase
-  //  FIX: primero leemos `profiles` (rol verdadero). Si no hay fila,
-  //       recién ahí inferimos EMPRESA mirando `empresas.user_id`.
-  // =====================================================
-  const loadUserProfile = async (supabaseUser: any): Promise<Profile | null> => {
-    if (!supabaseUser) return null;
+  const loadUserProfile = useCallback(
+    async (supabaseUser: any): Promise<Profile | null> => {
+      if (!supabaseUser?.id) return null;
 
-    // 1) PERFIL en `profiles`
-    const { data: profile, error: profileErr } = await supabase
-      .from("profiles")
-      .select(
-        "id, email, nombre, apellido, matriculado_nombre, cpi, inmobiliaria, role, empresa_id, telefono"
-      )
-      .eq("id", supabaseUser.id)
-      .maybeSingle();
+      const userId = String(supabaseUser.id);
 
-    if (profileErr && profileErr.code !== "PGRST116") {
-      console.warn("⚠️ Error al buscar perfil:", profileErr.message);
-    }
+      if (
+        profileRequestRef.current?.userId === userId &&
+        profileRequestRef.current.promise
+      ) {
+        return profileRequestRef.current.promise;
+      }
 
-    if (profile) {
-      // ✅ Usar SIEMPRE el rol de profiles si existe
-      const perfilLimpio = JSON.parse(JSON.stringify(profile)) as Profile;
-      return perfilLimpio;
-    }
+      const request = (async (): Promise<Profile | null> => {
+        const { data: profile, error: profileErr } = await supabase
+          .from("profiles")
+          .select(
+            "id, email, nombre, apellido, matriculado_nombre, cpi, inmobiliaria, role, empresa_id, telefono"
+          )
+          .eq("id", userId)
+          .maybeSingle();
 
-    // 2) SIN `profiles` → intentar inferir EMPRESA por ownership
-    const { data: empresaData, error: empresaError } = await supabase
-      .from("empresas")
-      .select(
-        "id, nombre_comercial, razon_social, matriculado, cpi, telefono, logo_url, color, user_id"
-      )
-      .eq("user_id", supabaseUser.id)
-      .maybeSingle();
+        if (profileErr && profileErr.code !== "PGRST116") {
+          console.warn("⚠️ Error al buscar perfil:", profileErr.message);
+        }
 
-    if (empresaError && empresaError.code !== "PGRST116") {
-      console.warn("⚠️ Error al buscar empresa:", empresaError.message);
-    }
+        if (profile) {
+          return JSON.parse(JSON.stringify(profile)) as Profile;
+        }
 
-    const empresaLimpia = empresaData ? JSON.parse(JSON.stringify(empresaData)) : null;
+        /**
+         * Compatibilidad con empresas históricas:
+         * algunas quedaron vinculadas por user_id y otras por id_usuario.
+         */
+        const { data: empresaData, error: empresaError } = await supabase
+          .from("empresas")
+          .select(
+            "id, nombre_comercial, razon_social, matriculado, cpi, telefono, logo_url, color, user_id, id_usuario"
+          )
+          .or(`user_id.eq.${userId},id_usuario.eq.${userId}`)
+          .limit(1)
+          .maybeSingle();
 
-    if (empresaLimpia) {
-      // ▶️ Inferimos "empresa" sólo si NO hay perfil
-      return {
-        id: supabaseUser.id,
-        email: supabaseUser.email,
-        nombre: empresaLimpia.nombre_comercial,
-        matriculado_nombre: empresaLimpia.matriculado,
-        cpi: empresaLimpia.cpi,
-        inmobiliaria: empresaLimpia.nombre_comercial,
-        role: "empresa",
-        telefono: (empresaLimpia as any)?.telefono || undefined,
-        empresa_id: empresaLimpia.id,
-      };
-    }
+        if (empresaError && empresaError.code !== "PGRST116") {
+          console.warn("⚠️ Error al buscar empresa:", empresaError.message);
+        }
 
-    // 3) Fallback: metadata (admins / soporte creados sin profile)
-    return {
-      id: supabaseUser.id,
-      email: supabaseUser.email,
-      nombre: supabaseUser.user_metadata?.nombre,
-      apellido: supabaseUser.user_metadata?.apellido,
-      matriculado_nombre: supabaseUser.user_metadata?.matriculado_nombre,
-      cpi: supabaseUser.user_metadata?.cpi,
-      inmobiliaria: supabaseUser.user_metadata?.inmobiliaria,
-      role: (supabaseUser.user_metadata?.role as Profile["role"]) || "empresa",
-      empresa_id: null,
-    };
-  };
+        const empresaLimpia = empresaData
+          ? JSON.parse(JSON.stringify(empresaData))
+          : null;
 
-  // =====================================================
-  // ⚙️ Inicializar sesión y escuchar cambios
-  // =====================================================
+        if (empresaLimpia) {
+          return {
+            id: userId,
+            email: supabaseUser.email,
+            nombre: empresaLimpia.nombre_comercial,
+            matriculado_nombre: empresaLimpia.matriculado,
+            cpi: empresaLimpia.cpi,
+            inmobiliaria: empresaLimpia.nombre_comercial,
+            role: "empresa",
+            telefono: empresaLimpia.telefono || undefined,
+            empresa_id: empresaLimpia.id,
+          } as Profile;
+        }
+
+        return {
+          id: userId,
+          email: supabaseUser.email,
+          nombre: supabaseUser.user_metadata?.nombre,
+          apellido: supabaseUser.user_metadata?.apellido,
+          matriculado_nombre: supabaseUser.user_metadata?.matriculado_nombre,
+          cpi: supabaseUser.user_metadata?.cpi,
+          inmobiliaria: supabaseUser.user_metadata?.inmobiliaria,
+          role:
+            (supabaseUser.user_metadata?.role as Profile["role"]) || "empresa",
+          empresa_id: null,
+        } as Profile;
+      })();
+
+      profileRequestRef.current = { userId, promise: request };
+
+      try {
+        const result = await request;
+        loadedUserIdRef.current = userId;
+        return result;
+      } finally {
+        if (profileRequestRef.current?.promise === request) {
+          profileRequestRef.current = null;
+        }
+      }
+    },
+    []
+  );
+
   useEffect(() => {
+    let mounted = true;
+
+    const applySessionUser = async (
+      sessionUser: any,
+      forceReload = false
+    ): Promise<void> => {
+      if (!mounted) return;
+
+      if (!sessionUser) {
+        loadedUserIdRef.current = null;
+        profileRequestRef.current = null;
+        setUser(null);
+        setLoading(false);
+        return;
+      }
+
+      const userId = String(sessionUser.id);
+
+      if (!forceReload && loadedUserIdRef.current === userId) {
+        setLoading(false);
+        return;
+      }
+
+      const profile = await loadUserProfile(sessionUser);
+
+      if (mounted) {
+        setUser(profile);
+        setLoading(false);
+      }
+    };
+
     const init = async () => {
       setLoading(true);
 
@@ -107,30 +175,46 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         data: { session },
       } = await supabase.auth.getSession();
 
-      const sessionUser = session?.user ?? null;
-      const profile = sessionUser ? await loadUserProfile(sessionUser) : null;
-      setUser(profile);
-      setLoading(false);
+      await applySessionUser(session?.user ?? null);
     };
 
-    init();
+    void init();
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (!session?.user) {
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      /**
+       * INITIAL_SESSION suele repetirse con getSession().
+       * applySessionUser lo deduplica por userId.
+       *
+       * TOKEN_REFRESHED no requiere volver a consultar profiles.
+       */
+      if (event === "TOKEN_REFRESHED") return;
+
+      if (event === "SIGNED_OUT") {
+        loadedUserIdRef.current = null;
+        profileRequestRef.current = null;
         setUser(null);
-      } else {
-        loadUserProfile(session.user).then(setUser);
+        setLoading(false);
+        return;
+      }
+
+      if (event === "SIGNED_IN" || event === "USER_UPDATED") {
+        void applySessionUser(session?.user ?? null, event === "USER_UPDATED");
+        return;
+      }
+
+      if (event === "INITIAL_SESSION") {
+        void applySessionUser(session?.user ?? null);
       }
     });
 
-    return () => subscription.unsubscribe();
-  }, []);
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
+  }, [loadUserProfile]);
 
-  // =====================================================
-  // 🧩 Provider
-  // =====================================================
   return (
     <AuthContext.Provider value={{ user, loading, logout }}>
       {children}

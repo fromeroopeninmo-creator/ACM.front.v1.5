@@ -170,73 +170,6 @@ async function getLatestAgreement(empresaId: string) {
   return data ?? null;
 }
 
-async function syncOperationalPlanFromCurrentCycle(params: {
-  empresaId: string;
-  planId: string;
-  cycleStart: string;
-  cycleEnd: string;
-  maxAsesoresOverride: number | null;
-}) {
-  const { empresaId, planId, cycleStart, cycleEnd, maxAsesoresOverride } = params;
-
-  const { data: current } = await supabaseAdmin
-    .from("empresas_planes")
-    .select("id, plan_id, fecha_inicio, fecha_fin, max_asesores_override")
-    .eq("empresa_id", empresaId)
-    .eq("activo", true)
-    .order("fecha_inicio", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  const desiredStart = cycleStart.slice(0, 10);
-  const desiredEnd = cycleEnd.slice(0, 10);
-  const alreadySynced =
-    current &&
-    String(current.plan_id) === planId &&
-    String(current.fecha_inicio ?? "") === desiredStart &&
-    String(current.fecha_fin ?? "") === desiredEnd &&
-    Number(current.max_asesores_override ?? 0) ===
-      Number(maxAsesoresOverride ?? 0);
-
-  if (alreadySynced) return;
-
-  await supabaseAdmin
-    .from("empresas_planes")
-    .update({ activo: false, updated_at: nowISO() })
-    .eq("empresa_id", empresaId)
-    .eq("activo", true);
-
-  const { data: reusable } = await supabaseAdmin
-    .from("empresas_planes")
-    .select("id")
-    .eq("empresa_id", empresaId)
-    .eq("plan_id", planId)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  const payload = {
-    fecha_inicio: desiredStart,
-    fecha_fin: desiredEnd,
-    activo: true,
-    max_asesores_override: maxAsesoresOverride,
-    updated_at: nowISO(),
-  };
-
-  if (reusable?.id) {
-    await supabaseAdmin
-      .from("empresas_planes")
-      .update(payload)
-      .eq("id", reusable.id);
-  } else {
-    await supabaseAdmin.from("empresas_planes").insert({
-      empresa_id: empresaId,
-      plan_id: planId,
-      ...payload,
-    });
-  }
-}
-
 export async function GET(req: Request) {
   try {
     const server = supabaseServer();
@@ -379,49 +312,7 @@ export async function GET(req: Request) {
       }
     }
 
-    if (automaticSuspension && !manualSuspension) {
-      if (
-        empresa.suspendida !== true ||
-        empresa.suspension_motivo !== automaticReason
-      ) {
-        await supabaseAdmin
-          .from("empresas")
-          .update({
-            suspendida: true,
-            suspendida_at: nowISO(),
-            suspension_motivo: automaticReason,
-            updated_at: nowISO(),
-          })
-          .eq("id", empresaId);
-      }
-    } else if (
-      accessAllowed &&
-      empresa.suspendida === true &&
-      isBillingSuspensionReason(empresa.suspension_motivo)
-    ) {
-      await supabaseAdmin
-        .from("empresas")
-        .update({
-          suspendida: false,
-          suspendida_at: null,
-          suspension_motivo: null,
-          updated_at: nowISO(),
-        })
-        .eq("id", empresaId);
-    }
-
-    if (currentCycle?.plan_actual_id) {
-      await syncOperationalPlanFromCurrentCycle({
-        empresaId,
-        planId: currentCycle.plan_actual_id,
-        cycleStart: currentCycle.ciclo_inicio,
-        cycleEnd: currentCycle.ciclo_fin,
-        maxAsesoresOverride:
-          cycleSnapshot.max_asesores_final == null
-            ? null
-            : Number(cycleSnapshot.max_asesores_final),
-      });
-    }
+    // Estado calculado únicamente en memoria. Este GET no modifica la base.
 
     const agreementStatus = activeAgreement
       ? "vigente"

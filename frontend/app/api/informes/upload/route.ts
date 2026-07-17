@@ -6,6 +6,7 @@ export const preferredRegion = ["gru1", "sfo1"];
 
 import { NextResponse } from "next/server";
 import { supabaseServer } from "#lib/supabaseServer";
+import { assertBillingAccessForActor } from "#lib/billing/utils";
 import { createClient } from "@supabase/supabase-js";
 
 type Role =
@@ -104,6 +105,18 @@ export async function POST(req: Request) {
       return NextResponse.json(
         { error: "No autenticado." },
         { status: 401 }
+      );
+    }
+
+    try {
+      await assertBillingAccessForActor({
+        authSupabase: server,
+        dataSupabase: supabaseAdmin,
+      });
+    } catch (accessError: any) {
+      return NextResponse.json(
+        { error: accessError?.message || "Acceso suspendido." },
+        { status: Number(accessError?.status || 403) }
       );
     }
 

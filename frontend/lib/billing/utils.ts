@@ -1087,3 +1087,230 @@ export function calcularDeltaProrrateo(params: {
 
   return { diasCiclo, diasRestantes, factor, deltaNeto, iva, total };
 }
+
+export type BillingAccessContext = {
+  actor: ActorCtx;
+  empresaId: string | null;
+  permitido: boolean;
+  bypassAdmin: boolean;
+  origen:
+    | "admin"
+    | "ciclo_pagado"
+    | "trial"
+    | "desarrollo"
+    | "suspension_manual"
+    | "sin_cobertura";
+  motivo: string | null;
+};
+
+function isAutomaticBillingSuspensionReason(reason?: string | null): boolean {
+  if (!reason) return false;
+  const normalized = reason.toLowerCase().trim();
+  return [
+    "falta de pago",
+    "pago no acreditado",
+    "suscripción vencida",
+    "suscripcion vencida",
+    "plan vencido",
+    "trial vencido",
+    "acuerdo comercial pendiente de pago",
+    "sin ciclo vigente",
+    "sin plan activo",
+  ].some((token) => normalized.includes(token));
+}
+
+/**
+ * Guard central de acceso comercial para APIs protegidas.
+ *
+ * Importante:
+ * - Es 100% de solo lectura.
+ * - No activa/desactiva empresas_planes.
+ * - No modifica empresas.suspendida ni sus fechas/motivos.
+ * - Admin/soporte omiten el bloqueo comercial, pero cada endpoint debe conservar
+ *   sus verificaciones de autorización sobre el recurso solicitado.
+ */
+export async function resolveBillingAccessForActor(params: {
+  authSupabase: SupabaseClient;
+  dataSupabase?: SupabaseClient;
+  empresaIdParam?: string;
+  allowAdminBypass?: boolean;
+}): Promise<BillingAccessContext> {
+  const {
+    authSupabase,
+    dataSupabase = authSupabase,
+    empresaIdParam,
+    allowAdminBypass = true,
+  } = params;
+
+  const actor = await assertAuthAndGetContext(authSupabase);
+  const role = String(actor.role ?? "").toLowerCase();
+  const isAdminLike =
+    role === "super_admin_root" ||
+    role === "super_admin" ||
+    role === "soporte";
+
+  if (isAdminLike && allowAdminBypass && !empresaIdParam) {
+    return {
+      actor,
+      empresaId: null,
+      permitido: true,
+      bypassAdmin: true,
+      origen: "admin",
+      motivo: null,
+    };
+  }
+
+  const empresaId = await getEmpresaIdForActor({
+    supabase: dataSupabase,
+    actor,
+    empresaIdParam,
+  });
+
+  if (!empresaId) {
+    return {
+      actor,
+      empresaId: null,
+      permitido: false,
+      bypassAdmin: false,
+      origen: "sin_cobertura",
+      motivo: "No se pudo resolver la empresa del usuario.",
+    };
+  }
+
+  if (isAdminLike && allowAdminBypass) {
+    return {
+      actor,
+      empresaId,
+      permitido: true,
+      bypassAdmin: true,
+      origen: "admin",
+      motivo: null,
+    };
+  }
+
+  const { data: empresa, error: empresaError } = await dataSupabase
+    .from("empresas")
+    .select("id, suspendida, suspension_motivo")
+    .eq("id", empresaId)
+    .maybeSingle();
+
+  if (empresaError) {
+    throw new Error(`Error leyendo empresa para validar acceso: ${empresaError.message}`);
+  }
+
+  if (!empresa) {
+    return {
+      actor,
+      empresaId,
+      permitido: false,
+      bypassAdmin: false,
+      origen: "sin_cobertura",
+      motivo: "Empresa no encontrada.",
+    };
+  }
+
+  const manualSuspension =
+    empresa.suspendida === true &&
+    !isAutomaticBillingSuspensionReason(empresa.suspension_motivo);
+
+  if (manualSuspension) {
+    return {
+      actor,
+      empresaId,
+      permitido: false,
+      bypassAdmin: false,
+      origen: "suspension_manual",
+      motivo: empresa.suspension_motivo ?? "Cuenta suspendida manualmente.",
+    };
+  }
+
+  const currentCycle = await getSuscripcionEstado(dataSupabase, empresaId);
+  if (currentCycle) {
+    return {
+      actor,
+      empresaId,
+      permitido: true,
+      bypassAdmin: false,
+      origen: "ciclo_pagado",
+      motivo: null,
+    };
+  }
+
+  const today = todayUTCDate();
+  const { data: operationalPlan, error: operationalError } = await dataSupabase
+    .from("empresas_planes")
+    .select("plan_id, fecha_inicio, fecha_fin, planes(es_trial, es_desarrollo)")
+    .eq("empresa_id", empresaId)
+    .eq("activo", true)
+    .order("fecha_inicio", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (operationalError) {
+    throw new Error(
+      `Error leyendo plan operativo para validar acceso: ${operationalError.message}`
+    );
+  }
+
+  const planRelation = Array.isArray((operationalPlan as any)?.planes)
+    ? (operationalPlan as any).planes[0]
+    : (operationalPlan as any)?.planes;
+  const isTrial = planRelation?.es_trial === true;
+  const isDevelopment = planRelation?.es_desarrollo === true;
+  const startsAt = operationalPlan?.fecha_inicio
+    ? String(operationalPlan.fecha_inicio)
+    : null;
+  const endsAt = operationalPlan?.fecha_fin
+    ? String(operationalPlan.fecha_fin)
+    : null;
+  const operationalCoverage =
+    !!operationalPlan &&
+    (isTrial || isDevelopment) &&
+    (!startsAt || startsAt <= today) &&
+    (!endsAt || endsAt >= today);
+
+  if (operationalCoverage) {
+    return {
+      actor,
+      empresaId,
+      permitido: true,
+      bypassAdmin: false,
+      origen: isTrial ? "trial" : "desarrollo",
+      motivo: null,
+    };
+  }
+
+  return {
+    actor,
+    empresaId,
+    permitido: false,
+    bypassAdmin: false,
+    origen: "sin_cobertura",
+    motivo: isTrial
+      ? "Trial vencido. Debe seleccionar un plan para continuar."
+      : operationalPlan?.plan_id
+      ? "Cuenta suspendida por falta de pago: sin ciclo vigente."
+      : "Sin plan activo. Debe seleccionar un plan para continuar.",
+  };
+}
+
+export async function assertBillingAccessForActor(params: {
+  authSupabase: SupabaseClient;
+  dataSupabase?: SupabaseClient;
+  empresaIdParam?: string;
+  allowAdminBypass?: boolean;
+}): Promise<BillingAccessContext> {
+  const access = await resolveBillingAccessForActor(params);
+
+  if (!access.permitido) {
+    const error = new Error(access.motivo ?? "Acceso suspendido.") as Error & {
+      status?: number;
+      code?: string;
+    };
+    error.status = access.empresaId ? 403 : 400;
+    error.code = "BILLING_ACCESS_DENIED";
+    throw error;
+  }
+
+  return access;
+}

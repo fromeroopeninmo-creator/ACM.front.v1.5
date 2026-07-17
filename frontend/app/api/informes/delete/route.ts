@@ -4,6 +4,7 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 import { supabaseServer } from "#lib/supabaseServer";
+import { assertBillingAccessForActor } from "#lib/billing/utils";
 import { createClient } from "@supabase/supabase-js";
 
 type Role = "empresa" | "asesor" | "soporte" | "super_admin" | "super_admin_root";
@@ -35,6 +36,18 @@ export async function DELETE(req: Request) {
     const user = auth?.user;
     if (!user) {
       return NextResponse.json({ error: "No autenticado." }, { status: 401 });
+    }
+
+    try {
+      await assertBillingAccessForActor({
+        authSupabase: server,
+        dataSupabase: supabaseAdmin,
+      });
+    } catch (accessError: any) {
+      return NextResponse.json(
+        { error: accessError?.message || "Acceso suspendido." },
+        { status: Number(accessError?.status || 403) }
+      );
     }
 
     // 2) Traer informe por SERVICE_ROLE (evitamos 404 de RLS)

@@ -1,5 +1,12 @@
 import { NextResponse } from "next/server";
 import { supabaseServer } from "#lib/supabaseServer";
+import { createClient } from "@supabase/supabase-js";
+import { assertBillingAccessForActor } from "#lib/billing/utils";
+
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
 
 export async function DELETE(req: Request) {
   try {
@@ -30,6 +37,18 @@ export async function DELETE(req: Request) {
 
     if (!session?.user) {
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+    }
+
+    try {
+      await assertBillingAccessForActor({
+        authSupabase: supabase,
+        dataSupabase: supabaseAdmin,
+      });
+    } catch (accessError: any) {
+      return NextResponse.json(
+        { error: accessError?.message || "Acceso suspendido." },
+        { status: Number(accessError?.status || 403) }
+      );
     }
 
     // 💡 RLS debe asegurar que:

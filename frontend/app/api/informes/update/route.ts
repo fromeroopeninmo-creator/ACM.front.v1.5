@@ -7,6 +7,7 @@ export const preferredRegion = ["gru1", "sfo1"];
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { supabaseServer } from "#lib/supabaseServer";
+import { assertBillingAccessForActor } from "#lib/billing/utils";
 
 type Role = "empresa" | "asesor" | "soporte" | "super_admin" | "super_admin_root";
 
@@ -47,6 +48,18 @@ export async function POST(req: Request) {
     }
     if (!user) {
       return NextResponse.json({ error: "No autenticado." }, { status: 401 });
+    }
+
+    try {
+      await assertBillingAccessForActor({
+        authSupabase: server,
+        dataSupabase: supabaseAdmin,
+      });
+    } catch (accessError: any) {
+      return NextResponse.json(
+        { error: accessError?.message || "Acceso suspendido." },
+        { status: Number(accessError?.status || 403) }
+      );
     }
 
     // 1) Body

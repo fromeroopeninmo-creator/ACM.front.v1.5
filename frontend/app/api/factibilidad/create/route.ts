@@ -5,6 +5,7 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { supabaseServer } from "#lib/supabaseServer";
+import { assertBillingAccessForActor } from "#lib/billing/utils";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -86,6 +87,18 @@ export async function POST(req: Request) {
       return NextResponse.json(
         { error: "No autenticado." },
         { status: 401 }
+      );
+    }
+
+    try {
+      await assertBillingAccessForActor({
+        authSupabase: server,
+        dataSupabase: supabaseAdmin,
+      });
+    } catch (accessError: any) {
+      return NextResponse.json(
+        { error: accessError?.message || "Acceso suspendido." },
+        { status: Number(accessError?.status || 403) }
       );
     }
 

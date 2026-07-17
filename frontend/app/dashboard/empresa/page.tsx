@@ -381,8 +381,8 @@ export default function EmpresaDashboardPage() {
     if (!billingEstado || !estado) return null;
 
     const estaSuspendida = estado?.suspendida === true;
-    const planVencido = estado?.plan_vencido === true || estado?.planVencido === true;
-    const enGracia = estado?.en_periodo_gracia === true || estado?.enPeriodoGracia === true;
+    const planVencido = estado?.plan_vencido === true;
+    const enGracia = estado?.en_periodo_gracia === true;
 
     if (estaSuspendida || planVencido || enGracia) return null;
 

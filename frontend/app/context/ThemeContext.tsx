@@ -31,7 +31,19 @@ type EmpresaTheme = {
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const { user } = useAuth();
+  /**
+   * ThemeProvider también se monta durante el prerender de rutas públicas.
+   * En ese contexto puede no existir todavía un AuthProvider por encima.
+   * Conservamos una lectura segura para no romper /auth, /_not-found y SEO.
+   */
+  let user: any = null;
+
+  try {
+    user = useAuth()?.user || null;
+  } catch {
+    user = null;
+  }
+
   const pathname = usePathname();
 
   const [primaryColor, setPrimaryColor] = useState("#2563eb");

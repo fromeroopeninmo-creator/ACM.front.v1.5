@@ -12,21 +12,22 @@
     "@supabase/auth-helpers-nextjs": "^0.9.0",
     "@supabase/auth-helpers-react": "^0.4.0",
     "@supabase/supabase-js": "^2.43.0",
+    "html-to-image": "^1.11.13",
     "jspdf": "2.5.1",
     "next": "13.5.6",
     "react": "18.2.0",
     "react-dom": "18.2.0",
+    "sharp": "^0.33.3",
     "swr": "^2.2.0",
     "tailwindcss": "3.3.3",
-    "sharp": "^0.33.3",
     "zod": "^3.23.8"
   },
   "devDependencies": {
     "@types/node": "20.5.0",
     "@types/react": "18.2.21",
     "autoprefixer": "10.4.16",
+    "lucide-react": "^0.378.0",
     "postcss": "8.4.31",
-    "typescript": "5.2.2",
-    "lucide-react": "^0.378.0"
+    "typescript": "5.2.2"
   }
 }

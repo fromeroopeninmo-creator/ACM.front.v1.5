@@ -21,6 +21,7 @@ type NormalizedEvent = {
     planId: string | null;
     suscripcionId: string | null;
     movimientoId: string | null;
+    externalReference: string | null;
     paymentStatus: string | null;
     paymentStatusDetail: string | null;
     externoPaymentId: string;
@@ -148,7 +149,7 @@ async function normalizeMercadoPagoEvent(body: unknown): Promise<NormalizedEvent
       : null;
 
   const suscripcionId =
-    metadata.suscripcion_id ?? metadata.suscripcionId ?? externalReference ?? null;
+    metadata.suscripcion_id ?? metadata.suscripcionId ?? null;
   const movimientoId =
     metadata.movimiento_id ?? metadata.movimientoId ?? null;
 
@@ -161,6 +162,7 @@ async function normalizeMercadoPagoEvent(body: unknown): Promise<NormalizedEvent
       planId: metadata.plan_id ?? metadata.planId ?? null,
       suscripcionId: suscripcionId ? String(suscripcionId) : null,
       movimientoId: movimientoId ? String(movimientoId) : null,
+      externalReference: externalReference ? String(externalReference) : null,
       paymentStatus: status || null,
       paymentStatusDetail: payment.status_detail ?? null,
       externoPaymentId: String(payment.id),
@@ -174,18 +176,31 @@ async function normalizeMercadoPagoEvent(body: unknown): Promise<NormalizedEvent
 }
 
 async function resolvePendingSubscription(event: NormalizedEvent) {
-  const id = event.data.suscripcionId;
-  if (!id) return null;
-
-  const { data } = await supabaseAdmin
-    .from("suscripciones")
-    .select(
-      "id, empresa_id, plan_id, plan_actual_id, estado, metadata, precio_neto_override"
+  const candidateIds = Array.from(
+    new Set(
+      [event.data.suscripcionId, event.data.externalReference].filter(
+        (value): value is string => Boolean(value)
+      )
     )
-    .eq("id", id)
-    .maybeSingle();
+  );
 
-  return data ?? null;
+  for (const id of candidateIds) {
+    const { data, error } = await supabaseAdmin
+      .from("suscripciones")
+      .select(
+        "id, empresa_id, plan_id, plan_actual_id, estado, metadata, precio_neto_override"
+      )
+      .eq("id", id)
+      .maybeSingle();
+
+    if (error) {
+      throw new Error(`Error resolviendo suscripción del webhook: ${error.message}`);
+    }
+
+    if (data?.id) return data;
+  }
+
+  return null;
 }
 
 async function getCurrentCycleEnd(empresaId: string, excludeId?: string | null) {
@@ -293,16 +308,34 @@ async function syncOperationalPlan(params: {
 }
 
 async function settleFinancialMovement(event: NormalizedEvent) {
-  const movementId = event.data.movimientoId;
-  if (!movementId) return false;
+  const candidateIds = Array.from(
+    new Set(
+      [event.data.movimientoId, event.data.externalReference].filter(
+        (value): value is string => Boolean(value)
+      )
+    )
+  );
 
-  const { data: movement } = await supabaseAdmin
-    .from("movimientos_financieros")
-    .select("id, empresa_id, metadata")
-    .eq("id", movementId)
-    .maybeSingle();
+  let movement: any = null;
 
-  if (!movement?.id) return false;
+  for (const id of candidateIds) {
+    const { data, error } = await supabaseAdmin
+      .from("movimientos_financieros")
+      .select("id, empresa_id, estado, metadata, monto_neto, iva, total")
+      .eq("id", id)
+      .maybeSingle();
+
+    if (error) {
+      throw new Error(`Error resolviendo movimiento del webhook: ${error.message}`);
+    }
+
+    if (data?.id) {
+      movement = data;
+      break;
+    }
+  }
+
+  if (!movement?.id) return null;
 
   const paid = event.eventType === "payment_succeeded";
   const metadata = {
@@ -313,7 +346,7 @@ async function settleFinancialMovement(event: NormalizedEvent) {
     settled_at: nowISO(),
   };
 
-  await supabaseAdmin
+  const { error: movementUpdateError } = await supabaseAdmin
     .from("movimientos_financieros")
     .update({
       estado: paid ? "paid" : "failed",
@@ -323,23 +356,196 @@ async function settleFinancialMovement(event: NormalizedEvent) {
     })
     .eq("id", movement.id);
 
-  if (paid && movement.empresa_id && metadata.nuevo_plan_id) {
-    const start = event.data.approvedAt ?? nowISO();
-    const end = addOneCalendarMonth(start);
-    await syncOperationalPlan({
-      empresaId: String(movement.empresa_id),
-      planId: String(metadata.nuevo_plan_id),
-      cycleStart: start,
-      cycleEnd: end,
-      maxAsesoresOverride:
-        metadata.max_asesores_override == null
-          ? null
-          : Number(metadata.max_asesores_override),
-    });
-    await clearBillingSuspension(String(movement.empresa_id));
+  if (movementUpdateError) {
+    throw new Error(
+      `No se pudo conciliar el movimiento financiero: ${movementUpdateError.message}`
+    );
   }
 
-  return true;
+  return {
+    ...movement,
+    metadata,
+    paid,
+  };
+}
+
+async function activateSubscriptionFromMovement(params: {
+  event: NormalizedEvent;
+  movement: any;
+}) {
+  const { event, movement } = params;
+
+  if (event.eventType !== "payment_succeeded" || !movement?.paid) return null;
+
+  const empresaId = movement.empresa_id ? String(movement.empresa_id) : null;
+  const movementMetadata =
+    movement.metadata && typeof movement.metadata === "object"
+      ? movement.metadata
+      : {};
+  const planIdRaw =
+    (movementMetadata as any).nuevo_plan_id ??
+    (movementMetadata as any).plan_id ??
+    event.data.planId ??
+    null;
+  const planId = planIdRaw ? String(planIdRaw) : null;
+
+  if (!empresaId || !planId) {
+    throw new Error(
+      "El pago fue conciliado, pero el movimiento no contiene empresa_id y nuevo_plan_id para crear el ciclo."
+    );
+  }
+
+  const approvedAt = event.data.approvedAt ?? nowISO();
+  const currentEnd = await getCurrentCycleEnd(empresaId);
+  const cycleStart = currentEnd && currentEnd > approvedAt ? currentEnd : approvedAt;
+  const cycleEnd = addOneCalendarMonth(cycleStart);
+
+  const { data: pendingRows, error: pendingSearchError } = await supabaseAdmin
+    .from("suscripciones")
+    .select("id, metadata, precio_neto_override, created_at")
+    .eq("empresa_id", empresaId)
+    .eq("estado", "pendiente")
+    .or(`plan_id.eq.${planId},plan_actual_id.eq.${planId}`)
+    .order("created_at", { ascending: false })
+    .limit(5);
+
+  if (pendingSearchError) {
+    throw new Error(
+      `No se pudo buscar una suscripción pendiente relacionada: ${pendingSearchError.message}`
+    );
+  }
+
+  const pending = pendingRows?.[0] ?? null;
+  const pendingMetadata =
+    pending?.metadata && typeof pending.metadata === "object"
+      ? pending.metadata
+      : {};
+
+  const finalMetadata = {
+    ...pendingMetadata,
+    ...movementMetadata,
+    source: "change_plan_mercadopago",
+    cycle_status: "paid",
+    payment_status: event.data.paymentStatus,
+    payment_status_detail: event.data.paymentStatusDetail,
+    externo_payment_id: event.data.externoPaymentId,
+    approved_at: approvedAt,
+    cycle_start: cycleStart,
+    cycle_end: cycleEnd,
+    movimiento_id: String(movement.id),
+    synced_by_webhook: true,
+    raw_payment: event.data.rawPayment,
+  };
+
+  let subscriptionId: string;
+
+  if (pending?.id) {
+    const { error: updateError } = await supabaseAdmin
+      .from("suscripciones")
+      .update({
+        estado: "activa",
+        inicio: cycleStart,
+        fin: cycleEnd,
+        ciclo_inicio: cycleStart,
+        ciclo_fin: cycleEnd,
+        plan_id: planId,
+        plan_actual_id: planId,
+        moneda: "ARS",
+        externo_customer_id: event.data.externoCustomerId,
+        externo_subscription_id: event.data.externoPaymentId,
+        metadata: finalMetadata,
+        updated_at: nowISO(),
+      })
+      .eq("id", pending.id);
+
+    if (updateError) {
+      throw new Error(
+        `No se pudo activar la suscripción pendiente: ${updateError.message}`
+      );
+    }
+
+    subscriptionId = String(pending.id);
+  } else {
+    const snapshot =
+      (movementMetadata as any).pricing_nuevo &&
+      typeof (movementMetadata as any).pricing_nuevo === "object"
+        ? (movementMetadata as any).pricing_nuevo
+        : null;
+
+    const { data: inserted, error: insertError } = await supabaseAdmin
+      .from("suscripciones")
+      .insert({
+        empresa_id: empresaId,
+        plan_id: planId,
+        plan_actual_id: planId,
+        plan_proximo_id: null,
+        cambio_programado_para: null,
+        estado: "activa",
+        inicio: cycleStart,
+        fin: cycleEnd,
+        ciclo_inicio: cycleStart,
+        ciclo_fin: cycleEnd,
+        moneda: "ARS",
+        precio_neto_override: null,
+        externo_customer_id: event.data.externoCustomerId,
+        externo_subscription_id: event.data.externoPaymentId,
+        metadata: {
+          ...finalMetadata,
+          snapshot,
+        },
+      })
+      .select("id")
+      .single();
+
+    if (insertError || !inserted?.id) {
+      throw new Error(
+        `No se pudo crear el ciclo pagado en suscripciones: ${
+          insertError?.message ?? "sin ID"
+        }`
+      );
+    }
+
+    subscriptionId = String(inserted.id);
+  }
+
+  const { error: cancelPendingError } = await supabaseAdmin
+    .from("suscripciones")
+    .update({
+      estado: "cancelada",
+      updated_at: nowISO(),
+    })
+    .eq("empresa_id", empresaId)
+    .eq("estado", "pendiente")
+    .neq("id", subscriptionId);
+
+  if (cancelPendingError) {
+    throw new Error(
+      `No se pudieron cerrar checkouts pendientes duplicados: ${cancelPendingError.message}`
+    );
+  }
+
+  await closeExpiredHistoricalCycles(empresaId, subscriptionId);
+
+  await syncOperationalPlan({
+    empresaId,
+    planId,
+    cycleStart,
+    cycleEnd,
+    maxAsesoresOverride:
+      (movementMetadata as any).max_asesores_override == null
+        ? null
+        : Number((movementMetadata as any).max_asesores_override),
+  });
+
+  await clearBillingSuspension(empresaId);
+
+  return {
+    subscriptionId,
+    empresaId,
+    planId,
+    cycleStart,
+    cycleEnd,
+  };
 }
 
 export async function POST(req: Request) {
@@ -426,7 +632,7 @@ export async function POST(req: Request) {
           raw_payment: event.data.rawPayment,
         };
 
-        await supabaseAdmin
+        const { error: activatePendingError } = await supabaseAdmin
           .from("suscripciones")
           .update({
             estado: "activa",
@@ -442,6 +648,12 @@ export async function POST(req: Request) {
             updated_at: nowISO(),
           })
           .eq("id", pending.id);
+
+        if (activatePendingError) {
+          throw new Error(
+            `No se pudo activar la suscripción pagada: ${activatePendingError.message}`
+          );
+        }
 
         await supabaseAdmin
           .from("suscripciones")
@@ -484,7 +696,12 @@ export async function POST(req: Request) {
           })
           .eq("id", pending.id);
       }
-    } else if (!handledMovement) {
+    } else if (handledMovement) {
+      await activateSubscriptionFromMovement({
+        event,
+        movement: handledMovement,
+      });
+    } else {
       console.warn(
         "Webhook procesado sin suscripción ni movimiento identificable:",
         event.externalEventId

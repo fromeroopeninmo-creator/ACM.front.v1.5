@@ -134,6 +134,9 @@ async function crearPreferenciaMercadoPago(params: {
         }
       : undefined,
     auto_return: "approved",
+    notification_url: baseUrl
+      ? `${baseUrl}/api/pagos/webhook`
+      : undefined,
     payment_methods: {
       installments: 1,
     },

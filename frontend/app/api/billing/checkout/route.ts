@@ -115,13 +115,13 @@ async function findAlreadyPaidTargetCycle(params: {
   }) ?? null;
 }
 
-async function findReusablePendingCheckout(params: {
+async function findMatchingPendingCheckouts(params: {
   empresaId: string;
   planId: string;
   agreementId: string | null;
   targetStart: string | null;
 }) {
-  const { data } = await supabaseAdmin
+  const { data, error } = await supabaseAdmin
     .from("suscripciones")
     .select("id, plan_id, metadata, created_at, externo_subscription_id")
     .eq("empresa_id", params.empresaId)
@@ -130,15 +130,59 @@ async function findReusablePendingCheckout(params: {
     .order("created_at", { ascending: false })
     .limit(20);
 
-  return (data ?? []).find((row: any) => {
-    const metadata = row?.metadata && typeof row.metadata === "object" ? row.metadata : {};
+  if (error) throw error;
+
+  return (data ?? []).filter((row: any) => {
+    const metadata =
+      row?.metadata && typeof row.metadata === "object" ? row.metadata : {};
     const sameAgreement =
       String(metadata.agreement_id ?? metadata.acuerdo_id ?? "") ===
       String(params.agreementId ?? "");
     const pendingTarget = metadata.cycle_target_start ?? null;
     const sameTarget = pendingTarget === params.targetStart;
     return sameAgreement && sameTarget;
-  }) ?? null;
+  });
+}
+
+async function getLatestActiveSubscriptionCreatedAt(
+  empresaId: string
+): Promise<string | null> {
+  const { data, error } = await supabaseAdmin
+    .from("suscripciones")
+    .select("created_at")
+    .eq("empresa_id", empresaId)
+    .eq("estado", "activa")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data?.created_at ? String(data.created_at) : null;
+}
+
+async function cancelPendingCheckout(params: {
+  suscripcionId: string;
+  metadata: Record<string, any>;
+  reason: string;
+  cycleStatus: string;
+}) {
+  const cancelledAt = new Date().toISOString();
+  const { error } = await supabaseAdmin
+    .from("suscripciones")
+    .update({
+      estado: "cancelada",
+      updated_at: cancelledAt,
+      metadata: {
+        ...params.metadata,
+        cycle_status: params.cycleStatus,
+        cancelled_at: cancelledAt,
+        cancelled_reason: params.reason,
+      },
+    })
+    .eq("id", params.suscripcionId)
+    .eq("estado", "pendiente");
+
+  if (error) throw error;
 }
 
 function buildSnapshot(config: Awaited<ReturnType<typeof resolveEmpresaBillingConfig>>) {
@@ -331,39 +375,93 @@ export async function POST(req: Request) {
       );
     }
 
-    const reusablePending = await findReusablePendingCheckout({
+    const matchingPendings = await findMatchingPendingCheckouts({
       empresaId,
       planId: effectivePlanId,
       agreementId: config.agreement_id,
       targetStart,
     });
 
-    if (reusablePending) {
+    const latestActiveCreatedAt = await getLatestActiveSubscriptionCreatedAt(
+      empresaId
+    );
+    let reusablePending: any = null;
+
+    for (const pendingRow of matchingPendings) {
       const pendingMetadata =
-        reusablePending.metadata && typeof reusablePending.metadata === "object"
-          ? (reusablePending.metadata as Record<string, any>)
+        pendingRow.metadata && typeof pendingRow.metadata === "object"
+          ? (pendingRow.metadata as Record<string, any>)
           : {};
       const existingCheckoutUrl =
-        typeof pendingMetadata.checkout_url === "string"
-          ? pendingMetadata.checkout_url
+        typeof pendingMetadata.checkout_url === "string" &&
+        pendingMetadata.checkout_url.trim()
+          ? pendingMetadata.checkout_url.trim()
           : null;
+      const existingPreferenceId =
+        typeof pendingMetadata.checkout_preference_id === "string" &&
+        pendingMetadata.checkout_preference_id.trim()
+          ? pendingMetadata.checkout_preference_id.trim()
+          : pendingRow.externo_subscription_id
+            ? String(pendingRow.externo_subscription_id)
+            : null;
+      const supersededByActiveCycle =
+        Boolean(latestActiveCreatedAt) &&
+        new Date(String(pendingRow.created_at)).getTime() <
+          new Date(String(latestActiveCreatedAt)).getTime();
 
+      if (supersededByActiveCycle) {
+        await cancelPendingCheckout({
+          suscripcionId: String(pendingRow.id),
+          metadata: pendingMetadata,
+          cycleStatus: "cancelled_stale",
+          reason:
+            "Checkout pendiente anterior a una suscripción activa posterior.",
+        });
+        continue;
+      }
+
+      if (!existingCheckoutUrl || !existingPreferenceId) {
+        await cancelPendingCheckout({
+          suscripcionId: String(pendingRow.id),
+          metadata: pendingMetadata,
+          cycleStatus: "cancelled_stale",
+          reason:
+            "Checkout pendiente incompleto: falta URL o identificador de preferencia.",
+        });
+        continue;
+      }
+
+      if (!reusablePending) {
+        reusablePending = {
+          ...pendingRow,
+          checkoutUrl: existingCheckoutUrl,
+        };
+      } else {
+        await cancelPendingCheckout({
+          suscripcionId: String(pendingRow.id),
+          metadata: pendingMetadata,
+          cycleStatus: "cancelled_duplicate",
+          reason: "Checkout pendiente duplicado para el mismo ciclo.",
+        });
+      }
+    }
+
+    if (reusablePending) {
       return NextResponse.json(
         {
           ok: true,
           reused: true,
-          checkoutUrl: existingCheckoutUrl,
+          checkoutUrl: reusablePending.checkoutUrl,
           suscripcionId: String(reusablePending.id),
           planId: effectivePlanId,
           agreementApplied: config.agreement_applied,
-          message: existingCheckoutUrl
-            ? "Ya existe un checkout pendiente para este ciclo. Se reutilizó el enlace existente."
-            : "Ya existe un pago pendiente para este ciclo. Esperá su acreditación antes de generar otro.",
+          message:
+            "Ya existe un checkout pendiente para este ciclo. Se reutilizó el enlace existente.",
           code: "PENDING_CHECKOUT_EXISTS",
           cicloObjetivoInicio: targetStart,
           cicloObjetivoFin: targetEnd,
         },
-        { status: existingCheckoutUrl ? 200 : 409 }
+        { status: 200 }
       );
     }
 
@@ -430,6 +528,21 @@ export async function POST(req: Request) {
       : `Plan ${planNombre}`;
 
     if (!MP_ACCESS_TOKEN) {
+      await cancelPendingCheckout({
+        suscripcionId,
+        metadata: {
+          initiated_by: user.id,
+          initiated_role: role,
+          source: "checkout_sandbox",
+          cycle_target_start: targetStart,
+          cycle_target_end: targetEnd,
+          snapshot,
+          ...snapshot,
+        },
+        cycleStatus: "payment_provider_not_configured",
+        reason: "Mercado Pago no está configurado.",
+      });
+
       return NextResponse.json(
         {
           error:
@@ -489,22 +602,21 @@ export async function POST(req: Request) {
     const mpJson = await mpResponse.json().catch(() => null);
 
     if (!mpResponse.ok || !mpJson) {
-      await supabaseAdmin
-        .from("suscripciones")
-        .update({
-          estado: "cancelada",
-          updated_at: new Date().toISOString(),
-          metadata: {
-            initiated_by: user.id,
-            initiated_role: role,
-            source: "checkout_mercadopago",
-            cycle_status: "preference_creation_failed",
-            snapshot,
-            ...snapshot,
-            provider_error: mpJson,
-          },
-        })
-        .eq("id", suscripcionId);
+      await cancelPendingCheckout({
+        suscripcionId,
+        metadata: {
+          initiated_by: user.id,
+          initiated_role: role,
+          source: "checkout_mercadopago",
+          cycle_target_start: targetStart,
+          cycle_target_end: targetEnd,
+          snapshot,
+          ...snapshot,
+          provider_error: mpJson,
+        },
+        cycleStatus: "preference_creation_failed",
+        reason: "Mercado Pago no pudo generar la preferencia de pago.",
+      });
 
       return NextResponse.json(
         { error: "Mercado Pago no pudo generar el checkout." },
@@ -514,18 +626,37 @@ export async function POST(req: Request) {
 
     const checkoutUrl = mpJson.init_point ?? mpJson.sandbox_init_point ?? null;
 
-    if (!checkoutUrl) {
+    const preferenceId = String(mpJson.id ?? "").trim() || null;
+
+    if (!checkoutUrl || !preferenceId) {
+      await cancelPendingCheckout({
+        suscripcionId,
+        metadata: {
+          initiated_by: user.id,
+          initiated_role: role,
+          source: "checkout_mercadopago",
+          cycle_target_start: targetStart,
+          cycle_target_end: targetEnd,
+          snapshot,
+          ...snapshot,
+          provider_response: mpJson,
+        },
+        cycleStatus: "preference_incomplete",
+        reason:
+          "Mercado Pago no devolvió una URL o un identificador de preferencia válido.",
+      });
+
       return NextResponse.json(
-        { error: "Mercado Pago no devolvió una URL de checkout." },
+        { error: "Mercado Pago devolvió un checkout incompleto." },
         { status: 502 }
       );
     }
 
     const checkoutCreatedAt = new Date().toISOString();
-    await supabaseAdmin
+    const { error: checkoutSaveError } = await supabaseAdmin
       .from("suscripciones")
       .update({
-        externo_subscription_id: String(mpJson.id ?? "") || null,
+        externo_subscription_id: preferenceId,
         updated_at: checkoutCreatedAt,
         metadata: {
           initiated_by: user.id,
@@ -534,14 +665,48 @@ export async function POST(req: Request) {
           cycle_status: "awaiting_payment",
           cycle_target_start: targetStart,
           cycle_target_end: targetEnd,
-          checkout_preference_id: String(mpJson.id ?? "") || null,
+          checkout_preference_id: preferenceId,
           checkout_url: checkoutUrl,
           checkout_created_at: checkoutCreatedAt,
           snapshot,
           ...snapshot,
         },
       })
-      .eq("id", suscripcionId);
+      .eq("id", suscripcionId)
+      .eq("estado", "pendiente");
+
+    if (checkoutSaveError) {
+      console.error(
+        "billing/checkout save preference error:",
+        checkoutSaveError.message
+      );
+
+      await cancelPendingCheckout({
+        suscripcionId,
+        metadata: {
+          initiated_by: user.id,
+          initiated_role: role,
+          source: "checkout_mercadopago",
+          cycle_target_start: targetStart,
+          cycle_target_end: targetEnd,
+          checkout_preference_id: preferenceId,
+          checkout_url: checkoutUrl,
+          checkout_created_at: checkoutCreatedAt,
+          snapshot,
+          ...snapshot,
+        },
+        cycleStatus: "checkout_persistence_failed",
+        reason: "No se pudo guardar el checkout generado en la base de datos.",
+      });
+
+      return NextResponse.json(
+        {
+          error:
+            "El checkout fue generado, pero no pudo guardarse correctamente. Volvé a intentarlo.",
+        },
+        { status: 500 }
+      );
+    }
 
     return NextResponse.json(
       {

@@ -1,26 +1,25 @@
 export type PlateFormat = "square" | "story" | "landscape";
-export type PlateTemplateId =
-  | "hero"
-  | "bottom"
-  | "side"
-  | "mosaic2"
-  | "mosaic3"
-  | "minimal"
-  | "circle"
-  | "opportunity"
-  | "premiumdark"
-  | "technical"
-  | "elegant"
-  | "stacked";
-export type PropertyStatus = "" | "RESERVADO" | "VENDIDO" | "ALQUILADO" | "EN ALQUILER" | "OPORTUNIDAD" | "NUEVO PRECIO";
-export type ImagePosition = "center" | "top" | "bottom" | "left" | "right";
-export type ImageFit = "cover" | "contain";
 
-export type LocalImage = {
-  id: string;
-  name: string;
-  url: string;
-};
+export type PlateTemplateId =
+  | "impact"
+  | "premium"
+  | "editorial"
+  | "technical"
+  | "mosaic2"
+  | "mosaic4"
+  | "opportunity"
+  | "residential"
+  | "land"
+  | "minimal";
+
+export type PropertyStatus =
+  | ""
+  | "RESERVADO"
+  | "VENDIDO"
+  | "ALQUILADO"
+  | "EN ALQUILER"
+  | "OPORTUNIDAD"
+  | "NUEVO PRECIO";
 
 export type BrandData = {
   companyName: string;
@@ -31,15 +30,7 @@ export type BrandData = {
   primaryColor: string;
 };
 
-export type PlateState = {
-  format: PlateFormat;
-  templateId: PlateTemplateId;
-  images: LocalImage[];
-  importedPlate: LocalImage | null;
-  useImportedPlateMode: boolean;
-  imagePosition: ImagePosition;
-  imageFit: ImageFit;
-  imageZoom: number;
+export type PropertyData = {
   operation: string;
   title: string;
   currency: string;
@@ -52,8 +43,8 @@ export type PlateState = {
   garages: string;
   coveredArea: string;
   totalArea: string;
-  hasPool: boolean;
   highlight: string;
+  hasPool: boolean;
   status: PropertyStatus;
   showStatus: boolean;
   showPrice: boolean;

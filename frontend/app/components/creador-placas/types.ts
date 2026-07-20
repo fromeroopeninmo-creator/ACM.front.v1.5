@@ -1,7 +1,20 @@
 export type PlateFormat = "square" | "story" | "landscape";
-export type PlateTemplateId = "hero" | "bottom" | "side" | "mosaic2" | "mosaic3" | "minimal";
+export type PlateTemplateId =
+  | "hero"
+  | "bottom"
+  | "side"
+  | "mosaic2"
+  | "mosaic3"
+  | "minimal"
+  | "circle"
+  | "opportunity"
+  | "premiumdark"
+  | "technical"
+  | "elegant"
+  | "stacked";
 export type PropertyStatus = "" | "RESERVADO" | "VENDIDO" | "ALQUILADO" | "EN ALQUILER" | "OPORTUNIDAD" | "NUEVO PRECIO";
 export type ImagePosition = "center" | "top" | "bottom" | "left" | "right";
+export type ImageFit = "cover" | "contain";
 
 export type LocalImage = {
   id: string;
@@ -25,6 +38,7 @@ export type PlateState = {
   importedPlate: LocalImage | null;
   useImportedPlateMode: boolean;
   imagePosition: ImagePosition;
+  imageFit: ImageFit;
   imageZoom: number;
   operation: string;
   title: string;
@@ -32,11 +46,13 @@ export type PlateState = {
   price: string;
   oldPrice: string;
   location: string;
+  ambients: string;
   bedrooms: string;
   bathrooms: string;
   garages: string;
   coveredArea: string;
   totalArea: string;
+  hasPool: boolean;
   highlight: string;
   status: PropertyStatus;
   showStatus: boolean;

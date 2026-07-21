@@ -22,16 +22,13 @@ const FORMATS: Record<PlateFormat, { width: number; height: number; label: strin
 };
 
 const TEMPLATES: Array<{ id: PlateTemplateId; name: string; detail: string }> = [
-  { id: "impact", name: "Impacto fotográfico", detail: "Foto completa, degradado y datos fuertes" },
-  { id: "premium", name: "Premium oscuro", detail: "Galería, panel oscuro y precio destacado" },
-  { id: "editorial", name: "Editorial geométrica", detail: "Formas diagonales y composición de revista" },
-  { id: "technical", name: "Ficha técnica", detail: "Foto protagonista y datos ordenados" },
-  { id: "mosaic2", name: "Mosaico doble", detail: "Una foto principal y una secundaria" },
-  { id: "mosaic4", name: "Mosaico cuatro", detail: "Galería completa con tarjeta central" },
-  { id: "opportunity", name: "Oportunidad", detail: "Negro, amarillo y jerarquía de precio" },
-  { id: "residential", name: "Residencial elegante", detail: "Curvas suaves y look inmobiliario premium" },
-  { id: "land", name: "Terreno / desarrollo", detail: "Datos técnicos, superficie y ubicación" },
-  { id: "minimal", name: "Minimal corporativo", detail: "Limpio, sobrio y adaptable a marca" },
+  { id: "residential", name: "Círculos inmobiliarios", detail: "Foto principal, recortes circulares y panel de datos" },
+  { id: "mosaic2", name: "Galería inferior", detail: "Foto principal con dos imágenes de apoyo y banda inferior" },
+  { id: "editorial", name: "Diagonal corporativa", detail: "Formas geométricas, contraste y foco en la propiedad" },
+  { id: "mosaic4", name: "Collage central", detail: "Cuatro fotos con ficha central destacada" },
+  { id: "premium", name: "Vertical lateral", detail: "Galería apilada y panel lateral editable" },
+  { id: "opportunity", name: "Vertical oportunidad", detail: "Precio protagonista y bloques de color editables" },
+  { id: "technical", name: "Vertical ficha técnica", detail: "Composición limpia con datos, iconos y foto amplia" },
 ];
 
 const STATUS_OPTIONS: PropertyStatus[] = [
@@ -69,6 +66,7 @@ const DEFAULT_DATA: PropertyData = {
   showLogo: true,
   primaryColor: "#d4a64d",
   secondaryColor: "#111827",
+  accentColor: "#ffffff",
 };
 
 function formatPrice(currency: string, value: string): string {
@@ -126,12 +124,13 @@ export default function PlateEditor({ mode }: { mode: "empresa" | "asesor" }) {
   const { primaryColor: themeColor, logoUrl: themeLogo } = useTheme();
 
   const htmlCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const previewContainerRef = useRef<HTMLDivElement | null>(null);
   const fabricCanvasRef = useRef<any>(null);
   const fabricModuleRef = useRef<any>(null);
   const buildSequenceRef = useRef(0);
 
   const [format, setFormat] = useState<PlateFormat>("square");
-  const [templateId, setTemplateId] = useState<PlateTemplateId>("impact");
+  const [templateId, setTemplateId] = useState<PlateTemplateId>("residential");
   const [data, setData] = useState<PropertyData>(DEFAULT_DATA);
   const [images, setImages] = useState<string[]>([]);
   const [brand, setBrand] = useState<BrandData>({
@@ -149,13 +148,14 @@ export default function PlateEditor({ mode }: { mode: "empresa" | "asesor" }) {
   const [message, setMessage] = useState<string | null>(null);
   const [selectedPhotoSlot, setSelectedPhotoSlot] = useState<number | null>(null);
   const [selectedPhotoZoom, setSelectedPhotoZoom] = useState(1);
+  const [previewWidth, setPreviewWidth] = useState(760);
 
   const size = FORMATS[format];
   const previewScale = useMemo(() => {
-    const maxWidth = format === "story" ? 430 : 760;
-    const maxHeight = 760;
-    return Math.min(maxWidth / size.width, maxHeight / size.height, 1);
-  }, [format, size.height, size.width]);
+    const safeWidth = Math.max(240, previewWidth);
+    const maxHeight = typeof window !== "undefined" ? Math.max(420, window.innerHeight - 150) : 760;
+    return Math.min(safeWidth / size.width, maxHeight / size.height, 1);
+  }, [previewWidth, size.height, size.width]);
 
   const updateData = <K extends keyof PropertyData>(key: K, value: PropertyData[K]) => {
     setData((prev) => ({ ...prev, [key]: value }));
@@ -164,6 +164,21 @@ export default function PlateEditor({ mode }: { mode: "empresa" | "asesor" }) {
   useEffect(() => {
     setData((prev) => ({ ...prev, primaryColor: themeColor || prev.primaryColor }));
   }, [themeColor]);
+
+
+  useEffect(() => {
+    const element = previewContainerRef.current;
+    if (!element) return;
+    const update = () => setPreviewWidth(Math.max(240, element.clientWidth - 2));
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(element);
+    window.addEventListener("resize", update);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", update);
+    };
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -756,7 +771,7 @@ export default function PlateEditor({ mode }: { mode: "empresa" | "asesor" }) {
           { x: W * 0.33, y: H },
           { x: 0, y: H },
         ],
-        "#facc15",
+        data.accentColor,
       );
       text("opportunityLabel", data.status || "EN OPORTUNIDAD", W * 0.04, topH + 34 * unit, W * 0.32, 24 * unit, {
         fill: "#111827",
@@ -1024,7 +1039,7 @@ export default function PlateEditor({ mode }: { mode: "empresa" | "asesor" }) {
       </header>
 
       <div className="grid items-start gap-5 xl:grid-cols-[400px_minmax(0,1fr)]">
-        <aside className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <aside className="min-w-0 space-y-4 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm sm:p-4">
           <Section title="Formato y plantilla">
             <Field label="Formato de salida">
               <select className="vai-input" value={format} onChange={(event) => setFormat(event.target.value as PlateFormat)}>
@@ -1133,13 +1148,17 @@ export default function PlateEditor({ mode }: { mode: "empresa" | "asesor" }) {
           </Section>
 
           <Section title="Colores">
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 xl:grid-cols-1 2xl:grid-cols-3">
               <ColorInput label="Principal" value={data.primaryColor} onChange={(value) => updateData("primaryColor", value)} />
               <ColorInput label="Secundario" value={data.secondaryColor} onChange={(value) => updateData("secondaryColor", value)} />
+              <ColorInput label="Acento" value={data.accentColor} onChange={(value) => updateData("accentColor", value)} />
             </div>
-            <button type="button" className="vai-secondary w-full" onClick={() => updateData("primaryColor", brand.primaryColor)}>
-              Restaurar color corporativo
-            </button>
+            <div className="grid grid-cols-2 gap-2">
+              <button type="button" className="vai-secondary" onClick={() => setData((prev) => ({ ...prev, primaryColor: brand.primaryColor, secondaryColor: "#111827", accentColor: "#ffffff" }))}>Corporativo</button>
+              <button type="button" className="vai-secondary" onClick={() => setData((prev) => ({ ...prev, primaryColor: "#0f172a", secondaryColor: "#e5e7eb", accentColor: "#f59e0b" }))}>Oscuro</button>
+              <button type="button" className="vai-secondary" onClick={() => setData((prev) => ({ ...prev, primaryColor: "#0f766e", secondaryColor: "#ecfeff", accentColor: "#f97316" }))}>Moderno</button>
+              <button type="button" className="vai-secondary" onClick={() => setData((prev) => ({ ...prev, primaryColor: "#7f1d1d", secondaryColor: "#fff7ed", accentColor: "#facc15" }))}>Oportunidad</button>
+            </div>
           </Section>
 
           <div className="grid grid-cols-2 gap-2">
@@ -1150,14 +1169,14 @@ export default function PlateEditor({ mode }: { mode: "empresa" | "asesor" }) {
           {message ? <div className="rounded-xl bg-slate-100 p-3 text-sm text-slate-700">{message}</div> : null}
         </aside>
 
-        <main className="xl:sticky xl:top-5">
+        <main className="min-w-0 self-start xl:sticky xl:top-5 xl:max-h-[calc(100vh-2.5rem)]">
           <div className="rounded-2xl border border-slate-200 bg-slate-100 p-4 shadow-inner">
             <div className="mb-3 flex items-center justify-between text-xs text-slate-500">
               <span>Vista previa interactiva</span>
               <span>{size.width} × {size.height}px</span>
             </div>
-            <div className="overflow-auto">
-              <div style={{ width: size.width * previewScale, height: size.height * previewScale }}>
+            <div ref={previewContainerRef} className="w-full overflow-hidden">
+              <div className="mx-auto" style={{ width: size.width * previewScale, height: size.height * previewScale }}>
                 <div style={{ transform: `scale(${previewScale})`, transformOrigin: "top left", width: size.width, height: size.height }}>
                   <canvas ref={htmlCanvasRef} />
                 </div>
@@ -1178,7 +1197,9 @@ export default function PlateEditor({ mode }: { mode: "empresa" | "asesor" }) {
         .vai-secondary { border-radius:.8rem; border:1px solid #cbd5e1; background:white; color:#0f172a; padding:.8rem 1rem; font-weight:700; font-size:.875rem; }
         .vai-secondary:disabled { opacity:.5; }
         .vai-mini { height:1.8rem; min-width:1.8rem; border-radius:.45rem; border:1px solid #cbd5e1; background:white; font-weight:700; }
-        .canvas-container { box-shadow:0 18px 45px rgba(15,23,42,.18); background:white; }
+        .canvas-container { box-shadow:0 18px 45px rgba(15,23,42,.18); background:white; max-width:100%; }
+        @media (max-width: 1279px) { .canvas-container { margin:0 auto; } }
+        @media (max-width: 640px) { .vai-input { font-size:16px; } .vai-primary, .vai-secondary { min-height:44px; } }
       `}</style>
     </div>
   );

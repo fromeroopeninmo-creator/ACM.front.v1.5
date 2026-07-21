@@ -55,4 +55,5 @@ export type PropertyData = {
   showLogo: boolean;
   primaryColor: string;
   secondaryColor: string;
+  accentColor: string;
 };

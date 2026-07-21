@@ -1,16 +1,5 @@
 export type PlateFormat = "square" | "story" | "landscape";
-
-export type PlateTemplateId =
-  | "impact"
-  | "premium"
-  | "editorial"
-  | "technical"
-  | "mosaic2"
-  | "mosaic4"
-  | "opportunity"
-  | "residential"
-  | "land"
-  | "minimal";
+export type PlateTemplateId = "circles-controlled";
 
 export type PropertyStatus =
   | ""

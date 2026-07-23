@@ -262,7 +262,7 @@ export default function EmpresaInformesPage() {
     if (inf.tipo_informe === "FACT") {
       router.push(`/dashboard/empresa/factibilidad?id=${inf.id}`);
     } else {
-      router.push(`/vai/acmforms?id=${inf.id}`);
+      router.push(`/dashboard/empresa/vai?id=${encodeURIComponent(inf.id)}`);
     }
   };
 

@@ -263,7 +263,7 @@ export default function AsesorInformesPage() {
     if (inf.tipo_informe === "FACT") {
       router.push(`/dashboard/asesor/factibilidad?id=${inf.id}`);
     } else {
-      router.push(`/vai/acmforms?id=${inf.id}`);
+      router.push(`/dashboard/asesor/vai?id=${encodeURIComponent(inf.id)}`);
     }
   };
 
@@ -274,7 +274,7 @@ export default function AsesorInformesPage() {
       <section className="bg-white shadow-sm rounded-xl p-6 flex items-center justify-between">
         <h1 className="text-xl md:text-2xl font-bold">Informes</h1>
         <Link
-          href="/vai/acmforms"
+          href="/dashboard/asesor/vai"
           className="px-6 py-3 text-white font-semibold rounded-lg shadow transition text-center bg-blue-600 hover:bg-blue-700"
         >
           ➕ Nuevo Informe de Valuación

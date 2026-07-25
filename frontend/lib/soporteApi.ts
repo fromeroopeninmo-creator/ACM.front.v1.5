@@ -66,6 +66,9 @@ export type EmpresaDetalle = {
     cuit?: string | null;
     condicion_fiscal?: string | null;
     telefono?: string | null;
+    email?: string | null;
+    titular_nombre?: string | null;
+    titular_user_id?: string | null;
     direccion?: string | null;
     localidad?: string | null;
     provincia?: string | null;
@@ -260,7 +263,7 @@ export async function getEmpresaDetalle(
           max_asesores_final: raw.plan.maxAsesoresFinal ?? null,
 
           // Estado/flags del plan
-          es_trial: raw.plan.es_trial ?? null,
+          es_trial: raw.plan.esTrial ?? raw.plan.es_trial ?? null,
         }
       : null;
 
@@ -308,6 +311,9 @@ export async function getEmpresaDetalle(
       cuit: raw?.empresa?.cuit ?? null,
       condicion_fiscal: raw?.empresa?.condicion_fiscal ?? null,
       telefono: raw?.empresa?.telefono ?? null,
+      email: raw?.empresa?.email ?? null,
+      titular_nombre: raw?.empresa?.titular_nombre ?? null,
+      titular_user_id: raw?.empresa?.titular_user_id ?? null,
       direccion: raw?.empresa?.direccion ?? null,
       localidad: raw?.empresa?.localidad ?? null,
       provincia: raw?.empresa?.provincia ?? null,

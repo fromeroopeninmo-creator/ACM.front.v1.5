@@ -100,10 +100,20 @@ export async function GET(
     const { data: empresaRow } = await supabaseAdmin
       .from("empresas")
       .select(
-        "logo_url, color, condicion_fiscal, telefono, direccion, localidad, provincia, suspendida, suspendida_at, suspension_motivo"
+        "user_id, id_usuario, logo_url, color, condicion_fiscal, telefono, direccion, localidad, provincia, suspendida, suspendida_at, suspension_motivo"
       )
       .eq("id", empresaId)
       .maybeSingle();
+
+    const titularUserId = empresaRow?.user_id ?? empresaRow?.id_usuario ?? null;
+    const { data: titularProfile } = titularUserId
+      ? await supabaseAdmin
+          .from("profiles")
+          .select("id, email, nombre, apellido, telefono")
+          .or(`id.eq.${titularUserId},user_id.eq.${titularUserId}`)
+          .limit(1)
+          .maybeSingle()
+      : { data: null };
 
     // 2.1) Plan operativo SOLO ACTIVO
     const { data: planActivoRow } = await supabaseAdmin
@@ -297,12 +307,13 @@ export async function GET(
       return NextResponse.json({ error: accErr.message }, { status: 400 });
     }
 
-    // 4) Listado de asesores
+    // 4) Listado REAL de asesores desde profiles.
     const { data: asesores, error: asesErr } = await supabaseAdmin
-      .from("asesores")
-      .select("id, nombre, apellido, email, activo, fecha_creacion")
+      .from("profiles")
+      .select("id, nombre, apellido, email, created_at, empresa_id")
       .eq("empresa_id", empresaId)
-      .order("fecha_creacion", { ascending: false });
+      .eq("role", "asesor")
+      .order("created_at", { ascending: false });
 
     if (asesErr) {
       return NextResponse.json({ error: asesErr.message }, { status: 400 });
@@ -334,7 +345,10 @@ export async function GET(
         logoUrl: empresaRow?.logo_url ?? null,
         color: empresaRow?.color ?? null,
         condicion_fiscal: empresaRow?.condicion_fiscal ?? null,
-        telefono: empresaRow?.telefono ?? null,
+        telefono: empresaRow?.telefono ?? titularProfile?.telefono ?? null,
+        email: titularProfile?.email ?? null,
+        titular_nombre: [titularProfile?.nombre, titularProfile?.apellido].filter(Boolean).join(" ") || null,
+        titular_user_id: titularUserId,
         direccion: empresaRow?.direccion ?? null,
         localidad: empresaRow?.localidad ?? null,
         provincia: empresaRow?.provincia ?? null,
@@ -383,6 +397,7 @@ export async function GET(
               billingConfig?.max_asesores_final ??
               (planOperativo?.max_asesores_override ?? null) ??
               (planBaseRow?.max_asesores ?? null),
+            esTrial: planBaseRow?.es_trial == null ? null : Boolean(planBaseRow.es_trial),
           }
         : null,
       acuerdoComercial:
@@ -422,7 +437,7 @@ export async function GET(
             }
           : null,
       kpis: {
-        asesoresTotales: detalle.asesores_totales ?? 0,
+        asesoresTotales: asesores?.length ?? 0,
         informesTotales: detalle.informes_totales ?? 0,
       },
       ultimasAccionesSoporte:
@@ -439,8 +454,8 @@ export async function GET(
           nombre: a.nombre,
           apellido: a.apellido,
           email: a.email,
-          activo: a.activo,
-          fecha_creacion: a.fecha_creacion,
+          activo: true,
+          fecha_creacion: a.created_at,
         })) ?? [],
       informes:
         (informes || []).map((i) => ({

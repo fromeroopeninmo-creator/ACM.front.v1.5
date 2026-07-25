@@ -6,6 +6,7 @@ import { supabaseServer } from "#lib/supabaseServer";
 import { getEmpresaDetalle, type EmpresaDetalle } from "#lib/soporteApi";
 import AcuerdoComercialAdminCard from "./AcuerdoComercialAdminCard";
 import AccessControlAdminCard from "./AccessControlAdminCard";
+import PasswordResetAdminButton from "./PasswordResetAdminButton";
 
 export const dynamic = "force-dynamic";
 
@@ -157,6 +158,17 @@ export default async function AdminEmpresaDetallePage({
     if (billingRes.ok) billingEstado = await billingRes.json();
   } catch {
     billingEstado = null;
+  }
+
+  let historial: { ciclos: any[]; acuerdos: any[] } = { ciclos: [], acuerdos: [] };
+  try {
+    const historialRes = await fetch(
+      `${getBaseUrl()}/api/admin/empresas/${encodeURIComponent(params.empresaId)}/historial`,
+      { headers: { cookie: cookieHeader }, cache: "no-store" },
+    );
+    if (historialRes.ok) historial = await historialRes.json();
+  } catch {
+    historial = { ciclos: [], acuerdos: [] };
   }
 
   const suspendida = !!detalle?.empresa?.suspendida;
@@ -312,7 +324,14 @@ export default async function AdminEmpresaDetallePage({
                       .join(", ") || "—"}
                   </div>
                   <div>Condición fiscal: {detalle.empresa.condicion_fiscal || "—"}</div>
+                  <div>Titular: {detalle.empresa.titular_nombre || "—"}</div>
+                  <div>Email: {detalle.empresa.email || "—"}</div>
                   <div>Teléfono: {detalle.empresa.telefono || "—"}</div>
+                  {detalle.empresa.email ? (
+                    <div className="mt-3">
+                      <PasswordResetAdminButton email={detalle.empresa.email} />
+                    </div>
+                  ) : null}
                 </div>
               </div>
 
@@ -709,6 +728,51 @@ export default async function AdminEmpresaDetallePage({
             </div>
           )}
 
+
+          <section className="rounded-2xl border bg-white p-4 dark:bg-neutral-900">
+            <h2 className="text-lg font-semibold">Histórico de ciclos de pago</h2>
+            <p className="mt-1 text-sm text-gray-500">Incluye ciclos activos, vencidos, cancelados y pendientes.</p>
+            <div className="mt-4 overflow-x-auto">
+              <table className="min-w-[900px] w-full text-sm">
+                <thead><tr className="border-b text-left text-xs text-gray-500"><th className="p-2">Plan</th><th className="p-2">Estado</th><th className="p-2">Inicio</th><th className="p-2">Fin</th><th className="p-2">Moneda</th><th className="p-2">Importe</th><th className="p-2">Creado</th></tr></thead>
+                <tbody>
+                  {historial.ciclos.length ? historial.ciclos.map((c: any) => (
+                    <tr key={c.id} className="border-b last:border-0">
+                      <td className="p-2">{c.plan_nombre || "—"}</td>
+                      <td className="p-2"><span className={statusBadgeClass(c.estado === "activa" ? "ok" : c.estado === "cancelada" ? "neutral" : "warn")}>{c.estado || "—"}</span></td>
+                      <td className="p-2">{fmtDateOnly(c.ciclo_inicio ?? c.inicio)}</td>
+                      <td className="p-2">{fmtDateOnly(c.ciclo_fin ?? c.fin)}</td>
+                      <td className="p-2">{c.moneda || "—"}</td>
+                      <td className="p-2">{fmtMoney(c.precio_neto_override ?? c.metadata?.precio_neto_final ?? c.metadata?.snapshot?.precio_neto_final ?? null)}</td>
+                      <td className="p-2">{fmtDate(c.created_at)}</td>
+                    </tr>
+                  )) : <tr><td colSpan={7} className="p-4 text-center text-gray-500">Sin ciclos registrados.</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section className="rounded-2xl border bg-white p-4 dark:bg-neutral-900">
+            <h2 className="text-lg font-semibold">Histórico de acuerdos comerciales</h2>
+            <div className="mt-4 overflow-x-auto">
+              <table className="min-w-[1000px] w-full text-sm">
+                <thead><tr className="border-b text-left text-xs text-gray-500"><th className="p-2">Plan</th><th className="p-2">Estado</th><th className="p-2">Tipo</th><th className="p-2">Precio neto</th><th className="p-2">Cupo</th><th className="p-2">Vigencia</th><th className="p-2">Observaciones</th></tr></thead>
+                <tbody>
+                  {historial.acuerdos.length ? historial.acuerdos.map((a: any) => (
+                    <tr key={a.id} className="border-b last:border-0">
+                      <td className="p-2">{a.plan_nombre || "—"}</td>
+                      <td className="p-2"><span className={statusBadgeClass(a.activo ? "ok" : "neutral")}>{a.activo ? "Activo" : "Inactivo"}</span></td>
+                      <td className="p-2">{a.tipo_acuerdo || "—"}</td>
+                      <td className="p-2">{fmtMoney(a.precio_neto_fijo)}</td>
+                      <td className="p-2">{fmtNumber(a.max_asesores_override)}</td>
+                      <td className="p-2">{fmtDateOnly(a.fecha_inicio)} — {fmtDateOnly(a.fecha_fin)}</td>
+                      <td className="p-2 max-w-[320px] break-words">{a.observaciones || a.motivo || "—"}</td>
+                    </tr>
+                  )) : <tr><td colSpan={7} className="p-4 text-center text-gray-500">Sin acuerdos registrados.</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          </section>
 
         </>
       )}

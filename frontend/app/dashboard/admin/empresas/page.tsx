@@ -179,12 +179,20 @@ export default async function EmpresasPage({
               Estado real de acceso, ciclos vigentes y acuerdos comerciales.
             </p>
           </div>
-          <a
-            href="/dashboard/admin"
-            className="w-full rounded-xl border bg-white px-4 py-2.5 text-center text-sm font-semibold hover:bg-slate-50 dark:bg-neutral-900 sm:w-auto"
-          >
-            ← Volver al panel
-          </a>
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+            <a
+              href="/api/admin/empresas/export"
+              className="w-full rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-center text-sm font-semibold text-emerald-700 hover:bg-emerald-100 sm:w-auto"
+            >
+              Descargar CSV
+            </a>
+            <a
+              href="/dashboard/admin"
+              className="w-full rounded-xl border bg-white px-4 py-2.5 text-center text-sm font-semibold hover:bg-slate-50 dark:bg-neutral-900 sm:w-auto"
+            >
+              ← Volver al panel
+            </a>
+          </div>
         </header>
 
         <section className="min-w-0 rounded-2xl border bg-white p-4 shadow-sm dark:bg-neutral-900">

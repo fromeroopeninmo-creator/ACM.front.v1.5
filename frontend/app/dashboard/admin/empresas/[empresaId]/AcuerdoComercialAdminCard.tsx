@@ -27,6 +27,13 @@ type AcuerdoComercial = {
   observaciones?: string | null;
 } | null;
 
+const COMMERCIAL_PLAN_IDS = [
+  "b68eba23-7352-4cf4-a20b-9a31d4a938cf", // Broker
+  "d683cfa9-a7fc-46d6-948c-549b1cf81765", // Equipo
+  "ab561d53-97d3-4247-a954-eb0419eb6cc6", // Team Pro
+  "33b41048-feaf-481d-bfff-f9eb46e96916", // Enterprise
+];
+
 type Props = {
   empresaId: string;
   acuerdoActual: AcuerdoComercial;
@@ -201,6 +208,7 @@ export default function AcuerdoComercialAdminCard({
         const { data, error } = await supabase
           .from("planes")
           .select("id, nombre, tipo_plan, max_asesores, precio, duracion_dias, es_trial")
+          .in("id", COMMERCIAL_PLAN_IDS)
           .order("max_asesores", { ascending: true });
 
         if (error) {

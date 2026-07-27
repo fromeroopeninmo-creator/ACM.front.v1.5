@@ -615,9 +615,47 @@ export async function POST(req: Request) {
         const empresaId = String(pending.empresa_id);
         const planId = String(pending.plan_actual_id ?? pending.plan_id);
         const approvedAt = event.data.approvedAt ?? nowISO();
-        const currentEnd = await getCurrentCycleEnd(empresaId, String(pending.id));
-        const cycleStart = currentEnd && currentEnd > approvedAt ? currentEnd : approvedAt;
+        const isImmediateChange =
+          (currentMetadata as any).cycle_mode === "immediate_change";
+        const currentEnd = isImmediateChange
+          ? null
+          : await getCurrentCycleEnd(empresaId, String(pending.id));
+        const cycleStart =
+          currentEnd && currentEnd > approvedAt ? currentEnd : approvedAt;
         const cycleEnd = addOneCalendarMonth(cycleStart);
+
+        if (isImmediateChange) {
+          const { data: activeRows } = await supabaseAdmin
+            .from("suscripciones")
+            .select("id, metadata")
+            .eq("empresa_id", empresaId)
+            .eq("estado", "activa")
+            .neq("id", pending.id);
+
+          for (const activeRow of activeRows ?? []) {
+            const activeMetadata =
+              activeRow?.metadata && typeof activeRow.metadata === "object"
+                ? activeRow.metadata
+                : {};
+
+            await supabaseAdmin
+              .from("suscripciones")
+              .update({
+                estado: "cancelada",
+                fin: approvedAt,
+                ciclo_fin: approvedAt,
+                updated_at: nowISO(),
+                metadata: {
+                  ...activeMetadata,
+                  cycle_status: "replaced_by_immediate_change",
+                  replaced_at: approvedAt,
+                  replaced_by_subscription_id: String(pending.id),
+                },
+              })
+              .eq("id", activeRow.id)
+              .eq("estado", "activa");
+          }
+        }
 
         const finalMetadata = {
           ...currentMetadata,
@@ -628,6 +666,7 @@ export async function POST(req: Request) {
           approved_at: approvedAt,
           cycle_start: cycleStart,
           cycle_end: cycleEnd,
+          cycle_mode: isImmediateChange ? "immediate_change" : "renewal",
           synced_by_webhook: true,
           raw_payment: event.data.rawPayment,
         };

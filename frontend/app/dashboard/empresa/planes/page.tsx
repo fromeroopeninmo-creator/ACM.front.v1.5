@@ -4,75 +4,38 @@ import { useEffect, useMemo, useState } from "react";
 import { supabase } from "#lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
 
-interface EmpresaPlan {
-  plan_id: string;
-  plan_nombre: string;
-  tipo_plan?: string | null;
-  fecha_inicio: string;
-  fecha_fin: string;
-  activo: boolean;
-  max_asesores: number;
-}
+const PLAN_IDS = {
+  broker: "b68eba23-7352-4cf4-a20b-9a31d4a938cf",
+  equipo: "d683cfa9-a7fc-46d6-948c-549b1cf81765",
+  teamPro: "ab561d53-97d3-4247-a954-eb0419eb6cc6",
+  enterprise: "33b41048-feaf-481d-bfff-f9eb46e96916",
+} as const;
+
+const COMMERCIAL_PLAN_IDS = Object.values(PLAN_IDS);
+const ENTERPRISE_PLAN_ID = PLAN_IDS.enterprise;
+const WHATSAPP_URL =
+  "https://wa.me/5493513280798?text=Hola%2C%20quiero%20recibir%20una%20propuesta%20para%20el%20plan%20Enterprise%20de%20VAI%20Prop.";
+const CONTACT_EMAIL = "info@vaiprop.com";
 
 interface Plan {
   id: string;
   nombre: string;
-  tipo_plan?: string | null;
-  incluye_valuador?: boolean | null;
-  incluye_tracker?: boolean | null;
+  nombre_comercial?: string | null;
   max_asesores: number;
   precio?: number | string | null;
   duracion_dias?: number | null;
-  precio_extra_por_asesor?: number | string | null;
+  incluye_valuador?: boolean | null;
+  incluye_tracker?: boolean | null;
 }
 
-type PreviewResult = {
-  tipo?: "upgrade" | "downgrade" | "sin_cambio";
-  accion?: "upgrade" | "downgrade" | "sin_cambio";
-  empresa_id: string;
-  plan_actual?: { id: string; nombre: string; precio_neto?: number | null } | null;
-  plan_nuevo?: { id: string; nombre: string; precio_neto?: number | null } | null;
-  dias_ciclo?: number | null;
-  dias_restantes?: number | null;
-  delta_neto?: number;
-  iva?: number;
-  total?: number;
-  aplicar_desde?: string | null;
-  nota?: string | null;
-  ciclo?: {
-    inicio?: string;
-    fin?: string;
-    dias_ciclo?: number | null;
-    dias_restantes?: number | null;
-  };
-  delta?: {
-    neto?: number;
-    iva?: number;
-    total?: number;
-    moneda?: string;
-  };
-};
-
-type TipoPlanKind = "combo" | "core" | "tracker_only";
-
 type BillingEstado = {
-  plan: {
-    id: string;
-    nombre: string;
-    precioNeto?: number | null;
-    totalConIVA?: number | null;
-    precioBaseNeto?: number | null;
+  plan?: {
+    id?: string | null;
+    nombre?: string | null;
     precioNetoFinal?: number | null;
-    ivaModo?: string | null;
-    ivaPct?: number | null;
-    ivaImporte?: number | null;
     precioTotalFinal?: number | null;
-    pricingSource?: string | null;
-    tipo_plan?: string | null;
-    incluye_valuador?: boolean | null;
-    incluye_tracker?: boolean | null;
-    es_trial?: boolean | null;
     duracion_dias?: number | null;
+    es_trial?: boolean | null;
   } | null;
   ciclo?: {
     inicio?: string | null;
@@ -81,1146 +44,571 @@ type BillingEstado = {
   } | null;
   estado?: {
     suspendida?: boolean;
-    suspendida_motivo?: string | null;
-    suspendida_at?: string | null;
     plan_vencido?: boolean;
-    dias_desde_vencimiento?: number | null;
-    en_periodo_gracia?: boolean;
     requiere_seleccion_plan?: boolean;
     requiere_pago?: boolean;
     requiere_pago_inicial_acuerdo?: boolean;
   } | null;
   pricing?: {
-    precio_base_neto?: number | null;
     precio_neto_final?: number | null;
+    precio_total_final?: number | null;
     modo_iva?: string | null;
     iva_pct?: number | null;
-    iva_importe?: number | null;
-    precio_total_final?: number | null;
-    pricing_source?: string | null;
-    suscripcion_override_applied?: boolean;
-    suscripcion_precio_neto_override?: number | null;
   } | null;
   cupos?: {
-    max_asesores_plan?: number | null;
     max_asesores_final?: number | null;
-    precio_extra_por_asesor_plan?: number | null;
-    precio_extra_por_asesor_final?: number | null;
   } | null;
   acuerdoComercial?: {
     activo: boolean;
     id?: string | null;
-    tipo?: string | null;
     plan_id?: string | null;
     fecha_inicio?: string | null;
     fecha_fin?: string | null;
-    modo_iva?: string | null;
-    iva_pct?: number | null;
     precio_neto_final?: number | null;
     precio_total_final?: number | null;
     max_asesores_final?: number | null;
-    precio_extra_por_asesor_final?: number | null;
   } | null;
 };
 
-function tierFromMaxAsesores(max: number): "Inicial" | "Pro" | "Premium" | "Personalizado" {
-  if (!max || max <= 4) return "Inicial";
-  if (max <= 10) return "Pro";
-  if (max <= 20) return "Premium";
-  return "Personalizado";
+type PendingAction = {
+  plan: Plan;
+  kind: "change" | "agreement_locked";
+};
+
+function numberValue(value?: number | string | null): number {
+  if (value == null) return 0;
+  return typeof value === "string" ? Number(value) : value;
 }
 
-function tierDisplayName(tier: "Inicial" | "Pro" | "Premium" | "Personalizado"): string {
-  if (tier === "Pro") return "Profesional";
-  return tier;
-}
-
-const displayPlanName = (n: string) => (n === "Pro" ? "Profesional" : n);
-
-function getPlanUiName(plan: Plan): string {
-  const tipo = (plan.tipo_plan || "").toLowerCase();
-  const tier = tierFromMaxAsesores(plan.max_asesores);
-  const tierLabel = tierDisplayName(tier);
-
-  if (tipo === "combo") return `Full ${tierLabel}`;
-  if (tipo === "core") return `Core ${tierLabel}`;
-  if (tipo === "tracker_only") return `Tracker ${tierLabel}`;
-
-  return displayPlanName(plan.nombre);
-}
-
-function getEmpresaPlanUiName(ep: EmpresaPlan | null): string {
-  if (!ep) return "Sin plan";
-  const tipo = (ep.tipo_plan || "").toLowerCase();
-  const tier = tierFromMaxAsesores(ep.max_asesores || 0);
-  const tierLabel = tierDisplayName(tier);
-
-  if (tipo === "combo") return `Full ${tierLabel}`;
-  if (tipo === "core") return `Core ${tierLabel}`;
-  if (tipo === "tracker_only") return `Tracker ${tierLabel}`;
-
-  return displayPlanName(ep.plan_nombre);
-}
-
-function isHiddenPlan(plan: Plan): boolean {
-  const tipo = (plan.tipo_plan || "").toLowerCase();
-  if (tipo === "trial") return true;
-  if (plan.nombre === "Desarrollo") return true;
-  return false;
-}
-
-function fmtMoney(value?: number | string | null) {
-  if (value == null) return "—";
-  const n = typeof value === "string" ? parseFloat(value) : value;
-  if (!isFinite(n)) return "—";
-  if (n === 0) return "$ 0";
+function fmtMoney(value?: number | string | null): string {
+  const amount = numberValue(value);
+  if (!Number.isFinite(amount)) return "—";
   return new Intl.NumberFormat("es-AR", {
     style: "currency",
     currency: "ARS",
     maximumFractionDigits: 0,
-  }).format(n);
+  }).format(amount);
 }
 
-function fmtModoIVA(v?: string | null) {
-  switch (v) {
-    case "sumar_al_neto":
-      return "Sumar al neto";
-    case "incluido_en_precio":
-      return "Incluido en precio";
-    case "no_aplica":
-      return "No aplica";
+function fmtDate(value?: string | null): string {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  return new Intl.DateTimeFormat("es-AR", {
+    timeZone: "America/Argentina/Cordoba",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  }).format(date);
+}
+
+function daysRemaining(end?: string | null): number | null {
+  if (!end) return null;
+  const endMs = new Date(end).getTime();
+  if (Number.isNaN(endMs)) return null;
+  return Math.max(0, Math.ceil((endMs - Date.now()) / 86_400_000));
+}
+
+function planDescription(planId: string): string {
+  switch (planId) {
+    case PLAN_IDS.broker:
+      return "Ideal para brokers independientes que trabajan con una única cuenta.";
+    case PLAN_IDS.equipo:
+      return "Para inmobiliarias y equipos pequeños que necesitan medir su operación.";
+    case PLAN_IDS.teamPro:
+      return "Pensado para equipos comerciales consolidados y en crecimiento.";
+    case PLAN_IDS.enterprise:
+      return "Condiciones, cupos e implementación personalizados mediante acuerdo comercial.";
     default:
-      return "—";
+      return "Acceso completo a VAI Prop.";
   }
 }
 
-function fmtDateOnly(d?: string | null) {
-  if (!d) return "—";
-  const dt = new Date(d);
-  if (Number.isNaN(dt.getTime())) return "—";
-  return dt.toLocaleDateString("es-AR");
+function userAccessLabel(plan: Plan): string {
+  if (plan.id === PLAN_IDS.broker) return "1 usuario total";
+  if (plan.id === PLAN_IDS.equipo) return "Cuenta empresa + hasta 5 asesores";
+  if (plan.id === PLAN_IDS.teamPro) return "Cuenta empresa + hasta 10 asesores";
+  return "Cantidad de usuarios a medida";
 }
 
-function fmtPricingSource(v?: string | null) {
-  switch (v) {
-    case "plan":
-      return "Precio de lista";
-    case "personalizado_formula":
-      return "Fórmula personalizado";
-    case "suscripcion_override":
-      return "Override de suscripción";
-    case "acuerdo_comercial_descuento":
-      return "Acuerdo comercial";
-    case "acuerdo_comercial_precio_fijo":
-      return "Acuerdo comercial";
-    default:
-      return "—";
-  }
-}
-
-function fmtAgreementType(v?: string | null) {
-  switch (v) {
-    case "descuento_pct":
-      return "Descuento porcentual";
-    case "precio_fijo":
-      return "Precio fijo";
-    case "precio_fijo_con_cupo":
-      return "Precio fijo con cupo";
-    case "descuento_con_cupo":
-      return "Descuento con cupo";
-    default:
-      return "Acuerdo comercial";
-  }
-}
+const featureList = [
+  "Valuación y tasación inmobiliaria",
+  "Factibilidad constructiva y cálculo de PER",
+  "Tracker, Analytics y rendimiento por asesor",
+  "Agenda, propiedades, captaciones y cierres",
+  "VAI Market Data y herramientas financieras",
+];
 
 export default function EmpresaPlanesPage() {
   const { user } = useAuth();
-
   const [empresaId, setEmpresaId] = useState<string | null>(null);
-  const [planActual, setPlanActual] = useState<EmpresaPlan | null>(null);
-  const [planesDisponibles, setPlanesDisponibles] = useState<Plan[]>([]);
-  const [billingEstado, setBillingEstado] = useState<BillingEstado | null>(null);
+  const [plans, setPlans] = useState<Plan[]>([]);
+  const [billing, setBilling] = useState<BillingEstado | null>(null);
   const [loading, setLoading] = useState(true);
-  const [loadingPago, setLoadingPago] = useState(false);
-  const [mensaje, setMensaje] = useState<string | null>(null);
-
-  const [personalCount, setPersonalCount] = useState<number>(21);
-
-  const [preview, setPreview] = useState<PreviewResult | null>(null);
-  const [previewVisible, setPreviewVisible] = useState(false);
-  const [previewConfirmLoading, setPreviewConfirmLoading] = useState(false);
-  const [previewTarget, setPreviewTarget] = useState<{
-    planId: string;
-    personalizadoCount?: number;
-  } | null>(null);
-
-  const [agreementLockVisible, setAgreementLockVisible] = useState(false);
-
-  const IVA_PCT = 0.21;
-
-  const previewTipo = useMemo<"upgrade" | "downgrade" | "sin_cambio" | null>(() => {
-    if (!preview) return null;
-    const anyPrev = preview as any;
-    return anyPrev.tipo ?? anyPrev.accion ?? null;
-  }, [preview]);
-
-  const previewDiasCiclo = useMemo<number | null>(() => {
-    if (!preview) return null;
-    const anyPrev = preview as any;
-    return anyPrev.dias_ciclo ?? anyPrev.ciclo?.dias_ciclo ?? null;
-  }, [preview]);
-
-  const previewDiasRestantes = useMemo<number | null>(() => {
-    if (!preview) return null;
-    const anyPrev = preview as any;
-    return anyPrev.dias_restantes ?? anyPrev.ciclo?.dias_restantes ?? null;
-  }, [preview]);
-
-  const previewDeltaNeto = useMemo<number>(() => {
-    if (!preview) return 0;
-    const anyPrev = preview as any;
-    return anyPrev.delta_neto ?? anyPrev.delta?.neto ?? 0;
-  }, [preview]);
-
-  const previewIva = useMemo<number>(() => {
-    if (!preview) return 0;
-    const anyPrev = preview as any;
-    return anyPrev.iva ?? anyPrev.delta?.iva ?? 0;
-  }, [preview]);
-
-  const previewTotal = useMemo<number>(() => {
-    if (!preview) return 0;
-    const anyPrev = preview as any;
-    return anyPrev.total ?? anyPrev.delta?.total ?? 0;
-  }, [preview]);
+  const [processing, setProcessing] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
 
   useEffect(() => {
-    const fetchEmpresa = async () => {
+    async function resolveEmpresa() {
       if (!user?.id) return;
-      const { data: emp, error } = await supabase
+
+      const { data: byUserId } = await supabase
         .from("empresas")
         .select("id")
         .eq("user_id", user.id)
         .maybeSingle();
-      if (error) {
-        console.error("Error buscando empresa:", error);
-        setEmpresaId(null);
+
+      if (byUserId?.id) {
+        setEmpresaId(String(byUserId.id));
         return;
       }
-      setEmpresaId(emp?.id ?? null);
-    };
-    fetchEmpresa();
-  }, [user]);
+
+      const { data: byLegacyId } = await supabase
+        .from("empresas")
+        .select("id")
+        .eq("id_usuario", user.id)
+        .maybeSingle();
+
+      setEmpresaId(byLegacyId?.id ? String(byLegacyId.id) : null);
+    }
+
+    resolveEmpresa();
+  }, [user?.id]);
 
   useEffect(() => {
-    const fetchPlanes = async () => {
+    async function load() {
       if (!empresaId) {
         setLoading(false);
         return;
       }
+
       setLoading(true);
       try {
-        const { data: empresaPlan, error: errorEmpresaPlan } = await supabase
-          .from("empresas_planes")
-          .select(
-            `
-            plan_id,
-            fecha_inicio,
-            fecha_fin,
-            activo,
-            max_asesores_override,
-            planes:plan_id (nombre, max_asesores, tipo_plan)
-          `
+        const [{ data: planRows, error: plansError }, billingResponse] =
+          await Promise.all([
+            supabase
+              .from("planes")
+              .select(
+                "id, nombre, nombre_comercial, max_asesores, precio, duracion_dias, incluye_valuador, incluye_tracker"
+              )
+              .in("id", COMMERCIAL_PLAN_IDS),
+            fetch(
+              `/api/billing/estado?empresaId=${encodeURIComponent(empresaId)}`,
+              { cache: "no-store" }
+            ),
+          ]);
+
+        if (plansError) throw plansError;
+
+        const json = await billingResponse.json().catch(() => null);
+        if (!billingResponse.ok) {
+          throw new Error(json?.error || "No se pudo cargar el estado de Billing.");
+        }
+
+        const order = new Map<string, number>([
+          [PLAN_IDS.broker, 1],
+          [PLAN_IDS.equipo, 2],
+          [PLAN_IDS.teamPro, 3],
+          [PLAN_IDS.enterprise, 4],
+        ]);
+
+        setPlans(
+          ((planRows || []) as Plan[]).sort(
+            (a, b) => (order.get(a.id) || 99) - (order.get(b.id) || 99)
           )
-          .eq("empresa_id", empresaId)
-          .eq("activo", true)
-          .maybeSingle();
-
-        if (errorEmpresaPlan) {
-          console.error("Error obteniendo plan actual:", errorEmpresaPlan);
-          setPlanActual(null);
-        } else if (empresaPlan) {
-          const planDataRaw = (empresaPlan as any).planes;
-          const planData = Array.isArray(planDataRaw) ? planDataRaw[0] : planDataRaw;
-          const baseMax = planData?.max_asesores ?? 0;
-          const override = (empresaPlan as any)?.max_asesores_override as number | null;
-
-          setPlanActual({
-            plan_id: (empresaPlan as any).plan_id as string,
-            plan_nombre: planData?.nombre || "Sin plan",
-            tipo_plan: planData?.tipo_plan ?? null,
-            fecha_inicio: empresaPlan.fecha_inicio,
-            fecha_fin: empresaPlan.fecha_fin,
-            activo: empresaPlan.activo,
-            max_asesores: override ?? baseMax,
-          });
-
-          const tier = tierFromMaxAsesores(override ?? baseMax);
-          if (tier === "Personalizado") {
-            setPersonalCount(Math.max(21, Math.min(50, override ?? 21)));
-          }
-        } else {
-          setPlanActual(null);
-        }
-
-        const { data: planes, error: errorPlanes } = await supabase
-          .from("planes")
-          .select(
-            "id, nombre, tipo_plan, incluye_valuador, incluye_tracker, max_asesores, precio, duracion_dias, precio_extra_por_asesor"
-          )
-          .order("max_asesores", { ascending: true });
-
-        if (errorPlanes) {
-          console.error("Error cargando planes:", errorPlanes);
-        } else {
-          setPlanesDisponibles(planes || []);
-        }
-
-        try {
-          const res = await fetch(`/api/billing/estado?empresaId=${encodeURIComponent(empresaId)}`, {
-            method: "GET",
-            cache: "no-store",
-          });
-          const data = await res.json();
-          if (res.ok) {
-            setBillingEstado(data as BillingEstado);
-          } else {
-            console.error("Error obteniendo billing/estado:", data);
-            setBillingEstado(null);
-          }
-        } catch (err) {
-          console.error("Error cargando billing/estado:", err);
-          setBillingEstado(null);
-        }
-      } catch (err) {
-        console.error("Error cargando planes:", err);
+        );
+        setBilling((json || null) as BillingEstado | null);
+      } catch (error) {
+        console.error(error);
+        setMessage(
+          error instanceof Error
+            ? `❌ ${error.message}`
+            : "❌ No se pudo cargar la información de planes."
+        );
       } finally {
         setLoading(false);
       }
-    };
+    }
 
-    fetchPlanes();
+    load();
   }, [empresaId]);
 
-  const visiblePlanes = useMemo(
-    () => planesDisponibles.filter((p) => !isHiddenPlan(p)),
-    [planesDisponibles]
+  const agreementActive = Boolean(billing?.acuerdoComercial?.activo);
+  const currentPlanId = billing?.plan?.id ?? null;
+  const currentPlan = useMemo(
+    () => plans.find((plan) => plan.id === currentPlanId) ?? null,
+    [plans, currentPlanId]
   );
-
-  const planesFull = useMemo(
-    () =>
-      visiblePlanes
-        .filter((p) => (p.tipo_plan || "").toLowerCase() === "combo")
-        .slice()
-        .sort((a, b) => a.max_asesores - b.max_asesores),
-    [visiblePlanes]
-  );
-
-  const planesCore = useMemo(
-    () =>
-      visiblePlanes
-        .filter((p) => (p.tipo_plan || "").toLowerCase() === "core")
-        .slice()
-        .sort((a, b) => a.max_asesores - b.max_asesores),
-    [visiblePlanes]
-  );
-
-  const planesTracker = useMemo(
-    () =>
-      visiblePlanes
-        .filter((p) => (p.tipo_plan || "").toLowerCase() === "tracker_only")
-        .slice()
-        .sort((a, b) => a.max_asesores - b.max_asesores),
-    [visiblePlanes]
-  );
-
-  const num = (x?: number | string | null) =>
-    typeof x === "string" ? parseFloat(x) : (x ?? 0);
-
-  const withIVA = (net?: number | string | null) => {
-    if (net == null) return null;
-    const n = typeof net === "string" ? parseFloat(net) : net;
-    if (!isFinite(n)) return null;
-    return Math.round(n * (1 + IVA_PCT));
-  };
-
-  const corePremiumPrecio = useMemo(() => {
-    const p = planesDisponibles.find(
-      (pl) =>
-        (pl.tipo_plan || "").toLowerCase() === "core" &&
-        tierFromMaxAsesores(pl.max_asesores) === "Premium"
-    );
-    return num(p?.precio);
-  }, [planesDisponibles]);
-
-  const trackerPremiumPrecio = useMemo(() => {
-    const p = planesDisponibles.find(
-      (pl) =>
-        (pl.tipo_plan || "").toLowerCase() === "tracker_only" &&
-        tierFromMaxAsesores(pl.max_asesores) === "Premium"
-    );
-    return num(p?.precio);
-  }, [planesDisponibles]);
-
-  const fullPremiumPrecio = useMemo(() => {
-    const p = planesDisponibles.find(
-      (pl) =>
-        (pl.tipo_plan || "").toLowerCase() === "combo" &&
-        tierFromMaxAsesores(pl.max_asesores) === "Premium"
-    );
-    return num(p?.precio);
-  }, [planesDisponibles]);
-
-  const extraUnitPrice = 1850;
-
-  const planActualNombre = useMemo(
-    () =>
-      billingEstado?.plan?.nombre ||
-      getEmpresaPlanUiName(planActual),
-    [planActual, billingEstado]
-  );
-
-  const acuerdoVisible = !!billingEstado?.acuerdoComercial?.activo;
-  const planVencido = !!billingEstado?.estado?.plan_vencido;
-  const estaSuspendida = !!billingEstado?.estado?.suspendida;
-  const enPeriodoGracia = !!billingEstado?.estado?.en_periodo_gracia;
-  const requiereSeleccionPlan = !!billingEstado?.estado?.requiere_seleccion_plan;
-  const requierePagoInicialAcuerdo =
-    !!billingEstado?.estado?.requiere_pago_inicial_acuerdo;
-
-  const proximoCobro = billingEstado?.ciclo?.proximoCobro ?? planActual?.fecha_fin ?? null;
-  const acuerdoFechaInicio = billingEstado?.acuerdoComercial?.fecha_inicio ?? null;
-  const acuerdoFechaFin = billingEstado?.acuerdoComercial?.fecha_fin ?? null;
-  const pricingSource = billingEstado?.pricing?.pricing_source ?? billingEstado?.plan?.pricingSource ?? null;
-
-  const resumenAsesores =
-    billingEstado?.cupos?.max_asesores_final ??
-    planActual?.max_asesores ??
+  const cycleEnd = billing?.ciclo?.fin ?? billing?.ciclo?.proximoCobro ?? null;
+  const remaining = daysRemaining(cycleEnd);
+  const cycleExpired = Boolean(billing?.estado?.plan_vencido);
+  const currentNet =
+    billing?.pricing?.precio_neto_final ??
+    billing?.plan?.precioNetoFinal ??
+    currentPlan?.precio ??
     null;
+  const currentTotal =
+    billing?.pricing?.precio_total_final ??
+    billing?.plan?.precioTotalFinal ??
+    (currentNet != null ? Math.round(numberValue(currentNet) * 1.21) : null);
+  const currentMax =
+    billing?.cupos?.max_asesores_final ?? currentPlan?.max_asesores ?? null;
 
-  const resumenInicio =
-    billingEstado?.ciclo?.inicio ??
-    planActual?.fecha_inicio ??
-    acuerdoFechaInicio ??
-    null;
-
-  const resumenFin =
-    billingEstado?.ciclo?.fin ??
-    planActual?.fecha_fin ??
-    acuerdoFechaFin ??
-    null;
-
-  const importeMensual =
-    billingEstado?.pricing?.precio_total_final ??
-    billingEstado?.plan?.precioTotalFinal ??
-    null;
-
-  const handleUpgrade = async (planId: string, opts?: { personalizadoCount?: number }) => {
+  async function createCheckout(planId: string, immediateChange: boolean) {
     if (!empresaId) return;
 
-    if (acuerdoVisible) {
-      setAgreementLockVisible(true);
-      return;
-    }
-
-    setMensaje("Calculando prorrateo...");
-    setPreview(null);
-    setPreviewTarget(null);
+    setProcessing(true);
+    setMessage("Generando checkout seguro…");
 
     try {
-      const qs = new URLSearchParams();
-      qs.set("empresa_id", empresaId);
-      qs.set("nuevo_plan_id", planId);
-      if (typeof opts?.personalizadoCount === "number") {
-        qs.set("max_asesores_override", String(opts.personalizadoCount));
-      }
-
-      const res = await fetch(`/api/billing/preview-change?${qs.toString()}`, {
-        method: "GET",
-        headers: { "Content-Type": "application/json" },
-        cache: "no-store",
-      });
-
-      const data: any = await res.json().catch(() => null);
-
-      if (!res.ok || !data) {
-        console.error("preview-change error:", data);
-        setMensaje("❌ No se pudo calcular el cambio de plan. Intenta nuevamente.");
-        return;
-      }
-
-      setPreview(data as PreviewResult);
-      setPreviewTarget({ planId, personalizadoCount: opts?.personalizadoCount });
-      setPreviewVisible(true);
-      setMensaje(null);
-    } catch (err) {
-      console.error("Error en preview-change:", err);
-      setMensaje("❌ Error de red al calcular el cambio de plan.");
-    } finally {
-      setTimeout(() => setMensaje(null), 2500);
-    }
-  };
-
-  const confirmPreview = async () => {
-    if (!empresaId || !previewTarget) return;
-    setPreviewConfirmLoading(true);
-    setMensaje("Aplicando cambio de plan...");
-
-    try {
-      const res = await fetch("/api/billing/change-plan", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          empresa_id: empresaId,
-          nuevo_plan_id: previewTarget.planId,
-          max_asesores_override:
-            typeof previewTarget.personalizadoCount === "number"
-              ? previewTarget.personalizadoCount
-              : undefined,
-        }),
-      });
-      const data: any = await res.json();
-
-      if (!res.ok || data?.error) {
-        console.error("change-plan error:", data?.error || data);
-        setMensaje("❌ No se pudo confirmar el cambio.");
-        return;
-      }
-
-      if (data.checkoutUrl) {
-        window.location.href = data.checkoutUrl as string;
-        return;
-      }
-
-      setMensaje("✅ Operación procesada.");
-      setPreviewVisible(false);
-      setTimeout(() => window.location.reload(), 800);
-    } catch (err) {
-      console.error("Error en change-plan:", err);
-      setMensaje("❌ Error de red al confirmar cambio.");
-    } finally {
-      setPreviewConfirmLoading(false);
-      setTimeout(() => setMensaje(null), 3000);
-    }
-  };
-
-  const handleIrAPagar = async () => {
-    if (!empresaId) return;
-
-    setLoadingPago(true);
-    setMensaje("Redirigiendo al checkout...");
-
-    try {
-      const planIdForCheckout =
-        billingEstado?.plan?.id ??
-        planActual?.plan_id ??
-        undefined;
-
-      const res = await fetch("/api/billing/checkout", {
+      const response = await fetch("/api/billing/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           empresaId,
-          planId: planIdForCheckout,
+          planId,
+          changeMode: immediateChange ? "immediate" : "renewal",
         }),
       });
 
-      const data: any = await res.json();
-
-      if (!res.ok || data?.error) {
-        console.error("Error ir a pagar:", data?.error || data);
-        setMensaje("❌ No se pudo generar el checkout.");
-        return;
+      const json = await response.json().catch(() => null);
+      if (!response.ok || json?.error) {
+        throw new Error(json?.error || "No se pudo generar el checkout.");
       }
 
-      if (data.checkoutUrl) {
-        window.location.href = data.checkoutUrl as string;
-        return;
+      if (!json?.checkoutUrl) {
+        throw new Error("Mercado Pago no devolvió un checkout válido.");
       }
 
-      setMensaje("❌ No se recibió un checkout válido.");
-    } catch (err) {
-      console.error("Error generando checkout:", err);
-      setMensaje("❌ Error de red al generar checkout.");
+      window.location.href = String(json.checkoutUrl);
+    } catch (error) {
+      setMessage(
+        error instanceof Error ? `❌ ${error.message}` : "❌ Error inesperado."
+      );
     } finally {
-      setLoadingPago(false);
-      setTimeout(() => setMensaje(null), 3000);
+      setProcessing(false);
     }
-  };
+  }
+
+  function selectPlan(plan: Plan) {
+    if (plan.id === ENTERPRISE_PLAN_ID && !agreementActive) {
+      window.open(WHATSAPP_URL, "_blank", "noopener,noreferrer");
+      return;
+    }
+
+    if (agreementActive && plan.id !== currentPlanId) {
+      setPendingAction({ plan, kind: "agreement_locked" });
+      return;
+    }
+
+    if (plan.id === currentPlanId) {
+      createCheckout(plan.id, false);
+      return;
+    }
+
+    setPendingAction({ plan, kind: "change" });
+  }
 
   if (loading) {
     return (
-      <div className="flex justify-center items-center h-[60vh] text-gray-500">
-        Cargando información de planes…
+      <div className="flex min-h-[60vh] items-center justify-center text-gray-500">
+        Cargando planes…
       </div>
     );
   }
 
-  const esTrial = planActual?.plan_nombre === "Trial";
-
-  const renderPlanCard = (plan: Plan, sectionKind: TipoPlanKind) => {
-    const uiName = getPlanUiName(plan);
-    const tier = tierFromMaxAsesores(plan.max_asesores);
-    const isPersonalizadoTier = tier === "Personalizado";
-    const isActive = planActual?.plan_id === plan.id;
-
-    const neto = num(plan.precio);
-    const totalConIVA = withIVA(neto);
-    const capAsesores = isPersonalizadoTier ? personalCount : plan.max_asesores;
-    const extraAsesores = Math.max(0, personalCount - 20);
-
-    let netoPersonalizado: number | null = null;
-    let totalPersonalizadoConIVA: number | null = null;
-
-    if (isPersonalizadoTier) {
-      if (sectionKind === "core") {
-        netoPersonalizado = corePremiumPrecio + extraAsesores * extraUnitPrice;
-        totalPersonalizadoConIVA = withIVA(netoPersonalizado);
-      } else if (sectionKind === "tracker_only") {
-        netoPersonalizado = trackerPremiumPrecio + extraAsesores * extraUnitPrice;
-        totalPersonalizadoConIVA = withIVA(netoPersonalizado);
-      } else if (sectionKind === "combo") {
-        netoPersonalizado = fullPremiumPrecio + extraAsesores * extraUnitPrice;
-        totalPersonalizadoConIVA = withIVA(netoPersonalizado);
-      }
-    }
-
-    const handleClick = () => {
-      if (isPersonalizadoTier) {
-        handleUpgrade(plan.id, { personalizadoCount: personalCount });
-      } else {
-        handleUpgrade(plan.id);
-      }
-    };
-
-    const disabled =
-      !acuerdoVisible &&
-      isActive &&
-      (!isPersonalizadoTier || planActual?.max_asesores === personalCount);
-
-    return (
-      <div
-        key={plan.id}
-        className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm hover:shadow transition flex flex-col"
-      >
-        <div className="mb-4">
-          <div className="flex items-baseline justify-between">
-            <h3 className="text-xl font-semibold text-blue-700">{uiName}</h3>
-            <span className="text-sm text-gray-500">
-              {plan.duracion_dias ? `${plan.duracion_dias} días` : ""}
-            </span>
-          </div>
-
-          {isPersonalizadoTier && netoPersonalizado !== null ? (
-            <div className="mt-3">
-              <div className="text-2xl font-bold">
-                Total: {fmtMoney(netoPersonalizado)}{" "}
-                <span className="text-base font-semibold">+ IVA</span>
-              </div>
-              <div className="text-xs text-gray-600">
-                Total:{" "}
-                {totalPersonalizadoConIVA != null
-                  ? fmtMoney(totalPersonalizadoConIVA)
-                  : "—"}
-              </div>
-            </div>
-          ) : (
-            <div className="mt-2">
-              <div className="text-2xl font-bold">
-                {fmtMoney(neto)}{" "}
-                <span className="text-base font-semibold">+ IVA</span>
-              </div>
-              <div className="text-xs text-gray-600">
-                Total: {totalConIVA != null ? fmtMoney(totalConIVA) : "—"}
-              </div>
-            </div>
-          )}
-
-          {isPersonalizadoTier && (
-            <div className="mt-4">
-              <label className="block text-sm text-gray-600 mb-1">
-                Cantidad de asesores
-              </label>
-              <div className="flex items-center gap-3">
-                <input
-                  type="range"
-                  min={21}
-                  max={50}
-                  value={personalCount}
-                  onChange={(e) =>
-                    setPersonalCount(parseInt(e.target.value || "21", 10))
-                  }
-                  className="w-full"
-                />
-                <input
-                  type="number"
-                  min={21}
-                  max={50}
-                  value={personalCount}
-                  onChange={(e) => {
-                    const v = Math.max(
-                      21,
-                      Math.min(50, parseInt(e.target.value || "21", 10))
-                    );
-                    setPersonalCount(v);
-                  }}
-                  className="w-20 border rounded-lg px-2 py-1"
-                />
-              </div>
-              <div className="text-xs text-gray-500 mt-1">
-                De 21 a 50 asesores (configurable).
-              </div>
-            </div>
-          )}
-
-          {sectionKind === "combo" && (
-            <ul className="mt-4 text-sm text-gray-700 space-y-1">
-              <li><strong>• Hasta {capAsesores} asesores</strong></li>
-              <li>• Valuador de Activos Inmobiliarios</li>
-              <li>• Análisis de Factibilidad Constructiva</li>
-              <li>• Sin límites de informes</li>
-              <li>• Guarda / Carga / Edita tus informes</li>
-              <li>• Informe descargable en PDF</li>
-              <li>• Registra tus actividades diarias</li>
-              <li>• Carga tus captaciones y cierres</li>
-              <li>• Maneja tus métricas y gráficos</li>
-            </ul>
-          )}
-
-          {sectionKind === "core" && (
-            <ul className="mt-4 text-sm text-gray-700 space-y-1">
-              <li><strong>• Hasta {capAsesores} asesores</strong></li>
-              <li>• Valuador de Activos Inmobiliarios</li>
-              <li>• Análisis de Factibilidad Constructiva</li>
-              <li>• Sin límites de informes</li>
-              <li>• Guarda / Carga / Edita tus informes</li>
-              <li>• Informe descargable en PDF</li>
-            </ul>
-          )}
-
-          {sectionKind === "tracker_only" && (
-            <ul className="mt-4 text-sm text-gray-700 space-y-1">
-              <li><strong>• Hasta {capAsesores} asesores</strong></li>
-              <li>• Registra las actividades de tus asesores</li>
-              <li>• Carga tus captaciones y cierres</li>
-              <li>• Maneja tus métricas y gráficos de desempeño</li>
-              <li>• Vista unificada para la empresa</li>
-            </ul>
-          )}
-        </div>
-
-        <button
-          onClick={handleClick}
-          disabled={disabled}
-          className={`mt-auto w-full py-2.5 rounded-lg text-sm font-medium transition ${
-            disabled
-              ? "bg-gray-300 text-gray-600 cursor-not-allowed"
-              : acuerdoVisible
-              ? "bg-slate-700 hover:bg-slate-800 text-white"
-              : "bg-blue-600 hover:bg-blue-700 text-white"
-          }`}
-        >
-          {disabled ? "Plan actual" : acuerdoVisible ? "Consultar cambio" : "Seleccionar plan"}
-        </button>
-      </div>
-    );
-  };
-
   return (
-    <div className="p-6 space-y-6">
-      <section className="bg-white shadow-sm rounded-xl p-6 border border-gray-200">
-        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+    <main className="space-y-6 p-4 md:p-6">
+      <section className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-950 text-white shadow-lg">
+        <div className="grid gap-6 p-6 lg:grid-cols-[1.4fr_1fr] lg:p-8">
           <div>
-            <h1 className="text-2xl font-semibold">
-              {acuerdoVisible ? "Acuerdo y Suscripción Mensual" : "Suscripción Mensual"}
-            </h1>
-            <p className="text-gray-600 mt-1">
-              Plan actual:{" "}
-              <span className="font-semibold">{planActualNombre || "Sin plan"}</span>
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-amber-400">
+              Tu suscripción
             </p>
+            <h1 className="mt-2 text-3xl font-bold">
+              {agreementActive
+                ? "Tu acuerdo Enterprise"
+                : (currentPlan || billing?.plan?.nombre)
+                ? `Tu plan actual: ${currentPlan?.nombre || billing?.plan?.nombre}`
+                : "Elegí el plan ideal para tu operación"}
+            </h1>
+            <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-300">
+              Todos los planes incluyen acceso completo a VAI Prop. Solo cambia la
+              cantidad de asesores habilitados.
+            </p>
+
+            <div className="mt-6 grid gap-3 sm:grid-cols-2">
+              <Info label="Plan" value={agreementActive ? "Enterprise" : currentPlan?.nombre || billing?.plan?.nombre || "Sin plan pago"} />
+              <Info
+                label="Cupo"
+                value={
+                  agreementActive
+                    ? `${currentMax ?? "A medida"} asesores`
+                    : currentPlanId === PLAN_IDS.broker
+                    ? "1 usuario total"
+                    : currentMax != null
+                    ? `Hasta ${currentMax} asesores + cuenta empresa`
+                    : "—"
+                }
+              />
+              <Info label="Ciclo vigente desde" value={fmtDate(billing?.ciclo?.inicio)} />
+              <Info label="Ciclo vigente hasta" value={fmtDate(cycleEnd)} />
+            </div>
           </div>
 
-          {acuerdoVisible ? (
-            <span className="inline-flex self-start md:self-auto items-center rounded-full bg-blue-100 text-blue-700 text-sm font-medium px-3 py-1">
-              Acuerdo Comercial Vigente
-            </span>
-          ) : null}
-        </div>
-      </section>
-
-      {(planVencido || estaSuspendida || requiereSeleccionPlan) && (
-        <section className="bg-red-50 border border-red-200 text-red-800 rounded-xl p-4">
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-            <div className="space-y-1">
-              <h2 className="font-semibold">
-                {acuerdoVisible
-                  ? "Suscripción mensual pendiente de regularización"
-                  : "Tu plan se encuentra vencido"}
-              </h2>
-              <p className="text-sm">
-                {acuerdoVisible
-                  ? "Tu empresa posee un acuerdo comercial vigente, pero la suscripción mensual se encuentra vencida o pendiente de regularización. Para restablecer el acceso, aboná el ciclo correspondiente a tu acuerdo."
-                  : "Tu suscripción venció y necesitás regularizar el pago para seguir utilizando la plataforma."}
-              </p>
-              {proximoCobro ? (
-                <p className="text-sm">
-                  Vencimiento: <strong>{fmtDateOnly(proximoCobro)}</strong>
-                </p>
-              ) : null}
-              {enPeriodoGracia ? (
-                <p className="text-xs">
-                  Estás dentro del período de gracia.
-                </p>
-              ) : null}
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
+            <div className="text-sm text-slate-300">Importe mensual</div>
+            <div className="mt-1 text-3xl font-bold text-amber-400">
+              {fmtMoney(currentNet)}
+            </div>
+            <div className="text-sm text-slate-300">
+              {billing?.pricing?.modo_iva === "no_aplica"
+                ? "IVA no aplicable según condición vigente"
+                : `Total con IVA: ${fmtMoney(currentTotal)}`}
             </div>
 
-            <button
-              onClick={handleIrAPagar}
-              disabled={loadingPago}
-              className="rounded-lg bg-red-600 hover:bg-red-700 text-white px-4 py-2 text-sm font-medium disabled:opacity-60"
-            >
-              {loadingPago
-                ? "Redirigiendo..."
-                : acuerdoVisible
-                ? "Regularizar pago"
-                : "Ir a pagar"}
-            </button>
-          </div>
-        </section>
-      )}
-
-      <section className="bg-white shadow-sm rounded-xl p-6 border border-gray-200">
-        <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-5">
-          <div className="space-y-3">
-            <div>
-              <h2 className="text-lg font-semibold">
-                {planActualNombre || "Sin plan activo"}
-              </h2>
-              <p className="text-sm text-gray-600">
-                {acuerdoVisible
-                  ? "Detalle actual del acuerdo comercial y del ciclo mensual."
-                  : "Detalle actual de la suscripción mensual."}
-              </p>
+            <div className="mt-5 rounded-xl bg-black/20 p-3 text-sm text-slate-200">
+              {cycleExpired
+                ? "El ciclo se encuentra vencido. Podés regularizarlo ahora."
+                : remaining != null
+                ? `Tu ciclo conserva vigencia por ${remaining} día${remaining === 1 ? "" : "s"}.`
+                : "La vigencia del ciclo se actualizará después de cada pago aprobado."}
             </div>
 
-            <div className="grid sm:grid-cols-2 gap-3 text-sm">
-              <div className="rounded-lg border p-3">
-                <div className="text-xs text-gray-500 mb-1">Asesores incluidos</div>
-                <div className="font-medium">{resumenAsesores ?? "—"}</div>
-              </div>
-
-              <div className="rounded-lg border p-3">
-                <div className="text-xs text-gray-500 mb-1">
-                  {acuerdoVisible ? "Importe mensual del acuerdo" : "Importe mensual a abonar"}
-                </div>
-                <div className="font-medium">{fmtMoney(importeMensual)}</div>
-              </div>
-
-              <div className="rounded-lg border p-3">
-                <div className="text-xs text-gray-500 mb-1">Vigencia desde</div>
-                <div className="font-medium">{fmtDateOnly(resumenInicio)}</div>
-              </div>
-
-              <div className="rounded-lg border p-3">
-                <div className="text-xs text-gray-500 mb-1">Vigencia hasta</div>
-                <div className="font-medium">{fmtDateOnly(resumenFin)}</div>
-              </div>
-
-              <div className="rounded-lg border p-3 sm:col-span-2">
-                <div className="text-xs text-gray-500 mb-1">Origen del precio</div>
-                <div className="font-medium">{fmtPricingSource(pricingSource)}</div>
-              </div>
-            </div>
-
-            {esTrial && (
-              <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3">
-                🔸 Estás usando el plan <strong>Trial</strong>. Para habilitar
-                asesores y funciones comerciales, seleccioná un plan pago.
-              </p>
-            )}
-          </div>
-
-          <div className="flex flex-col gap-3 min-w-[220px]">
-            <button
-              onClick={handleIrAPagar}
-              disabled={loadingPago || (!billingEstado?.plan?.id && !planActual?.plan_id)}
-              className="rounded-lg bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 text-sm font-medium disabled:opacity-60"
-            >
-              {loadingPago
-                ? "Redirigiendo..."
-                : acuerdoVisible
-                ? "Regularizar pago"
-                : "Ir a pagar"}
-            </button>
-
-            {acuerdoVisible ? (
-              <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
-                Esta cuenta posee un acuerdo comercial vigente. Los cambios de
-                plan, cupo o condiciones comerciales deben gestionarse con
-                administración. Desde esta pantalla podés regularizar el pago
-                del ciclo mensual correspondiente al acuerdo.
-              </div>
+            {currentPlanId ? (
+              <button
+                type="button"
+                disabled={processing}
+                onClick={() => createCheckout(currentPlanId, false)}
+                className="mt-4 w-full rounded-xl bg-amber-400 px-4 py-3 font-semibold text-slate-950 transition hover:bg-amber-300 disabled:opacity-60"
+              >
+                {processing
+                  ? "Generando checkout…"
+                  : cycleExpired
+                  ? "Pagar nuevo ciclo"
+                  : "Renovar plan actual"}
+              </button>
             ) : null}
           </div>
         </div>
       </section>
 
-      {acuerdoVisible && billingEstado?.acuerdoComercial && (
-        <section className="bg-white shadow-sm rounded-xl p-6 border border-gray-200">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <h2 className="text-lg font-semibold">Acuerdo Comercial</h2>
-              <p className="text-sm text-gray-600">
-                Condiciones comerciales actualmente aplicadas a tu empresa.
-              </p>
-            </div>
-            <span className="text-xs px-2 py-1 rounded bg-blue-100 text-blue-700">
-              Activo
-            </span>
-          </div>
+      {message ? (
+        <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm shadow-sm">
+          {message}
+        </div>
+      ) : null}
 
-          <div className="mt-4 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 text-sm">
-            <div className="rounded-lg border p-3">
-              <div className="text-xs text-gray-500 mb-1">Condición</div>
-              <div className="font-medium">
-                {fmtAgreementType(billingEstado.acuerdoComercial.tipo)}
-              </div>
-            </div>
-
-            <div className="rounded-lg border p-3">
-              <div className="text-xs text-gray-500 mb-1">Importe mensual</div>
-              <div className="font-medium">
-                {fmtMoney(billingEstado.acuerdoComercial.precio_total_final ?? null)}
-              </div>
-            </div>
-
-            <div className="rounded-lg border p-3">
-              <div className="text-xs text-gray-500 mb-1">Cupo acordado</div>
-              <div className="font-medium">
-                {billingEstado.acuerdoComercial.max_asesores_final ?? "—"} asesores
-              </div>
-            </div>
-
-            <div className="rounded-lg border p-3">
-              <div className="text-xs text-gray-500 mb-1">Vigencia del acuerdo</div>
-              <div className="font-medium">
-                {fmtDateOnly(acuerdoFechaInicio)} — {fmtDateOnly(acuerdoFechaFin)}
-              </div>
-            </div>
-          </div>
-
-          {requierePagoInicialAcuerdo ? (
-            <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">
-              <p className="font-medium">
-                El acuerdo está vigente, pero falta regularizar el pago del ciclo mensual actual.
-              </p>
-              <p className="mt-1">
-                Al abonar este ciclo, el acceso debería restablecerse automáticamente.
-              </p>
-            </div>
-          ) : (
-            <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
-              <p className="font-medium">
-                El acuerdo comercial está vigente.
-              </p>
-              <p className="mt-1">
-                Si el pago mensual se encuentra al día, la cuenta podrá operar normalmente.
-              </p>
-            </div>
-          )}
+      {agreementActive ? (
+        <section className="rounded-2xl border border-blue-200 bg-blue-50 p-5 text-blue-900">
+          <h2 className="font-semibold">Acuerdo comercial vigente</h2>
+          <p className="mt-1 text-sm leading-6">
+            Esta cuenta tiene condiciones Enterprise personalizadas hasta el {" "}
+            <strong>{fmtDate(billing?.acuerdoComercial?.fecha_fin)}</strong>. Para
+            evitar una contratación cruzada, los demás planes quedan bloqueados
+            mientras el acuerdo continúe activo.
+          </p>
         </section>
-      )}
+      ) : null}
 
-      {(!planActual && !billingEstado?.plan) && (
-        <section className="bg-white shadow-sm rounded-xl p-6 border border-dashed border-gray-300">
-          <p className="text-gray-600">No se encontró un plan activo.</p>
-        </section>
-      )}
+      <section>
+        <div className="mb-5">
+          <h2 className="text-2xl font-bold text-slate-900">Planes disponibles</h2>
+          <p className="mt-1 text-sm text-slate-600">
+            Sin módulos recortados: todos incluyen la plataforma completa.
+          </p>
+        </div>
 
-      {!acuerdoVisible && planesFull.length > 0 && (
-        <section className="space-y-4">
-          <div>
-            <h2 className="text-lg font-semibold">Planes Full VAI (todo incluido)</h2>
-            <p className="text-sm text-gray-600 mt-1">
-              Tené el <strong>Valuador de Activos Inmobiliarios</strong>, el{" "}
-              <strong>módulo de Factibilidad</strong>, el{" "}
-              <strong>Business Tracker</strong> y el{" "}
-              <strong>Business Analytics</strong> en un solo plan mensual.
-              Pagás un extra fijo por el Tracker y lo disfrutás con todos los
-              asesores de tu equipo, ya sean 4 o 10: el valor del Tracker es
-              siempre el mismo.
-            </p>
-          </div>
+        <div className="grid gap-5 xl:grid-cols-4">
+          {plans.map((plan) => {
+            const isEnterprise = plan.id === ENTERPRISE_PLAN_ID;
+            const isCurrent = plan.id === currentPlanId;
+            const net = numberValue(plan.precio);
+            const total = Math.round(net * 1.21);
+            const lockedByAgreement = agreementActive && !isCurrent;
 
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {planesFull.map((plan) => renderPlanCard(plan, "combo"))}
-          </div>
-        </section>
-      )}
-
-      {!acuerdoVisible && planesCore.length > 0 && (
-        <section className="space-y-4">
-          <div>
-            <h2 className="text-lg font-semibold">Planes Core VAI</h2>
-            <p className="text-sm text-gray-600 mt-1">
-              Incluyen el <strong>Valuador de Activos Inmobiliarios</strong> y
-              el <strong>Análisis de Factibilidad Constructiva</strong>. Ideales
-              si querés empezar por la valuación profesional y el estudio de
-              proyectos, y más adelante sumar el Business Tracker.
-            </p>
-          </div>
-
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {planesCore.map((plan) => renderPlanCard(plan, "core"))}
-          </div>
-        </section>
-      )}
-
-      {!acuerdoVisible && planesTracker.length > 0 && (
-        <section className="space-y-4">
-          <div>
-            <h2 className="text-lg font-semibold">Planes Business Tracker</h2>
-            <p className="text-sm text-gray-600 mt-1">
-              Centralizá la información de tu empresa y tus asesores en un solo
-              lugar. Medí la <strong>actividad</strong>, detectá{" "}
-              <strong>oportunidades</strong> y apoyá tus decisiones en{" "}
-              <strong>datos concretos</strong>, sin depender de hojas de cálculo
-              dispersas.
-            </p>
-          </div>
-
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {planesTracker.map((plan) =>
-              renderPlanCard(plan, "tracker_only")
-            )}
-          </div>
-        </section>
-      )}
-
-      {mensaje && (
-        <p className="text-center text-blue-600 font-medium">{mensaje}</p>
-      )}
-
-      {previewVisible && preview && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg p-6">
-            <h3 className="text-lg font-semibold mb-2">
-              Confirmar cambio de plan
-            </h3>
-
-            <div className="text-sm text-gray-700 space-y-1 mb-3">
-              {preview.plan_actual?.nombre && preview.plan_nuevo?.nombre ? (
-                <p>
-                  {preview.plan_actual.nombre}{" "}
-                  → <strong>{preview.plan_nuevo.nombre}</strong>
-                </p>
-              ) : null}
-              {previewDiasRestantes !== null && previewDiasCiclo !== null ? (
-                <p>
-                  Días restantes: <strong>{previewDiasRestantes}</strong> de{" "}
-                  {previewDiasCiclo}
-                </p>
-              ) : null}
-            </div>
-
-            {previewTipo === "upgrade" && (
-              <div className="border rounded-lg p-3 mb-3 bg-emerald-50 border-emerald-200">
-                <p className="text-sm">
-                  Delta neto: <strong>{fmtMoney(previewDeltaNeto)}</strong>
-                </p>
-                <p className="text-sm">
-                  IVA: <strong>{fmtMoney(previewIva)}</strong>
-                </p>
-                <p className="text-sm">
-                  Total a pagar ahora: <strong>{fmtMoney(previewTotal)}</strong>
-                </p>
-              </div>
-            )}
-
-            {previewTipo === "downgrade" && (
-              <div className="border rounded-lg p-3 mb-3 bg-amber-50 border-amber-200">
-                <p className="text-sm">
-                  El cambio se aplicará desde:{" "}
-                  <strong>
-                    {preview.aplicar_desde
-                      ? new Date(preview.aplicar_desde).toLocaleDateString("es-AR")
-                      : "próximo ciclo"}
-                  </strong>
-                </p>
-                <p className="text-xs text-gray-600">
-                  No se generan créditos ni reembolsos. Seguirás usando tu plan
-                  actual hasta esa fecha.
-                </p>
-              </div>
-            )}
-
-            {preview.nota && (
-              <p className="text-xs text-gray-500 mb-2">{preview.nota}</p>
-            )}
-
-            <div className="flex gap-3 justify-end pt-2">
-              <button
-                onClick={() => {
-                  setPreviewVisible(false);
-                  setPreview(null);
-                  setPreviewTarget(null);
-                }}
-                className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 text-sm hover:bg-gray-50"
-                disabled={previewConfirmLoading}
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={confirmPreview}
-                className={`px-4 py-2 rounded-lg text-sm text-white ${
-                  previewTipo === "upgrade"
-                    ? "bg-blue-600 hover:bg-blue-700"
-                    : "bg-gray-700 hover:bg-gray-800"
-                } ${
-                  previewConfirmLoading
-                    ? "opacity-70 cursor-not-allowed"
-                    : ""
+            return (
+              <article
+                key={plan.id}
+                className={`flex min-h-[520px] flex-col rounded-2xl border bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${
+                  isCurrent
+                    ? "border-amber-400 ring-2 ring-amber-100"
+                    : "border-slate-200"
                 }`}
-                disabled={previewConfirmLoading}
               >
-                {previewConfirmLoading
-                  ? "Aplicando..."
-                  : previewTipo === "upgrade"
-                  ? "Abonar"
-                  : "Confirmar cambio"}
-              </button>
-            </div>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h3 className="text-xl font-bold text-slate-900">{plan.nombre}</h3>
+                    <p className="mt-1 text-sm text-slate-500">{planDescription(plan.id)}</p>
+                  </div>
+                  {isCurrent ? (
+                    <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-800">
+                      Plan actual
+                    </span>
+                  ) : null}
+                </div>
+
+                <div className="mt-5">
+                  {isEnterprise ? (
+                    <>
+                      <div className="text-3xl font-bold text-slate-900">Consultar</div>
+                      <div className="mt-1 text-sm text-slate-500">Acuerdo comercial personalizado</div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="text-3xl font-bold text-slate-900">
+                        {fmtMoney(net)}
+                      </div>
+                      <div className="mt-1 text-sm text-slate-500">
+                        neto + IVA · Total {fmtMoney(total)}
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                <div className="mt-5 rounded-xl bg-slate-50 p-3 text-sm font-semibold text-slate-800">
+                  {userAccessLabel(plan)}
+                </div>
+
+                <ul className="mt-5 space-y-3 text-sm text-slate-700">
+                  {featureList.map((feature) => (
+                    <li key={feature} className="flex gap-2">
+                      <span className="mt-0.5 text-amber-500">✓</span>
+                      <span>{feature}</span>
+                    </li>
+                  ))}
+                </ul>
+
+                <button
+                  type="button"
+                  disabled={processing}
+                  onClick={() => selectPlan(plan)}
+                  className={`mt-auto w-full rounded-xl px-4 py-3 text-sm font-semibold transition disabled:opacity-60 ${
+                    isCurrent
+                      ? "bg-slate-900 text-white hover:bg-slate-800"
+                      : lockedByAgreement
+                      ? "bg-slate-200 text-slate-600 hover:bg-slate-300"
+                      : isEnterprise
+                      ? "border border-amber-500 bg-white text-amber-700 hover:bg-amber-50"
+                      : "bg-amber-400 text-slate-950 hover:bg-amber-300"
+                  }`}
+                >
+                  {isCurrent
+                    ? cycleExpired
+                      ? "Pagar nuevo ciclo"
+                      : "Renovar plan"
+                    : lockedByAgreement
+                    ? "Consultar cambio"
+                    : isEnterprise
+                    ? "Solicitar propuesta"
+                    : "Elegir plan"}
+                </button>
+              </article>
+            );
+          })}
+        </div>
+      </section>
+
+      {pendingAction ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl">
+            {pendingAction.kind === "agreement_locked" ? (
+              <>
+                <h2 className="text-xl font-bold text-slate-900">
+                  Tenés un acuerdo Enterprise vigente
+                </h2>
+                <p className="mt-3 text-sm leading-6 text-slate-600">
+                  Tu empresa cuenta con condiciones comerciales personalizadas y
+                  no puede contratar {pendingAction.plan.nombre} mientras el acuerdo
+                  continúe activo. Esto evita generar suscripciones cruzadas o perder
+                  las condiciones negociadas.
+                </p>
+                <div className="mt-4 rounded-xl bg-blue-50 p-4 text-sm text-blue-900">
+                  <div><strong>Plan:</strong> Enterprise</div>
+                  <div><strong>Cupo:</strong> {currentMax ?? "A medida"} asesores</div>
+                  <div><strong>Importe:</strong> {fmtMoney(currentTotal)}</div>
+                  <div><strong>Vigencia:</strong> hasta {fmtDate(billing?.acuerdoComercial?.fecha_fin)}</div>
+                </div>
+                <div className="mt-6 grid gap-3 sm:grid-cols-2">
+                  <button
+                    type="button"
+                    onClick={() => setPendingAction(null)}
+                    className="rounded-xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white"
+                  >
+                    Continuar con Enterprise
+                  </button>
+                  <a
+                    href={WHATSAPP_URL}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="rounded-xl border border-slate-300 px-4 py-3 text-center text-sm font-semibold text-slate-800"
+                  >
+                    Contactar a VAI Prop
+                  </a>
+                </div>
+              </>
+            ) : (
+              <>
+                <h2 className="text-xl font-bold text-slate-900">
+                  Cambiar a {pendingAction.plan.nombre}
+                </h2>
+                <p className="mt-3 text-sm leading-6 text-slate-600">
+                  Tu plan actual conserva vigencia hasta el {fmtDate(cycleEnd)}. Si
+                  continuás ahora, pagarás el valor mensual completo de {" "}
+                  <strong>{pendingAction.plan.nombre}</strong> y el nuevo ciclo de 30
+                  días comenzará cuando Mercado Pago confirme el pago.
+                </p>
+                <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                  No se aplicará prorrateo, devolución ni traslado de días restantes.
+                  El ciclo anterior finalizará al activarse el nuevo plan.
+                </div>
+                <div className="mt-6 grid gap-3 sm:grid-cols-2">
+                  <button
+                    type="button"
+                    disabled={processing}
+                    onClick={() => {
+                      const planId = pendingAction.plan.id;
+                      setPendingAction(null);
+                      createCheckout(planId, true);
+                    }}
+                    className="rounded-xl bg-amber-400 px-4 py-3 text-sm font-semibold text-slate-950 disabled:opacity-60"
+                  >
+                    Continuar al pago
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPendingAction(null)}
+                    className="rounded-xl border border-slate-300 px-4 py-3 text-sm font-semibold text-slate-800"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
-      )}
+      ) : null}
 
-      {agreementLockVisible && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
-            <h3 className="text-lg font-semibold mb-2">
-              Esta cuenta posee Acuerdo Comercial
-            </h3>
-            <p className="text-sm text-gray-600 mb-4">
-              Los cambios de plan, cupo de asesores o condiciones comerciales no
-              pueden gestionarse desde esta pantalla porque tu empresa posee un
-              acuerdo comercial vigente.
-            </p>
-            <p className="text-sm text-gray-600 mb-6">
-              Para solicitar una mejora, un cambio o la desactivación del
-              acuerdo, comunicate con tu asesor comercial o con administración.
-            </p>
+      <section className="rounded-2xl border border-slate-200 bg-slate-50 p-5 text-sm text-slate-700">
+        <strong>¿Necesitás ayuda?</strong> Escribinos a {" "}
+        <a className="font-semibold text-blue-700 underline" href={`mailto:${CONTACT_EMAIL}`}>
+          {CONTACT_EMAIL}
+        </a>{" "}
+        o por {" "}
+        <a className="font-semibold text-blue-700 underline" href={WHATSAPP_URL} target="_blank" rel="noreferrer">
+          WhatsApp
+        </a>.
+      </section>
+    </main>
+  );
+}
 
-            <div className="flex justify-end">
-              <button
-                onClick={() => setAgreementLockVisible(false)}
-                className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium"
-              >
-                Entendido
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+function Info({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+      <div className="text-xs text-slate-400">{label}</div>
+      <div className="mt-1 font-semibold text-white">{value}</div>
     </div>
   );
 }

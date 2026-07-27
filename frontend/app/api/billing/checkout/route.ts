@@ -20,6 +20,8 @@ const MP_ACCESS_TOKEN =
 
 const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE);
 
+const ENTERPRISE_PLAN_ID = "33b41048-feaf-481d-bfff-f9eb46e96916";
+
 type Role =
   | "empresa"
   | "asesor"
@@ -235,6 +237,8 @@ export async function POST(req: Request) {
       typeof body?.empresaId === "string" && body.empresaId.trim()
         ? body.empresaId.trim()
         : null;
+    const changeMode =
+      body?.changeMode === "immediate" ? "immediate" : "renewal";
 
     let empresaId: string | null = null;
 
@@ -321,6 +325,17 @@ export async function POST(req: Request) {
       );
     }
 
+    if (effectivePlanId === ENTERPRISE_PLAN_ID && !acuerdoVigente) {
+      return NextResponse.json(
+        {
+          error:
+            "El plan Enterprise requiere un acuerdo comercial vigente. Contactá a VAI Prop para recibir una propuesta personalizada.",
+          code: "ENTERPRISE_REQUIRES_AGREEMENT",
+        },
+        { status: 409 }
+      );
+    }
+
     const config = await resolveEmpresaBillingConfig({
       supabase: supabaseAdmin,
       empresaId,
@@ -329,29 +344,17 @@ export async function POST(req: Request) {
 
     const currentCycle = await getSuscripcionEstado(supabaseAdmin, empresaId);
     const now = new Date();
-    const renewalWindowMs = 2 * 24 * 60 * 60 * 1000;
     const cycleEnd = currentCycle?.ciclo_fin ?? null;
+    const isImmediateChange =
+      changeMode === "immediate" &&
+      Boolean(currentCycle?.plan_actual_id) &&
+      currentCycle?.plan_actual_id !== effectivePlanId &&
+      !acuerdoVigente;
 
-    if (cycleEnd) {
-      const remainingMs = new Date(cycleEnd).getTime() - now.getTime();
-      if (remainingMs > renewalWindowMs) {
-        return NextResponse.json(
-          {
-            error: `Tu suscripción está vigente hasta el ${formatDateAR(cycleEnd)}. Podrás renovar cuando falten 2 días para el vencimiento.`,
-            code: "CYCLE_STILL_ACTIVE",
-            cicloFin: cycleEnd,
-            renovacionDisponibleDesde: new Date(
-              new Date(cycleEnd).getTime() - renewalWindowMs
-            ).toISOString(),
-          },
-          { status: 409 }
-        );
-      }
-    }
-
-    const targetStart = cycleEnd && new Date(cycleEnd).getTime() > now.getTime()
-      ? cycleEnd
-      : null;
+    const targetStart =
+      !isImmediateChange && cycleEnd && new Date(cycleEnd).getTime() > now.getTime()
+        ? cycleEnd
+        : null;
     const targetEnd = targetStart ? addOneCalendarMonth(targetStart) : null;
 
     const alreadyPaidTarget = await findAlreadyPaidTargetCycle({
@@ -503,6 +506,8 @@ export async function POST(req: Request) {
             ? "checkout_mercadopago"
             : "checkout_sandbox",
           cycle_status: "awaiting_payment",
+          cycle_mode: isImmediateChange ? "immediate_change" : "renewal",
+          previous_plan_id: currentCycle?.plan_actual_id ?? null,
           cycle_target_start: targetStart,
           cycle_target_end: targetEnd,
           snapshot,
@@ -576,6 +581,8 @@ export async function POST(req: Request) {
         acuerdo_id: config.agreement_id,
         agreement_id: config.agreement_id,
         precio_total_final: config.precio_total_final,
+        cycle_mode: isImmediateChange ? "immediate_change" : "renewal",
+        previous_plan_id: currentCycle?.plan_actual_id ?? null,
       },
       notification_url: `${SITE_URL}/api/pagos/webhook`,
       back_urls: {
@@ -663,6 +670,8 @@ export async function POST(req: Request) {
           initiated_role: role,
           source: "checkout_mercadopago",
           cycle_status: "awaiting_payment",
+          cycle_mode: isImmediateChange ? "immediate_change" : "renewal",
+          previous_plan_id: currentCycle?.plan_actual_id ?? null,
           cycle_target_start: targetStart,
           cycle_target_end: targetEnd,
           checkout_preference_id: preferenceId,

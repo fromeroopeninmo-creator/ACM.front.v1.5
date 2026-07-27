@@ -236,6 +236,9 @@ export default function EmpresaPlanesPage() {
 
   const agreementActive = Boolean(billing?.acuerdoComercial?.activo);
   const currentPlanId = billing?.plan?.id ?? null;
+  const isTrial =
+    billing?.plan?.es_trial === true ||
+    (billing?.plan?.nombre || "").trim().toLowerCase() === "trial";
   const currentPlan = useMemo(
     () => plans.find((plan) => plan.id === currentPlanId) ?? null,
     [plans, currentPlanId]
@@ -376,7 +379,7 @@ export default function EmpresaPlanesPage() {
                 : "La vigencia del ciclo se actualizará después de cada pago aprobado."}
             </div>
 
-            {currentPlanId ? (
+            {currentPlanId && !isTrial ? (
               <button
                 type="button"
                 disabled={processing}
@@ -416,7 +419,7 @@ export default function EmpresaPlanesPage() {
         <div className="mb-5">
           <h2 className="text-2xl font-bold text-slate-900">Planes disponibles</h2>
           <p className="mt-1 text-sm text-slate-600">
-            Sin módulos recortados: todos incluyen la plataforma completa.
+            Todos los planes incluyen acceso completo a VAI Prop. Solo cambia la cantidad de usuarios habilitados.
           </p>
         </div>
 

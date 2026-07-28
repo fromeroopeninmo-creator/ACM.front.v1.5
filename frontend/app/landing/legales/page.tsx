@@ -2,7 +2,6 @@
 export const dynamic = "force-dynamic";
 
 import SiteNavbar from "@/components/SiteNavbar";
-import SiteFooter from "@/components/SiteFooter";
 
 export default function LegalesPage() {
   return (

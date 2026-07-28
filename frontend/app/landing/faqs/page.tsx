@@ -1,6 +1,5 @@
 // app/landing/faqs/page.tsx
 import SiteNavbar from "@/components/SiteNavbar";
-import SiteFooter from "@/components/SiteFooter";
 
 export const metadata = {
   title: "Preguntas Frecuentes | VAI Prop",

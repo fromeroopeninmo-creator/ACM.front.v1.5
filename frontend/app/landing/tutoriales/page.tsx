@@ -59,6 +59,8 @@ export default function LandingTutorialesPage() {
           name: "Cómo utilizar el Valuador de Activos Inmobiliarios",
           description:
             "Paso a paso para cargar un inmueble, sumar comparables, subir imágenes y generar un Informe VAI listo para enviar.",
+          thumbnailUrl: ["https://i.ytimg.com/vi/oMVdw8uFu2E/hqdefault.jpg"],
+          uploadDate: "2025-12-10",
           embedUrl: "https://www.youtube.com/embed/oMVdw8uFu2E",
           url: "https://www.youtube.com/watch?v=oMVdw8uFu2E",
           publisher: { "@type": "Organization", name: "VAI Prop" },
@@ -72,6 +74,8 @@ export default function LandingTutorialesPage() {
           name: "Cómo valuar un lote por Factibilidad Constructiva",
           description:
             "Recorrido por el módulo de Factibilidad Constructiva: normativa, parámetros y escenarios para analizar viabilidad.",
+          thumbnailUrl: ["https://i.ytimg.com/vi/UdCCU-Axbk0/hqdefault.jpg"],
+          uploadDate: "2025-12-10",
           embedUrl: "https://www.youtube.com/embed/UdCCU-Axbk0",
           url: "https://www.youtube.com/watch?v=UdCCU-Axbk0",
           publisher: { "@type": "Organization", name: "VAI Prop" },
@@ -85,6 +89,8 @@ export default function LandingTutorialesPage() {
           name: "Business Tracker: seguimiento de contactos y oportunidades",
           description:
             "Cómo registrar contactos, propiedades, actividades y estados para ordenar el seguimiento comercial.",
+          thumbnailUrl: ["https://i.ytimg.com/vi/a-FZa9QbOSE/hqdefault.jpg"],
+          uploadDate: "2025-12-12",
           embedUrl: "https://www.youtube.com/embed/a-FZa9QbOSE",
           url: "https://www.youtube.com/watch?v=a-FZa9QbOSE",
           publisher: { "@type": "Organization", name: "VAI Prop" },
@@ -98,6 +104,8 @@ export default function LandingTutorialesPage() {
           name: "Business Analytics: métricas y tableros para decidir con datos",
           description:
             "Recorrido por gráficos y tableros: ingresos, mix de tipologías, desempeño por asesor y visión global.",
+          thumbnailUrl: ["https://i.ytimg.com/vi/_KseZwDzANg/hqdefault.jpg"],
+          uploadDate: "2025-12-12",
           embedUrl: "https://www.youtube.com/embed/_KseZwDzANg",
           url: "https://www.youtube.com/watch?v=_KseZwDzANg",
           publisher: { "@type": "Organization", name: "VAI Prop" },

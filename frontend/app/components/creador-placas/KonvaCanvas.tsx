@@ -99,6 +99,7 @@ const ShapeElement = ({ el, textValue, selected, onSelect, onChange }: { el: Can
 
 const KonvaCanvas = forwardRef<KonvaCanvasHandle, Props>(function KonvaCanvas({elements,data,images,logoUrl,brandText,contactText,selectedId,onSelect,onChange,scale},ref){
   const stageRef=useRef<Konva.Stage>(null);
+  const logo = useHtmlImage(logoUrl);
   useImperativeHandle(ref,()=>({exportImage:(mime)=>stageRef.current?.toDataURL({pixelRatio:1,mimeType:mime,quality:.94})||""}),[]);
   const sorted=[...elements].filter(e=>e.visible!==false).sort((a,b)=>a.zIndex-b.zIndex);
   return <Stage ref={stageRef} width={DESIGN_WIDTH*scale} height={DESIGN_HEIGHT*scale} scaleX={scale} scaleY={scale} onMouseDown={(e)=>{if(e.target===e.target.getStage())onSelect(null)}} onTouchStart={(e)=>{if(e.target===e.target.getStage())onSelect(null)}}>

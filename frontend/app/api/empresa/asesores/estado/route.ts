@@ -124,7 +124,8 @@ async function resolveEmpresaForCompany(
       .eq("id", profileEmpresaId)
       .maybeSingle();
 
-    if (data?.id) return data.id;
+    const empresa = data as { id: string } | null;
+    if (empresa?.id) return empresa.id;
   }
 
   const { data } = await supabaseAdmin
@@ -133,7 +134,8 @@ async function resolveEmpresaForCompany(
     .eq("user_id", authUserId)
     .maybeSingle();
 
-  return data?.id || null;
+  const empresa = data as { id: string } | null;
+  return empresa?.id || null;
 }
 
 async function getEffectiveLimit(

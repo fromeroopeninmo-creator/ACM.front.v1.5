@@ -1,8 +1,26 @@
 "use client";
 
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
-import Konva from "konva";
-import { Circle, Image as KonvaImage, Layer, Line, Rect, Stage, Text, Transformer } from "react-konva";
+import type Konva from "konva";
+import {
+  Circle,
+  Image as KonvaImage,
+  Layer,
+  Line,
+  Rect,
+  Stage,
+  Text,
+  Transformer,
+} from "react-konva/lib/ReactKonvaCore";
+
+// Registro explícito de las figuras usadas. Esta variante evita que Next.js
+// importe el entrypoint Node de Konva y trate de empaquetar canvas.node.
+import "konva/lib/shapes/Circle";
+import "konva/lib/shapes/Image";
+import "konva/lib/shapes/Line";
+import "konva/lib/shapes/Rect";
+import "konva/lib/shapes/Text";
+import "konva/lib/shapes/Transformer";
 import type { CanvasElement, PropertyData } from "./types";
 import { DESIGN_HEIGHT, DESIGN_WIDTH } from "./templates";
 

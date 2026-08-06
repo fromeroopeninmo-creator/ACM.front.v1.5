@@ -142,7 +142,7 @@ async function getEffectiveLimit(
   supabaseAdmin: ReturnType<typeof createClient>,
   empresaId: string
 ): Promise<{ limit: number; planName: string }> {
-  const { data: empresaPlan, error: empresaPlanError } = await supabaseAdmin
+  const { data: empresaPlanRaw, error: empresaPlanError } = await supabaseAdmin
     .from("empresas_planes")
     .select("id, plan_id, max_asesores_override")
     .eq("empresa_id", empresaId)
@@ -150,6 +150,12 @@ async function getEffectiveLimit(
     .order("fecha_inicio", { ascending: false })
     .limit(1)
     .maybeSingle();
+
+  const empresaPlan = empresaPlanRaw as {
+    id: string;
+    plan_id: string | null;
+    max_asesores_override: number | null;
+  } | null;
 
   if (empresaPlanError || !empresaPlan?.plan_id) {
     throw new Error("La empresa no tiene un plan activo configurado.");
@@ -172,7 +178,13 @@ async function getEffectiveLimit(
     console.warn("asesores/estado acuerdo", agreementError);
   }
 
-  const agreementRows = Array.isArray(agreements) ? agreements : [];
+  const agreementRows = (Array.isArray(agreements) ? agreements : []) as Array<{
+    id: string;
+    plan_id: string | null;
+    max_asesores_override: number | null;
+    fecha_inicio: string | null;
+    fecha_fin: string | null;
+  }>;
   const agreement =
     agreementRows.find((item) => item.plan_id === empresaPlan.plan_id) ||
     agreementRows.find((item) => item.plan_id == null) ||
@@ -181,13 +193,22 @@ async function getEffectiveLimit(
 
   const planId = agreement?.plan_id || empresaPlan.plan_id;
 
-  const { data: plan, error: planError } = await supabaseAdmin
+  const { data: planRaw, error: planError } = await supabaseAdmin
     .from("planes")
     .select(
       "id, nombre, nombre_comercial, tier_plan, max_asesores, es_trial"
     )
     .eq("id", planId)
     .maybeSingle();
+
+  const plan = planRaw as {
+    id: string;
+    nombre: string | null;
+    nombre_comercial: string | null;
+    tier_plan: string | null;
+    max_asesores: number | null;
+    es_trial: boolean | null;
+  } | null;
 
   if (planError || !plan) {
     throw new Error("No se pudo leer la información del plan actual.");
@@ -258,7 +279,14 @@ export async function GET(req: NextRequest) {
       query = query.eq("id", authUser.id);
     }
 
-    const { data: advisor, error: advisorError } = await query.maybeSingle();
+    const { data: advisorRaw, error: advisorError } = await query.maybeSingle();
+
+    const advisor = advisorRaw as {
+      id: string;
+      empresa_id: string;
+      activo: boolean | null;
+      email: string | null;
+    } | null;
 
     if (advisorError) {
       console.error("GET asesores/estado", advisorError);
@@ -325,11 +353,20 @@ export async function POST(req: NextRequest) {
       return errorJson("activo debe ser booleano.", 400);
     }
 
-    const { data: advisor, error: advisorError } = await supabaseAdmin
+    const { data: advisorRaw, error: advisorError } = await supabaseAdmin
       .from("asesores")
       .select("id, empresa_id, nombre, apellido, email, activo")
       .eq("id", asesorId)
       .maybeSingle();
+
+    const advisor = advisorRaw as {
+      id: string;
+      empresa_id: string;
+      nombre: string | null;
+      apellido: string | null;
+      email: string | null;
+      activo: boolean | null;
+    } | null;
 
     if (advisorError) {
       console.error("POST asesores/estado advisor", advisorError);
@@ -415,7 +452,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const { data: updated, error: updateError } = await supabaseAdmin
+    const { data: updatedRaw, error: updateError } = await supabaseAdmin
       .from("asesores")
       .update({ activo: active })
       .eq("id", advisor.id)
@@ -423,7 +460,13 @@ export async function POST(req: NextRequest) {
       .select("id, empresa_id, activo")
       .single();
 
-    if (updateError) {
+    const updated = updatedRaw as {
+      id: string;
+      empresa_id: string;
+      activo: boolean;
+    } | null;
+
+    if (updateError || !updated) {
       console.error("POST asesores/estado update", updateError);
       return errorJson("No se pudo actualizar el estado del asesor.", 500);
     }
@@ -431,7 +474,7 @@ export async function POST(req: NextRequest) {
     if (!active) {
       const normalizedEmail = String(advisor.email || "").trim().toLowerCase();
 
-      const { data: advisorProfile, error: advisorProfileError } =
+      const { data: advisorProfileRaw, error: advisorProfileError } =
         await supabaseAdmin
           .from("profiles")
           .select("id, user_id")
@@ -442,6 +485,11 @@ export async function POST(req: NextRequest) {
           )
           .limit(1)
           .maybeSingle();
+
+      const advisorProfile = advisorProfileRaw as {
+        id: string;
+        user_id: string | null;
+      } | null;
 
       if (advisorProfileError) {
         console.warn("asesores/estado profile asesor", advisorProfileError);

@@ -346,6 +346,8 @@ export default function AsesoresPage() {
 
   const [showForm, setShowForm] = useState(false);
 
+  const [changingAsesorId, setChangingAsesorId] = useState<string | null>(null);
+
   const [sortOption, setSortOption] =
     useState<SortOption>("ultima_actividad_asc");
 
@@ -462,45 +464,75 @@ export default function AsesoresPage() {
     setFechaHasta(period.fechaHasta);
   };
 
-  const toggleActivo = async (
-    id: string,
-    current: boolean
+  const cambiarEstadoAsesor = async (
+    asesor: AsesorRendimiento
   ) => {
-    const { error: updateError } = await supabase
-      .from("asesores")
-      .update({ activo: !current })
-      .eq("id", id);
+    const nuevoEstado = !asesor.activo;
+    const accion = nuevoEstado ? "reactivar" : "desactivar";
 
-    if (updateError) {
-      setError(
-        "No se pudo actualizar el estado del asesor."
-      );
-      return;
-    }
-
-    await fetchRendimiento();
-  };
-
-  const eliminarAsesor = async (id: string) => {
     const confirmed = window.confirm(
-      "¿Seguro que deseas eliminar este asesor? Esta acción puede fallar si tiene información relacionada."
+      nuevoEstado
+        ? `¿Reactivar a ${asesor.nombre_completo}? Volverá a ocupar un cupo y podrá ingresar nuevamente a VAI Prop.`
+        : `¿Desactivar a ${asesor.nombre_completo}? Perderá el acceso y dejará de ocupar un cupo activo. Sus contactos, actividades, propiedades, cierres, informes y métricas históricas se conservarán.`
     );
 
     if (!confirmed) return;
 
-    const { error: deleteError } = await supabase
-      .from("asesores")
-      .delete()
-      .eq("id", id);
+    setChangingAsesorId(asesor.id);
+    setError(null);
 
-    if (deleteError) {
-      setError(
-        "No se pudo eliminar el asesor. Puede tener registros asociados."
+    try {
+      const {
+        data: { session },
+        error: sessionError,
+      } = await supabase.auth.getSession();
+
+      if (sessionError || !session?.access_token) {
+        throw new Error(
+          "La sesión expiró. Volvé a iniciar sesión."
+        );
+      }
+
+      const response = await fetch(
+        "/api/empresa/asesores/estado",
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            asesor_id: asesor.id,
+            activo: nuevoEstado,
+            empresa_id: asesor.empresa_id,
+          }),
+        }
       );
-      return;
-    }
 
-    await fetchRendimiento();
+      const payload = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(
+          payload?.error ||
+            `No se pudo ${accion} el asesor.`
+        );
+      }
+
+      await fetchRendimiento();
+    } catch (stateError) {
+      console.error(
+        `Error al ${accion} asesor:`,
+        stateError
+      );
+
+      setError(
+        stateError instanceof Error
+          ? stateError.message
+          : `No se pudo ${accion} el asesor.`
+      );
+    } finally {
+      setChangingAsesorId(null);
+    }
   };
 
   const asesoresOrdenados = useMemo(() => {
@@ -963,12 +995,31 @@ export default function AsesoresPage() {
                       </span>
                     </div>
 
-                    <Link
-                      href={`/dashboard/empresa/asesores/${asesor.id}?fecha_desde=${fechaDesde}&fecha_hasta=${fechaHasta}`}
-                      className="mt-4 flex w-full items-center justify-center rounded-xl border border-[#E6A930] px-4 py-2.5 text-sm font-semibold text-gray-900 transition hover:bg-[#E6A930]/10 dark:text-white"
-                    >
-                      Ver detalle
-                    </Link>
+                    <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                      <button
+                        type="button"
+                        onClick={() => void cambiarEstadoAsesor(asesor)}
+                        disabled={changingAsesorId === asesor.id}
+                        className={`flex w-full items-center justify-center rounded-xl px-4 py-2.5 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                          asesor.activo
+                            ? "border border-red-200 text-red-700 hover:bg-red-50 dark:border-red-900 dark:text-red-300 dark:hover:bg-red-950/30"
+                            : "border border-green-200 text-green-700 hover:bg-green-50 dark:border-green-900 dark:text-green-300 dark:hover:bg-green-950/30"
+                        }`}
+                      >
+                        {changingAsesorId === asesor.id
+                          ? "Procesando..."
+                          : asesor.activo
+                          ? "Desactivar asesor"
+                          : "Reactivar asesor"}
+                      </button>
+
+                      <Link
+                        href={`/dashboard/empresa/asesores/${asesor.id}?fecha_desde=${fechaDesde}&fecha_hasta=${fechaHasta}`}
+                        className="flex w-full items-center justify-center rounded-xl border border-[#E6A930] px-4 py-2.5 text-sm font-semibold text-gray-900 transition hover:bg-[#E6A930]/10 dark:text-white"
+                      >
+                        Ver detalle
+                      </Link>
+                    </div>
                   </article>
                 );
               })}
@@ -1084,24 +1135,15 @@ export default function AsesoresPage() {
                         </div>
 
                         <div className="flex shrink-0 flex-col items-end gap-2">
-                          <button
-                            type="button"
-                            onClick={() =>
-                              toggleActivo(
-                                asesor.id,
-                                asesor.activo
-                              )
-                            }
+                          <span
                             className={`rounded-full px-3 py-1 text-xs font-semibold ${
                               asesor.activo
                                 ? "bg-green-100 text-green-700 dark:bg-green-950/50 dark:text-green-300"
                                 : "bg-red-100 text-red-700 dark:bg-red-950/50 dark:text-red-300"
                             }`}
                           >
-                            {asesor.activo
-                              ? "Activo"
-                              : "Inactivo"}
-                          </button>
+                            {asesor.activo ? "Activo" : "Inactivo"}
+                          </span>
 
                           <Link
                             href={`/dashboard/empresa/asesores/${asesor.id}?fecha_desde=${fechaDesde}&fecha_hasta=${fechaHasta}`}
@@ -1112,12 +1154,19 @@ export default function AsesoresPage() {
 
                           <button
                             type="button"
-                            onClick={() =>
-                              eliminarAsesor(asesor.id)
-                            }
-                            className="rounded-lg px-3 py-1.5 text-xs font-semibold text-red-600 transition hover:bg-red-50 dark:hover:bg-red-950/30"
+                            onClick={() => void cambiarEstadoAsesor(asesor)}
+                            disabled={changingAsesorId === asesor.id}
+                            className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                              asesor.activo
+                                ? "text-red-600 hover:bg-red-50 dark:text-red-300 dark:hover:bg-red-950/30"
+                                : "text-green-700 hover:bg-green-50 dark:text-green-300 dark:hover:bg-green-950/30"
+                            }`}
                           >
-                            Eliminar
+                            {changingAsesorId === asesor.id
+                              ? "Procesando..."
+                              : asesor.activo
+                              ? "Desactivar"
+                              : "Reactivar"}
                           </button>
                         </div>
                       </div>

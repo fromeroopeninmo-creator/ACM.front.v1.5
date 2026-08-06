@@ -112,8 +112,10 @@ async function getAuthenticatedContext(req: Request) {
   return { supabaseAdmin, authUser, profile } as const;
 }
 
+type AdminClient = NonNullable<ReturnType<typeof createAdminClient>>;
+
 async function resolveEmpresaForCompany(
-  supabaseAdmin: ReturnType<typeof createClient>,
+  supabaseAdmin: AdminClient,
   authUserId: string,
   profileEmpresaId: string | null
 ): Promise<string | null> {
@@ -139,7 +141,7 @@ async function resolveEmpresaForCompany(
 }
 
 async function getEffectiveLimit(
-  supabaseAdmin: ReturnType<typeof createClient>,
+  supabaseAdmin: AdminClient,
   empresaId: string
 ): Promise<{ limit: number; planName: string }> {
   const { data: empresaPlanRaw, error: empresaPlanError } = await supabaseAdmin
